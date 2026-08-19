@@ -1,0 +1,44 @@
+﻿# === Java / Maven ===
+target/
+*.class
+*.jar
+*.war
+*.log
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+dependency-reduced-pom.xml
+build/
+
+# === IDE ===
+.idea/
+*.iml
+*.iws
+*.ipr
+.settings/
+.project
+.classpath
+.sts4-cache/
+.vscode/
+
+# === Node / Frontend ===
+node_modules/
+dist/
+dev-dist/
+*.local
+
+# === OS ===
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# === Env / Secrets ===
+.env
+.env.local
+*.pem
+*.key
+
+# === Logs ===
+logs/
+*.log
