@@ -3,7 +3,7 @@
 > An open-source, lightweight web workbench for AI-agent-powered document collaboration, built for individuals and small teams.
 > Documents as the single collaboration vehicle for AI Agent tasks.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Planning-orange)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%200%20ready-green)
 
 English | [简体中文](./README.md)
 
@@ -71,15 +71,17 @@ Gateway (Spring Cloud Gateway · WebFlux)
 
 ## Getting Started
 
-> ⚠️ Currently in the **planning/skeleton phase**; code is not implemented yet. The following is the v0.1 startup plan.
+> Phase 0 engineering foundations are complete. Development now continues with the Phase 1 backend foundation.
 
 ```bash
 # 1. Start infrastructure (MySQL / Redis / RabbitMQ / MinIO / Nacos)
 docker compose up -d
+# Tip: if MySQL / Redis are installed locally, start only the other three:
+# docker compose up -d rabbitmq minio nacos
 
 # 2. Start backend (Maven multi-module)
 cd backend
-./mvnw spring-boot:run -pl auth-service
+./mvnw spring-boot:run -pl auth-service -am
 
 # 3. Start frontend
 cd frontend
@@ -87,13 +89,14 @@ pnpm install
 pnpm dev
 ```
 
-Environment variable templates: `.env.example` (MCP credentials, JWT keys and other secrets must go through environment variables — never commit them).
+Backend service ports: Gateway `8084`, Auth `8081`, Document `8082`, and Task `8083`.
+Frontend variables are documented in `frontend/.env.example`; infrastructure and secret templates are in `.env.example`.
 
 ## Development Roadmap
 
 | Phase | Scope | Status |
 | --- | --- | --- |
-| Phase 0 | Engineering foundation: Git, Docker Compose, frontend/backend scaffolding | Planned |
+| Phase 0 | Engineering foundation: Git, Docker Compose, frontend/backend scaffolding | Completed |
 | Phase 1 | Backend foundation: common, auth, gateway | Planned |
 | Phase 2 | Document core: spaces/documents/versions/Diff | Planned |
 | Phase 3 | Agents & tasks: MCP integration, Token circuit breaker | Planned |
