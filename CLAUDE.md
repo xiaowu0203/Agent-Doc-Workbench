@@ -39,11 +39,12 @@
 
 ## 四、技术栈（已定稿，详见 `docs/tech/README.md`）
 
-### 当前状态（2026-08-19）
-- 项目处于**初始骨架阶段**：规划文档齐全（`docs/`），技术栈已定稿
-- `backend/`：Spring Boot 3.5.0 + Java 21 初始脚手架，仅有启动类与默认测试，无业务代码
-- `frontend/`：空目录，按既定选型待搭建
-- 尚未初始化 Git 仓库；License 倾向 Apache-2.0（已写入技术栈文档）
+### 当前状态（2026-08-20）
+- Phase 0 工程基建**已完成**：Git 仓库（main / phase-0 分支）、Docker Compose、`.gitignore`、Apache-2.0 LICENSE、双语 README 齐备
+- `backend/`：Maven 多模块骨架 `common` / `gateway-service` / `auth-service` / `document-service` / `task-service`（JDK 21 / Spring Boot 3.5.0 / Spring Cloud 2025.0.0），各服务可启动并提供 ping 接口
+- `frontend/`：Vite + Vue 3 + TS(strict) + Pinia + Vue Router + Element Plus + ESLint + Prettier + Husky + Vitest 脚手架完成，默认首页可访问
+- `docker compose` 一键编排 MySQL 5.7 / Redis 7 / RabbitMQ 3-management / MinIO / Nacos 3.2.2（本地开发中间件）
+- 待办（下一步）：启动 Phase 1 后端地基（common 公共能力、auth 鉴权闭环、gateway 路由）
 
 ### 后端选型（v0.1）
 - **基础**：JDK 21 / Spring Boot 3.5.0 / Spring Cloud 2025.0.0 / Maven / Apache-2.0
@@ -99,6 +100,11 @@ public interface AgentRuntime {
 
 ## 六、开发规范
 
+### 提交与推送（强制约束）
+- **未经用户明确要求，禁止执行任何 git commit / git push / 分支创建与切换**
+- 用户明确说「提交」「推送」等指令时才可操作，且操作前说明将要执行的 git 命令
+- 工作区保持整洁：完成任务后不自动提交，等待用户指令
+
 ### 代码与协作
 - 中文优先：注释、文档、提交信息使用中文（面向中文社区开源）
 - 提交信息格式：`类型(范围): 简述`，如 `feat(backend): 新增空间实体`；类型参考 feat / fix / docs / refactor / test / chore
@@ -119,7 +125,12 @@ public interface AgentRuntime {
 - 已生成 v0.1 全 8 页 UI 效果图（docs/ui-mockups/）
 - 开发路线图定稿（docs/development-plan.md，Phase 0-6，约 1 个月）
 - 已生成双语 README（README.md / README.en.md）
-- 待办（下一步）：启动 Phase 0 工程基建
+
+### 2026-08-20（Phase 0 完成）
+- `docker-compose.yml`：MySQL 5.7 / Redis 7 / RabbitMQ 3-management / MinIO / Nacos 3.2.2，含持久化卷与健康检查
+- 后端重构为 Maven 多模块：`common`（Result/BusinessException）、四个 Boot 服务，端口 Gateway 8084 / Auth 8081 / Document 8082 / Task 8083
+- 前端脚手架完成并验证：lint / build（vue-tsc）/ vitest 全绿，Husky pre-commit → lint-staged → eslint/prettier 链路实测可用
+- 清理 backend 冗余文件：HELP.md、backend.iml、.idea/、旧单模块 src 与 target、重复的 backend/.gitignore
 
 
 ## 八、决策记录（ADR，倒序追加）
