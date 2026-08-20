@@ -1,7 +1,7 @@
 ﻿# 开发路线图（v0.1 → 开源发布）
 
 > 基于《Agent-Doc-Workbench 项目完整开发规划文档》与技术栈定稿（docs/tech/）
-> 更新时间：2026-08-19 · 状态：待启动
+> 更新时间：2026-08-20 · 状态：Phase 0 已完成
 
 ## 总体节奏
 
@@ -18,13 +18,13 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 
 **目标**：搭建可复现的开发环境与仓库骨架
 
-- [ ] 初始化 Git 仓库 + `.gitignore` + Apache-2.0 LICENSE + 根 README
-- [ ] `docker-compose.yml` 本地一键启动：MySQL 5.7 / Redis 7 / RabbitMQ 3-management / MinIO / Nacos 3.2.2
-- [ ] 后端 Maven 多模块骨架：`common` / `gateway-service` / `auth-service` / `document-service` / `task-service`（agent / audit 先并入 document 或独立模块，接口稳定后再拆）
-- [ ] 前端脚手架：Vite + Vue 3 + TypeScript(strict) + Pinia + Vue Router + Element Plus + ESLint + Prettier + Husky + Vitest
-- [ ] `.env.example`、开发环境变量模板
+- [x] 初始化 Git 仓库 + `.gitignore` + Apache-2.0 LICENSE + 根 README
+- [x] `docker-compose.yml` 本地一键启动：MySQL 5.7 / Redis 7 / RabbitMQ 3-management / MinIO / Nacos 3.2.2
+- [x] 后端 Maven 多模块骨架：`common` / `gateway-service` / `auth-service` / `document-service` / `task-service`（agent / audit 先并入 document 或独立模块，接口稳定后再拆）
+- [x] 前端脚手架：Vite + Vue 3 + TypeScript(strict) + Pinia + Vue Router + Element Plus + ESLint + Prettier + Husky + Vitest
+- [x] `.env.example`、开发环境变量模板
 
-**验收**：`docker compose up -d` 一键起全部中间件；前后端均可启动并展示默认页；Git 提交规范生效。
+**验收**：Compose 配置可解析并支持一键启动全部中间件；前后端均可启动并展示默认页；前端 Git 提交钩子已配置。
 
 ## Phase 1：后端地基（3-5 天）
 

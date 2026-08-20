@@ -3,7 +3,7 @@
 > 面向个人/小团队的 Agent 活文档协作开源 Web 工作台
 > 文档，作为 AI Agent 任务的唯一协作载体。
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Planning-orange)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%200%20ready-green)
 
 [English](./README.en.md) | 简体中文
 
@@ -71,15 +71,17 @@ Gateway (Spring Cloud Gateway · WebFlux)
 
 ## 快速开始
 
-> ⚠️ 当前处于**规划/骨架阶段**，代码尚未实现。以下为 v0.1 的启动计划。
+> Phase 0 工程基建已完成，当前进入 Phase 1 后端地基开发。
 
 ```bash
 # 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Nacos）
 docker compose up -d
+# 提示：本机已装 MySQL / Redis 时，可只启动其余三个：
+# docker compose up -d rabbitmq minio nacos
 
 # 2. 启动后端（Maven 多模块）
 cd backend
-./mvnw spring-boot:run -pl auth-service
+./mvnw spring-boot:run -pl auth-service -am
 
 # 3. 启动前端
 cd frontend
@@ -87,13 +89,14 @@ pnpm install
 pnpm dev
 ```
 
-环境变量模板见 `.env.example`（MCP 凭证、JWT 密钥等敏感配置一律走环境变量，严禁提交）。
+后端服务默认端口：Gateway `8084`、Auth `8081`、Document `8082`、Task `8083`。
+前端环境变量模板见 `frontend/.env.example`；基础设施与敏感配置模板见 `.env.example`。
 
 ## 开发路线图
 
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| Phase 0 | 工程基建：Git、Docker Compose、前后端骨架 | 待启动 |
+| Phase 0 | 工程基建：Git、Docker Compose、前后端骨架 | 已完成 |
 | Phase 1 | 后端地基：common、auth、gateway | 待启动 |
 | Phase 2 | 文档核心：空间/文档/版本/Diff | 待启动 |
 | Phase 3 | Agent 与任务：MCP 接入、Token 熔断 | 待启动 |
