@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.agentdoc</groupId>
+        <artifactId>agent-doc-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>agent-doc-common-web-spring-boot-starter</artifactId>
+    <name>agent-doc-common-web-spring-boot-starter</name>
+    <description>Servlet Web 服务通用自动装配：全局异常处理器、TraceId 链路、用户上下文 Filter、权限拦截器、健康探测 Ping</description>
+
+    <dependencies>
+        <!-- 公共核心库：Result/ErrorCode/异常/上下文/权限注解等 -->
+        <dependency>
+            <groupId>com.agentdoc</groupId>
+            <artifactId>agent-doc-common-core</artifactId>
+        </dependency>
+        <!-- Spring WebMVC：WebMvcConfigurer / HandlerInterceptor / OncePerRequestFilter 编译与运行必需
+             （本 starter 面向 Servlet MVC 服务，gateway 不依赖本 starter，不会带进 WebFlux） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+        </dependency>
+        <!-- Servlet API：过滤器编译用；provided，运行时由容器提供 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Lombok：日志注解编译用；provided 不进入消费者传递依赖 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- 日志门面：TraceIdFilter(MDC) / GlobalExceptionHandler(@Slf4j) 编译与运行必需 -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Spring Boot AutoConfiguration：@AutoConfiguration / 条件注解 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

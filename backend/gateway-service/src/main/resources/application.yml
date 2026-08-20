@@ -4,11 +4,110 @@ server:
 spring:
   application:
     name: gateway-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   cloud:
     gateway:
-      discovery:
-        locator:
-          enabled: false
+      server:
+        webflux:
+          discovery:
+            locator:
+              enabled: false
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowedOriginPatterns: "*"
+                allowedMethods: "*"
+                allowedHeaders: "*"
+                allowCredentials: true
+                maxAge: 3600
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+            # 全局限流：100 桶 / 200 容量（QPS 兜底）
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 100
+                redis-rate-limiter.burstCapacity: 200
+                redis-rate-limiter.requestedTokens: 1
+          routes:
+            # ---- SpringDoc 聚合：把各服务的 /v3/api-docs 以 /api/{svc}/v3/api-docs 暴露（order 需在 catch-all 之前）----
+            - id: api-docs-auth
+              uri: http://localhost:${AUTH_SERVICE_PORT:8081}
+              predicates:
+                - Path=/api/auth/v3/api-docs/**
+              filters:
+                - RewritePath=/api/auth/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
+              order: -30
+            - id: api-docs-document
+              uri: http://localhost:${DOCUMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/document/v3/api-docs/**
+              filters:
+                - RewritePath=/api/document/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
+              order: -30
+            - id: api-docs-task
+              uri: http://localhost:${TASK_SERVICE_PORT:8083}
+              predicates:
+                - Path=/api/task/v3/api-docs/**
+              filters:
+                - RewritePath=/api/task/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
+              order: -30
+
+            # ---- 登录接口单独更严限流（与全局限流叠加，需同时过两桶）----
+            - id: login-rate-limit
+              uri: http://localhost:${AUTH_SERVICE_PORT:8081}
+              predicates:
+                - Path=/api/auth/login
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 5
+                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.requestedTokens: 1
+                    key-resolver: "#{@loginKeyResolver}"
+              order: -20
+
+            # ---- 业务服务（静态 URI，不走 Nacos）----
+            - id: auth-service
+              uri: http://localhost:${AUTH_SERVICE_PORT:8081}
+              predicates:
+                - Path=/api/auth/**,/oauth2/jwks,/actuator/**
+              order: 0
+            - id: document-service
+              uri: http://localhost:${DOCUMENT_SERVICE_PORT:8082}
+              predicates:
+                - Path=/api/document/**
+              order: 0
+            - id: task-service
+              uri: http://localhost:${TASK_SERVICE_PORT:8083}
+              predicates:
+                - Path=/api/task/**
+              order: 0
+
+# 网关免鉴权白名单与 JWKS 地址
+auth:
+  gateway:
+    jwk-url: http://localhost:${AUTH_SERVICE_PORT:8081}/oauth2/jwks
+    whitelist:
+      - /api/auth/register
+      - /api/auth/login
+      - /api/auth/refresh
+      - /api/auth/logout
+      - /api/auth/ping
+      - /api/document/ping
+      - /api/task/ping
+      - /oauth2/jwks
+      - /actuator/**
+      - /swagger-ui.html
+      - /swagger-ui/**
+      - /v3/api-docs/**
+      - /api/*/v3/api-docs
+      - /api/*/v3/api-docs/**
+      - /favicon.ico
 
 management:
   endpoints:
@@ -18,3 +117,15 @@ management:
   endpoint:
     health:
       show-details: never
+
+# SpringDoc：网关聚合三服务的 Swagger UI
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: auth-service
+        url: /api/auth/v3/api-docs
+      - name: document-service
+        url: /api/document/v3/api-docs
+      - name: task-service
+        url: /api/task/v3/api-docs

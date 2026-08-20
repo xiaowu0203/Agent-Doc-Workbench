@@ -4,6 +4,36 @@ server:
 spring:
   application:
     name: auth-service
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  jackson:
+    time-zone: Asia/Shanghai
+
+auth:
+  jwt:
+    # 可选：生产环境用 PEM（Base64 或标准 PEM 文本）。留空则启动时自动生成临时密钥（开发用）
+    private-key: ${JWT_PRIVATE_KEY:}
+    public-key: ${JWT_PUBLIC_KEY:}
+    access-ttl: 30m
+    refresh-ttl: 7d
+    issuer: agent-doc-workbench
+
+agent-doc:
+  openapi:
+    title: Auth Service API
+    description: 认证服务：注册、登录、刷新、JWKS
 
 management:
   endpoints:
@@ -13,3 +43,9 @@ management:
   endpoint:
     health:
       show-details: never
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs

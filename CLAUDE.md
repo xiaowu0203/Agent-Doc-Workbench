@@ -1,4 +1,4 @@
-﻿# CLAUDE.md
+# CLAUDE.md
 
 > Agent-Doc-Workbench 项目记忆与协作规范（本文件随项目演进持续维护）
 
@@ -6,7 +6,7 @@
 
 - **Gitee**：https://gitee.com/wu_hai123/agent-doc-workbench
 - **GitHub**：https://github.com/xiaowu0203/Agent-Doc-Workbench
-- 分支约定：main 为稳定分支；phase-0 为第一阶段开发分支（Phase 0 工程基建）
+- 分支约定：main 为稳定分支；phase-0 / phase-1 为开发分支（Phase 0 工程基建 / Phase 1 后端地基）
 
 ## 一、项目概述
 
@@ -45,6 +45,12 @@
 - `frontend/`：Vite + Vue 3 + TS(strict) + Pinia + Vue Router + Element Plus + ESLint + Prettier + Husky + Vitest 脚手架完成，默认首页可访问
 - `docker compose` 一键编排 MySQL 5.7 / Redis 7 / RabbitMQ 3-management / MinIO / Nacos 3.2.2（本地开发中间件）
 - 待办（下一步）：启动 Phase 1 后端地基（common 公共能力、auth 鉴权闭环、gateway 路由）
+
+### 当前状态（2026-08-21）
+- **Phase 1 后端地基完成并实测**：common 公共能力、auth 鉴权闭环（注册/登录/刷新/登出/me + JWT RS256 + JWKS）、gateway 路由/鉴权/限流/OpenAPI 聚合，全链路验证通过（含高并发限流 429）
+- **common 拆分为 5 子模块**（详见 `docs/common-modules.md`）：`common-core` + `common-web-spring-boot-starter` + `common-springdoc-spring-boot-starter` + `common-mybatis-plus-spring-boot-starter` + `common-redis-spring-boot-starter`；gateway 仅依赖 core
+- **Redis 键统一 `agent-doc-workbench:` 前缀**（多项目共享 Redis 隔离）；限流用自定义 `ProjectRedisRateLimiter`（SCG 4.3.0 移除 key-prefix 配置）
+- 待办（下一步）：Phase 2（前端鉴权接入、文档空间 CRUD API 等）
 
 ### 后端选型（v0.1）
 - **基础**：JDK 21 / Spring Boot 3.5.0 / Spring Cloud 2025.0.0 / Maven / Apache-2.0
@@ -132,8 +138,24 @@ public interface AgentRuntime {
 - 前端脚手架完成并验证：lint / build（vue-tsc）/ vitest 全绿，Husky pre-commit → lint-staged → eslint/prettier 链路实测可用
 - 清理 backend 冗余文件：HELP.md、backend.iml、.idea/、旧单模块 src 与 target、重复的 backend/.gitignore
 
+### 2026-08-21（Phase 1 完成 + common 拆分）
+- Phase 1 后端地基完成并实测：common 公共能力、11 张表 Flyway（V1__init.sql 由 auth-service 托管）、auth 鉴权闭环、gateway 路由/鉴权/限流/OpenAPI 聚合
+- **common 拆分为 common-core + 4 个 starter**（web / springdoc / mybatis-plus / redis），11 模块构建全绿（37 测试），端到端验证通过（注册→登录→me→刷新→登出、JWKS、OpenAPI 聚合、网关 401/透传、高并发登录限流 429）
+- **BaseEntity 两层设计**：`BaseEntity`（id/createdAt）+ `BaseLogicDeleteEntity`（+updatedAt/deleted），依据 11 表字段实情（11 个 created_at / 8 个 updated_at / 9 个 deleted）；TokenUsage/AuditLog（流水表）继承 Base，DocumentVersion（无 updated_at）继承 Base + 自持 @TableLogic
+- **Redis 键前缀统一 `agent-doc-workbench:`**：refresh token 键、限流键（自定义 `ProjectRedisRateLimiter`，SCG 4.3.0 移除 key-prefix 后自研）；双桶（全局 100/s + 登录 5/s）经独立 KeyResolver 隔离
+- 环境事实：IDEA 用系统 Maven 3.8.4（settings.xml localRepository=`D:\maven\...\repository`），命令行 mvnw 用默认 `~/.m2`（**两仓库不一致**，IDE 解析失败先查这个）；IntelliJ 新建子模块可能被加入 `.idea/misc.xml` 的 ignoredFiles（表现为删除线/无 Maven 图标，Maven 面板右键 Unignore 解决）
 
 ## 八、决策记录（ADR，倒序追加）
+
+### ADR-007：Redis 键前缀统一 + 自定义 RateLimiter（2026-08-21）
+- 结论：所有 Redis 键以 `agent-doc-workbench:` 开头（`RedisKeyConstants` 常量统一）；限流键经自定义 `ProjectRedisRateLimiter`（前缀 `agent-doc-workbench:rate`，键格式 `agent-doc-workbench:rate.{routeId.id}.{tokens,timestamp}`）实现
+- 理由：本机共享 Redis 实例与多项目共存，裸键会冲突；Spring Cloud Gateway 4.3.0 已移除 RedisRateLimiter 的 key-prefix 配置（字节码硬编码 `request_rate_limiter`），`spring.cloud.gateway.redis-rate-limiter.prefix` 与 filter args 均实测无效，KeyResolver 注入仅能让键名中间含工程名、无法实现真前缀
+- 后果：网关维护一份复制自框架的令牌桶 Lua + 限流器实现（约百行），升级 SCG 时需回归验证；全局限流（100/s 桶 200）与登录限流（5/s 桶 10）通过独立 KeyResolver（`login:` 前缀 id）实现双桶隔离
+
+### ADR-006：common 模块拆分为 core + 多 Starter（2026-08-21）
+- 结论：`common` 拆为 `common-core`（纯库：Result/异常/常量/上下文/工具/权限注解/BaseEntity）+ 4 个职责单一 starter（web / springdoc / mybatis-plus / redis），服务按需依赖（gateway 仅依赖 core）
+- 理由：纯库与自动装配分离，符合 Spring Boot starter 惯例；消除三服务重复（Ping/OpenAPI/MyBatis-Plus 配置/Redis 模板）；BaseEntity 依 11 表实情设计两层
+- 后果：新公共能力按「core 纯库 / starter 装配」定位落位；MVC 与 WebFlux 装配严格隔离（optional 依赖纪律）；starter 必须显式声明自身依赖（Step 5 曾因传递依赖断裂致编译失败）
 
 ### ADR-005：Agent 接入抽象层（2026-08-19）
 - 结论：定义 `AgentRuntime` 接口，v0.1 实现 `McpAgentRuntime`（Workbench 作为 MCP Client 主动驱动外部 Agent）
