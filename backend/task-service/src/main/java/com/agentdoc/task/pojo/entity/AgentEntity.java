@@ -27,7 +27,10 @@ public class AgentEntity extends BaseLogicDeleteEntity {
     @Schema(description = "关联 oauth2_client 的 client_id")
     private String clientId;
 
-    @Schema(description = "MCP 连接配置（Phase 3 加密存储）")
+    @Schema(description = "关联模型 ID，关联 model 表")
+    private Long modelId;
+
+    @Schema(description = "MCP 连接配置（应用层 AES 加密存储，禁止明文存储密钥）")
     private String mcpConfig;
 
     @Schema(description = "工具白名单（逗号分隔）")
