@@ -1,4 +1,4 @@
-﻿# 技术栈总览
+# 技术栈总览
 
 > 本目录为原《docs / 前后端技术栈.md》的拆分重组版，信息无丢失，组织更清晰。原文件可安全删除。
 
@@ -10,7 +10,7 @@
 |    前端    | Vue 3 + TypeScript + Vite + Pinia + Element Plus + ProseMirror |
 |    鉴权    | OAuth2 Authorization Code + PKCE + JWT（RSA RS256），外部 Agent 用 Client Credentials |
 | Agent 接入 | Spring AI MCP + 官方 MCP Java SDK，业务编排自研（AgentRuntime 抽象） |
-|  基础设施  | Nacos + Spring Cloud Gateway + RabbitMQ + Redis 5.0.14.1 + MinIO + XXL‑Job，Docker Compose 一键启动 |
+|  基础设施  | Nacos + Spring Cloud Gateway + RabbitMQ + Redis 5.0.14.1 + MinIO，Docker Compose 一键启动；定时任务 v0.1 用 Spring `@Scheduled` + Redisson 锁，XXL‑Job 待 v0.2 集群化后引入 |
 
 ## 文档导航
 

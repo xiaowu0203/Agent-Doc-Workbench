@@ -188,6 +188,13 @@ public interface AgentRuntime {
 ### 2026-08-22（网关 starter 依赖更新，未提交）
 - 网关依赖替换：`spring-cloud-starter-gateway` → `spring-cloud-starter-gateway-server-webflux`（Spring Cloud 2025.0.0 弃用旧坐标，消除启动时 `spring-cloud-starter-gateway is deprecated` 警告；本项目网关为 WebFlux 服务端，新坐标为直接替代，版本仍由 `spring-cloud-dependencies` BOM 管理），网关模块编译 + 6 测试通过
 
+### 2026-08-22（模型管理 + Token 统计设计定稿，未提交）
+- **model 表引入**（Flyway `V2__model_and_token_stats.sql` 已执行，14 张表）：`model` 模型元数据表（厂商 / model_key / 预估价格，不存密钥）+ `agent.model_id` 逻辑外键；业务渲染变化：Agent 绑定模型、任务执行透传 `model_key` 给外部 MCP‑Server、Token 明细 JOIN 模型名渲染、新增模型管理页；聚合维度无模型维度（v0.2 再评估）
+- **Token 统计三表架构**：`token_usage_detail`（真相源，无条件落库）/ `token_usage`（历史日聚合，折线图截止昨日）/ `token_daily_snapshot`（当日快照，今日卡片仅展示）；`token_usage` 重构为通用 `obj_id` + 唯一键 `uk_dim_obj_date`
+- **设计决策已定稿**（详见 `docs/database-design.md`）：任务级熔断本地累计 `task.tokens_used` + 结束对账补偿，空间 / Agent 级 v0.1 实时 SUM 明细（v0.2 Redis 计数器）；凌晨聚合 Spring `@Scheduled` + Redisson 锁（v0.2 迁 XXL‑Job），聚合幂等；今日快照懒加载异步触发 + 3min 节流 + 手动刷新 + 跨零点收尾快照
+- **`V3__token_stats_indexes.sql`**（未执行）：`token_usage(space_id, usage_date)`、`token_daily_snapshot(space_id, snapshot_date, created_at)`（替换旧索引）
+- 实体同步：`AgentEntity` + `modelId`；`TokenUsageEntity` 三列收敛为 `objId`；3 张新表实体待 Phase 2
+
 ## 八、决策记录（ADR，倒序追加）
 
 ### ADR-008：Refresh Token 单设备会话策略（2026-08-22）

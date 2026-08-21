@@ -20,6 +20,7 @@ Token 预算熔断与全链路审计。v0.1 仅实现单 Agent，多 Agent 编�
   - **common 拆分**：common-core + 4 个 starter（web / springdoc / mybatis-plus / redis）
   - **Redis 键前缀统一** `agent-doc-workbench:`（自定义 `ProjectRedisRateLimiter`，见第六节）
 - 端到端验证通过：注册→登录→me→刷新→登出、JWKS、OpenAPI 聚合、网关 401/透传、高并发登录限流 429
+- **2026-08-22 数据库演进（待提交）**：新增 `model` 表 + Token 统计三表架构（`token_usage` 重构为通用 `obj_id`、`token_usage_detail` 明细真相源、`token_daily_snapshot` 当日快照），`agent` 增 `model_id`；Flyway 新增 `V2__model_and_token_stats.sql` + `V3__token_stats_indexes.sql`，共 **14 张业务表**；设计详见 `docs/database-design.md`
 
 ## 三、当前目录结构
 
@@ -121,7 +122,7 @@ backend/
 - **Maven 仓库不一致**：IDEA 用系统 Maven 3.8.4（settings.xml `localRepository=D:\maven\...\repository`），命令行 mvnw 用 `~/.m2`；IDE 解析不到新 artifact 先查仓库；统一方式：IDEA User settings file 留空 或 `backend/.mvn/maven.config` 指定 repo
 - **IntelliJ 子模块不识别**：新建模块可能进 `.idea/misc.xml` ignoredFiles（删除线/无图标），Maven 面板 Unignore 或手动删记录
 - **Windows curl 中文**：按 GBK 发送，需 `--data-binary @file` + `Content-Type: application/json; charset=UTF-8`（纯 ASCII 可规避）
-- **SCG 废弃告警**：`spring-cloud-gateway-server` 模块废弃（4.3.0 提示换 webflux 新 starter），v0.1 暂不迁移
+- **SCG 废弃告警（已处理 2026-08-22）**：`spring-cloud-starter-gateway` 已切换为 `spring-cloud-starter-gateway-server-webflux`，告警消除
 - **限流验证需并发**：登录接口单次 >200ms，串行打不满桶；需 30 并发才触发 429
 - 本机中间件版本：MySQL 5.7 / Redis 5.0.14.1（规划文档已同步，勿按 7.x 假设）
 
@@ -129,4 +130,4 @@ backend/
 
 - task-service 消费审批队列、RabbitMQ 异步任务、`AgentRuntime` + `McpAgentRuntime`（Spring AI MCP Client）
 - document 提供**权限校验 Feign 接口**（配合 common-feign starter / common-agent-sdk）
-- Token 预算四维度统计（token_usage 表已建）、审计日志（audit_log 表已建，Insert-only）
+- Token 统计三表架构已建（`token_usage` 聚合 / `token_usage_detail` 真相源 / `token_daily_snapshot` 快照）与模型管理（`model` 表），详见 `docs/database-design.md`；审计日志（audit_log 表已建，Insert-only）

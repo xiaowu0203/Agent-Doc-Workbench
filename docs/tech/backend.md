@@ -1,4 +1,4 @@
-﻿# 后端技术栈
+# 后端技术栈
 
 ## 基础版本
 
@@ -46,7 +46,7 @@
 |       RabbitMQ       |       3‑management       |          任务分发、异步事件          |
 |        Redis         |         5.0.14.1         |            缓存、分布式锁            |
 |        MinIO         |            —             |               对象存储               |
-|       XXL‑Job        |            —             |               定时任务               |
+|       XXL‑Job        |            —             | 定时任务（v0.1 用 Spring `@Scheduled` + Redisson 锁，XXL‑Job 待 v0.2 集群化引入） |
 |         ELK          | 可选（非 v0.1 启动依赖） |             日志收集分析             |
 |    Docker Compose    |            —             |         本地一键启动基础设施         |
 

@@ -47,10 +47,12 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 
 | 基类 | 字段 | 适用 |
 | --- | --- | --- |
-| `BaseEntity` | id（@TableId ASSIGN_ID）+ createdAt | 全部 11 张表 |
-| `BaseLogicDeleteEntity extends BaseEntity` | + updatedAt + @TableLogic deleted | 8 张常规业务表 |
+| `BaseEntity` | id（@TableId ASSIGN_ID）+ createdAt | 全部 14 张表 |
+| `BaseLogicDeleteEntity extends BaseEntity` | + updatedAt + @TableLogic deleted | 9 张常规业务表 |
 
 - `TokenUsageEntity` / `AuditLogEntity`（流水/日志表，无 deleted/updated_at）→ 继承 `BaseEntity`
+- `token_usage_detail` / `token_daily_snapshot`（V2 新增流水表，无 deleted/updated_at）→ 继承 `BaseEntity`（Phase 2 建实体）
+- `model`（V2 新增，含 updated_at/deleted）→ 继承 `BaseLogicDeleteEntity`（Phase 2 建实体）
 - `DocumentVersionEntity`（无 updated_at）→ 继承 `BaseEntity` + 自持 `@TableLogic deleted`
 - 逻辑删除/雪花 ID 由字段注解承担，无需 yml 全局配置
 

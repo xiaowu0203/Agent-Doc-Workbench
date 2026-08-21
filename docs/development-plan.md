@@ -1,4 +1,4 @@
-﻿# 开发路线图（v0.1 → 开源发布）
+# 开发路线图（v0.1 → 开源发布）
 
 > 基于《Agent‑Doc‑Workbench 项目完整开发规划文档》与技术栈定稿（docs/tech/）
 >
@@ -32,7 +32,7 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 **目标**：公共能力与鉴权闭环
 
 -  `common` 模块：统一响应体、全局异常、雪花 ID、上下文工具、鉴权工具
--  数据库设计定稿：space /member/document /document_version/change_request /agent/task /token_usage/audit_log（逻辑删除、雪花 ID、UTF8MB4）
+-  数据库设计定稿：14 张表——user / oauth2_client / space / member / document / document_version / change_request / agent / task / model / token_usage / token_usage_detail / token_daily_snapshot / audit_log（逻辑删除、雪花 ID、UTF8MB4；Token 统计三表架构与 model 设计见 `docs/database-design.md`）
 -  `auth‑service`：注册登录、JWT (RS256) 签发与校验、Spring Authorization Server、Refresh Token 机制
 -  `gateway‑service`：路由、JWT 校验、跨域、限流
 -  SpringDoc OpenAPI 接入
