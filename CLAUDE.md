@@ -118,6 +118,21 @@ public interface AgentRuntime {
 - 后端代码遵循 Spring 官方风格；前端遵循既定工程规范（ESLint/Prettier/Husky）
 - 重要技术决策记录到「决策记录」章节，形成项目记忆；技术选型细节以 `docs/` 文档为准
 
+### 后端代码规范（全后端强制，含后续新代码）
+1. **DTO/VO 命名与分层**：DTO/VO 后缀必须全大写（`UserVO`，禁止 `UserDto`）；`entity` / `dto` / `vo` 三个包的父级包必须是 `pojo`（即 `pojo.entity` / `pojo.dto` / `pojo.vo`）；请求入参归 DTO、出参/展示对象归 VO
+2. **禁止魔法值**：代码中不得出现硬编码数值/字符串（如 `user.setStatus(1)`），一律抽取为常量（`constant` 包，`XXXConstant` 命名）或枚举（`enums` 包）
+3. **枚举放 `enums` 包**
+4. **配置类放 `config` 包**，命名 `XXXConfig` / `XXXProperties`
+5. **常量类放 `constant` 包**，命名 `XXXConstant`
+6. **自定义注解放 `annotation` 包**
+7. **AOP 相关放 `aop` 包**（无 AOP 代码则不建）
+8. 分层示例：`controller` / `service` / `mapper` / `pojo{entity,dto,vo}` / `enums` / `aop` / `config` / `annotation` / `constant` / `utils` / `handler` / `executor`，按实际情况创建
+9. **Entity/VO/DTO/Enum 字段必须带注释或 `@Schema`**：业务服务（依赖 springdoc）字段统一加 `@Schema(description = "...")`；common-core 纯库不加 `@Schema`（避免反向依赖 springdoc），用 javadoc
+10. **分页参数统一用 `PageParam`**（`common-core` 的 `pojo.dto`）：`pageNum`（默认 1）/ `pageSize`（默认 10）+ `validate()` 校验（pageSize 上限 100），分页接口直接接收并先校验
+11. **Feign 远程调用规范**：新模块命名 `common-feign-spring-boot-starter`；接口落位 `common-core` 的 `com.agentdoc.common.feign` 包，一个业务一个 `XXXXFeign` 接口；待出现第一个跨服务调用（Phase 2）时再建
+12. **类转换全部封装进实体类**：Entity 自带 `toVO()`/`toDTO()`，DTO/VO 自带 `toEntity()` 等转换方法，Controller/Service 中禁止出现对象字段搬运
+13. **实体类禁止手写 getter/setter**：VO/DTO/Entity 统一用 Lombok `@Data`/`@Getter`/`@Setter`（record 自动生成访问器），除非不得已（如实现框架接口的 `getOrder()`/`setApplicationContext()`）
+
 ### 开源规范
 - 目标开源，License 倾向 Apache-2.0；发布前补齐 README、CONTRIBUTING、安全说明
 - 敏感配置（MCP 凭证、Token 密钥）严禁提交，使用环境变量/配置文件忽略机制
@@ -152,6 +167,26 @@ public interface AgentRuntime {
 - **Refresh Token 用户索引键独立前缀** `agent-doc-workbench:auth:refresh:user:`（`REFRESH_TOKEN_USER_INDEX_PREFIX`）：索引键与 token 键空间隔离，消除数字 userId 与随机 token 撞键隐患
 - **common-mybatis-plus starter 新增 `CommonMetaObjectHandler`**：createdAt（INSERT）/ updatedAt（INSERT_UPDATE）由应用层自动填充，`@TableField(fill=...)` 注解真正生效（原依赖 DDL 默认值兜底）
 - 遗留提示：`validateAndGetRefreshToken(Long)` 暂未使用（预留）；common-core 引入 micrometer `StringUtils` 未显式声明依赖（当前靠传递依赖编译通过）
+
+### 2026-08-22（代码规范对齐重构，未提交）
+- 按代码规范整改 8 个模块的包结构与魔法值，**编译 + 全部测试通过（BUILD SUCCESS）**：
+  - **pojo 父包**：entity/dto/vo 统一收归 `pojo` 下——auth/document/task 实体 → `pojo.entity`；auth 请求对象 → `pojo.dto`（改名 `RegisterRequestDTO` / `LoginRequestDTO` / `RefreshRequestDTO`），响应对象 → `pojo.vo`（`AuthResponseVO` / `UserVO`，原 `UserDto` 小写违规）；common 基类 → `common.pojo.entity`。record 字段名未改，**API JSON 契约不变**
+  - **enums 包**：`ErrorCode` → `common.enums`；新增 `auth.enums.UserStatus`（ENABLED/DISABLED + `isEnabled()`）消除 `user.setStatus(1)` 魔法值
+  - **config 包**：`JwtProperties` / `SecurityConfig` → `auth.config`（gateway 与 common starter 原本已合规）
+  - **annotation 包**：`RequireLogin` / `RequirePermission` → `common.annotation`
+  - **constant 包**：common 新增 `JwtConstant`（JWT claim 键名/scope/Bearer 签发解析共用，防拼写漂移）；auth 新增 `AuthConstant`（RSA 位数 2048 / refresh token 字节数 48 / PEM 标记）
+  - **其余归位**：`JwtService`→service、`PingController`→controller、`GlobalExceptionHandler`→handler、`RedisUtils`/`JwtTokenParser`→utils、`CommonMetaObjectHandler`→handler；`web` 下两个 Filter 与 `security` 下 `PermissionInterceptor` 保留原位
+  - **魔法值清理**：`response.setStatus(401)`→`HttpServletResponse.SC_UNAUTHORIZED`、JWT claim 键名/scope/`"Bearer"`/RSA 位数/`byte[48]`/PEM 标记全部常量化；代码库无 AOP 代码，不建 aop 包
+- 追加代码规范 9-13 条（详见「开发规范 → 后端代码规范」清单，全后端强制）：
+  - **规则 9（字段注释/@Schema）**：auth 的 7 个 pojo + UserStatus 枚举、document/task 共 9 个实体所有字段统一加 `@Schema(description=...)`；common-core 纯库（BaseEntity 系、PageParam）用 javadoc，不引 springdoc
+  - **规则 10（PageParam）**：新增 `common-core/pojo/dto/PageParam`（pageNum 默认 1 / pageSize 默认 10 + `validate()` 校验，pageSize 上限 100）；MyBatis-Plus `Page` 转换 `toPage()` 待 Phase 2 首个分页接口出现时再定落位
+  - **规则 11（Feign）**：暂不建模块，规范已固化（starter 命名 `common-feign-spring-boot-starter` + common-core `feign` 包 + `XXXXFeign` 接口），Phase 2 首个跨服务调用时再建
+  - **规则 12（类转换入实体）**：`UserEntity.toVO()` 与 `RegisterRequestDTO.toEntity(String passwordHash)`（密码编码仍由 Service 准备），`AuthService` 的私有 `toDto` 已删除、注册字段搬运收敛到实体类
+  - **规则 13（禁止手写 getter/setter）**：VO/DTO/Entity 全部使用 Lombok（实体 `@Data`、DTO/VO 用 record），仅 `PageParam` 曾手写 4 个访问器已改为 `@Data`；保留手写仅限框架接口实现（如 `getOrder()`/`setApplicationContext()`）与枚举取值
+- 环境注意：命令行 `JAVA_HOME=D:\jdk8`（JDK 8），编译需显式 `$env:JAVA_HOME='C:\Program Files\Java\jdk-21'`；Maven 写 `target\` 状态文件与文件删除受 DSH 沙箱限制，构建/清理需以全权限运行
+
+### 2026-08-22（网关 starter 依赖更新，未提交）
+- 网关依赖替换：`spring-cloud-starter-gateway` → `spring-cloud-starter-gateway-server-webflux`（Spring Cloud 2025.0.0 弃用旧坐标，消除启动时 `spring-cloud-starter-gateway is deprecated` 警告；本项目网关为 WebFlux 服务端，新坐标为直接替代，版本仍由 `spring-cloud-dependencies` BOM 管理），网关模块编译 + 6 测试通过
 
 ## 八、决策记录（ADR，倒序追加）
 

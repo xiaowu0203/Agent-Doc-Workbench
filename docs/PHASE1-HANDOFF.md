@@ -130,4 +130,4 @@ pnpm lint / pnpm build / pnpm test
 - **Windows curl 发中文请求体会按 GBK 编码**，服务端 JSON 解析报 `Invalid UTF-8 middle byte`。需将 body 写入 UTF-8 文件后 `curl --data-binary @file`，并带 `Content-Type: application/json; charset=UTF-8`
 - **限流验证需并发**：登录接口每次含 BCrypt+DB+Redis+RSA 签名，串行 curl 单次 >200ms、实际速率 <5/s，永远打不满 10 桶拿不到 429。需 `seq 1 30 | xargs -P 30 -I{} curl ...` 并发打才触发（实测 30 并发 → 23×429）。若只是抽查 Redis 限流 key，注意正确配置 5/10 时 key TTL=4s，几秒后查询自然消失属正常，不能据此判定配置未生效
 - **Spring Cloud Gateway 2025.0.0 配置前缀废弃**：`spring.cloud.gateway.*` 已迁移为 `spring.cloud.gateway.server.webflux.*`（routes/default-filters/globalcors 全部在其下，`corsConfigurations` 改为 `cors-configurations`）。当前 gateway `application.yml` 已用新前缀，配置键告警已消除
-- **遗留告警（可接受）**：`spring-cloud-gateway-server` / `spring-cloud-starter-gateway` 模块本身被废弃，提示改用 `spring-cloud-gateway-server-webflux`。新 starter 本地仓库尚未解析、类布局可能不同，v0.1 暂不迁移，记为后续跟进
+- **遗留告警（已处理 2026-08-22）**：`spring-cloud-starter-gateway` 在 Spring Cloud 2025.0.0 被废弃，已切换为 `spring-cloud-starter-gateway-server-webflux`（同 BOM 管理，WebFlux 服务端直接替代），弃用警告消除，网关模块编译 + 6 项测试通过

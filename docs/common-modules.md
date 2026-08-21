@@ -1,26 +1,32 @@
-# common 模块说明（2026-08-21）
+# common 模块说明（2026-08-21，包结构 2026-08-22 按代码规范更新）
 
 > Agent-Doc-Workbench 公共能力模块：纯库 + 多个 Spring Boot Starter 的拆分说明。
-> 相关决策见 CLAUDE.md ADR-006 / ADR-007。
+> 相关决策见 CLAUDE.md ADR-006 / ADR-007；包结构遵循 CLAUDE.md「后端代码规范」1-13 条。
 
 ## 一、模块结构
 
 ```
 backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-common）
-├── common-core/                       # 纯库（无自动装配）
-│   ├── api/           Result<T> / ErrorCode
+├── common-core/                       # 纯库（无自动装配，不依赖 springdoc，字段注释用 javadoc）
+│   ├── api/           Result<T>
 │   ├── exception/     BusinessException
-│   ├── constant/      HeaderConstants / RedisKeyConstants
+│   ├── constant/      HeaderConstants / RedisKeyConstants / JwtConstant
 │   ├── context/       LoginUser / TraceContext / UserContext
 │   ├── id/            SnowflakeIdGenerator
-│   ├── security/      JwtTokenParser / @RequireLogin / @RequirePermission
-│   └── entity/        BaseEntity / BaseLogicDeleteEntity
+│   ├── enums/         ErrorCode
+│   ├── annotation/    @RequireLogin / @RequirePermission
+│   ├── utils/         JwtTokenParser
+│   ├── pojo/entity/   BaseEntity / BaseLogicDeleteEntity
+│   └── pojo/dto/      PageParam（分页参数：pageNum/pageSize 默认 1/10 + validate()）
 ├── common-web-spring-boot-starter/    # Servlet Web 自动装配
-│   GlobalExceptionHandler / TraceIdFilter / UserContextFilter /
-│   PermissionInterceptor / PingController（/api/{service}/ping）
+│   ├── config/        CommonWebAutoConfiguration
+│   ├── controller/    PingController（/api/{service}/ping）
+│   ├── handler/       GlobalExceptionHandler
+│   ├── web/           TraceIdFilter / UserContextFilter
+│   └── security/      PermissionInterceptor
 ├── common-springdoc-spring-boot-starter/   # OpenAPI 模板（agent-doc.openapi.*）
-├── common-mybatis-plus-spring-boot-starter # 分页插件 + 乐观锁（默认关）
-└── common-redis-spring-boot-starter/       # jsonRedisTemplate + RedisUtils（条件装配）
+├── common-mybatis-plus-spring-boot-starter # 分页插件 + 乐观锁（默认关）；CommonMetaObjectHandler 在 handler/
+└── common-redis-spring-boot-starter/       # jsonRedisTemplate + RedisUtils（utils/，条件装配）
 ```
 
 ## 二、依赖矩阵
