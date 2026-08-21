@@ -1,5 +1,6 @@
 package com.agentdoc.common.config;
 
+import io.micrometer.common.util.StringUtils;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -13,13 +14,13 @@ public record OpenApiProperties(
         String version) {
 
     public OpenApiProperties {
-        if (title == null || title.isBlank()) {
+        if (StringUtils.isBlank(title)) {
             title = "Agent-Doc-Workbench API";
         }
-        if (description == null || description.isBlank()) {
+        if (StringUtils.isBlank(description)) {
             description = "Agent 活文档协作平台服务接口";
         }
-        if (version == null || version.isBlank()) {
+        if (StringUtils.isBlank(version)) {
             version = "v0.1.0";
         }
     }

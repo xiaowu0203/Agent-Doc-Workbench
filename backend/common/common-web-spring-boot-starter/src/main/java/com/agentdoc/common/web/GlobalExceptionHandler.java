@@ -12,19 +12,39 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * 全局异常处理：统一转换为 Result 结构。
- * 仅依赖 spring-web（ErrorResponse 接口可兜住 NoResourceFoundException / ResponseStatusException 等），
- * 由 common-web-spring-boot-starter（CommonWebAutoConfiguration）自动装配注册。
+ * 全局统一异常处理器，@RestControllerAdvice，仅对HTTP Controller接口生效。
+ * <p>
+ * 处理分类：
+ * <ul>
+ * <li>{@link BusinessException}：业务自定义异常，返回业务错误码；</li>
+ * <li>{@link MethodArgumentNotValidException}：JSR‑303参数校验异常，提取第一个字段错误；</li>
+ * <li>{@link Exception} 兜底：识别Spring {@link ErrorResponse}体系异常映射业务码；其余作为系统500错误。</li>
+ * </ul>
+ * <p>兼容性说明：仅依赖 spring‑web 基础API，不强依赖Servlet/WebMvc特有类，
+ * 理论上Gateway WebFlux环境也可以加载（但Gateway一般不会导入common‑web starter）。
+ * <p>注意：只处理Controller层抛出的异常；Filter、Interceptor抛出的异常，
+ * 在Servlet环境下也会进入本Advice；但WebFlux WebFilter抛出异常不会进入此类。
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * 捕获业务自定义异常 {@link BusinessException}。
+     * @param ex 业务异常
+     * @return 统一Result失败响应，HTTP 200，携带业务错误码与消息
+     */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> handleBusiness(BusinessException ex) {
         return ResponseEntity.ok(Result.fail(ex.getCode(), ex.getMessage()));
     }
 
+    /**
+     * 捕获请求参数校验异常（@Valid / @Validated）。
+     * 取第一个字段校验错误作为返回提示。
+     * @param ex 参数校验异常
+     * @return Result失败响应，HTTP 400
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Result<Void>> handleValidation(MethodArgumentNotValidException ex) {
         String msg = ex.getBindingResult().getFieldErrors().stream()
@@ -35,9 +55,14 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 兜底处理：实现 {@link ErrorResponse} 的异常（NoResourceFoundException / ResponseStatusException 等）
-     * 按 HTTP 状态映射错误码；其余按 500 处理。
-     * 仅依赖 spring-web，不引用 webmvc 类，确保 WebFlux gateway 加载该 Advice 也安全。
+     * 全局兜底异常捕获。
+     * <p>
+     * 优先识别Spring实现 {@link ErrorResponse} 的内置异常：
+     * {@code NoResourceFoundException、ResponseStatusException} 等，根据HTTP状态码映射业务ErrorCode；
+     * 非ErrorResponse类型全部当作系统内部错误500，打印error级别的完整堆栈日志。
+     * </p>
+     * @param ex 任意未被上面handler捕获的异常
+     * @return Result包装的错误响应，携带对应HTTP status与业务错误码
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleGeneric(Exception ex) {

@@ -12,6 +12,16 @@ public final class RedisKeyConstants {
     /** Refresh Token 键前缀：agent-doc-workbench:auth:refresh: */
     public static final String REFRESH_TOKEN_PREFIX = PROJECT_PREFIX + ":auth:refresh:";
 
+    /**
+     * Refresh Token 用户索引键前缀：agent-doc-workbench:auth:refresh:user:
+     * 存放 {@code userId -> 当前有效refreshToken} 的反查映射，与 {@link #REFRESH_TOKEN_PREFIX}
+     * 的 token 主映射键空间隔离，避免 token 字符串与数字 userId 落入同一命名空间产生撞键风险。
+     */
+    public static final String REFRESH_TOKEN_USER_INDEX_PREFIX = PROJECT_PREFIX + ":auth:refresh:user:";
+
+    /** 请求限流计数器键前缀：agent-doc-workbench:rate */
+    public static final String RATE_KEY_PREFIX = RedisKeyConstants.PROJECT_PREFIX + ":rate:";
+
     private RedisKeyConstants() {
     }
 }

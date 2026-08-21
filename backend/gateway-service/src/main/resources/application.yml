@@ -1,10 +1,14 @@
+# Gateway网关服务 gateway‑service 配置（WebFlux）
 server:
-  port: ${GATEWAY_PORT:8084}
+  # 网关服务端口，环境变量GATEWAY_PORT，默认9090
+  port: ${GATEWAY_PORT:9090}
 
 spring:
   application:
+    # 网关服务名，用于日志、监控识别
     name: gateway-service
   data:
+    # Redis连接配置
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
@@ -15,7 +19,9 @@ spring:
         webflux:
           discovery:
             locator:
+              # 关闭服务发现自动路由，使用手动静态路由配置，不自动根据nacos生成路由
               enabled: false
+          # 全局跨域配置
           globalcors:
             add-to-simple-url-handler-mapping: true
             cors-configurations:
@@ -25,16 +31,19 @@ spring:
                 allowedHeaders: "*"
                 allowCredentials: true
                 maxAge: 3600
+          # 全局默认过滤器，所有路由都会生效
           default-filters:
+            # 去重跨域响应头，避免重复返回Access‑Control‑*头造成浏览器报错
             - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
-            # 全局限流：100 桶 / 200 容量（QPS 兜底）
+            # 全局限流：Redis令牌桶；replenishRate=100(每秒恢复令牌)，burstCapacity=200(最大桶容量)，作为全局限流兜底QPS
             - name: RequestRateLimiter
               args:
                 redis-rate-limiter.replenishRate: 100
                 redis-rate-limiter.burstCapacity: 200
                 redis-rate-limiter.requestedTokens: 1
           routes:
-            # ---- SpringDoc 聚合：把各服务的 /v3/api-docs 以 /api/{svc}/v3/api-docs 暴露（order 需在 catch-all 之前）----
+            # -------- SpringDoc聚合路由：转发各业务服务OpenAPI文档元数据 --------
+            # 将 /api/auth/v3/api-docs/** 重写转发到 auth服务 /v3/api-docs，order优先级要高于业务catch‑all路由
             - id: api-docs-auth
               uri: http://localhost:${AUTH_SERVICE_PORT:8081}
               predicates:
@@ -42,6 +51,7 @@ spring:
               filters:
                 - RewritePath=/api/auth/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
               order: -30
+
             - id: api-docs-document
               uri: http://localhost:${DOCUMENT_SERVICE_PORT:8082}
               predicates:
@@ -49,6 +59,7 @@ spring:
               filters:
                 - RewritePath=/api/document/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
               order: -30
+
             - id: api-docs-task
               uri: http://localhost:${TASK_SERVICE_PORT:8083}
               predicates:
@@ -57,7 +68,7 @@ spring:
                 - RewritePath=/api/task/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
               order: -30
 
-            # ---- 登录接口单独更严限流（与全局限流叠加，需同时过两桶）----
+            # -------- 登录接口单独限流（会叠加全局限流，双重令牌桶校验） --------
             - id: login-rate-limit
               uri: http://localhost:${AUTH_SERVICE_PORT:8081}
               predicates:
@@ -65,33 +76,41 @@ spring:
               filters:
                 - name: RequestRateLimiter
                   args:
+                    # 每秒恢复5个令牌
                     redis-rate-limiter.replenishRate: 5
+                    # 桶最大容量10，防暴力登录
                     redis-rate-limiter.burstCapacity: 10
                     redis-rate-limiter.requestedTokens: 1
+                    # 使用自定义Bean，按IP做限流key
                     key-resolver: "#{@loginKeyResolver}"
               order: -20
 
-            # ---- 业务服务（静态 URI，不走 Nacos）----
+              # -------- 业务服务静态路由（本地直连，不使用注册中心Nacos） --------
+              # auth认证服务路由，包含业务接口、jwks公钥端点、actuator健康端点
             - id: auth-service
               uri: http://localhost:${AUTH_SERVICE_PORT:8081}
               predicates:
                 - Path=/api/auth/**,/oauth2/jwks,/actuator/**
               order: 0
+
             - id: document-service
               uri: http://localhost:${DOCUMENT_SERVICE_PORT:8082}
               predicates:
                 - Path=/api/document/**
               order: 0
+
             - id: task-service
               uri: http://localhost:${TASK_SERVICE_PORT:8083}
               predicates:
                 - Path=/api/task/**
               order: 0
 
-# 网关免鉴权白名单与 JWKS 地址
+# 网关鉴权配置（网关层做JWT校验）
 auth:
   gateway:
+    # JWKS公钥地址，从auth服务拉取RSA公钥校验JWT签名
     jwk-url: http://localhost:${AUTH_SERVICE_PORT:8081}/oauth2/jwks
+    # 网关免鉴权白名单，匹配路径直接放行，不校验JWT
     whitelist:
       - /api/auth/register
       - /api/auth/login
@@ -109,6 +128,7 @@ auth:
       - /api/*/v3/api-docs/**
       - /favicon.ico
 
+# Actuator健康监控端点
 management:
   endpoints:
     web:
@@ -118,10 +138,11 @@ management:
     health:
       show-details: never
 
-# SpringDoc：网关聚合三服务的 Swagger UI
+# SpringDoc网关聚合Swagger‑UI，在网关统一查看全部业务服务接口文档
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+    # 聚合多个服务的openapi文档地址
     urls:
       - name: auth-service
         url: /api/auth/v3/api-docs
