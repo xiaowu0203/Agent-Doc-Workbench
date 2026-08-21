@@ -1,6 +1,6 @@
 package com.agentdoc.auth.controller;
 
-import com.agentdoc.auth.security.JwtService;
+import com.agentdoc.auth.service.JwtService;
 import com.nimbusds.jose.jwk.JWKSet;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

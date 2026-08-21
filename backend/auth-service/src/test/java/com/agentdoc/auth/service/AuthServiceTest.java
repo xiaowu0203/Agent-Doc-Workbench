@@ -1,12 +1,12 @@
 package com.agentdoc.auth.service;
 
-import com.agentdoc.auth.dto.AuthResponse;
-import com.agentdoc.auth.dto.RegisterRequest;
-import com.agentdoc.auth.entity.UserEntity;
+import com.agentdoc.auth.config.JwtProperties;
+import com.agentdoc.auth.enums.UserStatus;
+import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
+import com.agentdoc.auth.pojo.entity.UserEntity;
+import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.mapper.UserMapper;
-import com.agentdoc.auth.security.JwtProperties;
-import com.agentdoc.auth.security.JwtService;
-import com.agentdoc.common.api.ErrorCode;
+import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +43,7 @@ class AuthServiceTest {
     @Test
     void registerRejectsDuplicateUsername() {
         when(userMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
-        RegisterRequest request = new RegisterRequest("alice", "secret1", null, null);
+        RegisterRequestDTO request = new RegisterRequestDTO("alice", "secret1", null, null);
         BusinessException ex = assertThrows(BusinessException.class, () -> authService.register(request));
         assertEquals(ErrorCode.USERNAME_EXISTS.getCode(), ex.getCode());
     }
@@ -57,13 +57,13 @@ class AuthServiceTest {
         user.setUsername("alice");
         user.setNickname("Alice");
         user.setPasswordHash(encoder.encode(rawPassword));
-        user.setStatus(1);
+        user.setStatus(UserStatus.ENABLED.getCode());
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
         when(jwtService.createAccessToken(user)).thenReturn("access-token");
         when(jwtService.createRefreshToken()).thenReturn("refresh-token");
 
-        AuthResponse response = authService.login("alice", rawPassword);
+        AuthResponseVO response = authService.login("alice", rawPassword);
         assertEquals("access-token", response.accessToken());
         assertEquals("refresh-token", response.refreshToken());
         assertEquals("alice", response.user().username());
@@ -76,7 +76,7 @@ class AuthServiceTest {
         user.setId(10L);
         user.setUsername("alice");
         user.setPasswordHash(encoder.encode("secret1"));
-        user.setStatus(1);
+        user.setStatus(UserStatus.ENABLED.getCode());
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
 
@@ -91,7 +91,7 @@ class AuthServiceTest {
         user.setId(10L);
         user.setUsername("alice");
         user.setPasswordHash(encoder.encode("secret1"));
-        user.setStatus(0);
+        user.setStatus(UserStatus.DISABLED.getCode());
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
 

@@ -1,6 +1,6 @@
 package com.agentdoc.auth.mapper;
 
-import com.agentdoc.auth.entity.UserEntity;
+import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**

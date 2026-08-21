@@ -1,5 +1,7 @@
 package com.agentdoc.common.api;
 
+import com.agentdoc.common.enums.ErrorCode;
+
 /**
  * 统一响应体。
  */

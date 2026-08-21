@@ -1,6 +1,6 @@
 package com.agentdoc.common.exception;
 
-import com.agentdoc.common.api.ErrorCode;
+import com.agentdoc.common.enums.ErrorCode;
 
 /**
  * 业务异常，全局异常处理器统一转换为 Result。

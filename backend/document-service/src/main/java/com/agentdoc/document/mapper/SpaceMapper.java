@@ -1,6 +1,6 @@
 package com.agentdoc.document.mapper;
 
-import com.agentdoc.document.entity.SpaceEntity;
+import com.agentdoc.document.pojo.entity.SpaceEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 
 /**

@@ -1,10 +1,11 @@
 package com.agentdoc.gateway.security;
 
-import com.agentdoc.common.api.ErrorCode;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
+import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.context.LoginUser;
-import com.agentdoc.common.security.JwtTokenParser;
+import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.utils.JwtTokenParser;
 import com.agentdoc.gateway.config.GatewayAuthProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,7 +67,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
     );
 
     /** Authorization Bearer token前缀 */
-    private static final String BEARER_PREFIX = "Bearer ";
+    private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
 
     private final JwtDecoder jwtDecoder;
     private final GatewayAuthProperties properties;

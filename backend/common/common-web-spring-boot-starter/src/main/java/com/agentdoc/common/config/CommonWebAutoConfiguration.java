@@ -1,8 +1,8 @@
 package com.agentdoc.common.config;
 
+import com.agentdoc.common.controller.PingController;
+import com.agentdoc.common.handler.GlobalExceptionHandler;
 import com.agentdoc.common.security.PermissionInterceptor;
-import com.agentdoc.common.web.GlobalExceptionHandler;
-import com.agentdoc.common.web.PingController;
 import com.agentdoc.common.web.TraceIdFilter;
 import com.agentdoc.common.web.UserContextFilter;
 import org.springframework.beans.factory.annotation.Value;

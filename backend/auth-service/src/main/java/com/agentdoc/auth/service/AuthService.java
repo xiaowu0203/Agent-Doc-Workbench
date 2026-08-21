@@ -1,20 +1,19 @@
 package com.agentdoc.auth.service;
 
-import com.agentdoc.auth.dto.AuthResponse;
-import com.agentdoc.auth.dto.RegisterRequest;
-import com.agentdoc.auth.dto.UserDto;
-import com.agentdoc.auth.entity.UserEntity;
+import com.agentdoc.auth.enums.UserStatus;
+import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
+import com.agentdoc.auth.pojo.entity.UserEntity;
+import com.agentdoc.auth.pojo.vo.AuthResponseVO;
+import com.agentdoc.auth.pojo.vo.UserVO;
 import com.agentdoc.auth.mapper.UserMapper;
-import com.agentdoc.auth.security.JwtService;
-import com.agentdoc.common.api.ErrorCode;
+import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.time.LocalDateTime;
 
 /**
  * 认证服务：注册、登录、刷新、登出。
@@ -39,11 +38,11 @@ public class AuthService {
     /**
      * 用户注册
      * @param request 注册请求参数：用户名、密码、昵称、邮箱
-     * @return UserDto 用户信息DTO
+     * @return UserVO 用户信息VO
      * @throws BusinessException 用户名已存在抛出业务异常
      */
     @Transactional
-    public UserDto register(RegisterRequest request) {
+    public UserVO register(RegisterRequestDTO request) {
         // 查询用户名是否已经存在
         Long existing = userMapper.selectCount(
                 new LambdaQueryWrapper<UserEntity>().eq(UserEntity::getUsername, request.username()));
@@ -51,28 +50,21 @@ public class AuthService {
         if (existing != null && existing > 0) {
             throw new BusinessException(ErrorCode.USERNAME_EXISTS);
         }
-        // 创建用户实体
-        UserEntity user = new UserEntity();
-        user.setUsername(request.username());
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setNickname(request.nickname() == null || request.nickname().isBlank()
-                ? request.username() : request.nickname());
-        user.setEmail(request.email());
-        // 设置正常启用状态
-        user.setStatus(1);
+        // 请求转实体：字段搬运统一收敛在实体类，此处仅准备密码哈希
+        UserEntity user = request.toEntity(passwordEncoder.encode(request.password()));
         // 落库
         userMapper.insert(user);
-        return toDto(user);
+        return user.toVO();
     }
 
     /**
      * 账号登录
      * @param username 用户名
      * @param password 明文密码
-     * @return AuthResponse 返回 accessToken、refreshToken、用户信息
+     * @return AuthResponseVO 返回 accessToken、refreshToken、用户信息
      * @throws BusinessException 账号密码错误 / 账号禁用抛出异常
      */
-    public AuthResponse login(String username, String password) {
+    public AuthResponseVO login(String username, String password) {
         // 根据用户名查询用户
         UserEntity user = userMapper.selectOne(
                 new LambdaQueryWrapper<UserEntity>().eq(UserEntity::getUsername, username));
@@ -81,7 +73,7 @@ public class AuthService {
             throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
         // 账号禁用，抛出异常
-        if (user.getStatus() == null || user.getStatus() != 1) {
+        if (!UserStatus.isEnabled(user.getStatus())) {
             throw new BusinessException(ErrorCode.USER_DISABLED);
         }
         // 下发全新一对令牌
@@ -91,10 +83,10 @@ public class AuthService {
     /**
      * 使用refreshToken刷新获取新的访问令牌，令牌轮换模式
      * @param refreshToken 旧的刷新令牌
-     * @return AuthResponse 返回全新 accessToken + refreshToken
+     * @return AuthResponseVO 返回全新 accessToken + refreshToken
      * @throws BusinessException refreshToken无效、用户不存在、账号禁用抛出异常
      */
-    public AuthResponse refresh(String refreshToken) {
+    public AuthResponseVO refresh(String refreshToken) {
         // 校验refreshToken，拿到绑定的用户ID
         Long userId = refreshTokenService.validateAndGetUserId(refreshToken);
         if (userId == null) {
@@ -102,7 +94,7 @@ public class AuthService {
         }
         UserEntity user = userMapper.selectById(userId);
         // 用户已删除或者账号被禁用，拒绝刷新
-        if (user == null || user.getStatus() == null || user.getStatus() != 1) {
+        if (user == null || !UserStatus.isEnabled(user.getStatus())) {
             throw new BusinessException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
         // 令牌轮换：撤销当前旧refreshToken，防止令牌复用
@@ -122,41 +114,31 @@ public class AuthService {
     /**
      * 根据用户ID查询用户信息
      * @param userId 用户ID
-     * @return UserDto 用户DTO，不存在返回null
+     * @return UserVO 用户VO，不存在返回null
      */
-    public UserDto getById(Long userId) {
+    public UserVO getById(Long userId) {
         UserEntity user = userMapper.selectById(userId);
-        return user == null ? null : toDto(user);
+        return user == null ? null : user.toVO();
     }
 
     /**
      * 签发令牌对：生成accessToken JWT，生成并存储refreshToken
      * @param user 用户数据库实体
-     * @return AuthResponse 令牌响应对象
+     * @return AuthResponseVO 令牌响应对象
      */
-    private AuthResponse issueTokens(UserEntity user) {
+    private AuthResponseVO issueTokens(UserEntity user) {
         // 生成短期访问JWT
         String accessToken = jwtService.createAccessToken(user);
         // 生成refreshToken字符串
         String refreshToken = jwtService.createRefreshToken();
         // 将refreshToken存入服务端存储（Redis）
         refreshTokenService.store(refreshToken, user.getId());
-        return new AuthResponse(
+        return new AuthResponseVO(
                 accessToken,
                 refreshToken,
-                "Bearer",
+                JwtConstant.TOKEN_TYPE_BEARER,
                 jwtService.props().accessTtl().toSeconds(),
-                toDto(user)
+                user.toVO()
         );
-    }
-
-    /**
-     * Entity转DTO，剥离密码等敏感字段对外输出
-     * @param user 数据库实体
-     * @return UserDto
-     */
-    private UserDto toDto(UserEntity user) {
-        return new UserDto(user.getId(), user.getUsername(), user.getNickname(),
-                user.getEmail(), user.getAvatarUrl());
     }
 }

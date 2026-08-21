@@ -1,6 +1,6 @@
 package com.agentdoc.auth.service;
 
-import com.agentdoc.auth.security.JwtProperties;
+import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.common.constant.RedisKeyConstants;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import lombok.extern.slf4j.Slf4j;

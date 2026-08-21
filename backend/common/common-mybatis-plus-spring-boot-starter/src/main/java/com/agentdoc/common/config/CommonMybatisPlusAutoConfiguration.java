@@ -1,5 +1,6 @@
 package com.agentdoc.common.config;
 
+import com.agentdoc.common.handler.CommonMetaObjectHandler;
 import com.baomidou.mybatisplus.annotation.DbType;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;

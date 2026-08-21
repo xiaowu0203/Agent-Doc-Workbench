@@ -1,6 +1,6 @@
 package com.agentdoc.common.config;
 
-import com.agentdoc.common.redis.RedisUtils;
+import com.agentdoc.common.utils.RedisUtils;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;

@@ -1,6 +1,8 @@
 package com.agentdoc.common.security;
 
-import com.agentdoc.common.api.ErrorCode;
+import com.agentdoc.common.annotation.RequireLogin;
+import com.agentdoc.common.annotation.RequirePermission;
+import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.context.UserContext;
 import com.agentdoc.common.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
