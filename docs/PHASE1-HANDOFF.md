@@ -23,7 +23,7 @@ Token 预算熔断与全链路审计。
 Agent-Doc-Workbench/
 ├── backend/                          # Maven 多模块（父 POM：com.agentdoc:agent-doc-workbench）
 │   ├── common/                       # 公共库：Result<T>、BusinessException（无业务逻辑）
-│   ├── gateway-service/              # Spring Cloud Gateway（WebFlux），端口 8084
+│   ├── gateway-service/              # Spring Cloud Gateway（WebFlux），端口 9090
 │   ├── auth-service/                 # 认证服务（Spring MVC），端口 8081
 │   ├── document-service/             # 文档服务（Spring MVC），端口 8082
 │   ├── task-service/                 # 任务服务（Spring MVC），端口 8083
@@ -37,7 +37,7 @@ Agent-Doc-Workbench/
 │   │   └── styles/main.css
 │   ├── .husky/pre-commit             # 提交钩子：cd frontend && pnpm lint-staged
 │   ├── package.json / pnpm-lock.yaml
-│   └── vite.config.ts                # /api 代理 → http://localhost:8084（网关）
+│   └── vite.config.ts                # /api 代理 → http://localhost:9090（网关）
 ├── docs/                             # 规划、技术栈、UI 效果图、路线图
 ├── .env.example                      # 基础设施与敏感配置模板
 ├── docker-compose.yml
@@ -70,7 +70,7 @@ pnpm lint / pnpm build / pnpm test
 ### 服务端口
 | 服务 | 端口 |
 | --- | --- |
-| Gateway | 8084 |
+| Gateway | 9090 |
 | Auth | 8081 |
 | Document | 8082 |
 | Task | 8083 |

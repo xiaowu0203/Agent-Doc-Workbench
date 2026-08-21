@@ -134,7 +134,7 @@ public interface AgentRuntime {
 
 ### 2026-08-20（Phase 0 完成）
 - `docker-compose.yml`：MySQL 5.7 / Redis 7 / RabbitMQ 3-management / MinIO / Nacos 3.2.2，含持久化卷与健康检查
-- 后端重构为 Maven 多模块：`common`（Result/BusinessException）、四个 Boot 服务，端口 Gateway 8084 / Auth 8081 / Document 8082 / Task 8083
+- 后端重构为 Maven 多模块：`common`（Result/BusinessException）、四个 Boot 服务，端口 Gateway 9090 / Auth 8081 / Document 8082 / Task 8083
 - 前端脚手架完成并验证：lint / build（vue-tsc）/ vitest 全绿，Husky pre-commit → lint-staged → eslint/prettier 链路实测可用
 - 清理 backend 冗余文件：HELP.md、backend.iml、.idea/、旧单模块 src 与 target、重复的 backend/.gitignore
 
@@ -145,7 +145,20 @@ public interface AgentRuntime {
 - **Redis 键前缀统一 `agent-doc-workbench:`**：refresh token 键、限流键（自定义 `ProjectRedisRateLimiter`，SCG 4.3.0 移除 key-prefix 后自研）；双桶（全局 100/s + 登录 5/s）经独立 KeyResolver 隔离
 - 环境事实：IDEA 用系统 Maven 3.8.4（settings.xml localRepository=`D:\maven\...\repository`），命令行 mvnw 用默认 `~/.m2`（**两仓库不一致**，IDE 解析失败先查这个）；IntelliJ 新建子模块可能被加入 `.idea/misc.xml` 的 ignoredFiles（表现为删除线/无 Maven 图标，Maven 面板右键 Unignore 解决）
 
+### 2026-08-22（代码审查修正，未提交）
+- 代码审查结论：网关端口统一 9090（此前配置 8084 与文档不一致已修正）、common 基类 fill 注解、`RefreshTokenService` 单设备会话模式；后端 11 模块编译 + 测试全绿（JDK 21 mvnw），前端 vue-tsc + vite build 通过
+- 修正 auth-service / task-service 的 application.yml 头部注释复制粘贴错误（误写为「文档服务 document‑service」）
+- 新增 **ADR-008**：Refresh Token 单设备会话策略（详见决策记录）
+- **Refresh Token 用户索引键独立前缀** `agent-doc-workbench:auth:refresh:user:`（`REFRESH_TOKEN_USER_INDEX_PREFIX`）：索引键与 token 键空间隔离，消除数字 userId 与随机 token 撞键隐患
+- **common-mybatis-plus starter 新增 `CommonMetaObjectHandler`**：createdAt（INSERT）/ updatedAt（INSERT_UPDATE）由应用层自动填充，`@TableField(fill=...)` 注解真正生效（原依赖 DDL 默认值兜底）
+- 遗留提示：`validateAndGetRefreshToken(Long)` 暂未使用（预留）；common-core 引入 micrometer `StringUtils` 未显式声明依赖（当前靠传递依赖编译通过）
+
 ## 八、决策记录（ADR，倒序追加）
+
+### ADR-008：Refresh Token 单设备会话策略（2026-08-22）
+- 结论：Refresh Token 采用**单设备模式**；Redis 主映射 `agent-doc-workbench:auth:refresh:{token} -> userId`，反向索引独立键空间 `agent-doc-workbench:auth:refresh:user:{userId} -> token`（`RedisKeyConstants.REFRESH_TOKEN_USER_INDEX_PREFIX`，与 token 键隔离防撞键）；`store()` 时先读取并删除旧会话（旧 token + 索引）再写入新令牌对；`revoke(String)` 双向删除；新增 `revoke(Long)` 按 userId 撤销全部会话（登出/改密场景）
+- 理由：小团队场景单账号多端并发登录易造成会话混乱与安全风险；单设备实现简单，登出/改密可一键全端下线，配合 7 天 TTL 足够 v0.1 使用
+- 后果：同一账号新登录会立即使旧 Refresh Token 失效（旧 Access Token 至多 30 分钟自然过期）；用户索引键空间与 token 键空间已隔离（随机 token 为纯数字亦不会撞上 userId 索引）；若后续需多设备并存，改回独立 token 映射并去掉旧会话删除即可
 
 ### ADR-007：Redis 键前缀统一 + 自定义 RateLimiter（2026-08-21）
 - 结论：所有 Redis 键以 `agent-doc-workbench:` 开头（`RedisKeyConstants` 常量统一）；限流键经自定义 `ProjectRedisRateLimiter`（前缀 `agent-doc-workbench:rate`，键格式 `agent-doc-workbench:rate.{routeId.id}.{tokens,timestamp}`）实现
