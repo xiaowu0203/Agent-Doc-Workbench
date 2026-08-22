@@ -1,15 +1,73 @@
+# 认证服务 auth‑service 应用配置
+
+# 服务端口，环境变量 AUTH_SERVICE_PORT，默认8081
 server:
   port: ${AUTH_SERVICE_PORT:8081}
 
 spring:
   application:
+    # 服务名称，用于注册中心、日志、Ping探活接口
     name: auth-service
+  # MySQL连接配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+  # Redis连接配置
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  # flyway数据库版本迁移配置
+  flyway:
+    enabled: true
+    # SQL脚本存放路径，版本化sql放置在 resources/db/migration 下
+    locations: classpath:db/migration
+    # 非空库自动执行baseline基线初始化，适配已有数据库的项目
+    baseline-on-migrate: true
+  # Jackson JSON序列化全局时区，统一东八区，解决日期时间序列化时差问题
+  jackson:
+    time-zone: Asia/Shanghai
 
+# Auth JWT认证配置
+auth:
+  jwt:
+    # RSA私钥，环境变量 JWT_PRIVATE_KEY；生产环境填入PEM格式密钥；为空则启动自动生成临时密钥（仅开发调试使用）
+    private-key: ${JWT_PRIVATE_KEY:}
+    # RSA公钥，环境变量 JWT_PUBLIC_KEY；生产环境填入PEM公钥，用于校验token签名
+    public-key: ${JWT_PUBLIC_KEY:}
+    # AccessToken 有效期 30分钟
+    access-ttl: 30m
+    # RefreshToken 有效期 7天，用于刷新access令牌
+    refresh-ttl: 7d
+    # JWT签发者标识，写入token payload iss字段
+    issuer: agent-doc-workbench
+
+# 自定义openapi配置
+agent-doc:
+  openapi:
+    title: Auth Service API
+    description: 认证服务：注册、登录、刷新、JWKS
+
+# Spring Boot Actuator 健康检查端点配置
 management:
   endpoints:
     web:
       exposure:
+        # 对外暴露健康、信息端点，供k8s/gateway做服务探活
         include: health,info
   endpoint:
     health:
+      # 健康接口不返回详细组件详情，只返回UP/DOWN，保护内部信息
       show-details: never
+
+# SpringDoc OpenAPI Swagger文档路径配置
+springdoc:
+  swagger-ui:
+    # Swagger UI访问页面路径
+    path: /swagger-ui.html
+  api-docs:
+    # OpenAPI JSON元数据接口路径
+    path: /v3/api-docs

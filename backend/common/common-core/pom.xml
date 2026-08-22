@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.agentdoc</groupId>
+        <artifactId>agent-doc-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>agent-doc-common-core</artifactId>
+    <name>agent-doc-common-core</name>
+    <description>公共核心库：统一响应、错误码、公共 POJO（含 BaseEntity）、业务异常、常量、工具类、权限注解（无业务逻辑）</description>
+
+    <dependencies>
+        <!-- Spring Web：Result 反序列化与 @RestControllerAdvice 异常处理 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+        </dependency>
+        <!-- Spring WebMVC：仅权限拦截器/用户上下文过滤器编译用；optional 不进入消费者传递依赖，
+             避免把 spring-webmvc 带进 WebFlux 的 gateway 依赖树 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <!-- Servlet API：UserContextFilter/PermissionInterceptor 编译用；provided，运行时由容器提供 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Lombok：日志注解编译用；provided 不进入消费者传递依赖 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Spring Boot AutoConfiguration：CommonAutoConfiguration / 条件注解 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <!-- JWT 解析：JwtTokenParser 用 NimbusJwtDecoder / Jwt -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus 注解：BaseEntity 编译用（@TableId/@TableLogic）；optional，
+             仅使用 BaseEntity 的模块需自行声明 mybatis-plus 依赖（gateway 不加载 BaseEntity，不受影响） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-annotation</artifactId>
+            <version>${mybatis-plus.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

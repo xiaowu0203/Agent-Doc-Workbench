@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.agentdoc</groupId>
+        <artifactId>agent-doc-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>agent-doc-common-redis-spring-boot-starter</artifactId>
+    <name>agent-doc-common-redis-spring-boot-starter</name>
+    <description>Redis 统一自动配置：jsonRedisTemplate（JSON 序列化）与通用 RedisUtils 工具，条件装配</description>
+
+    <dependencies>
+        <!-- 公共核心库 -->
+        <dependency>
+            <groupId>com.agentdoc</groupId>
+            <artifactId>agent-doc-common-core</artifactId>
+        </dependency>
+        <!-- Spring Boot Data Redis：连接工厂（lettuce）与 RedisAutoConfiguration，本 starter 直接携带 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- JSON 序列化（GenericJackson2JsonRedisSerializer 值序列化用） -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+        <!-- Spring Boot AutoConfiguration：@AutoConfiguration / 条件注解 / 装配顺序 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <!-- Lombok：编译用；provided 不进入消费者传递依赖 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

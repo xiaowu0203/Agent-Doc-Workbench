@@ -89,7 +89,7 @@ pnpm install
 pnpm dev
 ```
 
-后端服务默认端口：Gateway `8084`、Auth `8081`、Document `8082`、Task `8083`。
+后端服务默认端口：Gateway `9090`、Auth `8081`、Document `8082`、Task `8083`。
 前端环境变量模板见 `frontend/.env.example`；基础设施与敏感配置模板见 `.env.example`。
 
 ## 开发路线图
