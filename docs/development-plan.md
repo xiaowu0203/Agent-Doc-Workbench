@@ -2,7 +2,7 @@
 
 > 基于《Agent‑Doc‑Workbench 项目完整开发规划文档》与技术栈定稿（docs/tech/）
 >
-> 更新时间：2026‑08‑20・状态：Phase 0 已完成
+> 更新时间：2026‑08‑22・状态：Phase 0 / Phase 1 已完成（Phase 1 已合并入 main）
 
 ## 总体节奏
 
@@ -28,6 +28,8 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 **验收**：Compose 配置可解析并支持一键启动全部中间件；前后端均可启动并展示默认页；前端 Git 提交钩子已配置。
 
 ## Phase 1：后端地基（3‑5 天）
+
+**状态**：已完成（2026‑08‑22，已合并入 main）——common 拆分 5 子模块（common‑core + web/springdoc/mybatis‑plus/redis 四个 starter）、auth 鉴权闭环（注册/登录/刷新/登出/me + JWT RS256 + JWKS）、gateway 路由/鉴权/限流（自定义 ProjectRedisRateLimiter）/OpenAPI 聚合、14 张表（含 model 与 Token 统计三表架构）、代码规范整改（pojo 分层 / enums・annotation・constant 包 / @Schema / PageParam / 类转换收敛实体类）；后端 11 模块编译 + 全部测试通过，端到端实测（注册→登录→me→刷新→登出、JWKS、OpenAPI 聚合、限流 429）通过。交接见 `docs/PHASE1-HANDOFF.md`。
 
 **目标**：公共能力与鉴权闭环
 
