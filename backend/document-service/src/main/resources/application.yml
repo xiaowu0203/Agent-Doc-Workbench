@@ -1,15 +1,46 @@
+# 文档服务 document‑service 应用配置
+
+# 服务端口，环境变量 DOCUMENT_SERVICE_PORT，默认8082
 server:
   port: ${DOCUMENT_SERVICE_PORT:8082}
 
 spring:
   application:
+    # 服务名称，用于注册中心、日志、Ping探活接口
     name: document-service
+  # MySQL连接配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+  # Jackson JSON序列化全局时区，统一东八区，解决日期时间序列化时差问题
+  jackson:
+    time-zone: Asia/Shanghai
 
+# 自定义openapi配置
+agent-doc:
+  openapi:
+    title: Document Service API
+    description: 文档服务：空间、成员、文档树、版本快照
+
+# Spring Boot Actuator 健康检查端点配置
 management:
   endpoints:
     web:
       exposure:
+        # 对外暴露健康、信息端点，供k8s/gateway做服务探活
         include: health,info
   endpoint:
     health:
+      # 健康接口不返回详细组件详情，只返回UP/DOWN，保护内部信息
       show-details: never
+
+# SpringDoc OpenAPI Swagger文档路径配置
+springdoc:
+  swagger-ui:
+    # Swagger UI访问页面路径
+    path: /swagger-ui.html
+  api-docs:
+    # OpenAPI JSON元数据接口路径
+    path: /v3/api-docs

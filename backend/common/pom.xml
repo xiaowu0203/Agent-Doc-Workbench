@@ -9,6 +9,15 @@
         <version>0.1.0-SNAPSHOT</version>
     </parent>
     <artifactId>agent-doc-common</artifactId>
+    <packaging>pom</packaging>
     <name>agent-doc-common</name>
-    <description>公共响应与异常模型</description>
+    <description>common 聚合模块：common-core 公共库与各 Spring Boot Starter（web / springdoc / mybatis-plus / redis）</description>
+
+    <modules>
+        <module>common-core</module>
+        <module>common-web-spring-boot-starter</module>
+        <module>common-springdoc-spring-boot-starter</module>
+        <module>common-mybatis-plus-spring-boot-starter</module>
+        <module>common-redis-spring-boot-starter</module>
+    </modules>
 </project>

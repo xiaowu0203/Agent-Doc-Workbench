@@ -89,7 +89,7 @@ pnpm install
 pnpm dev
 ```
 
-Backend service ports: Gateway `8084`, Auth `8081`, Document `8082`, and Task `8083`.
+Backend service ports: Gateway `9090`, Auth `8081`, Document `8082`, and Task `8083`.
 Frontend variables are documented in `frontend/.env.example`; infrastructure and secret templates are in `.env.example`.
 
 ## Development Roadmap

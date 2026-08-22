@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.agentdoc</groupId>
+        <artifactId>agent-doc-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>agent-doc-common-mybatis-plus-spring-boot-starter</artifactId>
+    <name>agent-doc-common-mybatis-plus-spring-boot-starter</name>
+    <description>MyBatis-Plus 统一装配：分页插件（默认）、乐观锁插件（默认关闭，需表有 version 列后开启）</description>
+
+    <dependencies>
+        <!-- 公共核心库：BaseEntity / BaseLogicDeleteEntity 等 -->
+        <dependency>
+            <groupId>com.agentdoc</groupId>
+            <artifactId>agent-doc-common-core</artifactId>
+        </dependency>
+        <!-- MyBatis-Plus（Spring Boot 3） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+        </dependency>
+        <!-- 分页插件独立包（MyBatis-Plus 3.5.9+ 起 PaginationInnerInterceptor 需要） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+        </dependency>
+        <!-- Spring Boot AutoConfiguration：@AutoConfiguration / 条件注解 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <!-- Lombok：编译用；provided 不进入消费者传递依赖 -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
