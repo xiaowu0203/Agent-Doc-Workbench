@@ -1,16 +1,16 @@
-﻿# Agent-Doc-Workbench
+# Agent-Doc-Workbench
 
 > 面向个人/小团队的 Agent 活文档协作开源 Web 工作台
 > 文档，作为 AI Agent 任务的唯一协作载体。
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%200%20ready-green)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%201%20ready-green)
 
 [English](./README.en.md) | 简体中文
 
 **仓库**
 - Gitee：https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub：https://github.com/xiaowu0203/Agent-Doc-Workbench
-- 分支：main（稳定）· phase-0（Phase 0 工程基建开发中）
+- 分支：main（稳定）· phase-1（Phase 1 后端地基，已合并入 main）
 
 ---
 
@@ -69,9 +69,19 @@ Gateway (Spring Cloud Gateway · WebFlux)
    外部 MCP Agent（通过 MCP 协议读取文档片段、提交变更）
 ```
 
+## 当前进度
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| Phase 0 | 工程基建：Git、Docker Compose、前后端骨架 | ✅ 已完成（2026-08-20） |
+| Phase 1 | 后端地基：common 5 子模块、auth 鉴权闭环（JWT RS256 + JWKS）、gateway 路由/限流/OpenAPI 聚合、14 张表（含 Token 统计三表架构） | ✅ 已完成并合并入 main（2026-08-22） |
+| Phase 2 | 文档核心：空间 / 文档 / 版本 / Diff 审批 | 🚧 待启动 |
+
+交接文档：[docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md)
+
 ## 快速开始
 
-> Phase 0 工程基建已完成，当前进入 Phase 1 后端地基开发。
+> Phase 0 工程基建与 Phase 1 后端地基已完成（已合并入 main），当前进入 Phase 2 文档核心开发。
 
 ```bash
 # 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Nacos）
@@ -97,7 +107,7 @@ pnpm dev
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | Phase 0 | 工程基建：Git、Docker Compose、前后端骨架 | 已完成 |
-| Phase 1 | 后端地基：common、auth、gateway | 待启动 |
+| Phase 1 | 后端地基：common、auth、gateway | 已完成 |
 | Phase 2 | 文档核心：空间/文档/版本/Diff | 待启动 |
 | Phase 3 | Agent 与任务：MCP 接入、Token 熔断 | 待启动 |
 | Phase 4 | 前端 8 个核心页面 | 待启动 |
@@ -114,6 +124,8 @@ pnpm dev
 | [docs/development-plan.md](docs/development-plan.md) | 开发路线图（Phase 0-6） |
 | [docs/tech/](docs/tech/README.md) | 技术栈定稿：后端、前端、鉴权方案 |
 | [docs/ui-mockups/](docs/ui-mockups/README.md) | v0.1 全部页面 UI 效果图 |
+| [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) | Phase 1 后端地基交接文档（已完成） |
+| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 交接与规划文档（待启动） |
 | [CLAUDE.md](CLAUDE.md) | 项目记忆与协作规范（含 ADR 决策记录） |
 
 ## 开源计划

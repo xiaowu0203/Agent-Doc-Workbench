@@ -195,6 +195,11 @@ public interface AgentRuntime {
 - **`V3__token_stats_indexes.sql`**（未执行）：`token_usage(space_id, usage_date)`、`token_daily_snapshot(space_id, snapshot_date, created_at)`（替换旧索引）
 - 实体同步：`AgentEntity` + `modelId`；`TokenUsageEntity` 三列收敛为 `objId`；3 张新表实体待 Phase 2
 
+### 2026-08-22（Phase 1 合并入 main + README 进度同步）
+- Phase 1 后端地基经 Gitee PR !2 合并入 main；README（中英）同步进度：状态徽章 Phase 1 ready、分支说明、快速开始提示、路线图 Phase 1 标记已完成、新增「当前进度」小节、文档导航补充 PHASE1/PHASE2 交接文档
+- `docs/development-plan.md` 更新头部状态（Phase 0/1 已完成）并为 Phase 1 补充实际交付说明（common 5 子模块 / auth 闭环 / gateway 限流与 OpenAPI / 14 张表 / 规范整改）
+- 下一步：Phase 2（前端鉴权接入、文档空间 CRUD API 等）
+
 ## 八、决策记录（ADR，倒序追加）
 
 ### ADR-008：Refresh Token 单设备会话策略（2026-08-22）
