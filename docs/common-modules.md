@@ -1,7 +1,7 @@
 # common 模块说明（2026-08-21，包结构 2026-08-22 按代码规范更新）
 
 > Agent-Doc-Workbench 公共能力模块：纯库 + 多个 Spring Boot Starter 的拆分说明。
-> 相关决策见 CLAUDE.md ADR-006 / ADR-007；包结构遵循 CLAUDE.md「后端代码规范」1-13 条。
+> 相关决策见 CLAUDE.md ADR-006 / ADR-007；包结构遵循 CLAUDE.md「后端代码规范」。
 
 ## 一、模块结构
 
@@ -10,23 +10,28 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 ├── common-core/                       # 纯库（无自动装配，不依赖 springdoc，字段注释用 javadoc）
 │   ├── api/           Result<T>
 │   ├── exception/     BusinessException
-│   ├── constant/      HeaderConstants / RedisKeyConstants / JwtConstant
-│   ├── context/       LoginUser / TraceContext / UserContext
+│   ├── constant/      HeaderConstants（仅 X-Trace-Id；X-User-* 已废弃——身份由业务服务自行解析 JWT）
+│   │                  RedisKeyConstants / JwtConstant
+│   ├── context/       TraceContext
 │   ├── id/            SnowflakeIdGenerator
-│   ├── enums/         ErrorCode
-│   ├── annotation/    @RequireLogin / @RequirePermission
-│   ├── utils/         JwtTokenParser
+│   ├── enums/         ErrorCode / ChangeOp
+│   ├── annotation/    @RequireLogin
+│   ├── utils/         AuthUtils（读取 SecurityContext）/ JsonUtils
+│   ├── feign/         DocumentFeign 及其 DTO/VO（契约即客户端）
 │   ├── pojo/entity/   BaseEntity / BaseLogicDeleteEntity
-│   └── pojo/dto/      PageParam（分页参数：pageNum/pageSize 默认 1/10 + validate()）
-├── common-web-spring-boot-starter/    # Servlet Web 自动装配
-│   ├── config/        CommonWebAutoConfiguration
-│   ├── controller/    PingController（/api/{service}/ping）
+│   ├── pojo/dto/      PageParam（分页参数：pageNum/pageSize 默认 1/10 + validate()）
+│   └── pojo/vo/       PageVO（统一分页响应）
+├── common-web-spring-boot-starter/    # Servlet Web 自动装配（仅横切基础设施，无业务形态代码；探活由 Actuator health 承担）
+│   ├── config/        CommonWebAutoConfiguration（含 businessJwtDecoder：agent-doc.security.jwks-url 配置）
+│   │                  CommonSecurityAutoConfiguration（Security Resource Server：permitAll + JWT 解析 + 401 JSON）
+│   │                  SecurityVerifyProperties
 │   ├── handler/       GlobalExceptionHandler
-│   ├── web/           TraceIdFilter / UserContextFilter
-│   └── security/      PermissionInterceptor
+│   ├── web/           TraceIdFilter
+│   └── security/      PermissionInterceptor（@RequireLogin 注解驱动，检查 SecurityContext）
 ├── common-springdoc-spring-boot-starter/   # OpenAPI 模板（agent-doc.openapi.*）
-├── common-mybatis-plus-spring-boot-starter # 分页插件 + 乐观锁（默认关）；CommonMetaObjectHandler 在 handler/
-└── common-redis-spring-boot-starter/       # jsonRedisTemplate + RedisUtils（utils/，条件装配）
+├── common-mybatis-plus-spring-boot-starter # 分页插件 + 乐观锁（默认关）；CommonMetaObjectHandler 在 handler/；PageUtils 在 utils/（toPage，随技术栈落位）
+├── common-redis-spring-boot-starter/       # jsonRedisTemplate + RedisUtils（utils/，条件装配）
+└── common-feign-spring-boot-starter/       # @EnableFeignClients 统一扫描契约 + 默认 AuthHeaderForwardInterceptor（透传用户 JWT）
 ```
 
 ## 二、依赖矩阵
@@ -36,11 +41,11 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 | gateway-service | `common-core` only（WebFlux，其余 starter 全不引） |
 | auth-service | core + web + springdoc + mybatis-plus + redis |
 | document-service | core + web + springdoc + mybatis-plus（redis 按需） |
-| task-service | core + web + springdoc + mybatis-plus + redis |
+| task-service | core + web + springdoc + mybatis-plus + redis + feign |
 
 约束：
 - **线程模型**：web starter 仅面向 Servlet MVC；gateway（WebFlux）不依赖任何 MVC starter
-- **optional 纪律**：core 中 webmvc / servlet / mybatis-plus-annotation 均为 optional，避免污染 WebFlux 依赖树
+- **optional 纪律**：core 中 webmvc / servlet / openfeign / mybatis-plus-annotation 均为 optional，避免污染 WebFlux 依赖树
 - **starter 自包含**：每个 starter 必须显式声明自身用到的依赖（勿依赖传递）
 
 ## 三、BaseEntity 两层设计

@@ -1,6 +1,8 @@
 package com.agentdoc.document.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseEntity;
+import com.agentdoc.document.pojo.vo.DocumentVersionDetailVO;
+import com.agentdoc.document.pojo.vo.DocumentVersionVO;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -35,4 +37,20 @@ public class DocumentVersionEntity extends BaseEntity {
     @Schema(description = "逻辑删除标记：0 未删除 / 1 已删除")
     @TableLogic
     private Integer deleted;
+
+    /**
+     * 转换为版本列表视图对象（不含正文快照）。
+     * @return 版本列表视图
+     */
+    public DocumentVersionVO toVO() {
+        return new DocumentVersionVO(getId(), documentId, versionNo, changeSummary, createdBy, getCreatedAt());
+    }
+
+    /**
+     * 转换为版本详情视图对象（含正文快照）。
+     * @return 版本详情视图
+     */
+    public DocumentVersionDetailVO toDetailVO() {
+        return new DocumentVersionDetailVO(documentId, versionNo, content, changeSummary, createdBy);
+    }
 }

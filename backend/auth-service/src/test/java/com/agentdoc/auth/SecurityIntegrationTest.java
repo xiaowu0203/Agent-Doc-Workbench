@@ -22,8 +22,8 @@ class SecurityIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
-    void permitAllPingReturns200() throws Exception {
-        mockMvc.perform(get("/api/auth/ping"))
+    void permitAllHealthReturns200() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk());
     }
 

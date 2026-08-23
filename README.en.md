@@ -3,14 +3,14 @@
 > An open-source, lightweight web workbench for AI-agent-powered document collaboration, built for individuals and small teams.
 > Documents as the single collaboration vehicle for AI Agent tasks.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%201%20ready-green)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%202%20ready-green)
 
 English | [简体中文](./README.md)
 
 **Repository**
 - Gitee: https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub: https://github.com/xiaowu0203/Agent-Doc-Workbench
-- Branches: main (stable) · phase-1 (Phase 1 backend foundation, merged into main)
+- Branches: main (stable) · phase-2 (Phase 2 document core, pending merge into main)
 
 ---
 
@@ -75,13 +75,14 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | --- | --- | --- |
 | Phase 0 | Engineering foundation: Git, Docker Compose, frontend/backend scaffolding | ✅ Completed (2026-08-20) |
 | Phase 1 | Backend foundation: common (5 sub-modules), auth loop (JWT RS256 + JWKS), gateway routing/rate-limiting/OpenAPI aggregation, 14 tables (incl. Token stats 3-table architecture) | ✅ Completed and merged into main (2026-08-22) |
-| Phase 2 | Document core: spaces/documents/versions/Diff approval | 🚧 Planned |
+| Phase 2 | Document core: spaces/documents/versions/Diff approval | ✅ Completed (2026-08-23, pending merge into main) |
+| Phase 3 | Agents & tasks: MCP integration, Token circuit breaker | 🚧 Planned |
 
-Handoff docs: [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md)
+Handoff docs: [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) · [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md)
 
 ## Getting Started
 
-> Phase 0 engineering foundations and the Phase 1 backend foundation are complete (merged into main). Development now moves on to the Phase 2 document core.
+> Phases 0 and 1 are merged into main. The Phase 2 document core is complete on `phase-2`; development moves next to Phase 3 agents and tasks.
 
 ```bash
 # 1. Start infrastructure (MySQL / Redis / RabbitMQ / MinIO / Nacos)
@@ -108,7 +109,7 @@ Frontend variables are documented in `frontend/.env.example`; infrastructure and
 | --- | --- | --- |
 | Phase 0 | Engineering foundation: Git, Docker Compose, frontend/backend scaffolding | Completed |
 | Phase 1 | Backend foundation: common, auth, gateway | Completed |
-| Phase 2 | Document core: spaces/documents/versions/Diff | Planned |
+| Phase 2 | Document core: spaces/documents/versions/Diff | Completed, pending merge |
 | Phase 3 | Agents & tasks: MCP integration, Token circuit breaker | Planned |
 | Phase 4 | Frontend: 8 core pages | Planned |
 | Phase 5 | Integration & testing of the full loop | Planned |
@@ -125,7 +126,8 @@ See [docs/development-plan.md](docs/development-plan.md).
 | [docs/tech/README.md](docs/tech/README.md) | Finalized tech stack: backend, frontend, auth |
 | [docs/ui-mockups/README.md](docs/ui-mockups/README.md) | UI mockups for all v0.1 pages |
 | [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) | Phase 1 backend handoff doc (completed) |
-| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 handoff & planning doc (planned) |
+| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 startup baseline (completed) |
+| [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) | Phase 3 agents & tasks handoff doc |
 | [CLAUDE.md](CLAUDE.md) | Project memory & collaboration conventions (incl. ADRs) |
 
 ## Open Source Plans

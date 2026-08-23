@@ -19,5 +19,6 @@
         <module>common-springdoc-spring-boot-starter</module>
         <module>common-mybatis-plus-spring-boot-starter</module>
         <module>common-redis-spring-boot-starter</module>
+        <module>common-feign-spring-boot-starter</module>
     </modules>
 </project>
