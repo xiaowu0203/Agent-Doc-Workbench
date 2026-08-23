@@ -96,5 +96,7 @@
 | `V1__init.sql` | 11 张表基线（user / oauth2_client / space / member / document / document_version / change_request / agent / task / token_usage / audit_log） |
 | `V2__model_and_token_stats.sql` | 新增 `model`；`agent` 增 `model_id` 与索引；`token_usage` 重构为通用 `obj_id` + 唯一键；新增 `token_usage_detail` / `token_daily_snapshot` |
 | `V3__token_stats_indexes.sql` | 查询索引：`token_usage(space_id, usage_date)`；`token_daily_snapshot(space_id, snapshot_date, created_at)`（替换旧索引） |
+| `V4__change_request_base_version.sql` | `change_request` 新增 `base_version` 列（审批合并时校验基线版本，防止并发覆盖） |
+| `V5__document_parent_id_nullable.sql` | `document.parent_id` 改为可空；根目录由 `0` 约定迁移为 `NULL` |
 
-已执行的迁移不可修改（Flyway checksum）；后续变更一律新增 V4+ 增量脚本。
+已执行的迁移不可修改（Flyway checksum）；后续变更一律新增 V6+ 增量脚本。

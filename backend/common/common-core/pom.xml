@@ -25,7 +25,7 @@
             <artifactId>spring-webmvc</artifactId>
             <optional>true</optional>
         </dependency>
-        <!-- Servlet API：UserContextFilter/PermissionInterceptor 编译用；provided，运行时由容器提供 -->
+        <!-- Servlet API：PermissionInterceptor 编译用；provided，运行时由容器提供 -->
         <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
@@ -42,10 +42,33 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
         </dependency>
-        <!-- JWT 解析：JwtTokenParser 用 NimbusJwtDecoder / Jwt -->
+        <!-- JWT 类型与解码：AuthUtils/网关用 Jwt/JwtDecoder -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-oauth2-jose</artifactId>
+        </dependency>
+        <!-- Security 上下文：AuthUtils 读取 SecurityContextHolder / Authentication / AnonymousAuthenticationToken -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-core</artifactId>
+        </dependency>
+        <!-- JSON 注解：ChangeOp @JsonValue 契约序列化 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <!-- JSON 序列化：JsonUtils（ObjectMapper） -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- Feign 客户端注解：DocumentFeign 契约接口直接标注 @FeignClient / HTTP 注解（统一入口）；
+             optional 不传递——gateway / auth 依赖 common-core 不会引入 openfeign，
+             使用方（task-service）经 common-feign-spring-boot-starter 获得完整 openfeign 依赖 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-openfeign-core</artifactId>
+            <optional>true</optional>
         </dependency>
         <!-- MyBatis-Plus 注解：BaseEntity 编译用（@TableId/@TableLogic）；optional，
              仅使用 BaseEntity 的模块需自行声明 mybatis-plus 依赖（gateway 不加载 BaseEntity，不受影响） -->

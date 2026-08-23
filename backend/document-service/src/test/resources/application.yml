@@ -5,6 +5,11 @@ spring:
     username: sa
     password:
 
+# 测试环境启用 Security Resource Server（与生产一致；仅构造 JwtDecoder 不联网拉取）
+agent-doc:
+  security:
+    jwks-url: http://localhost:8081/oauth2/jwks
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

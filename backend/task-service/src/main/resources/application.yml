@@ -23,6 +23,13 @@ agent-doc:
   openapi:
     title: Task Service API
     description: 任务服务：Agent 任务、变更审批、Token 用量与审计
+  security:
+    # 模型 B：从 auth-service JWK Set 拉取 RSA 公钥，供 Spring Security Resource Server
+    # 从 Authorization 自行解析 JWT 身份（配置即启用；无效 token 由 Security 层直接 401）
+    jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+  feign:
+    # 服务间调用统一经网关（复用 JWT 门禁并透传原始 Authorization，身份可追溯）
+    gateway-url: ${GATEWAY_URL:http://localhost:9090}
 
 # Spring Boot Actuator 健康检查端点配置
 management:

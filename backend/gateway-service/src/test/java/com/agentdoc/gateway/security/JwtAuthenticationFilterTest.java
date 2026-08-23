@@ -40,11 +40,10 @@ class JwtAuthenticationFilterTest {
         return MockServerWebExchange.from(MockServerHttpRequest.get(path).build());
     }
 
-    /** 白名单路径放行，且剥离入站伪造的 X-User-* 头 */
+    /** 白名单路径放行，并注入 X-Trace-Id */
     @Test
-    void whitelistPassesThroughAndStripsSpoofedHeaders() {
-        MockServerWebExchange exchange =
-                exchange("/api/auth/login", HeaderConstants.X_USER_ID, "999");
+    void whitelistPassesThroughWithTraceId() {
+        MockServerWebExchange exchange = exchange("/api/auth/login");
 
         ServerWebExchange[] captured = new ServerWebExchange[1];
         GatewayFilterChain chain = ex -> {
@@ -55,8 +54,6 @@ class JwtAuthenticationFilterTest {
         filter.filter(exchange, chain).block();
 
         assertNull(captured[0].getResponse().getStatusCode(), "白名单不应返回 401");
-        assertNull(captured[0].getRequest().getHeaders().getFirst(HeaderConstants.X_USER_ID),
-                "入站伪造的 X-User-Id 必须被剥离");
         assertTrue(captured[0].getRequest().getHeaders().containsKey(HeaderConstants.X_TRACE_ID),
                 "应注入 X-Trace-Id");
     }
@@ -74,15 +71,13 @@ class JwtAuthenticationFilterTest {
         assertTrue(body.contains("\"code\":40100"), "响应体应包含统一错误码, actual=" + body);
     }
 
-    /** 有效 token → 注入 X-User-* 头、保留 Authorization、放行下游 */
+    /** 有效 token → 透传并保留 Authorization，不注入任何身份头（身份由业务服务自行解析） */
     @Test
-    void validTokenInjectsIdentityAndRetainsAuthorization() {
+    void validTokenPassesThroughWithoutInjectingIdentity() {
         Jwt jwt = Jwt.withTokenValue("signed.jwt.value")
                 .header("alg", "RS256")
                 .claim("sub", "10")
                 .claim("username", "alice")
-                .claim("nickname", "Alice")
-                .claim("scope", "read,write")
                 .build();
         when(jwtDecoder.decode("signed.jwt.value")).thenReturn(jwt);
 
@@ -99,13 +94,11 @@ class JwtAuthenticationFilterTest {
 
         assertNull(captured[0].getResponse().getStatusCode(), "有效 token 不应返回 401");
         ServerHttpRequest downstream = captured[0].getRequest();
-        assertEquals("10", downstream.getHeaders().getFirst(HeaderConstants.X_USER_ID));
-        assertEquals("alice", downstream.getHeaders().getFirst(HeaderConstants.X_USER_NAME));
-        assertEquals("Alice", downstream.getHeaders().getFirst(HeaderConstants.X_USER_NICKNAME));
-        assertEquals("read,write", downstream.getHeaders().getFirst(HeaderConstants.X_USER_SCOPES));
         assertEquals("Bearer signed.jwt.value",
                 downstream.getHeaders().getFirst(org.springframework.http.HttpHeaders.AUTHORIZATION),
-                "应保留原 Authorization 头供下游二次校验");
+                "应透传原始 Authorization 头供业务服务自行解析");
+        assertNull(downstream.getHeaders().getFirst("X-User-Id"),
+                "不应注入 X-User-Id 身份头");
     }
 
     /** 非法 token（解码失败）→ 401 + Result JSON */

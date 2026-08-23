@@ -2,7 +2,7 @@
 
 > 基于《Agent‑Doc‑Workbench 项目完整开发规划文档》与技术栈定稿（docs/tech/）
 >
-> 更新时间：2026‑08‑22・状态：Phase 0 / Phase 1 已完成（Phase 1 已合并入 main）
+> 更新时间：2026‑08‑23・状态：Phase 0 / 1 / 2 已完成（Phase 2 已完成开发，待合并入 main）
 
 ## 总体节奏
 
@@ -42,6 +42,14 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 **验收**：注册→登录→带 Token 调业务接口全链路可用；OpenAPI 文档可访问。
 
 ## Phase 2：文档核心（4‑6 天）
+
+**状态**：已完成（2026‑08‑22 开发 + 2026‑08‑23 模型 B 架构收尾）——空间/成员/文档/版本/Diff 数据闭环全部落地并端到端实测通过（20/20）：
+- **common**：**模型 B 安全**——common-web 装配 Spring Security Resource Server（`CommonSecurityAutoConfiguration`：permitAll 注解驱动 + JWT 解析 + 401 JSON），业务服务配置 `agent-doc.security.jwks-url` 即自行解析身份（无 X-User-* 自定义头、无 UserContext 体系，业务代码经 `AuthUtils` 读 SecurityContext）；`PageParam.toPage()` 落位为 mybatis‑plus starter 的 `PageUtils.toPage()`；新增 `PageVO` 统一分页响应；新增 **common‑feign‑spring‑boot‑starter**（首个跨服务调用，兑现规范 11，Feign 契约即客户端统一入口 + JWT 透传默认装配）
+- **document‑service**：空间 CRUD（创建者自动 OWNER）+ 成员角色管理（OWNER/EDITOR/VIEWER，最后一名 OWNER 不可移除）+ 文档 CRUD/树形目录/移动防环/归档回收站 + 草稿/正式双模式 + 版本快照（编辑自动生成/列表/详情/对比/回滚生成新版本不删历史）+ 文档片段读取接口（控 Token）+ 合并端点 `POST /api/document/documents/merge`（服务间调用，SecurityContext 解析身份 + EDITOR 校验，业务异常转 HTTP 状态码供 Feign 识别）
+- **task‑service**：ChangeRequest 审批队列（提交/分页查询/通过/拒绝/退回，结构化 changes[] + baseVersion）+ 审批合并闭环（Feign 经网关调 document 应用变更，透传审批人 JWT 保持身份连续，基线版本校验防并发覆盖 40900）+ 3 个新实体（Model / TokenUsageDetail / TokenDailySnapshot）
+- **Flyway V4 / V5**：`change_request` 新增 `base_version`；`document.parent_id` 改为可空并将根目录从 `0` 迁移为 `NULL`；本机库已执行 V1‑V5
+- 端到端实测：注册→登录→建空间→建文档→编辑版本→回滚→提交变更→审批→合并→冲突 40900→片段读取→归档恢复 全链路通过；网关 401 / 直连无效 token 401（Security 层）/ 合并操作人=审批人（SecurityContext 解析）均验证
+- 交接见 `docs/PHASE3-HANDOFF.md`；计划见 `docs/PHASE2-PLAN.md`
 
 **目标**：空间 / 文档 / 版本 / Diff 数据闭环
 
