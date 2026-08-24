@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -43,5 +44,18 @@ class JwtServiceTest {
         String token = jwtService.createRefreshToken();
         assertNotNull(token);
         assertEquals(true, token.matches("^[A-Za-z0-9_-]+$"));
+    }
+
+    @Test
+    void createsTaskCapabilityTokenWithAgentScope() {
+        JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
+
+        Jwt jwt = decoder.decode(jwtService.createTaskCapabilityToken(
+                10L, 20L, 30L, 40L, List.of("READ_FRAGMENT")));
+
+        assertEquals("10", jwt.getSubject());
+        assertEquals("AGENT", jwt.getClaimAsString("actorType"));
+        assertEquals("agent", jwt.getClaimAsString("scope"));
+        assertEquals(List.of("READ_FRAGMENT"), jwt.getClaimAsStringList("agentActions"));
     }
 }

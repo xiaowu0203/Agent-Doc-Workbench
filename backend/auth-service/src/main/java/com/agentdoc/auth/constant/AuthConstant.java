@@ -14,6 +14,9 @@ public final class AuthConstant {
     /** Refresh Token 随机字节长度 */
     public static final int REFRESH_TOKEN_BYTE_LENGTH = 48;
 
+    /** 任务能力令牌有效期（小时） */
+    public static final long TASK_CAPABILITY_TTL_HOURS = 6L;
+
     /** PEM 私钥开始标记 */
     public static final String PEM_PRIVATE_KEY_BEGIN = "-----BEGIN PRIVATE KEY-----";
 

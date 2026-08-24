@@ -6,14 +6,11 @@ import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.pojo.vo.UserVO;
 import com.agentdoc.auth.service.AuthService;
-import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.api.Result;
-import com.agentdoc.common.exception.BusinessException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -61,15 +58,13 @@ public class AuthController {
 
     @Operation(summary = "当前用户信息")
     @GetMapping("/me")
-    public Result<UserVO> me(Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
-        }
-        Long userId = Long.valueOf(jwt.getSubject());
-        UserVO user = authService.getById(userId);
-        if (user == null) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED);
-        }
-        return Result.ok(user);
+    public Result<UserVO> me() {
+        return Result.ok(authService.currentUser());
+    }
+
+    @Operation(summary = "内部签发任务能力令牌")
+    @PostMapping("/internal/task-capabilities")
+    public Result<String> issueTaskCapability(@RequestBody TaskCapabilityIssueDTO request) {
+        return Result.ok(authService.issueTaskCapability(request));
     }
 }
