@@ -46,6 +46,10 @@ public class SnowflakeIdGenerator {
     private static final long TIMESTAMP_SHIFT = SEQUENCE_BITS + WORKER_BITS + DATACENTER_BITS;
     /** 序列号掩码，用于序列号自增后取模，保证不越界 */
     private static final long SEQUENCE_MASK = -1L ^ (-1L << SEQUENCE_BITS);
+    /** 序列号每次递增步长 */
+    private static final long SEQUENCE_INCREMENT = 1L;
+    /** 尚未生成 ID 时的时间戳哨兵值 */
+    private static final long UNINITIALIZED_TIMESTAMP = -1L;
 
     /** 工作机器ID(0~31)，集群实例之间必须唯一 */
     private final long workerId;
@@ -54,7 +58,7 @@ public class SnowflakeIdGenerator {
     /** 同一毫秒内序列号，0‑4095循环 */
     private long sequence = 0L;
     /** 上一次生成ID的时间戳(毫秒) */
-    private long lastTimestamp = -1L;
+    private long lastTimestamp = UNINITIALIZED_TIMESTAMP;
 
     /**
      * 构造雪花ID生成器
@@ -94,7 +98,7 @@ public class SnowflakeIdGenerator {
         }
         // 同一毫秒内，序列号自增
         if (timestamp == lastTimestamp) {
-            sequence = (sequence + 1) & SEQUENCE_MASK;
+            sequence = (sequence + SEQUENCE_INCREMENT) & SEQUENCE_MASK;
             // 序列号溢出，阻塞等到下一毫秒
             if (sequence == 0L) {
                 timestamp = waitNextMillis(lastTimestamp);

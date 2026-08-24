@@ -67,19 +67,19 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleGeneric(Exception ex) {
         if (ex instanceof ErrorResponse errorResponse) {
-            int status = errorResponse.getStatusCode().value();
+            HttpStatus status = HttpStatus.resolve(errorResponse.getStatusCode().value());
             ErrorCode code = switch (status) {
-                case 400, 415 -> ErrorCode.BAD_REQUEST;
-                case 401 -> ErrorCode.UNAUTHORIZED;
-                case 403 -> ErrorCode.FORBIDDEN;
-                case 404 -> ErrorCode.NOT_FOUND;
-                case 405 -> ErrorCode.METHOD_NOT_ALLOWED;
-                case 409 -> ErrorCode.CONFLICT;
-                case 429 -> ErrorCode.TOO_MANY_REQUESTS;
-                default -> ErrorCode.INTERNAL_ERROR;
+                case BAD_REQUEST, UNSUPPORTED_MEDIA_TYPE -> ErrorCode.BAD_REQUEST;
+                case UNAUTHORIZED -> ErrorCode.UNAUTHORIZED;
+                case FORBIDDEN -> ErrorCode.FORBIDDEN;
+                case NOT_FOUND -> ErrorCode.NOT_FOUND;
+                case METHOD_NOT_ALLOWED -> ErrorCode.METHOD_NOT_ALLOWED;
+                case CONFLICT -> ErrorCode.CONFLICT;
+                case TOO_MANY_REQUESTS -> ErrorCode.TOO_MANY_REQUESTS;
+                case null, default -> ErrorCode.INTERNAL_ERROR;
             };
             log.warn("HTTP 异常: {} - {}", status, ex.getMessage());
-            return ResponseEntity.status(status).body(Result.fail(code));
+            return ResponseEntity.status(errorResponse.getStatusCode()).body(Result.fail(code));
         }
         log.error("未处理异常", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
