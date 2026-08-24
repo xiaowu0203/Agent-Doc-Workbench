@@ -3,10 +3,14 @@ package com.agentdoc.task.convertor;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.task.enums.ActorType;
 import com.agentdoc.task.enums.ChangeRequestStatus;
 import com.agentdoc.task.enums.ChangeRequestType;
+import com.agentdoc.task.pojo.dto.ChangeRequestSubmitDTO;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
+import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.vo.ChangeRequestVO;
+import com.agentdoc.task.runtime.AgentExecutionResult;
 import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.util.List;
@@ -19,6 +23,38 @@ import java.util.Map;
 public final class ChangeRequestConvertor {
 
     private ChangeRequestConvertor() {
+    }
+
+    /**
+     * 将用户提交参数转换为待审批变更请求。
+     */
+    public static ChangeRequestEntity fromHumanSubmission(ChangeRequestSubmitDTO dto, Long userId) {
+        ChangeRequestEntity entity = new ChangeRequestEntity();
+        entity.setDocumentId(dto.documentId());
+        entity.setRequestType(dto.requestType().getCode());
+        entity.setChanges(serializeChanges(dto.changes()));
+        entity.setBaseVersion(dto.baseVersion());
+        entity.setStatus(ChangeRequestStatus.PENDING.getCode());
+        entity.setProposedBy(userId);
+        entity.setProposedActorType(ActorType.HUMAN.getCode());
+        return entity;
+    }
+
+    /**
+     * 将 Agent 执行结果转换为待审批正式文档变更请求。
+     */
+    public static ChangeRequestEntity fromAgentSubmission(
+            TaskEntity task, AgentExecutionResult result, Long baseVersion) {
+        ChangeRequestEntity entity = new ChangeRequestEntity();
+        entity.setDocumentId(task.getDocumentId());
+        entity.setRequestType(ChangeRequestType.FORMAL.getCode());
+        entity.setChanges(serializeChanges(result.changes()));
+        entity.setBaseVersion(baseVersion);
+        entity.setStatus(ChangeRequestStatus.PENDING.getCode());
+        entity.setSourceTaskId(task.getId());
+        entity.setProposedBy(task.getAgentId());
+        entity.setProposedActorType(ActorType.AGENT.getCode());
+        return entity;
     }
 
     /**

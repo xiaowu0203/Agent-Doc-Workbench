@@ -37,6 +37,9 @@ public class ChangeRequestEntity extends BaseLogicDeleteEntity {
     @Schema(description = "提交人（用户或 Agent ID）")
     private Long proposedBy;
 
+    @Schema(description = "提交主体：1 人 / 2 Agent")
+    private Integer proposedActorType;
+
     @Schema(description = "审批意见")
     private String reviewComment;
 }

@@ -26,6 +26,9 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "目标文档 ID")
     private Long documentId;
 
+    @Schema(description = "任务名称")
+    private String name;
+
     @Schema(description = "任务指令")
     private String instruction;
 
@@ -43,6 +46,21 @@ public class TaskEntity extends BaseLogicDeleteEntity {
 
     @Schema(description = "结束时间")
     private LocalDateTime endTime;
+
+    @Schema(description = "最近一次失败原因")
+    private String errorMessage;
+
+    @Schema(description = "任务结果摘要")
+    private String resultSummary;
+
+    @Schema(description = "预留父任务 ID，Phase 3 不参与业务逻辑")
+    private Long parentTaskId;
+
+    @Schema(description = "消息重试次数")
+    private Integer retryCount;
+
+    @Schema(description = "加密保存的任务能力令牌")
+    private String capabilityToken;
 
     @Schema(description = "创建人用户 ID")
     private Long createdBy;

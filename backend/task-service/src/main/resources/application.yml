@@ -14,19 +14,33 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:root}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+        default-requeue-rejected: false
   # Jackson JSON序列化全局时区，统一东八区，解决日期时间序列化时差问题
   jackson:
     time-zone: Asia/Shanghai
 
 # 自定义openapi配置
 agent-doc:
-  openapi:
-    title: Task Service API
-    description: 任务服务：Agent 任务、变更审批、Token 用量与审计
   security:
+    # Base64 编码的 16/24/32 字节 AES 密钥，生产环境必须通过环境变量注入
+    mcp-config-key: ${AGENT_MCP_CONFIG_KEY:}
     # 模型 B：从 auth-service JWK Set 拉取 RSA 公钥，供 Spring Security Resource Server
     # 从 Authorization 自行解析 JWT 身份（配置即启用；无效 token 由 Security 层直接 401）
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+  openapi:
+    title: Task Service API
+    description: 任务服务：Agent 任务、变更审批、Token 用量与审计
   feign:
     # 服务间调用统一经网关（复用 JWT 门禁并透传原始 Authorization，身份可追溯）
     gateway-url: ${GATEWAY_URL:http://localhost:9090}
