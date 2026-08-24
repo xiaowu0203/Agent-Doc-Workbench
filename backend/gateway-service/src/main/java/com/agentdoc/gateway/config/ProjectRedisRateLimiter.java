@@ -43,6 +43,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ProjectRedisRateLimiter extends AbstractRateLimiter<RedisRateLimiter.Config>
         implements RateLimiter<RedisRateLimiter.Config>, ApplicationContextAware {
 
+    private static final int SCRIPT_ALLOWED_INDEX = 0;
+    private static final int SCRIPT_TOKENS_LEFT_INDEX = 1;
+    private static final long SCRIPT_ALLOWED_VALUE = 1L;
+    private static final long UNKNOWN_TOKENS_LEFT = -1L;
+
     private final ReactiveStringRedisTemplate redisTemplate;
     private RedisScript<List> script;
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -105,10 +110,10 @@ public class ProjectRedisRateLimiter extends AbstractRateLimiter<RedisRateLimite
         Flux<List<Long>> flux = (Flux<List<Long>>) (Flux<?>) this.redisTemplate.execute(this.script, keys, scriptArgs);
         return flux.onErrorResume(throwable -> {
             log.error("Error calling rate limiter lua", throwable);
-            return Flux.just(Arrays.asList(1L, -1L));
+            return Flux.just(Arrays.asList(SCRIPT_ALLOWED_VALUE, UNKNOWN_TOKENS_LEFT));
         }).next().map(results -> {
-            boolean allowed = results.get(0) == 1L;
-            Long tokensLeft = results.get(1);
+            boolean allowed = results.get(SCRIPT_ALLOWED_INDEX) == SCRIPT_ALLOWED_VALUE;
+            Long tokensLeft = results.get(SCRIPT_TOKENS_LEFT_INDEX);
             Response response = new Response(allowed, getHeaders(routeConfig, tokensLeft));
             if (log.isDebugEnabled()) {
                 log.debug("response: " + response);

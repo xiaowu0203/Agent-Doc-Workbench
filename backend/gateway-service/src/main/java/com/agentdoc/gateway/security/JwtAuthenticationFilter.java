@@ -47,6 +47,8 @@ import java.util.UUID;
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
+    private static final int FILTER_ORDER = -100;
+
     /** Authorization Bearer token前缀 */
     private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
 
@@ -118,7 +120,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        return -100;
+        return FILTER_ORDER;
     }
 
     /**
