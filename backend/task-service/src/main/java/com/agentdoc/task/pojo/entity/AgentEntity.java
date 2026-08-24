@@ -1,6 +1,8 @@
 package com.agentdoc.task.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseLogicDeleteEntity;
+import com.agentdoc.task.enums.AgentStatus;
+import com.agentdoc.task.pojo.vo.AgentVO;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -47,4 +49,15 @@ public class AgentEntity extends BaseLogicDeleteEntity {
 
     @Schema(description = "创建人用户 ID")
     private Long createdBy;
+
+    /**
+     * 转换为 Agent 视图。
+     *
+     * @return Agent 视图
+     */
+    public AgentVO toVO() {
+        return new AgentVO(getId(), spaceId, name, description, clientId, modelId, toolWhitelist, docScope,
+                tokenBudget, mcpConfig != null && !mcpConfig.isBlank(), AgentStatus.fromCode(status),
+                createdBy, getCreatedAt());
+    }
 }
