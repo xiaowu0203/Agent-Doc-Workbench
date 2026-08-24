@@ -1,5 +1,6 @@
 package com.agentdoc.document.pojo.dto;
 
+import com.agentdoc.document.enums.SpaceStatus;
 import com.agentdoc.document.pojo.entity.SpaceEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -35,6 +36,7 @@ public record SpaceCreateDTO(
         entity.setDescription(description);
         entity.setTokenBudget(tokenBudget);
         entity.setOwnerId(ownerId);
+        entity.setStatus(SpaceStatus.NORMAL.getCode());
         return entity;
     }
 }

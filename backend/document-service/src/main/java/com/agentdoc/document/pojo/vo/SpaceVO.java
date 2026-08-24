@@ -1,6 +1,6 @@
 package com.agentdoc.document.pojo.vo;
 
-import com.agentdoc.document.enums.SpaceRole;
+import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.enums.SpaceStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 

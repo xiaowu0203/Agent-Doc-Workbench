@@ -25,6 +25,7 @@ agent-doc:
     description: 文档服务：空间、成员、文档树、版本快照
   security:
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    task-capability-filter-enabled: true
 
 # Spring Boot Actuator 健康检查端点配置
 management:

@@ -2,7 +2,7 @@ package com.agentdoc.document.service;
 
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.document.enums.SpaceRole;
+import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -38,7 +38,7 @@ class SpacePermissionServiceTest {
 
     @BeforeEach
     void setUp() {
-        permissionService = new SpacePermissionService(memberMapper);
+        permissionService = new SpacePermissionService(memberMapper, null, null, null);
         // 模拟已登录：SecurityContext 放入以 Jwt 为 principal 的认证信息
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")

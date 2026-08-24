@@ -2,8 +2,7 @@ package com.agentdoc.document.service;
 
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.document.enums.SpaceRole;
-import com.agentdoc.document.enums.SpaceStatus;
+import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.mapper.SpaceMapper;
 import com.agentdoc.document.pojo.dto.SpaceCreateDTO;
@@ -11,6 +10,7 @@ import com.agentdoc.document.pojo.dto.SpaceUpdateDTO;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import com.agentdoc.document.pojo.entity.SpaceEntity;
 import com.agentdoc.document.pojo.vo.SpaceVO;
+import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,6 +35,38 @@ public class SpaceService {
     private final SpacePermissionService permissionService;
 
     /**
+     * 服务间权限校验入口
+     */
+    public void requireRole(Long spaceId, SpaceRole role) {
+        // 校验当前登录用户的角色不低于 required（OWNER 满足一切要求，VIEWER 仅满足只读要求）。
+        permissionService.requireRole(spaceId, role);
+    }
+
+    /**
+     * 按跨服务传入的角色编码校验空间权限。
+     */
+    public void requireRole(Long spaceId, Integer roleCode) {
+        SpaceRole role = SpaceRole.fromCode(roleCode);
+        if (role == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "无效的空间角色");
+        }
+        permissionService.requireRole(spaceId, role);
+    }
+
+    /**
+     * 根据空间ID获取执行预算
+     * @param spaceId 空间ID
+     * @return 执行预算
+     */
+    public SpaceBudgetVO getExecutionBudget(Long spaceId) {
+        // 校验当前登录用户是空间成员
+        permissionService.requireMember(spaceId);
+        // 查询空间记录
+        SpaceEntity space = getSpace(spaceId);
+        return space.toBudgetVO();
+    }
+
+    /**
      * 创建空间
      * 事务保障：同时写入空间主记录 + 创建者OWNER成员记录，任一异常全部回滚。
      *
@@ -47,17 +79,11 @@ public class SpaceService {
         Long userId = permissionService.requireUserId();
         // DTO转换为空间数据库实体，设置创建人
         SpaceEntity space = dto.toEntity(userId);
-        // 设置空间状态为正常可用
-        space.setStatus(SpaceStatus.NORMAL.getCode());
         // 插入空间记录
         spaceMapper.insert(space);
 
         // 创建者自动成为该空间OWNER所有者，写入成员表
-        MemberEntity member = new MemberEntity();
-        member.setSpaceId(space.getId());
-        member.setUserId(userId);
-        member.setRole(SpaceRole.OWNER.getCode());
-        memberMapper.insert(member);
+        memberMapper.insert(MemberEntity.owner(space.getId(), userId));
         return space.toVO(SpaceRole.OWNER);
     }
 

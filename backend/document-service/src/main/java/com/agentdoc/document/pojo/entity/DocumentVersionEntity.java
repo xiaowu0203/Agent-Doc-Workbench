@@ -39,6 +39,20 @@ public class DocumentVersionEntity extends BaseEntity {
     private Integer deleted;
 
     /**
+     * 创建文档版本快照实体。
+     */
+    public static DocumentVersionEntity create(Long documentId, Long versionNo, String content,
+                                               String changeSummary, Long userId) {
+        DocumentVersionEntity entity = new DocumentVersionEntity();
+        entity.setDocumentId(documentId);
+        entity.setVersionNo(versionNo);
+        entity.setContent(content);
+        entity.setChangeSummary(changeSummary);
+        entity.setCreatedBy(userId);
+        return entity;
+    }
+
+    /**
      * 转换为版本列表视图对象（不含正文快照）。
      * @return 版本列表视图
      */

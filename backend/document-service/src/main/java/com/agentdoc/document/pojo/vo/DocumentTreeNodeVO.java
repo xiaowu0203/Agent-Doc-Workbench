@@ -1,6 +1,6 @@
 package com.agentdoc.document.pojo.vo;
 
-import com.agentdoc.document.enums.DocType;
+import com.agentdoc.common.enums.DocType;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.ArrayList;

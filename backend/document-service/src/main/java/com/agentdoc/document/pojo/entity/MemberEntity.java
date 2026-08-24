@@ -1,7 +1,7 @@
 package com.agentdoc.document.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseLogicDeleteEntity;
-import com.agentdoc.document.enums.SpaceRole;
+import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.pojo.vo.MemberVO;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -32,5 +32,16 @@ public class MemberEntity extends BaseLogicDeleteEntity {
      */
     public MemberVO toVO() {
         return new MemberVO(getId(), userId, SpaceRole.fromCode(role), getCreatedAt());
+    }
+
+    /**
+     * 创建空间所有者成员关系。
+     */
+    public static MemberEntity owner(Long spaceId, Long userId) {
+        MemberEntity entity = new MemberEntity();
+        entity.setSpaceId(spaceId);
+        entity.setUserId(userId);
+        entity.setRole(SpaceRole.OWNER.getCode());
+        return entity;
     }
 }
