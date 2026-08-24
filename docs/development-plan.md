@@ -2,7 +2,7 @@
 
 > 基于《Agent‑Doc‑Workbench 项目完整开发规划文档》与技术栈定稿（docs/tech/）
 >
-> 更新时间：2026‑08‑23・状态：Phase 0 / 1 / 2 已完成（Phase 2 已完成开发，待合并入 main）
+> 更新时间：2026‑08‑24・状态：Phase 0 / 1 / 2 / 3 已完成（Phase 3 真实外部 MCP Runtime 已接入）
 
 ## 总体节奏
 
@@ -33,7 +33,7 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 
 **目标**：公共能力与鉴权闭环
 
--  `common` 模块：统一响应体、全局异常、雪花 ID、上下文工具、鉴权工具
+-  `common` 模块：统一响应体、全局异常、雪花 ID、上下文工具、鉴权工具；拆分 `common-security-spring-boot-starter` 统一承载 JWT Resource Server 与任务能力令牌验签
 -  数据库设计定稿：14 张表——user / oauth2_client / space / member / document / document_version / change_request / agent / task / model / token_usage / token_usage_detail / token_daily_snapshot / audit_log（逻辑删除、雪花 ID、UTF8MB4；Token 统计三表架构与 model 设计见 `docs/database-design.md`）
 -  `auth‑service`：注册登录、JWT (RS256) 签发与校验、Spring Authorization Server、Refresh Token 机制
 -  `gateway‑service`：路由、JWT 校验、跨域、限流
@@ -44,7 +44,7 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 ## Phase 2：文档核心（4‑6 天）
 
 **状态**：已完成（2026‑08‑22 开发 + 2026‑08‑23 模型 B 架构收尾）——空间/成员/文档/版本/Diff 数据闭环全部落地并端到端实测通过（20/20）：
-- **common**：**模型 B 安全**——common-web 装配 Spring Security Resource Server（`CommonSecurityAutoConfiguration`：permitAll 注解驱动 + JWT 解析 + 401 JSON），业务服务配置 `agent-doc.security.jwks-url` 即自行解析身份（无 X-User-* 自定义头、无 UserContext 体系，业务代码经 `AuthUtils` 读 SecurityContext）；`PageParam.toPage()` 落位为 mybatis‑plus starter 的 `PageUtils.toPage()`；新增 `PageVO` 统一分页响应；新增 **common‑feign‑spring‑boot‑starter**（首个跨服务调用，兑现规范 11，Feign 契约即客户端统一入口 + JWT 透传默认装配）
+- **common**：**模型 B 安全**——`common-security-spring-boot-starter` 装配 Spring Security Resource Server（`CommonSecurityAutoConfiguration`：permitAll 注解驱动 + JWT 解析 + 401 JSON）与任务能力 JWT 验签组件，业务服务配置 `agent-doc.security.jwks-url` 即自行解析身份（无 X-User-* 自定义头、无 UserContext 体系，业务代码经 `AuthUtils` 读 SecurityContext）；`PageParam.toPage()` 落位为 mybatis‑plus starter 的 `PageUtils.toPage()`；新增 `PageVO` 统一分页响应；新增 **common‑feign‑spring‑boot‑starter**（首个跨服务调用，兑现规范 11，Feign 契约即客户端统一入口 + JWT 透传默认装配）
 - **document‑service**：空间 CRUD（创建者自动 OWNER）+ 成员角色管理（OWNER/EDITOR/VIEWER，最后一名 OWNER 不可移除）+ 文档 CRUD/树形目录/移动防环/归档回收站 + 草稿/正式双模式 + 版本快照（编辑自动生成/列表/详情/对比/回滚生成新版本不删历史）+ 文档片段读取接口（控 Token）+ 合并端点 `POST /api/document/documents/merge`（服务间调用，SecurityContext 解析身份 + EDITOR 校验，业务异常转 HTTP 状态码供 Feign 识别）
 - **task‑service**：ChangeRequest 审批队列（提交/分页查询/通过/拒绝/退回，结构化 changes[] + baseVersion）+ 审批合并闭环（Feign 经网关调 document 应用变更，透传审批人 JWT 保持身份连续，基线版本校验防并发覆盖 40900）+ 3 个新实体（Model / TokenUsageDetail / TokenDailySnapshot）
 - **Flyway V4 / V5**：`change_request` 新增 `base_version`；`document.parent_id` 改为可空并将根目录从 `0` 迁移为 `NULL`；本机库已执行 V1‑V5
@@ -61,7 +61,7 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 
 **验收**：REST API 全量文档管理 + 版本回滚演示可用。
 
-## Phase 3：Agent 与任务（5‑7 天）
+## Phase 3：Agent 与任务（5‑7 天，已完成）
 
 **目标**：单 Agent MCP 接入 + Token 预算熔断
 
@@ -72,7 +72,7 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 -  Token 预算：任务级上限 + 空间全局预算 + 熔断 + 四维度用量统计（空间 / 文档 / 任务 / Agent）
 -  审计日志：操作主体（人 / Agent）、操作类型、关联任务、不可篡改
 
-**验收**：对接一个真实 / 模拟 MCP Agent，走通「下发任务→Agent 读取片段→产出变更→熔断 / 预算生效」链路。
+**验收**：Mock 已走通统一的「下发任务→读取片段→产出变更→审批/草稿写入→熔断与统计」链路；真实 Runtime 已使用 Spring AI MCP Client 的 SSE 传输完成接入，凭证来自 Agent 加密配置，调用前校验工具白名单和远端工具发现结果，真实 endpoint 集成验证按环境配置执行。
 
 ## Phase 4：前端（5‑7 天）
 

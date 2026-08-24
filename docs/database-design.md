@@ -1,6 +1,6 @@
 # 数据库设计说明
 
-> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/`（`V1__init.sql` 11 张表 + `V2__model_and_token_stats.sql` 3 张新表 / 2 处变更 + `V3__token_stats_indexes.sql` 查询索引，共 14 张业务表，Flyway 由 auth-service 统一托管）。
+> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/`（`V1__init.sql` 11 张表 + `V2__model_and_token_stats.sql` 3 张新表 / 2 处变更 + `V3__token_stats_indexes.sql` 查询索引 + `V6__phase3_task_agent_audit.sql` Phase 3 字段与审计约束，Flyway 由 auth-service 统一托管）。
 > 本文档与迁移 SQL 同步维护，业务口径变更须同时更新两侧。
 
 ## 整体说明
@@ -25,7 +25,7 @@
 | `token_usage_detail` | 统计 | Token 调用明细【真相源】，无条件落库 |
 | `token_usage` | 统计 | 历史日聚合表（折线图，截止昨日） |
 | `token_daily_snapshot` | 统计 | 当日快照表（今日卡片，仅 UI 展示） |
-| `audit_log` | 审计 | 全链路审计，只 INSERT 不可篡改 |
+| `audit_log` | 审计 | 全链路审计，只 INSERT 不可篡改；V6 增加 `task_id` 关联 |
 
 ## 表分工
 
@@ -38,7 +38,7 @@
 7. **token_usage_detail【真相源】**：每次 MCP 调用插入一条原始明细，保存 input/output/cached token、调用时间、model_id、预估费用；所有统计、重算全部以此表为准。
 8. **token_usage【历史日聚合表】**：每日凌晨定时聚合**昨日以及更早完整自然日**；用于前端 7/30 天消耗折线图；**不包含今日数据**；联合唯一索引 `dimension+obj_id+usage_date`。
 9. **token_daily_snapshot【当日快照表】**：存储当日统计快照；支持系统自动快照、用户手动异步触发快照；页面【今日消耗卡片】读取本表最新快照（同 `space_id + snapshot_date` 取 `created_at` 最大一条）；**只做 UI 展示，不用于业务熔断**。
-10. **audit_log**：全链路审计记录，不可篡改。
+10. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
 
 ## model 表对业务数据渲染的影响
 

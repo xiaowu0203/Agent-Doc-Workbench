@@ -1,7 +1,7 @@
-# Phase 3 交接文档（2026-08-22）
+# Phase 3 交接文档（2026-08-24）
 
-> 用途：供新会话（Agent / 协作者）快速进入状态，开始 Phase 3「Agent 与任务」开发。
-> 生成依据：当前仓库 `phase-2` 分支（Phase 2「文档核心」已完成并端到端实测通过，待合并入 main）；
+> 用途：供新会话（Agent / 协作者）快速了解 Phase 3「Agent 与任务」实现状态。
+> 生成依据：当前仓库 `phase-3` 分支（基于已合并 Phase 2 的 main）；
 > 规划来源：`docs/development-plan.md`（Phase 3）与《Agent-Doc-Workbench 项目完整开发规划文档》（2.3 Agent 协作能力 / 2.4 Token 成本管控）。
 
 ## 一、项目一句话
@@ -10,7 +10,7 @@
 Agent 禁止直接改写正式文档，所有修改生成 Diff 变更请求，经人工审批后合并，支持版本回滚、
 Token 预算熔断与全链路审计。v0.1 仅实现单 Agent，多 Agent 编排后置 v0.2。
 
-## 二、Phase 2 已完成（本分支，待合并）
+## 二、Phase 2 已完成（已合并入 main）
 
 - **空间 / 成员**：空间 CRUD（创建者自动 OWNER）+ 成员角色（OWNER/EDITOR/VIEWER，最后一名 OWNER 不可移除）
 - **文档核心**：文档 CRUD / 树形目录（移动防环）/ 草稿-正式双模式 / 归档-回收站-恢复
@@ -29,8 +29,10 @@ backend/
 ├── common/
 │   ├── common-core/                    # + feign 包（DocumentFeign 完整客户端契约：@FeignClient+HTTP 注解 / MergeRequestDTO / MergeResultVO / ChangeItemDTO）
 │   │                                   # + enums.ChangeOp + pojo.vo.PageVO
-│   ├── common-web-spring-boot-starter/ # + config.CommonSecurityAutoConfiguration（Resource Server）
-│   │                                   # + config.SecurityVerifyProperties + web.TraceIdFilter
+│   ├── common-security-spring-boot-starter/ # + CommonSecurityAutoConfiguration（Resource Server）
+│   │                                       # + TaskCapabilityVerifier / TaskCapabilityAuthenticationFilter
+│   │                                       # + config.SecurityVerifyProperties
+│   ├── common-web-spring-boot-starter/ # + web.TraceIdFilter
 │   │                                   # + security.PermissionInterceptor（@RequireLogin 注解驱动）
 │   ├── common-springdoc-spring-boot-starter/
 │   ├── common-mybatis-plus-spring-boot-starter/  # + utils.PageUtils
@@ -51,25 +53,49 @@ backend/
     └── enums/       ChangeRequestStatus / ChangeRequestType
 ```
 
-## 四、Phase 3 任务清单（摘自 development-plan.md）
+## 四、Phase 3 任务清单（当前实现状态）
 
 **目标**：单 Agent MCP 接入 + Token 预算熔断（预计 5-7 天）
 
-- agent 业务模块：Agent 配置、MCP 凭证加密存储（AES，`agent.mcp_config`）、权限范围（空间/目录/文档）、工具白名单
-- task-service：任务状态机（PENDING→RUNNING→COMPLETED/TERMINATED/FAILED），RabbitMQ 异步消费
-- `AgentRuntime` 抽象 + `McpAgentRuntime` 实现（Spring AI MCP Client，Workbench 主动调用外部 Agent）
-- 变更输出 → ChangeRequest 转换：**正式文档入审批队列（复用 Phase 2 已建链路）、草稿文档直写**
-- Token 预算：任务级上限 + 空间全局预算 + 熔断 + 四维度用量统计（空间/文档/任务/Agent）
-- 审计日志：操作主体（人/Agent）、操作类型、关联任务、不可篡改（audit_log 表已建，Insert-only）
+- ✅ Agent 配置、AES-GCM 加密存储（`agent.mcp_config`）、空间权限和工具白名单
+- ✅ task-service 任务状态机（PENDING→RUNNING→COMPLETED/TERMINATED/FAILED）与 RabbitMQ 手动确认、重试、DLQ
+- ✅ `AgentRuntime` 抽象、可重复 Mock Runtime 与真实 `McpAgentRuntime`（Spring AI MCP Client SSE）
+- ✅ 变更输出转换：**正式文档进入 ChangeRequest 审批队列，草稿文档走 Agent 能力通道直写**
+- ✅ 空间/Agent/任务预算冻结为任务有效预算，调用明细无条件落库，超限终止；四维度历史聚合与今日快照
+- ✅ Agent 能力 JWT、文档读写权限、任务能力回查和审计日志追加写入
+- ✅ 外部 MCP：按 Agent 解密配置建立短生命周期 SSE 客户端，调用前校验远端工具与本地白名单，结果必须转换为结构化变更
 
-**验收**：对接一个真实/模拟 MCP Agent，走通「下发任务→Agent 读取片段→产出变更→熔断/预算生效」链路。
+**当前验收**：Mock 已完成端到端任务链路；真实 MCP Runtime 已完成 SDK 接入、配置/白名单/结构化结果单元测试和 task-service 编译验证，连接真实 endpoint 时按上述配置进行集成验证。
+
+### Phase 3 配置
+
+- `AGENT_MCP_CONFIG_KEY`：Base64 编码的 16/24/32 字节 AES 密钥。
+- `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`：auth-service 的 RSA JWT 密钥对；任务能力 JWT 与登录 JWT 共用该密钥，由 auth-service 统一签发。
+- 生产环境固定使用 `McpAgentRuntime` 调用外部 MCP Server；测试通过 Mockito 或结构化 MCP 响应构造隔离外部依赖。
+- Agent 的 `mcpConfig` 解密后必须是如下 SSE 配置，随后再次以密文保存：
+  ```json
+  {
+    "transport": "sse",
+    "baseUrl": "https://mcp.example.com",
+    "sseEndpoint": "/sse",
+    "toolName": "agent.execute",
+    "bearerToken": "由 Agent 配置接口写入并加密存储",
+    "headers": {"X-Tenant": "demo"},
+    "requestTimeoutSeconds": 60
+  }
+  ```
+- 外部工具入参包含 `taskId`、`agentId`、`documentId`、`instruction`、受控 `documentFragment`、片段位置和 `responseFormat=agent-doc-workbench.v1`。
+- 外部工具应返回 `structuredContent` 或 JSON 文本：`summary`、`changes[]`、`inputTokens`、`cachedInputTokens`、`outputTokens`；`changes[].op` 仅支持 `replace` / `append`。
+- RabbitMQ：`agent-doc-workbench.task.execute` 队列，失败消息进入 `agent-doc-workbench.task.dead`。
+
+任务能力签发接口为 `/api/auth/internal/task-capabilities`，要求普通用户认证上下文；task-service 只在创建任务时远程调用一次，用户 `Authorization JWT` 由现有 Feign 拦截器透传，任务执行与 document-service 访问均通过 auth-service JWKS 本地验签。
 
 ## 五、Phase 2 → Phase 3 交接点（已就绪的复用资产）
 
 1. **审批链路可直接复用**：ChangeRequestService.submit（proposedBy 已支持 Agent ID 语义，sourceTaskId 字段 Phase 3 由任务提交时填充）
 2. **合并接口已通**：`common.feign.DocumentFeign` 即完整 Feign 客户端（统一入口，`@FeignClient` + HTTP 注解均标注在契约上），task-service 直接注入调用（经网关）；document-service 侧 `/api/document/documents/merge` 已实现并校验 EDITOR 角色；冲突 40900 语义已验证；合并操作人身份 = 审批人（JWT 透传，已实测 updatedBy 一致）
-3. **片段读取接口已通**：`readFragment` 供 MCP 工具调用（工具白名单需在 Phase 3 接入）
-4. **权限校验 Feign 契约待补**（Phase 3 明确要求）：document 需提供「空间成员角色校验」Feign 接口（如 `checkSpacePermission(spaceId, userId, minRole)`），task 侧任务创建等场景复用（合并接口的角色校验已就绪：document 侧直接 SpacePermissionService 校验）
+3. **片段读取接口已通**：`readFragment` 由任务执行链路按需读取，真实 MCP Runtime 只接收该受控片段；工具白名单已在调用前校验
+4. **权限校验 Feign 契约已就绪**：document 提供 `checkSpacePermission`，task 侧 Agent 配置、任务创建与执行链路复用；合并接口继续由 document 侧校验 EDITOR 角色
 5. **Token 统计三表实体已建**：ModelEntity / TokenUsageDetailEntity / TokenDailySnapshotEntity；聚合/快照/对账逻辑（凌晨聚合 + 3min 节流快照 + 任务级本地累计 + 明细 SUM 对账）见 `docs/database-design.md`
 6. **Agent 表结构已就绪**：`agent`（含 `model_id` 关联、`mcp_config` AES 加密预留）、`model` 表；Agent 实体已含 modelId
 

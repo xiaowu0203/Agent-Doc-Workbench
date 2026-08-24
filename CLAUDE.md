@@ -136,6 +136,7 @@ public interface AgentRuntime {
 15. **验证分级（禁止每次改动都跑全量+端到端）**：按改动影响面选择最小验证手段——纯注释/文档改动**不验证**；删除无引用死代码（先 grep 确认零引用、引用处已同步清理）**仅编译受影响模块**；业务逻辑改动**跑该模块测试**；只有鉴权/跨服务/公共层装配等高风险改动才**全量测试 + 端到端**。全量 reactor test（约 2 分钟）与端到端（启动 4 服务）是重武器，只在真正需要时使用
 16. **查询参数封装（除 path 变量外，请求参数 ≥ 3 个封装为 SearchParam）**：`@PathVariable`（资源定位）不计入，其余 query/body 参数达到 3 个及以上时封装为查询参数对象统一经 `@RequestBody` 传递；**查询参数统一命名 `XXXSearchParam`、放各业务服务 `pojo.param` 包**（写入载荷仍为 `pojo.dto` 的 `XXXDTO`）；**复杂查询接口（多过滤条件 + 分页）用 POST + Body**（"POST for search" 惯例，规避 GET + body 不规范），分页参数（PageParam）并入 SearchParam 一并传递；Service 层对应改收 SearchParam，避免 Controller 字段搬运
 17. **跨业务访问统一走 Service/Feign（禁止直连他域 Mapper）**：业务 Service 只允许使用**自身业务域**的 Mapper（如 document 域可查 space/member/document/document_version，task 域可查 change_request 等）；需要其他业务数据（如 task 查文档标题/按空间过滤）一律经对应业务的 **Feign 契约**（common-core `com.agentdoc.common.feign` 的 `XXXXFeign`）调用对方 Service 实现的能力，**禁止在 Service 中引入他域 Mapper 直连对方表**；批量场景契约应支持批量查询（如 `getDocumentRefs(List<Long>)` 一次回填标题，避免逐条 RPC）
+18. **Java 类型统一使用 import 导入**：类、接口、枚举及其静态成员统一在文件头部通过 `import` / `import static` 导入，业务代码（字段、方法签名、注解、泛型及方法体）只使用简单类名，**禁止直接书写全限定类名**（如 `java.time.LocalDate.now()`、`com.agentdoc.common.utils.AuthUtils.isAgent()`）；仅当同一文件确实存在多个同名类型、无法同时用简单类名区分时，允许其中必要的类型使用全限定名。注解中的包扫描字符串等本身要求包名字符串的配置不受此规则限制
 
 ### 开源规范
 - 目标开源，License 倾向 Apache-2.0；发布前补齐 README、CONTRIBUTING、安全说明

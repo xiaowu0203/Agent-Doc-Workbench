@@ -3,14 +3,14 @@
 > 面向个人/小团队的 Agent 活文档协作开源 Web 工作台
 > 文档，作为 AI Agent 任务的唯一协作载体。
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%202%20ready-green)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%203%20ready-green)
 
 [English](./README.en.md) | 简体中文
 
 **仓库**
 - Gitee：https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub：https://github.com/xiaowu0203/Agent-Doc-Workbench
-- 分支：main（稳定）· phase-2（Phase 2 文档核心，待合并入 main）
+- 分支：main（稳定）· phase-3（Phase 3 Agent 与任务开发）
 
 ---
 
@@ -75,14 +75,14 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | --- | --- | --- |
 | Phase 0 | 工程基建：Git、Docker Compose、前后端骨架 | ✅ 已完成（2026-08-20） |
 | Phase 1 | 后端地基：common 5 子模块、auth 鉴权闭环（JWT RS256 + JWKS）、gateway 路由/限流/OpenAPI 聚合、14 张表（含 Token 统计三表架构） | ✅ 已完成并合并入 main（2026-08-22） |
-| Phase 2 | 文档核心：空间 / 文档 / 版本 / Diff 审批 | ✅ 已完成（2026-08-23，待合并入 main） |
-| Phase 3 | Agent 与任务：MCP 接入、Token 熔断 | 🚧 待启动 |
+| Phase 2 | 文档核心：空间 / 文档 / 版本 / Diff 审批 | ✅ 已完成并合并入 main（2026-08-23） |
+| Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | ✅ 已完成（2026-08-24） |
 
 交接文档：[docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) · [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md)
 
 ## 快速开始
 
-> Phase 0 / 1 已合并入 main，Phase 2 文档核心已在 `phase-2` 分支完成，下一步进入 Phase 3 Agent 与任务开发。
+> Phase 0 / 1 / 2 已合并入 main，Phase 3 已在 `phase-3` 分支完成核心实现。
 
 ```bash
 # 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Nacos）
@@ -109,8 +109,8 @@ pnpm dev
 | --- | --- | --- |
 | Phase 0 | 工程基建：Git、Docker Compose、前后端骨架 | 已完成 |
 | Phase 1 | 后端地基：common、auth、gateway | 已完成 |
-| Phase 2 | 文档核心：空间/文档/版本/Diff | 已完成，待合并 |
-| Phase 3 | Agent 与任务：MCP 接入、Token 熔断 | 待启动 |
+| Phase 2 | 文档核心：空间/文档/版本/Diff | 已完成并合并 |
+| Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | 已完成 |
 | Phase 4 | 前端 8 个核心页面 | 待启动 |
 | Phase 5 | 闭环联调与测试 | 待启动 |
 | Phase 6 | 开源发布准备 | 待启动 |
