@@ -1,0 +1,68 @@
+# agent‑service 服务端口，默认8084，可通过环境变量 AGENT_SERVICE_PORT 覆盖
+server:
+  port: ${AGENT_SERVICE_PORT:8084}
+
+spring:
+  application:
+    # Spring应用名称，注册到Nacos等注册中心时使用
+    name: agent-service
+  # Mysql配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+  ai:
+    openai:
+      # OpenAI API‑Key，运行时动态覆盖，配置文件仅占位符
+      api-key: ${OPENAI_API_KEY:unused-runtime-placeholder}
+    mcp:
+      # 关闭Spring‑AI内置MCP Client；本服务使用自研MCP Client实现，不使用框架自带
+      client:
+        enabled: false
+  jackson:
+    # JSON序列化全局时区：东八区
+    time-zone: Asia/Shanghai
+
+agent-doc:
+  security:
+    # Agent内部配置访问密钥
+    agent-config-key: ${AGENT_CONFIG_KEY:}
+    # JWT验签JWKS地址，用于校验外部传入的Task‑Capability‑Token任务能力令牌
+    jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    # 是否开启TaskCapabilityAuthenticationFilter任务能力令牌鉴权过滤器
+    task-capability-filter-enabled: true
+  agent:
+    # Agent服务对外公网可访问地址，用于A2A协议回调、生成Agent‑Card元信息
+    public-url: ${AGENT_PUBLIC_URL:http://localhost:9090}
+    # Agent平台级System Prompt资源文件路径，classpath下md文件，作为大模型系统提示词
+    platform-prompt-resource: classpath:prompts/platform-system-prompt.md
+  openapi:
+    # OpenAPI文档标题
+    title: Agent Service API
+    # OpenAPI文档描述：包含Agent配置管理、A2A Server协议、Spring AI运行时能力
+    description: Agent 配置、A2A Server 与 Spring AI Runtime
+  feign:
+    # Feign调用网关地址，用于反向调用workbench工作台服务（MCP回调、业务接口）
+    gateway-url: ${GATEWAY_URL:http://localhost:9090}
+
+# Spring Boot Actuator 监控端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        # 对外暴露健康、信息端点
+        include: health,info
+  endpoint:
+    health:
+      # 健康接口不返回详细明细，避免敏感信息泄露
+      show-details: never
+
+# SpringDoc OpenAPI(Swagger)文档配置
+springdoc:
+  # Swagger‑UI访问路径
+  swagger-ui:
+    path: /swagger-ui.html
+  # OpenAPI原始JSON文档访问路径
+  api-docs:
+    path: /v3/api-docs
