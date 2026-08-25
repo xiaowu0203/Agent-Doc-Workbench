@@ -62,4 +62,22 @@ class A2aTaskConvertorTest {
         assertThat(A2aTaskConvertor.mapStatus(TaskState.TASK_STATE_REJECTED))
                 .isEqualTo(TaskStatus.FAILED);
     }
+
+    @Test
+    void shouldKeepMissingTokenMetadataAsNull() {
+        Task remoteTask = Task.builder()
+                .id("a2a-task-id")
+                .contextId("a2a-context-id")
+                .status(new org.a2aproject.sdk.spec.TaskStatus(TaskState.TASK_STATE_COMPLETED))
+                .artifacts(List.of())
+                .build();
+
+        A2aTokenUsage usage = A2aTaskConvertor.tokenUsage(remoteTask);
+
+        assertThat(usage.inputTokens()).isNull();
+        assertThat(usage.cachedInputTokens()).isNull();
+        assertThat(usage.outputTokens()).isNull();
+        assertThat(usage.inputTokensEstimated()).isFalse();
+        assertThat(usage.outputTokensEstimated()).isFalse();
+    }
 }

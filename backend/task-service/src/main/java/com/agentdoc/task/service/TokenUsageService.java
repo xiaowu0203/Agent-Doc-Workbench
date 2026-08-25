@@ -48,7 +48,7 @@ public class TokenUsageService {
      * <p>
      * 事务原子性：写入用量明细、更新任务已消耗Token，要么全部成功，要么全部回滚。
      * <ol>
-     * <li>读取模型单价；对输入、缓存输入、输出token做下限保护，最小取0，避免负数；</li>
+     * <li>读取模型单价；保留远端返回的null，避免把“未返回”误判为0；</li>
      * <li>构建并插入{@link TokenUsageDetailEntity}执行明细记录；</li>
      * <li>累加更新任务的tokensUsed已消耗token；</li>
      * <li>判断：如果设置了任务tokenBudget预算，且累加后已消耗超过预算，则自动将任务置为TERMINATED，记录“Token预算已用尽”错误信息与结束时间；返回false表示任务已被预算终止；</li>
@@ -62,29 +62,33 @@ public class TokenUsageService {
      */
     @Transactional(rollbackFor = Exception.class)
     public boolean recordRemote(TaskEntity task, AgentExecutionProfileVO agent, A2aTokenUsage result) {
-        // 输入token
-        long input = Math.max(0, result.inputTokens());
-        // 缓存token
-        long cachedInput = Math.max(0, result.cachedInputTokens());
-        // 输出token
-        long output = Math.max(0, result.outputTokens());
+        Long input = result.inputTokens();
+        Long cachedInput = result.cachedInputTokens();
+        Long output = result.outputTokens();
+        Long used = input == null || output == null ? null : input + output;
+        BigDecimal cost = input == null || output == null
+                ? null
+                : estimateCost(agent.inputPricePerMillion(), agent.outputPricePerMillion(), input, output);
+        boolean estimated = result.inputTokensEstimated() || result.outputTokensEstimated();
 
         // 构建明细记录并入库
         TokenUsageDetailEntity detail = TokenUsageConvertor.toDetail(
                 task, agent.agentId(), agent.modelId(), input, cachedInput, output,
-                estimateCost(agent.inputPricePerMillion(), agent.outputPricePerMillion(), input, output));
+                result.inputTokensEstimated(), result.cachedInputTokensEstimated(),
+                result.outputTokensEstimated(), cost);
         detailMapper.insert(detail);
 
-        // 累加本次输入+输出，更新任务已消耗token
-        long used = input + output;
+        // 输入或输出缺失时，任务总量也保持null，不能伪装成0
         taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                 .eq(TaskEntity::getId, task.getId())
-                .set(TaskEntity::getTokensUsed, used));
+                .set(TaskEntity::getTokensUsed, used)
+                .set(TaskEntity::getTokensEstimated, estimated));
         // 更新内存对象，方便后续逻辑判断
         task.setTokensUsed(used);
+        task.setTokensEstimated(estimated);
 
-        // 任务配置了tokenBudget，且已消耗超过预算 → 自动终止任务
-        if (task.getTokenBudget() != null && used > task.getTokenBudget()) {
+        // 只有总量可用时才进行预算判断
+        if (task.getTokenBudget() != null && used != null && used > task.getTokenBudget()) {
             taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                     .eq(TaskEntity::getId, task.getId())
                     .set(TaskEntity::getStatus, TaskStatus.TERMINATED.getCode())
@@ -123,8 +127,19 @@ public class TokenUsageService {
         LocalDate end = date.plusDays(TaskConstant.DAY_OFFSET);
         Long input = detailMapper.sumInputBySpaceAndDate(spaceId, date, end);
         Long output = detailMapper.sumOutputBySpaceAndDate(spaceId, date, end);
+        boolean inputUnavailable = Boolean.TRUE.equals(
+                detailMapper.hasNullInputBySpaceAndDate(spaceId, date, end));
+        boolean outputUnavailable = Boolean.TRUE.equals(
+                detailMapper.hasNullOutputBySpaceAndDate(spaceId, date, end));
+        boolean inputEstimated = !inputUnavailable && Boolean.TRUE.equals(
+                detailMapper.hasEstimatedInputBySpaceAndDate(spaceId, date, end));
+        boolean outputEstimated = !outputUnavailable && Boolean.TRUE.equals(
+                detailMapper.hasEstimatedOutputBySpaceAndDate(spaceId, date, end));
         return TokenUsageTodayVO.of(spaceId, input, output,
-                detailMapper.sumCostBySpaceAndDate(spaceId, date, end));
+                inputUnavailable || outputUnavailable ? null
+                        : detailMapper.sumCostBySpaceAndDate(spaceId, date, end),
+                inputUnavailable ? false : inputEstimated,
+                outputUnavailable ? false : outputEstimated);
     }
 
     /**
@@ -172,7 +187,7 @@ public class TokenUsageService {
      * @return 估算费用；model为null返回{@link BigDecimal#ZERO}
      */
     private BigDecimal estimateCost(BigDecimal configuredInputPrice, BigDecimal configuredOutputPrice,
-                                    long input, long output) {
+                                    Long input, Long output) {
         BigDecimal inputPrice = configuredInputPrice == null ? BigDecimal.ZERO : configuredInputPrice;
         BigDecimal outputPrice = configuredOutputPrice == null ? BigDecimal.ZERO : configuredOutputPrice;
 

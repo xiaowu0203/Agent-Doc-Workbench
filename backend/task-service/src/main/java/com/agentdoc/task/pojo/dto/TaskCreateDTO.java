@@ -40,7 +40,8 @@ public record TaskCreateDTO(
         entity.setInstruction(instruction);
         entity.setStatus(TaskStatus.PENDING.getCode());
         entity.setTokenBudget(budget);
-        entity.setTokensUsed(0L);
+        entity.setTokensUsed(null);
+        entity.setTokensEstimated(Boolean.FALSE);
         entity.setRetryCount(0);
         entity.setCreatedBy(userId);
         return entity;

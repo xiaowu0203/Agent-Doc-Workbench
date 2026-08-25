@@ -28,6 +28,42 @@
           AND call_time &lt; #{end}
     </select>
 
+    <select id="hasNullInputBySpaceAndDate" resultType="java.lang.Boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM token_usage_detail
+        WHERE space_id = #{spaceId}
+          AND call_time &gt;= #{start}
+          AND call_time &lt; #{end}
+          AND input_tokens IS NULL
+    </select>
+
+    <select id="hasNullOutputBySpaceAndDate" resultType="java.lang.Boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM token_usage_detail
+        WHERE space_id = #{spaceId}
+          AND call_time &gt;= #{start}
+          AND call_time &lt; #{end}
+          AND output_tokens IS NULL
+    </select>
+
+    <select id="hasEstimatedInputBySpaceAndDate" resultType="java.lang.Boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM token_usage_detail
+        WHERE space_id = #{spaceId}
+          AND call_time &gt;= #{start}
+          AND call_time &lt; #{end}
+          AND input_tokens_estimated = 1
+    </select>
+
+    <select id="hasEstimatedOutputBySpaceAndDate" resultType="java.lang.Boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM token_usage_detail
+        WHERE space_id = #{spaceId}
+          AND call_time &gt;= #{start}
+          AND call_time &lt; #{end}
+          AND output_tokens_estimated = 1
+    </select>
+
     <select id="sumCostBySpaceAndDate" resultType="java.math.BigDecimal">
         SELECT COALESCE(SUM(estimated_cost), 0)
         FROM token_usage_detail

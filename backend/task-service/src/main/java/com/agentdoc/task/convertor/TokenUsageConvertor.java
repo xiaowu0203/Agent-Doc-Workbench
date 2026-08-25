@@ -21,7 +21,9 @@ public final class TokenUsageConvertor {
     }
 
     public static TokenUsageDetailEntity toDetail(TaskEntity task, Long agentId, Long modelId,
-                                                   long input, long cachedInput, long output,
+                                                   Long input, Long cachedInput, Long output,
+                                                   boolean inputEstimated, boolean cachedInputEstimated,
+                                                   boolean outputEstimated,
                                                    BigDecimal estimatedCost) {
         TokenUsageDetailEntity entity = new TokenUsageDetailEntity();
         entity.setSpaceId(task.getSpaceId());
@@ -29,8 +31,11 @@ public final class TokenUsageConvertor {
         entity.setAgentId(agentId);
         entity.setModelId(modelId);
         entity.setInputTokens(input);
+        entity.setInputTokensEstimated(inputEstimated);
         entity.setCachedInputTokens(cachedInput);
+        entity.setCachedInputTokensEstimated(cachedInputEstimated);
         entity.setOutputTokens(output);
+        entity.setOutputTokensEstimated(outputEstimated);
         entity.setCallTime(LocalDateTime.now());
         entity.setEstimatedCost(estimatedCost);
         return entity;

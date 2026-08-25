@@ -56,6 +56,9 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "已消耗 Token 数")
     private Long tokensUsed;
 
+    @Schema(description = "已消耗 Token 是否包含本地估算值")
+    private Boolean tokensEstimated;
+
     @Schema(description = "开始时间")
     private LocalDateTime startTime;
 

@@ -63,6 +63,7 @@ public class A2aTaskSynchronizationService {
                 .set(TaskEntity::getResultSummary, task.getResultSummary())
                 .set(TaskEntity::getErrorMessage, task.getErrorMessage())
                 .set(TaskEntity::getTokensUsed, task.getTokensUsed())
+                .set(TaskEntity::getTokensEstimated, task.getTokensEstimated())
                 .set(TaskEntity::getAgentExecutionId, task.getAgentExecutionId())
                 .set(TaskEntity::getPromptHash, task.getPromptHash()));
         // 更新行数为0：说明任务已经不是远端活跃状态，放弃同步

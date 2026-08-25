@@ -12,13 +12,21 @@ public record TokenUsageTodayVO(
         @Schema(description = "输入 Token 数") Long inputTokens,
         @Schema(description = "输出 Token 数") Long outputTokens,
         @Schema(description = "输入与输出 Token 总数") Long tokens,
-        @Schema(description = "预估费用，人民币") BigDecimal estimatedCost) {
+        @Schema(description = "预估费用，人民币") BigDecimal estimatedCost,
+        @Schema(description = "输入 Token 是否包含本地估算值") boolean inputTokensEstimated,
+        @Schema(description = "输出 Token 是否包含本地估算值") boolean outputTokensEstimated) {
 
     public static TokenUsageTodayVO of(Long spaceId, Long inputTokens, Long outputTokens,
                                        BigDecimal estimatedCost) {
-        long normalizedInput = inputTokens == null ? 0 : inputTokens;
-        long normalizedOutput = outputTokens == null ? 0 : outputTokens;
+        return of(spaceId, inputTokens, outputTokens, estimatedCost, false, false);
+    }
+
+    public static TokenUsageTodayVO of(Long spaceId, Long inputTokens, Long outputTokens,
+                                       BigDecimal estimatedCost, boolean inputTokensEstimated,
+                                       boolean outputTokensEstimated) {
+        Long tokens = inputTokens == null || outputTokens == null ? null : inputTokens + outputTokens;
         return new TokenUsageTodayVO(
-                spaceId, normalizedInput, normalizedOutput, normalizedInput + normalizedOutput, estimatedCost);
+                spaceId, inputTokens, outputTokens, tokens, estimatedCost,
+                inputTokensEstimated, outputTokensEstimated);
     }
 }

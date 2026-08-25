@@ -26,6 +26,22 @@ public interface TokenUsageDetailMapper extends BaseMapper<TokenUsageDetailEntit
                                  @Param("start") LocalDate start,
                                  @Param("end") LocalDate end);
 
+    Boolean hasNullInputBySpaceAndDate(@Param("spaceId") Long spaceId,
+                                       @Param("start") LocalDate start,
+                                       @Param("end") LocalDate end);
+
+    Boolean hasNullOutputBySpaceAndDate(@Param("spaceId") Long spaceId,
+                                        @Param("start") LocalDate start,
+                                        @Param("end") LocalDate end);
+
+    Boolean hasEstimatedInputBySpaceAndDate(@Param("spaceId") Long spaceId,
+                                            @Param("start") LocalDate start,
+                                            @Param("end") LocalDate end);
+
+    Boolean hasEstimatedOutputBySpaceAndDate(@Param("spaceId") Long spaceId,
+                                             @Param("start") LocalDate start,
+                                             @Param("end") LocalDate end);
+
     BigDecimal sumCostBySpaceAndDate(@Param("spaceId") Long spaceId,
                                      @Param("start") LocalDate start,
                                      @Param("end") LocalDate end);

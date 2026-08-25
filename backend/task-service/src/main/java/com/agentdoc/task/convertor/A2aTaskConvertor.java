@@ -92,7 +92,7 @@ public final class A2aTaskConvertor {
      * <p>从执行摘要Artifact的metadata读取输入Token、缓存输入Token、输出Token</p>
      *
      * @param remoteTask 远端A2A任务对象
-     * @return A2A Token用量对象，无元数据时全部置0
+     * @return A2A Token用量对象，无元数据时各用量保持null
      */
     public static A2aTokenUsage tokenUsage(Task remoteTask) {
         // 从Artifact列表筛选出【执行摘要】Artifact
@@ -100,12 +100,15 @@ public final class A2aTaskConvertor {
         // 解析元数据并返回Token用量
         Map<String, Object> metadata = artifact == null ? null : artifact.metadata();
         if (metadata == null) {
-            return new A2aTokenUsage(0L, 0L, 0L);
+            return new A2aTokenUsage(null, null, null, false, false, false);
         }
         return new A2aTokenUsage(
-                longValue(metadata.get(A2aMetadataConstant.INPUT_TOKENS)),
-                longValue(metadata.get(A2aMetadataConstant.CACHED_INPUT_TOKENS)),
-                longValue(metadata.get(A2aMetadataConstant.OUTPUT_TOKENS)));
+                nullableLong(metadata.get(A2aMetadataConstant.INPUT_TOKENS)),
+                nullableLong(metadata.get(A2aMetadataConstant.CACHED_INPUT_TOKENS)),
+                nullableLong(metadata.get(A2aMetadataConstant.OUTPUT_TOKENS)),
+                booleanValue(metadata.get(A2aMetadataConstant.INPUT_TOKENS_ESTIMATED)),
+                booleanValue(metadata.get(A2aMetadataConstant.CACHED_INPUT_TOKENS_ESTIMATED)),
+                booleanValue(metadata.get(A2aMetadataConstant.OUTPUT_TOKENS_ESTIMATED)));
     }
 
     /**
@@ -120,11 +123,13 @@ public final class A2aTaskConvertor {
             return;
         }
         // 获取输入token
-        long inputTokens = longValue(metadata.get(A2aMetadataConstant.INPUT_TOKENS));
+        Long inputTokens = nullableLong(metadata.get(A2aMetadataConstant.INPUT_TOKENS));
         // 获取输出token
-        long outputTokens = longValue(metadata.get(A2aMetadataConstant.OUTPUT_TOKENS));
+        Long outputTokens = nullableLong(metadata.get(A2aMetadataConstant.OUTPUT_TOKENS));
         // 设置总token
-        entity.setTokensUsed(inputTokens + outputTokens);
+        entity.setTokensUsed(sum(inputTokens, outputTokens));
+        entity.setTokensEstimated(booleanValue(metadata.get(A2aMetadataConstant.INPUT_TOKENS_ESTIMATED))
+                || booleanValue(metadata.get(A2aMetadataConstant.OUTPUT_TOKENS_ESTIMATED)));
         // 回填agent执行ID
         entity.setAgentExecutionId(nullableLong(metadata.get(A2aMetadataConstant.AGENT_EXECUTION_ID)));
         // 获取prompt哈希
@@ -178,17 +183,6 @@ public final class A2aTaskConvertor {
     }
 
     /**
-     * 对象安全转long，null则返回0
-     *
-     * @param value 待转换对象
-     * @return 转换后long，空值返回0
-     */
-    private static long longValue(Object value) {
-        Long converted = nullableLong(value);
-        return converted == null ? 0L : converted;
-    }
-
-    /**
      * 对象安全转Long包装类型，null保持null
      *
      * @param value 待转换对象
@@ -196,6 +190,14 @@ public final class A2aTaskConvertor {
      */
     private static Long nullableLong(Object value) {
         return value == null ? null : Long.valueOf(String.valueOf(value));
+    }
+
+    private static boolean booleanValue(Object value) {
+        return value != null && Boolean.parseBoolean(String.valueOf(value));
+    }
+
+    private static Long sum(Long left, Long right) {
+        return left == null || right == null ? null : left + right;
     }
 
     /**
