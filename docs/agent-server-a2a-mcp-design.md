@@ -117,10 +117,13 @@ flowchart LR
 | 字段 | 说明 |
 | --- | --- |
 | `provider` | 模型供应商枚举 |
+| `adapter_type` | 实际调用协议适配器类型 |
 | `model_key` | 供应商真实模型标识 |
 | `display_name` | 展示名称 |
 | `base_url` | 可选自定义模型地址 |
 | `encrypted_api_key` | 加密后的模型密钥 |
+| `options_json` | 适配器扩展配置 JSON |
+| `config_version` | 模型调用配置版本，每次有效修改递增 |
 | `context_window` | 上下文窗口 |
 | `max_output_tokens` | 最大输出 Token |
 | `input_price_per_million` | 输入价格 |
@@ -128,6 +131,8 @@ flowchart LR
 | `status` | 启用状态枚举 |
 
 模型密钥使用独立的 `AGENT_CONFIG_KEY` 加密，接口不返回密钥明文或密文。
+运行时按 `model_id + config_version` 缓存 ChatModel 实例，缓存采用有界 LRU；模型配置变更时主动失效该模型的全部旧版本，淘汰或服务关闭时释放厂商客户端资源。
+模型适配器同时提供单次调用和流式调用边界；流式调用只在 A2A `message:stream` 请求中启用，文本增量通过 `AgentEmitter` 推送，工具调用仍由上层统一循环处理。
 
 ### 4.3 AgentExecutionEntity
 
