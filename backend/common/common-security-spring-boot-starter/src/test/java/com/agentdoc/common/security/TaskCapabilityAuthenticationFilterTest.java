@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -82,5 +83,26 @@ class TaskCapabilityAuthenticationFilterTest {
 
         assertThat(TaskCapabilityContext.current()).isNull();
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isSameAs(originalAuthentication);
+    }
+
+    @Test
+    void acceptsBearerCapabilityForMcpEndpoint() throws Exception {
+        String token = "task-capability";
+        TaskCapabilityVerifier verifier = mock(TaskCapabilityVerifier.class);
+        Jwt jwt = Jwt.withTokenValue(token)
+                .header("alg", "none")
+                .subject("agent")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(60))
+                .build();
+        when(verifier.verify(token)).thenReturn(jwt);
+        TaskCapabilityAuthenticationFilter filter = new TaskCapabilityAuthenticationFilter(verifier);
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+        request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+
+        filter.doFilter(request, new MockHttpServletResponse(), (req, response) ->
+                assertThat(TaskCapabilityContext.current()).isEqualTo(token));
+
+        assertThat(TaskCapabilityContext.current()).isNull();
     }
 }
