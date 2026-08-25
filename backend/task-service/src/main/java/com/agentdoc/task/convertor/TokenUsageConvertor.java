@@ -2,7 +2,6 @@ package com.agentdoc.task.convertor;
 
 import com.agentdoc.task.enums.TokenSnapshotType;
 import com.agentdoc.task.enums.TokenUsageDimension;
-import com.agentdoc.task.pojo.entity.AgentEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.entity.TokenDailySnapshotEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
@@ -21,14 +20,14 @@ public final class TokenUsageConvertor {
     private TokenUsageConvertor() {
     }
 
-    public static TokenUsageDetailEntity toDetail(TaskEntity task, AgentEntity agent,
+    public static TokenUsageDetailEntity toDetail(TaskEntity task, Long agentId, Long modelId,
                                                    long input, long cachedInput, long output,
                                                    BigDecimal estimatedCost) {
         TokenUsageDetailEntity entity = new TokenUsageDetailEntity();
         entity.setSpaceId(task.getSpaceId());
         entity.setTaskId(task.getId());
-        entity.setAgentId(agent.getId());
-        entity.setModelId(agent.getModelId());
+        entity.setAgentId(agentId);
+        entity.setModelId(modelId);
         entity.setInputTokens(input);
         entity.setCachedInputTokens(cachedInput);
         entity.setOutputTokens(output);

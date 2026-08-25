@@ -6,31 +6,33 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.task.constant.TaskConstant;
-import com.agentdoc.task.enums.AgentStatus;
+import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.enums.AuditAction;
 import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
-import com.agentdoc.task.pojo.entity.AgentEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.vo.TaskVO;
-import com.agentdoc.task.security.McpConfigCryptoService;
+import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -44,10 +46,11 @@ import java.util.List;
 public class TaskService {
 
     private final TaskMapper taskMapper;
-    private final AgentService agentService;
+    private final A2aTaskClient a2aTaskClient;
+    private final AgentFeign agentFeign;
     private final DocumentFeign documentFeign;
     private final TaskMessagePublisher messagePublisher;
-    private final McpConfigCryptoService cryptoService;
+    private final TaskCapabilityCryptoService cryptoService;
     private final AuthFeign authFeign;
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
@@ -74,21 +77,21 @@ public class TaskService {
         Long userId = AuthUtils.getUserIdOrException();
         // 根据文档Id查询文档相关信息（所属空间Id、文档类型、状态、版本等等）
         DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(dto.documentId()));
-        // 根据agentId查询Agent信息
-        AgentEntity agent = agentService.require(dto.agentId());
+        // 根据agentId远程调用查询Agent信息
+        AgentExecutionProfileVO agent = requireData(agentFeign.getExecutionProfile(dto.agentId()));
 
-        // 校验Agent、文档是否匹配
-        if (!Integer.valueOf(AgentStatus.ENABLED.getCode()).equals(agent.getStatus())) {
+        // 校验Agent是否启用、文档是否匹配
+        if (!agent.enabled()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Agent 已禁用");
         }
-        if (!document.spaceId().equals(agent.getSpaceId())) {
+        if (!document.spaceId().equals(agent.spaceId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Agent 与文档不属于同一空间");
         }
 
         // 校验Agent文档访问范围配置，判断目标documentId是否在允许列表内
         requireDocumentScope(agent, document.documentId());
         // 获取任务预算
-        Long budget = dto.tokenBudget() == null ? agent.getTokenBudget() : dto.tokenBudget();
+        Long budget = dto.tokenBudget() == null ? agent.tokenBudget() : dto.tokenBudget();
         // 查询空间 Agent 执行预算
         SpaceBudgetVO spaceBudget = requireData(documentFeign.getSpaceExecutionBudget(document.spaceId()));
         if (spaceBudget.tokenBudget() != null) {
@@ -100,7 +103,7 @@ public class TaskService {
         }
 
         // 任务落库
-        TaskEntity entity = dto.toEntity(document.spaceId(), budget, userId);
+        TaskEntity entity = dto.toEntity(document.spaceId(), budget, agent.configVersion(), userId);
         taskMapper.insert(entity);
 
         // 生成任务能力令牌，并更新任务记录
@@ -111,7 +114,7 @@ public class TaskService {
                     JwtConstant.ACTION_CREATE_CHANGE_REQUEST);
             // 调用auth‑service申请任务短时能力JWT令牌
             String capability = requireData(authFeign.issueTaskCapability(
-                    new TaskCapabilityIssueDTO(entity.getId(), agent.getId(), document.spaceId(),
+                    new TaskCapabilityIssueDTO(entity.getId(), agent.agentId(), document.spaceId(),
                             document.documentId(), actions)));
             // 令牌加密存储，不在数据库留存明文
             entity.setCapabilityToken(cryptoService.encrypt(capability));
@@ -165,7 +168,7 @@ public class TaskService {
 
     /**
      * 终止任务
-     * <p>仅 PENDING / RUNNING 状态允许终止；使用数据库乐观锁防止并发状态冲突；记录审计日志。</p>
+     * <p>所有可取消的非终态均允许终止；远端任务先进入 CANCELING，再调用 A2A Cancel。</p>
      * @param id 任务ID
      * @return 终止后任务VO
      */
@@ -177,13 +180,27 @@ public class TaskService {
         // 任务状态转换
         TaskStatus current = TaskStatus.fromCode(entity.getStatus());
         // 若当前任务状态非【待运行】、【运行中】，则禁止【终止】
-        if (current != TaskStatus.PENDING && current != TaskStatus.RUNNING) {
+        if (!current.canTerminate()) {
             throw new BusinessException(ErrorCode.CONFLICT, "当前任务状态不允许终止");
+        }
+        // 若当前任务非【待运行】且A2A任务Id不为空
+        if (current != TaskStatus.PENDING && entity.getA2aTaskId() != null) {
+            // 远端任务先进入 CANCELING，再调用 A2A Cancel
+            int canceling = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+                    .eq(TaskEntity::getId, id)
+                    .eq(TaskEntity::getStatus, current.getCode())
+                    .set(TaskEntity::getStatus, TaskStatus.CANCELING.getCode()));
+            if (canceling == 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "任务状态已发生变化，请刷新后重试");
+            }
+            // 异步调用A2A取消任务
+            a2aTaskClient.cancel(entity.getA2aTaskId(), cryptoService.decrypt(entity.getCapabilityToken()));
+            return TaskVO.from(require(id));
         }
         // 乐观锁更新：仅当状态为待执行/运行中才更新，受并发状态变更保护
         int updated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                 .eq(TaskEntity::getId, id)
-                .in(TaskEntity::getStatus, TaskStatus.PENDING.getCode(), TaskStatus.RUNNING.getCode())
+                .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
                 .set(TaskEntity::getStatus, TaskStatus.TERMINATED.getCode())
                 .set(TaskEntity::getErrorMessage, "用户主动终止")
                 .set(TaskEntity::getEndTime, LocalDateTime.now()));
@@ -199,7 +216,7 @@ public class TaskService {
     /**
      * 校验任务能力令牌：JWT密码学校验 + 业务维度双重校验
      * <p>
-     * 校验项：令牌非空、JWT签名与基础claim、JWT内taskId匹配；数据库任务必须处于RUNNING；
+     * 校验项：令牌非空、JWT签名与基础 claim、JWT 内 taskId 匹配；数据库任务必须处于允许访问能力的活动状态；
      * JWT携带的agentId/spaceId/documentId与数据库任务实体完全匹配。
      * </p>
      * <p>解决JWT自包含的短板：JWT未过期，但任务已经停止/变更资源范围时拒绝访问。</p>
@@ -219,9 +236,8 @@ public class TaskService {
         }
         // 获取任务信息
         TaskEntity task = require(taskId);
-        // 业务状态校验：只有RUNNING运行中的任务允许使用该令牌执行操作
-        // 解决问题：JWT未过期，但任务已经被终止/失败，拒绝继续访问资源
-        if (!TaskStatus.RUNNING.getCodeEquals(task.getStatus())) {
+        // 校验当前任务状态设置不允许访问文档(已分发、运行中、等待输入、等待授权)
+        if (!TaskStatus.fromCode(task.getStatus()).allowsCapabilityAccess()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "任务当前不允许访问文档");
         }
         // 校验agentId、spaceId、documentId，和数据库任务记录完全匹配
@@ -263,18 +279,18 @@ public class TaskService {
 
     /**
      * 校验Agent文档访问范围配置，判断目标documentId是否在允许列表内
-     * <p>agent.docScope为空代表不做文档限制；配置异常抛出BAD_REQUEST；不在列表抛出FORBIDDEN。</p>
-     * @param agent Agent实体
+     * <p>agentExecutionProfileVO.docScope为空代表不做文档限制；配置异常抛出BAD_REQUEST；不在列表抛出FORBIDDEN。</p>
+     * @param agentExecutionProfileVO Agent执行简介VO
      * @param documentId 待访问文档ID
      */
-    private void requireDocumentScope(AgentEntity agent, Long documentId) {
-        // Agent文档服务为空直接返回
-        if (agent.getDocScope() == null || agent.getDocScope().isBlank()) {
+    private void requireDocumentScope(AgentExecutionProfileVO agentExecutionProfileVO, Long documentId) {
+        // Agent执行简介文档服务为范围直接返回
+        if (StringUtils.isBlank(agentExecutionProfileVO.documentScope())) {
             return;
         }
         try {
-            // 解析Agent文档范围
-            JsonNode scope = objectMapper.readTree(agent.getDocScope());
+            // 解析Agent执行简介文档范围
+            JsonNode scope = objectMapper.readTree(agentExecutionProfileVO.documentScope());
             // 获取文档Id列表
             JsonNode ids = scope.isArray() ? scope : scope.path("documentIds");
             boolean allowed = ids.isArray();

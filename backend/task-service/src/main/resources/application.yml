@@ -29,21 +29,35 @@ spring:
   # Jackson JSON序列化全局时区，统一东八区，解决日期时间序列化时差问题
   jackson:
     time-zone: Asia/Shanghai
+  ai:
+    mcp:
+      server:
+        name: agent-doc-workbench
+        version: 0.1.0
+        protocol: STREAMABLE
 
 # 自定义openapi配置
 agent-doc:
   security:
     # Base64 编码的 16/24/32 字节 AES 密钥，生产环境必须通过环境变量注入
-    mcp-config-key: ${AGENT_MCP_CONFIG_KEY:}
+    task-capability-key: ${TASK_CAPABILITY_KEY:}
     # 模型 B：从 auth-service JWK Set 拉取 RSA 公钥，供 Spring Security Resource Server
     # 从 Authorization 自行解析 JWT 身份（配置即启用；无效 token 由 Security 层直接 401）
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    task-capability-filter-enabled: true
   openapi:
     title: Task Service API
     description: 任务服务：Agent 任务、变更审批、Token 用量与审计
   feign:
     # 服务间调用统一经网关（复用 JWT 门禁并透传原始 Authorization，身份可追溯）
     gateway-url: ${GATEWAY_URL:http://localhost:9090}
+  a2a:
+    agent-service-url: ${AGENT_SERVICE_URL:http://localhost:8084}
+    task-callback-url: ${TASK_CALLBACK_URL:http://localhost:8083/api/task/internal/a2a/events}
+    mcp-server-url: ${MCP_SERVER_URL:http://localhost:8083/mcp}
+    reconcile-delay-ms: ${A2A_RECONCILE_DELAY_MS:60000}
+    reconcile-stale-seconds: ${A2A_RECONCILE_STALE_SECONDS:120}
+    reconcile-batch-size: ${A2A_RECONCILE_BATCH_SIZE:50}
 
 # Spring Boot Actuator 健康检查端点配置
 management:

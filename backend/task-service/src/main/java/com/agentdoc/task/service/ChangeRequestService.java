@@ -4,6 +4,7 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
@@ -20,7 +21,6 @@ import com.agentdoc.task.pojo.param.ChangeRequestSearchParam;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
 import com.agentdoc.task.pojo.vo.ChangeRequestVO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
-import com.agentdoc.task.runtime.AgentExecutionResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import feign.FeignException;
@@ -64,8 +64,8 @@ public class ChangeRequestService {
      * Agent 任务内部提交正式文档变更，不依赖 MQ 线程中的用户 SecurityContext。
      */
     @Transactional(rollbackFor = Exception.class)
-    public ChangeRequestEntity submitFromAgent(TaskEntity task, AgentExecutionResult result, Long baseVersion) {
-        ChangeRequestEntity entity = ChangeRequestConvertor.fromAgentSubmission(task, result, baseVersion);
+    public ChangeRequestEntity submitFromAgent(TaskEntity task, List<ChangeItemDTO> changes, Long baseVersion) {
+        ChangeRequestEntity entity = ChangeRequestConvertor.fromAgentSubmission(task, changes, baseVersion);
         changeRequestMapper.insert(entity);
         return entity;
     }

@@ -4,19 +4,17 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.task.a2a.A2aTokenUsage;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.convertor.TokenUsageConvertor;
 import com.agentdoc.task.enums.TokenUsageDimension;
 import com.agentdoc.task.enums.TaskStatus;
-import com.agentdoc.task.mapper.ModelMapper;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.mapper.TokenUsageMapper;
-import com.agentdoc.task.pojo.entity.AgentEntity;
-import com.agentdoc.task.pojo.entity.ModelEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
-import com.agentdoc.task.runtime.AgentExecutionResult;
 import com.agentdoc.task.pojo.entity.TokenUsageEntity;
 import com.agentdoc.task.pojo.vo.TokenUsageTodayVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTrendVO;
@@ -42,7 +40,6 @@ public class TokenUsageService {
 
     private final TokenUsageDetailMapper detailMapper;
     private final TaskMapper taskMapper;
-    private final ModelMapper modelMapper;
     private final TokenUsageMapper usageMapper;
     private final DocumentFeign documentFeign;
 
@@ -64,9 +61,7 @@ public class TokenUsageService {
      * @return true：未超预算，任务允许继续执行；false：已超出Token预算，任务已被自动终止
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean record(TaskEntity task, AgentEntity agent, AgentExecutionResult result) {
-        // 获取模型信息
-        ModelEntity model = modelMapper.selectById(agent.getModelId());
+    public boolean recordRemote(TaskEntity task, AgentExecutionProfileVO agent, A2aTokenUsage result) {
         // 输入token
         long input = Math.max(0, result.inputTokens());
         // 缓存token
@@ -76,11 +71,12 @@ public class TokenUsageService {
 
         // 构建明细记录并入库
         TokenUsageDetailEntity detail = TokenUsageConvertor.toDetail(
-                task, agent, input, cachedInput, output, estimateCost(model, input, output));
+                task, agent.agentId(), agent.modelId(), input, cachedInput, output,
+                estimateCost(agent.inputPricePerMillion(), agent.outputPricePerMillion(), input, output));
         detailMapper.insert(detail);
 
         // 累加本次输入+输出，更新任务已消耗token
-        long used = (task.getTokensUsed() == null ? 0 : task.getTokensUsed()) + input + output;
+        long used = input + output;
         taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                 .eq(TaskEntity::getId, task.getId())
                 .set(TaskEntity::getTokensUsed, used));
@@ -169,19 +165,16 @@ public class TokenUsageService {
     /**
      * 估算本次模型调用费用
      * <p>按百万token单价计算，保留{@link TaskConstant#TOKEN_COST_SCALE}位小数，四舍五入。</p>
-     * @param model 模型实体，包含输入、输出百万token单价
+     * @param configuredInputPrice 每百万输入token价格
+     * @param configuredOutputPrice 每百万token输出价格
      * @param input 输入token数量
      * @param output 输出token数量
      * @return 估算费用；model为null返回{@link BigDecimal#ZERO}
      */
-    private BigDecimal estimateCost(ModelEntity model, long input, long output) {
-        if (model == null) {
-            return BigDecimal.ZERO;
-        }
-        BigDecimal inputPrice = model.getInputPricePerMillion() == null
-                ? BigDecimal.ZERO : model.getInputPricePerMillion();
-        BigDecimal outputPrice = model.getOutputPricePerMillion() == null
-                ? BigDecimal.ZERO : model.getOutputPricePerMillion();
+    private BigDecimal estimateCost(BigDecimal configuredInputPrice, BigDecimal configuredOutputPrice,
+                                    long input, long output) {
+        BigDecimal inputPrice = configuredInputPrice == null ? BigDecimal.ZERO : configuredInputPrice;
+        BigDecimal outputPrice = configuredOutputPrice == null ? BigDecimal.ZERO : configuredOutputPrice;
 
         // 1.输入token × 百万输入单价 + 输出token × 百万输出单价
         // 2.除以1000000，换算真实费用；指定保留小数位数+四舍五入，避免除不尽抛出算术异常

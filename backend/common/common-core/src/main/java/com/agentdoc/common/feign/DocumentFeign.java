@@ -52,7 +52,7 @@ public interface DocumentFeign {
     Result<List<Long>> listDocumentIdsBySpace(@RequestParam Long spaceId);
 
     /**
-     * 查询当前用户可发起 Agent 任务的文档执行上下文。
+     * 查询 Agent 任务执行上下文
      */
     @GetMapping("/api/document/documents/{documentId}/execution-context")
     Result<DocumentExecutionContextVO> getExecutionContext(@PathVariable Long documentId);

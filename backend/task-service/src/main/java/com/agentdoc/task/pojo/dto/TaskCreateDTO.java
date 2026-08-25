@@ -30,10 +30,11 @@ public record TaskCreateDTO(
      * @param userId 创建人用户 ID
      * @return 初始化完成的待执行任务实体
      */
-    public TaskEntity toEntity(Long spaceId, Long budget, Long userId) {
+    public TaskEntity toEntity(Long spaceId, Long budget, Long agentConfigVersion, Long userId) {
         TaskEntity entity = new TaskEntity();
         entity.setSpaceId(spaceId);
         entity.setAgentId(agentId);
+        entity.setAgentConfigVersion(agentConfigVersion);
         entity.setDocumentId(documentId);
         entity.setName(name);
         entity.setInstruction(instruction);

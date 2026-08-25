@@ -4,12 +4,14 @@ import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
-import com.agentdoc.task.security.McpConfigCryptoService;
+import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,13 +39,15 @@ class TaskServiceCapabilityTest {
     @Mock
     private TaskMapper taskMapper;
     @Mock
-    private AgentService agentService;
+    private A2aTaskClient a2aTaskClient;
+    @Mock
+    private AgentFeign agentFeign;
     @Mock
     private DocumentFeign documentFeign;
     @Mock
     private TaskMessagePublisher messagePublisher;
     @Mock
-    private McpConfigCryptoService cryptoService;
+    private TaskCapabilityCryptoService cryptoService;
     @Mock
     private AuthFeign authFeign;
     @Mock
@@ -57,7 +61,8 @@ class TaskServiceCapabilityTest {
 
     @BeforeEach
     void setUp() {
-        service = new TaskService(taskMapper, agentService, documentFeign, messagePublisher, cryptoService,
+        service = new TaskService(taskMapper, a2aTaskClient, agentFeign, documentFeign,
+                messagePublisher, cryptoService,
                 authFeign, auditLogService, objectMapper, taskCapabilityVerifier);
     }
 

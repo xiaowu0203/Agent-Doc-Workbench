@@ -1,54 +1,37 @@
 package com.agentdoc.task.execution;
 
-import com.agentdoc.common.api.Result;
-import com.agentdoc.common.constant.HeaderConstants;
-import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.RedisKeyConstants;
-import com.agentdoc.common.context.TaskCapabilityContext;
-import com.agentdoc.common.enums.DocType;
-import com.agentdoc.common.enums.ErrorCode;
-import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.common.feign.DocumentFeign;
-import com.agentdoc.common.feign.dto.ChangeItemDTO;
-import com.agentdoc.common.feign.dto.MergeRequestDTO;
-import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
-import com.agentdoc.common.feign.vo.DocumentFragmentVO;
-import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.common.utils.RedisUtils;
+import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.config.RabbitTaskConfiguration;
 import com.agentdoc.task.constant.TaskConstant;
+import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.AuditAction;
 import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
-import com.agentdoc.task.pojo.entity.AgentEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
-import com.agentdoc.task.runtime.AgentExecutionContext;
-import com.agentdoc.task.runtime.AgentExecutionResult;
-import com.agentdoc.task.runtime.AgentRuntime;
-import com.agentdoc.task.security.McpConfigCryptoService;
-import com.agentdoc.task.service.AgentService;
+import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.agentdoc.task.service.AuditLogService;
-import com.agentdoc.task.service.ChangeRequestService;
 import com.agentdoc.task.service.TaskMessagePublisher;
 import com.agentdoc.task.service.TaskService;
-import com.agentdoc.task.service.TokenUsageService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
+import org.a2aproject.sdk.spec.Task;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
- * RabbitMQ 任务消费者和单 Agent 执行编排。
+ * RabbitMQ 任务消费者和 A2A 任务分发器。
  * <p>
- * 监听RabbitMQ任务队列，消费任务消息，驱动Agent完整执行流程。
- * 核心职责：消息消费防重复、分布式锁控、任务状态流转、Agent运行时调用、文档变更提交、异常重试、失败处理、审计日志。
+ * 监听 RabbitMQ 任务队列，将 Workbench Task 幂等分发给远程 Agent Server。
+ * 核心职责：消息消费防重复、分布式锁、任务状态流转、A2A 调用、异常重试和审计日志。
  * </p>
  */
 @Component
@@ -57,15 +40,10 @@ public class TaskExecutionService {
 
     private final TaskService taskService;
     private final TaskMapper taskMapper;
-    private final AgentService agentService;
-    private final DocumentFeign documentFeign;
-    private final ChangeRequestService changeRequestService;
-    private final AgentRuntime agentRuntime;
+    private final A2aTaskClient a2aTaskClient;
     private final TaskMessagePublisher messagePublisher;
     private final RedisUtils redisUtils;
-    private final McpConfigCryptoService cryptoService;
-    private final TaskCapabilityVerifier capabilityVerifier;
-    private final TokenUsageService tokenUsageService;
+    private final TaskCapabilityCryptoService cryptoService;
     private final AuditLogService auditLogService;
 
     /**
@@ -100,8 +78,8 @@ public class TaskExecutionService {
         }
 
         try {
-            // 数据库乐观锁：仅PENDING状态才流转为RUNNING；防止重复消费重复启动任务
-            if (!markRunning(taskId)) {
+            // 数据库乐观锁：将任务状态由 PENDING 更新为 DISPATCHED，并记录开始时间
+            if (!markDispatched(taskId)) {
                 channel.basicAck(tag, false);
                 return;
             }
@@ -122,100 +100,44 @@ public class TaskExecutionService {
     }
 
     /**
-     * Agent任务核心执行逻辑
+     * 将任务提交到 Agent Server，并记录远端 A2A Task 标识和初始状态。
      * <p>
-     * 1.解密任务能力令牌，校验令牌，放入线程上下文；
-     * 2.Feign获取文档执行上下文，读取文档起始片段；
-     * 3.调用AgentRuntime完成大模型推理；
-     * 4.记录Token消耗，预算耗尽直接终止；
-     * 5.有变更：正式文档走ChangeRequest，草稿直接apply变更；无变更直接完成；
-     * 6.finally清理ThreadLocal令牌，防止线程池内存泄露。
+     * Agent 后续通过 Task Capability 调用 Workbench MCP Server，执行状态和结果通过 A2A 回调同步。
      * </p>
      * @param task 待执行任务实体
      */
     private void execute(TaskEntity task) {
-        AgentEntity agent = agentService.require(task.getAgentId());
-        // 解密获取任务原始能力令牌
-        String token = cryptoService.decrypt(task.getCapabilityToken());
-        // token校验
-        capabilityVerifier.verify(token);
-        // 将任务令牌放入当前线程上下文，供下游Feign拦截器自动注入请求头
-        TaskCapabilityContext.set(token);
-        try {
-            // 获取文档执行上下文信息
-            DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(task.getDocumentId()));
-            // 读取文档初始片段，作为Agent输入上下文
-            DocumentFragmentVO fragment = requireData(documentFeign.readFragment(
-                    task.getDocumentId(), TaskConstant.INITIAL_FRAGMENT_START, TaskConstant.INITIAL_FRAGMENT_LENGTH));
-
-            /**
-             * 调用Agent运行时，执行大模型推理
-             */
-            AgentExecutionResult result = agentRuntime.execute(agent,
-                    new AgentExecutionContext(task.getId(), task.getAgentId(), task.getDocumentId(),
-                            task.getInstruction(), fragment.content(), fragment.start(), fragment.totalLength()));
-            // 记录token消耗；返回false代表token预算耗尽，任务已被终止，直接返回不再继续
-            if (!tokenUsageService.record(task, agent, result)) {
-                // 审计日志
-                auditLogService.recordAgent(task.getSpaceId(), task.getId(), task.getAgentId(),
-                        AuditAction.TASK_BUDGET_TERMINATED, AuditTargetType.TASK,
-                        task.getId(), "Token 预算已用尽");
-                return;
-            }
-
-            // Agent没有产出任何变更，直接标记任务完成
-            if (result.changes() == null || result.changes().isEmpty()) {
-                // 标记任务完成
-                complete(task, result.summary());
-                return;
-            }
-
-            // 根据文档类型分支处理变更落地
-            if (document.docType() == DocType.FORMAL.getCode()) {
-                // 正式文档：生成变更请求，等待人工审阅
-                changeRequestService.submitFromAgent(task, result, document.version());
-            } else {
-                // 草稿文档：直接应用Agent产生的修改
-                requireData(documentFeign.applyDraftAgentChanges(new MergeRequestDTO(
-                        task.getDocumentId(), document.version(), result.changes(), result.summary())));
-            }
-
-            // 标记任务完成
-            complete(task, result.summary());
-            // 审计日志
-            auditLogService.recordAgent(task.getSpaceId(), task.getId(), task.getAgentId(),
-                    AuditAction.TASK_COMPLETED, AuditTargetType.TASK, task.getId(), result.summary());
-        } finally {
-            // 强制清除线程上下文中的能力令牌，复用线程池避免令牌残留泄露
-            TaskCapabilityContext.clear();
+        // 生成 A2A Task Capability，并加密存储到数据库
+        String capability = cryptoService.decrypt(task.getCapabilityToken());
+        // 调用 A2A Client，将任务提交到 Agent Server
+        Task remoteTask = a2aTaskClient.send(task, capability);
+        if (remoteTask == null) {
+            throw new IllegalStateException("Agent Server 未返回 A2A Task");
         }
+        // 将remoteTask信息回填到task中
+        A2aTaskConvertor.apply(task, remoteTask);
+        // 更新任务
+        taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+                .eq(TaskEntity::getId, task.getId())
+                .isNull(TaskEntity::getA2aTaskId)
+                .set(TaskEntity::getA2aTaskId, task.getA2aTaskId())
+                .set(TaskEntity::getA2aContextId, task.getA2aContextId())
+                .set(TaskEntity::getStatus, task.getStatus())
+                .set(TaskEntity::getDispatchedAt, LocalDateTime.now())
+                .set(TaskEntity::getLastHeartbeatAt, task.getLastHeartbeatAt()));
     }
 
     /**
-     * 乐观锁将任务状态由PENDING更新为RUNNING，并赋值开始时间
+     * 乐观锁将任务状态由 PENDING 更新为 DISPATCHED，并记录开始时间。
      * @param taskId 任务ID
      * @return true 更新成功；false 状态已经不是PENDING，任务被外部变更过
      */
-    private boolean markRunning(Long taskId) {
+    private boolean markDispatched(Long taskId) {
         return taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                 .eq(TaskEntity::getId, taskId)
                 .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
-                .set(TaskEntity::getStatus, TaskStatus.RUNNING.getCode())
+                .set(TaskEntity::getStatus, TaskStatus.DISPATCHED.getCode())
                 .set(TaskEntity::getStartTime, LocalDateTime.now())) > 0;
-    }
-
-    /**
-     * 标记任务为已完成COMPLETED，写入结果摘要、结束时间
-     * @param task 任务实体
-     * @param summary Agent执行结果摘要文本
-     */
-    private void complete(TaskEntity task, String summary) {
-        taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
-                .eq(TaskEntity::getId, task.getId())
-                .eq(TaskEntity::getStatus, TaskStatus.RUNNING.getCode())
-                .set(TaskEntity::getStatus, TaskStatus.COMPLETED.getCode())
-                .set(TaskEntity::getResultSummary, summary)
-                .set(TaskEntity::getEndTime, LocalDateTime.now()));
     }
 
     /**
@@ -285,17 +207,4 @@ public class TaskExecutionService {
                 : message.substring(0, Math.min(message.length(), TaskConstant.MAX_ERROR_MESSAGE_LENGTH));
     }
 
-    /**
-     * Feign远程调用返回结果统一包装，非成功抛出业务异常
-     * @param result feign调用返回Result
-     * @return result.data()
-     * @param <T> data类型
-     */
-    private <T> T requireData(Result<T> result) {
-        if (result == null || result.code() != ErrorCode.SUCCESS.getCode() || result.data() == null) {
-            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
-                    result == null ? "远程服务调用失败" : result.message());
-        }
-        return result.data();
-    }
 }

@@ -10,7 +10,6 @@ import com.agentdoc.task.pojo.dto.ChangeRequestSubmitDTO;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.vo.ChangeRequestVO;
-import com.agentdoc.task.runtime.AgentExecutionResult;
 import com.fasterxml.jackson.core.type.TypeReference;
 
 import java.util.List;
@@ -44,11 +43,11 @@ public final class ChangeRequestConvertor {
      * 将 Agent 执行结果转换为待审批正式文档变更请求。
      */
     public static ChangeRequestEntity fromAgentSubmission(
-            TaskEntity task, AgentExecutionResult result, Long baseVersion) {
+            TaskEntity task, List<ChangeItemDTO> changes, Long baseVersion) {
         ChangeRequestEntity entity = new ChangeRequestEntity();
         entity.setDocumentId(task.getDocumentId());
         entity.setRequestType(ChangeRequestType.FORMAL.getCode());
-        entity.setChanges(serializeChanges(result.changes()));
+        entity.setChanges(serializeChanges(changes));
         entity.setBaseVersion(baseVersion);
         entity.setStatus(ChangeRequestStatus.PENDING.getCode());
         entity.setSourceTaskId(task.getId());

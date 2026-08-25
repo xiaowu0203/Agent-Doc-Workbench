@@ -23,6 +23,21 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "Agent ID")
     private Long agentId;
 
+    @Schema(description = "Agent 配置版本")
+    private Long agentConfigVersion;
+
+    @Schema(description = "Agent 执行 ID")
+    private Long agentExecutionId;
+
+    @Schema(description = "A2A 任务 ID")
+    private String a2aTaskId;
+
+    @Schema(description = "A2A 任务上下文 ID")
+    private String a2aContextId;
+
+    @Schema(description = "prompt 哈希值")
+    private String promptHash;
+
     @Schema(description = "目标文档 ID")
     private Long documentId;
 
@@ -43,6 +58,12 @@ public class TaskEntity extends BaseLogicDeleteEntity {
 
     @Schema(description = "开始时间")
     private LocalDateTime startTime;
+
+    @Schema(description = "派发时间")
+    private LocalDateTime dispatchedAt;
+
+    @Schema(description = "最近一次心跳时间")
+    private LocalDateTime lastHeartbeatAt;
 
     @Schema(description = "结束时间")
     private LocalDateTime endTime;
