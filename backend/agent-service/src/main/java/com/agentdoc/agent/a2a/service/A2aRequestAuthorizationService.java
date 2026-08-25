@@ -1,4 +1,4 @@
-package com.agentdoc.agent.a2a.server;
+package com.agentdoc.agent.a2a.service;
 
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;

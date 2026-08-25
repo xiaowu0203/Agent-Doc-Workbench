@@ -1,4 +1,4 @@
-package com.agentdoc.agent.execution;
+package com.agentdoc.agent.execution.runtime;
 
 public class AgentExecutionCanceledException extends RuntimeException {
 

@@ -1,6 +1,6 @@
-package com.agentdoc.agent.a2a.server;
+package com.agentdoc.agent.a2a.executor;
 
-import com.agentdoc.agent.execution.AgentExecutionApplicationService;
+import com.agentdoc.agent.execution.application.AgentExecutionApplicationService;
 import lombok.RequiredArgsConstructor;
 import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;

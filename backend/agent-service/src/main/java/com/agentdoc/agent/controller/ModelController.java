@@ -2,6 +2,7 @@ package com.agentdoc.agent.controller;
 
 import com.agentdoc.agent.pojo.dto.ModelCreateDTO;
 import com.agentdoc.agent.pojo.vo.ModelVO;
+import com.agentdoc.agent.pojo.vo.ModelConnectionTestVO;
 import com.agentdoc.agent.service.ModelService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
@@ -39,6 +40,12 @@ public class ModelController {
     @PostMapping
     public Result<ModelVO> create(@Valid @RequestBody ModelCreateDTO dto) {
         return Result.ok(modelService.create(dto));
+    }
+
+    @Operation(summary = "测试模型连通性")
+    @PostMapping("/test-connect")
+    public Result<ModelConnectionTestVO> testConnect(@Valid @RequestBody ModelCreateDTO dto) {
+        return Result.ok(modelService.testConnect(dto));
     }
 
     @Operation(summary = "启用或禁用模型")

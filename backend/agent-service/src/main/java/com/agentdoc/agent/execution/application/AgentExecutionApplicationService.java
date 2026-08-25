@@ -1,8 +1,11 @@
-package com.agentdoc.agent.execution;
+package com.agentdoc.agent.execution.application;
 
 import com.agentdoc.agent.convertor.AgentExecutionConvertor;
 import com.agentdoc.agent.enums.AgentExecutionStatus;
 import com.agentdoc.agent.enums.AgentStatus;
+import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
+import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
+import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
@@ -26,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,7 +38,7 @@ import static com.agentdoc.agent.constant.AgentConstant.MAX_ERROR_MESSAGE_LENGTH
 /**
  * Agent执行应用服务，业务层入口
  * <p>
- * 由 {@link com.agentdoc.agent.a2a.server.WorkbenchAgentExecutor} 调用，承接A2A协议下发的Agent执行与取消请求；
+ * 由 {@link com.agentdoc.agent.a2a.executor.WorkbenchAgentExecutor} 调用，承接A2A协议下发的Agent执行与取消请求；
  * 职责：参数解析、幂等校验、加载Agent/模型、数据库落库、调用运行时执行大模型、
  * 捕获各类执行异常、状态流转、通过{@link AgentEmitter}向A2A协议层输出事件。
  * </p>
@@ -96,8 +100,17 @@ public class AgentExecutionApplicationService {
         executionMapper.updateById(execution);
         try {
             // 调用运行时执行业务逻辑；传入取消回调，运行时内部可轮询判断是否被取消
-            AgentRuntimeResult result = runtime.execute(agent, model, instruction, input,
-                    () -> isCancelRequested(execution.getId()));
+            boolean streaming = context.getCallContext() != null
+                    && Boolean.TRUE.equals(context.getCallContext().getState()
+                    .get(A2aMetadataConstant.STREAMING_REQUEST_STATE));
+            AgentRuntimeResult result;
+            if (streaming) {
+                result = runtime.execute(agent, model, instruction, input,
+                        () -> isCancelRequested(execution.getId()), emitter::sendMessage);
+            } else {
+                result = runtime.execute(agent, model, instruction, input,
+                        () -> isCancelRequested(execution.getId()));
+            }
             // 执行成功，回填结果，更新数据库状态为COMPLETED
             AgentExecutionConvertor.complete(execution, result);
             executionMapper.updateById(execution);
@@ -219,13 +232,19 @@ public class AgentExecutionApplicationService {
      * @return 元数据Map
      */
     private Map<String, Object> tokenMetadata(AgentExecutionEntity execution, AgentRuntimeResult result) {
-        return Map.of(
-                A2aMetadataConstant.INPUT_TOKENS, result.inputTokens(),
-                A2aMetadataConstant.CACHED_INPUT_TOKENS,
-                result.cachedInputTokens() == null ? 0L : result.cachedInputTokens(),
-                A2aMetadataConstant.OUTPUT_TOKENS, result.outputTokens(),
-                A2aMetadataConstant.AGENT_EXECUTION_ID, execution.getId(),
-                A2aMetadataConstant.PROMPT_HASH, execution.getPromptHash());
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(A2aMetadataConstant.INPUT_TOKENS, result.tokenUsage().input().value());
+        metadata.put(A2aMetadataConstant.INPUT_TOKENS_ESTIMATED,
+                result.tokenUsage().input().estimated());
+        metadata.put(A2aMetadataConstant.CACHED_INPUT_TOKENS, result.tokenUsage().cachedInput().value());
+        metadata.put(A2aMetadataConstant.CACHED_INPUT_TOKENS_ESTIMATED,
+                result.tokenUsage().cachedInput().estimated());
+        metadata.put(A2aMetadataConstant.OUTPUT_TOKENS, result.tokenUsage().output().value());
+        metadata.put(A2aMetadataConstant.OUTPUT_TOKENS_ESTIMATED,
+                result.tokenUsage().output().estimated());
+        metadata.put(A2aMetadataConstant.AGENT_EXECUTION_ID, execution.getId());
+        metadata.put(A2aMetadataConstant.PROMPT_HASH, execution.getPromptHash());
+        return metadata;
     }
 
     /**

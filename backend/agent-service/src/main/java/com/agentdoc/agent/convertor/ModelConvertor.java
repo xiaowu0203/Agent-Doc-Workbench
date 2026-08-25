@@ -1,6 +1,7 @@
 package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.ModelProvider;
+import com.agentdoc.agent.enums.ModelAdapterType;
 import com.agentdoc.agent.enums.ModelStatus;
 import com.agentdoc.agent.pojo.dto.ModelCreateDTO;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
@@ -31,13 +32,17 @@ public final class ModelConvertor {
      */
     public static ModelEntity toEntity(ModelCreateDTO dto, String encryptedApiKey) {
         ModelEntity entity = new ModelEntity();
-        entity.setProvider(ModelProvider.fromCode(dto.provider()).getCode());
+        ModelProvider provider = ModelProvider.fromCode(dto.provider());
+        entity.setProvider(provider.getCode());
+        entity.setAdapterType(ModelAdapterType.fromCodeOrDefault(dto.adapterType(), provider).getCode());
         entity.setModelKey(dto.modelKey());
         entity.setDisplayName(dto.displayName());
         entity.setOfficialUrl(dto.officialUrl());
         entity.setBaseUrl(dto.baseUrl());
         // 保存加密后的API Key密文，禁止明文落库
         entity.setEncryptedApiKey(encryptedApiKey);
+        entity.setOptionsJson(dto.optionsJson());
+        entity.setConfigVersion(1L);
         entity.setContextWindow(dto.contextWindow());
         entity.setMaxOutputTokens(dto.maxOutputTokens());
         entity.setInputPricePerMillion(dto.inputPricePerMillion());
@@ -56,10 +61,11 @@ public final class ModelConvertor {
      * @return 对外展示VO，状态转换为枚举对象
      */
     public static ModelVO toVO(ModelEntity entity) {
-        return new ModelVO(entity.getId(), entity.getProvider(), entity.getModelKey(), entity.getDisplayName(),
-                entity.getOfficialUrl(), entity.getBaseUrl(),
+        return new ModelVO(entity.getId(), entity.getProvider(), entity.getAdapterType(), entity.getModelKey(),
+                entity.getDisplayName(), entity.getOfficialUrl(), entity.getBaseUrl(),
                 // true代表已配置密钥，VO不输出密钥密文，避免密钥泄露
-                entity.getEncryptedApiKey() != null,
+                entity.getEncryptedApiKey() != null, entity.getOptionsJson(),
+                entity.getConfigVersion(),
                 entity.getContextWindow(), entity.getMaxOutputTokens(), entity.getInputPricePerMillion(),
                 entity.getOutputPricePerMillion(), ModelStatus.fromCode(entity.getStatus()), entity.getDescription());
     }

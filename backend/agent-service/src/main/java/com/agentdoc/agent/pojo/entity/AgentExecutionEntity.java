@@ -36,10 +36,16 @@ public class AgentExecutionEntity extends BaseEntity {
     private Boolean cancelRequested;
     @Schema(description = "输入 Token 数")
     private Long inputTokens;
+    @Schema(description = "输入 Token 是否为估算值")
+    private Boolean inputTokensEstimated;
     @Schema(description = "缓存输入 Token 数")
     private Long cachedInputTokens;
+    @Schema(description = "缓存输入 Token 是否为估算值")
+    private Boolean cachedInputTokensEstimated;
     @Schema(description = "输出 Token 数")
     private Long outputTokens;
+    @Schema(description = "输出 Token 是否为估算值")
+    private Boolean outputTokensEstimated;
     @Schema(description = "执行结果摘要")
     private String resultSummary;
     @Schema(description = "错误信息")

@@ -1,10 +1,15 @@
 package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.ModelConvertor;
+import com.agentdoc.agent.execution.model.ModelAdapterContext;
+import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
+import com.agentdoc.agent.execution.model.ModelChatModelCache;
+import com.agentdoc.agent.execution.model.ModelProviderException;
 import com.agentdoc.agent.enums.ModelStatus;
 import com.agentdoc.agent.mapper.ModelMapper;
 import com.agentdoc.agent.pojo.dto.ModelCreateDTO;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.agent.pojo.vo.ModelConnectionTestVO;
 import com.agentdoc.agent.pojo.vo.ModelVO;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.common.enums.ErrorCode;
@@ -16,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Collections;
 
 /**
  * 大模型配置管理服务
@@ -32,6 +38,10 @@ public class ModelService {
     private final ModelMapper modelMapper;
     /** 配置加密服务，用于模型API‑Key加密存储 */
     private final AgentConfigCryptoService cryptoService;
+    /** 模型适配器注册表，用于配置保存前的连通性测试 */
+    private final ModelAdapterRegistry adapterRegistry;
+    /** 模型状态或配置变化时主动清理旧 ChatModel 实例 */
+    private final ModelChatModelCache chatModelCache;
 
     /**
      * 查询模型列表
@@ -66,6 +76,27 @@ public class ModelService {
     }
 
     /**
+     * 测试尚未保存的模型配置。
+     * <p>明文 API Key 只进入本次适配器调用，不写入数据库。</p>
+     *
+     * @param dto 模型配置和明文 API Key
+     * @return 连接测试结果；模型供应商异常以统一错误字段返回
+     */
+    public ModelConnectionTestVO testConnect(ModelCreateDTO dto) {
+        AuthUtils.getUserIdOrException();
+        ModelEntity model = ModelConvertor.toEntity(dto, null);
+        ModelAdapterContext context = new ModelAdapterContext(null, model, dto.apiKey(), 1,
+                Collections.emptyList());
+        try {
+            adapterRegistry.require(model).testConnect(context);
+            return new ModelConnectionTestVO(true, model.getProvider(), null, null, false, "模型连接成功");
+        } catch (ModelProviderException exception) {
+            return new ModelConnectionTestVO(false, exception.getProvider(), exception.getErrorType(),
+                    exception.getStatusCode(), exception.isRetryable(), exception.getMessage());
+        }
+    }
+
+    /**
      * 更新模型启用/禁用状态
      *
      * @param id     模型主键ID
@@ -78,7 +109,16 @@ public class ModelService {
         ModelEntity entity = require(id);
         entity.setStatus(ModelStatus.fromCode(status).getCode());
         modelMapper.updateById(entity);
+        chatModelCache.invalidate(id);
         return ModelConvertor.toVO(entity);
+    }
+
+    /**
+     * 供模型配置更新流程在递增 configVersion 后主动清理旧实例。
+     * 当前服务已提供的状态更新也会执行同样的失效逻辑。
+     */
+    public void invalidateChatModelCache(Long id) {
+        chatModelCache.invalidate(id);
     }
 
     /**

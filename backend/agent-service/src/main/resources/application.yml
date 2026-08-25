@@ -38,6 +38,9 @@ agent-doc:
       - /a2a
       - /a2a/**
   agent:
+    model:
+      chat-model-cache:
+        max-size: ${AGENT_CHAT_MODEL_CACHE_MAX_SIZE:100}
     # Agent服务对外公网可访问地址，用于A2A协议回调、生成Agent‑Card元信息
     public-url: ${AGENT_PUBLIC_URL:http://localhost:9090}
     # Agent平台级System Prompt资源文件路径，classpath下md文件，作为大模型系统提示词

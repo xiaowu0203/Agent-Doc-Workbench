@@ -1,11 +1,13 @@
 package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.AgentExecutionStatus;
-import com.agentdoc.agent.execution.AgentRuntimeResult;
+import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.common.enums.TokenValueSource;
+import com.agentdoc.common.pojo.TokenValue;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -59,9 +61,13 @@ public final class AgentExecutionConvertor {
         // 初始状态：已提交，还未开始执行
         entity.setStatus(AgentExecutionStatus.SUBMITTED.name());
         entity.setCancelRequested(Boolean.FALSE);
-        // Token消耗初始置0，执行结束回填
-        entity.setInputTokens(0L);
-        entity.setOutputTokens(0L);
+        // Token 消耗在模型返回后回填，未获取前保持 null
+        entity.setInputTokens(null);
+        entity.setInputTokensEstimated(Boolean.FALSE);
+        entity.setCachedInputTokens(null);
+        entity.setCachedInputTokensEstimated(Boolean.FALSE);
+        entity.setOutputTokens(null);
+        entity.setOutputTokensEstimated(Boolean.FALSE);
         return entity;
     }
 
@@ -84,11 +90,18 @@ public final class AgentExecutionConvertor {
      */
     public static void complete(AgentExecutionEntity entity, AgentRuntimeResult result) {
         entity.setStatus(AgentExecutionStatus.COMPLETED.name());
-        entity.setInputTokens(result.inputTokens());
-        entity.setCachedInputTokens(result.cachedInputTokens());
-        entity.setOutputTokens(result.outputTokens());
+        entity.setInputTokens(result.tokenUsage().input().value());
+        entity.setInputTokensEstimated(isEstimated(result.tokenUsage().input()));
+        entity.setCachedInputTokens(result.tokenUsage().cachedInput().value());
+        entity.setCachedInputTokensEstimated(isEstimated(result.tokenUsage().cachedInput()));
+        entity.setOutputTokens(result.tokenUsage().output().value());
+        entity.setOutputTokensEstimated(isEstimated(result.tokenUsage().output()));
         entity.setResultSummary(result.summary());
         entity.setFinishedAt(LocalDateTime.now());
+    }
+
+    private static boolean isEstimated(TokenValue value) {
+        return value.source() == TokenValueSource.ESTIMATED;
     }
 
     /**
@@ -126,7 +139,8 @@ public final class AgentExecutionConvertor {
     private static String toModelSnapshot(ModelEntity model, ObjectMapper objectMapper) {
         try {
             return objectMapper.writeValueAsString(new ModelSnapshot(model.getId(), model.getProvider(),
-                    model.getModelKey(), model.getDisplayName(), model.getBaseUrl(), model.getMaxOutputTokens()));
+                    model.getAdapterType(), model.getModelKey(), model.getDisplayName(), model.getBaseUrl(),
+                    model.getMaxOutputTokens()));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("模型快照序列化失败", exception);
         }
@@ -137,12 +151,13 @@ public final class AgentExecutionConvertor {
      *
      * @param id             模型ID
      * @param provider       模型服务商
+     * @param adapterType    模型适配器类型
      * @param modelKey       模型调用标识key
      * @param displayName    展示名称
      * @param baseUrl        模型接口地址
      * @param maxOutputTokens 最大输出token
      */
-    private record ModelSnapshot(Long id, String provider, String modelKey, String displayName,
+    private record ModelSnapshot(Long id, String provider, String adapterType, String modelKey, String displayName,
                                  String baseUrl, Long maxOutputTokens) {
     }
 }

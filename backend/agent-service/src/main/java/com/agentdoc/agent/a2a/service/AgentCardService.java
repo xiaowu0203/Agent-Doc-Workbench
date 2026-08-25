@@ -1,4 +1,4 @@
-package com.agentdoc.agent.a2a.server;
+package com.agentdoc.agent.a2a.service;
 
 import org.a2aproject.sdk.spec.AgentCapabilities;
 import org.a2aproject.sdk.spec.AgentCard;

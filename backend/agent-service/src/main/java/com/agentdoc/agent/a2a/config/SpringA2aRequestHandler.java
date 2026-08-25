@@ -1,4 +1,4 @@
-package com.agentdoc.agent.a2a.server;
+package com.agentdoc.agent.a2a.config;
 
 import org.a2aproject.sdk.jsonrpc.common.wrappers.ListTasksResult;
 import org.a2aproject.sdk.server.ServerCallContext;

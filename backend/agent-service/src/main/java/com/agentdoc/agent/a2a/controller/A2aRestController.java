@@ -1,5 +1,8 @@
-package com.agentdoc.agent.a2a.server;
+package com.agentdoc.agent.a2a.controller;
 
+import com.agentdoc.common.constant.A2aMetadataConstant;
+import com.agentdoc.agent.a2a.service.A2aRequestAuthorizationService;
+import com.agentdoc.agent.a2a.service.AgentCardService;
 import com.agentdoc.agent.pojo.param.A2aPushConfigSearchParam;
 import com.agentdoc.agent.pojo.param.A2aTaskSearchParam;
 import io.swagger.v3.oas.annotations.Operation;
@@ -88,7 +91,7 @@ public class A2aRestController {
                           @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version)
             throws A2AError {
         authorizationService.requireTaskScope(params);
-        return requestHandler.onMessageSend(params, callContext(version));
+        return requestHandler.onMessageSend(params, callContext(version, false));
     }
 
     @Operation(summary = "A2A流式消息发送接口，SSE长连接(提交Agent任务，以SSE流式返回增量事件流)")
@@ -98,7 +101,7 @@ public class A2aRestController {
             @RequestBody MessageSendParams params,
             @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version) throws A2AError {
         authorizationService.requireTaskScope(params);
-        return requestHandler.onMessageSendStream(params, callContext(version));
+        return requestHandler.onMessageSendStream(params, callContext(version, true));
     }
 
     @Operation(summary = "查询单个A2A任务详情")
@@ -108,7 +111,7 @@ public class A2aRestController {
                     @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version)
             throws A2AError {
         authorizationService.requireA2aTaskScope(id);
-        return requestHandler.onGetTask(new TaskQueryParams(id, historyLength), callContext(version));
+        return requestHandler.onGetTask(new TaskQueryParams(id, historyLength), callContext(version, false));
     }
 
     @Operation(summary = "按contextId列举任务列表，分页查询")
@@ -126,7 +129,7 @@ public class A2aRestController {
                 .statusTimestampAfter(searchParam.statusTimestampAfter())
                 .includeArtifacts(searchParam.includeArtifacts())
                 .build();
-        return requestHandler.onListTasks(params, callContext(version));
+        return requestHandler.onListTasks(params, callContext(version, false));
     }
 
     @Operation(summary = "取消正在执行的A2A任务")
@@ -135,7 +138,7 @@ public class A2aRestController {
                        @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version)
             throws A2AError {
         authorizationService.requireA2aTaskScope(id);
-        return requestHandler.onCancelTask(new CancelTaskParams(id), callContext(version));
+        return requestHandler.onCancelTask(new CancelTaskParams(id), callContext(version, false));
     }
 
     @Operation(summary = "SSE订阅任务事件，长连接实时接收任务增量更新")
@@ -144,7 +147,7 @@ public class A2aRestController {
             @PathVariable String id,
             @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version) throws A2AError {
         authorizationService.requireA2aTaskScope(id);
-        return requestHandler.onSubscribeToTask(new TaskIdParams(id), callContext(version));
+        return requestHandler.onSubscribeToTask(new TaskIdParams(id), callContext(version, true));
     }
 
     @Operation(summary = "创建任务推送回调通知配置(配置后任务状态变更会主动回调外部推送地址)")
@@ -157,7 +160,7 @@ public class A2aRestController {
         authorizationService.requireA2aTaskScope(taskId);
         TaskPushNotificationConfig scopedConfig = new TaskPushNotificationConfig(
                 config.id(), taskId, config.url(), config.token(), config.authentication(), config.tenant());
-        return requestHandler.onCreateTaskPushNotificationConfig(scopedConfig, callContext(version));
+        return requestHandler.onCreateTaskPushNotificationConfig(scopedConfig, callContext(version, false));
     }
 
     @Operation(summary = "查询任务下全部推送回调配置，分页")
@@ -169,7 +172,7 @@ public class A2aRestController {
         authorizationService.requireA2aTaskScope(taskId);
         ListTaskPushNotificationConfigsParams params = new ListTaskPushNotificationConfigsParams(
                 taskId, searchParam.pageSize(), searchParam.pageToken(), null);
-        return requestHandler.onListTaskPushNotificationConfigs(params, callContext(version));
+        return requestHandler.onListTaskPushNotificationConfigs(params, callContext(version, false));
     }
 
     @Operation(summary = "获取单条推送回调配置详情")
@@ -180,7 +183,7 @@ public class A2aRestController {
             @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version) throws A2AError {
         authorizationService.requireA2aTaskScope(taskId);
         return requestHandler.onGetTaskPushNotificationConfig(
-                new GetTaskPushNotificationConfigParams(taskId, configId), callContext(version));
+                new GetTaskPushNotificationConfigParams(taskId, configId), callContext(version, false));
     }
 
     @Operation(summary = "删除任务推送回调配置")
@@ -191,7 +194,7 @@ public class A2aRestController {
             @RequestHeader(value = PROTOCOL_VERSION_HEADER, required = false) String version) throws A2AError {
         authorizationService.requireA2aTaskScope(taskId);
         requestHandler.onDeleteTaskPushNotificationConfig(
-                new DeleteTaskPushNotificationConfigParams(taskId, configId), callContext(version));
+                new DeleteTaskPushNotificationConfigParams(taskId, configId), callContext(version, false));
     }
 
     /**
@@ -201,8 +204,9 @@ public class A2aRestController {
      * @param version 从Header取出的A2A‑Version版本字符串
      * @return ServerCallContext 调用上下文对象
      */
-    private ServerCallContext callContext(String version) {
+    private ServerCallContext callContext(String version, boolean streaming) {
         return new ServerCallContext(null,
-                Map.of(ServerCallContext.TRANSPORT_KEY, TransportProtocol.HTTP_JSON.asString()), Set.of(), version);
+                Map.of(ServerCallContext.TRANSPORT_KEY, TransportProtocol.HTTP_JSON.asString(),
+                        A2aMetadataConstant.STREAMING_REQUEST_STATE, streaming), Set.of(), version);
     }
 }
