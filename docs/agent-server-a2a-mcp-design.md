@@ -21,6 +21,23 @@
 | `agent-service` → LLM 厂商 | Spring AI Provider API | 模型推理与工具调用 |
 | `agent-service` → `task-service` | A2A Push Notification | 异步状态与结果通知 |
 
+### 1.1 当前服务角色边界
+
+当前只有 `agent-service` 是 Agent 执行方，`task-service` 是普通业务编排方，不需要再运行一个 Agent。
+
+```text
+task-service
+  ├─ A2A Client：提交、查询、取消 agent-service 的 Agent Task
+  ├─ MCP Server：暴露 WorkbenchMcpTools 业务工具
+  └─ A2A Push 回调接收端：接收 Agent 状态变更通知
+
+agent-service
+  ├─ A2A Server：管理 Agent Task 生命周期
+  └─ MCP Client：发现并调用 task-service 的 Workbench MCP 工具
+```
+
+这里的 A2A 是 Agent 任务协议，不要求通信双方都是 Agent；MCP 则是 Agent 访问 Workbench 业务能力的工具协议。`task-service` 的 `/api/task/internal/a2a/events` 是 Push Notification 接收端点，不是完整的 A2A Server。
+
 ## 2. 总体架构
 
 ```mermaid
@@ -248,6 +265,24 @@ pushNotifications: true
 
 MQ 消费线程不会阻塞等待模型执行，也不会在远端已经执行时因为消息重投而重复启动 Agent。
 
+### 6.4 查询、执行与事件职责
+
+`agent-service` 的 A2A 请求处理由官方 `DefaultRequestHandler` 统一分发，不由 `AgentExecutor` 负责所有接口：
+
+```text
+message:send  → 创建/保存 Task → 排队 → AgentExecutor.execute(...)
+tasks/{id}    → TaskStore.get(id)
+tasks/{id}:cancel → 更新任务/队列 → AgentExecutor.cancel(...)
+```
+
+其中：
+
+- `AgentExecutor` 只负责实际 Agent 执行和取消；
+- `TaskStore` 负责完整 A2A Task 的保存和查询；
+- `MainEventBusProcessor` 消费 `AgentEmitter` 产生的状态、Artifact 事件，并驱动 Push Notification。
+
+Agent 执行成功时，`addArtifact` 保存执行摘要和 Token 元数据，`complete` 将 Task 标记为完成；两者职责不同。task-service 收到 Push 后再通过 `GET /a2a/tasks/{id}` 拉取完整 Task，并从摘要 Artifact 同步本地结果。
+
 ## 7. Workbench MCP Server
 
 ### 7.1 协议基线
@@ -311,6 +346,18 @@ MQ 消费线程不会阻塞等待模型执行，也不会在远端已经执行�
 ```
 
 MCP Tool 类只负责参数转换和调用应用服务，不包含文档类型判断、审批创建或审计业务。
+
+### 7.4 工具发现与路由
+
+Agent 不需要知道 task-service 的 Java 类名。MCP 初始化后，agent-service 通过 `tools/list` 获取工具名、描述和参数 Schema；模型决定调用工具后，MCP Client 发送 `tools/call`：
+
+```text
+tools/call
+  name: workbench_read_document_fragment
+  arguments: { start, length }
+```
+
+task-service 的 Spring AI MCP Server 根据 `@McpTool(name = "workbench_read_document_fragment")` 注册表，将调用路由到 `WorkbenchMcpTools.readDocumentFragment(...)`，再由该门面转发到 `WorkbenchMcpApplicationService`。工具调用携带的 Task Capability 由 MCP 安全过滤器和 `McpTaskScopeService` 校验，之后才访问文档或变更业务。
 
 ## 8. Agent Runtime
 
