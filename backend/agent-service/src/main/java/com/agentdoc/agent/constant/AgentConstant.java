@@ -50,10 +50,6 @@ public final class AgentConstant {
      */
     public static final int MAX_ERROR_MESSAGE_LENGTH = 2000;
     /**
-     * OpenAI默认接口BaseUrl
-     */
-    public static final String DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
-    /**
      * MCP服务端默认端点路径，对应workbench暴露的MCP接口地址
      */
     public static final String DEFAULT_MCP_ENDPOINT = "/mcp";

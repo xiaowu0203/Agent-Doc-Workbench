@@ -38,6 +38,8 @@ agent-doc:
       - /a2a
       - /a2a/**
   agent:
+    runtime:
+      type: ${AGENT_RUNTIME_TYPE:custom}
     model:
       chat-model-cache:
         max-size: ${AGENT_CHAT_MODEL_CACHE_MAX_SIZE:100}

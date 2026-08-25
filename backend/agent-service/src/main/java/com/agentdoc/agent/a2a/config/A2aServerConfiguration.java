@@ -137,13 +137,53 @@ public class A2aServerConfiguration {
                                             @Qualifier("a2aExecutionExecutor") Executor executionExecutor,
                                             @Qualifier("a2aEventExecutor") Executor eventExecutor) {
         RequestHandler delegate = DefaultRequestHandler.builder()
+                /**
+                 * A2A 业务执行器：（当前实现是WorkbenchAgentExecutor）
+                 * 真正执行业务 Agent 任务，以及处理取消请求。
+                 * 内部最终会调用 AgentExecutor.execute(...) / cancel(...)
+                 */
                 .agentExecutor(agentExecutor)
+                /**
+                 * A2A Task 持久化存储：（当前实现是MySqlA2aTaskStore）
+                 * 保存、查询、更新完整的 A2A Task。
+                 */
                 .taskStore(taskStore)
+                /**
+                 * 任务队列管理器：（当前实现是InMemoryQueueManager）
+                 * 管理 A2A Task 的排队、调度和活跃状态。
+                 */
                 .queueManager(queueManager)
+                /**
+                 * 推送回调配置存储：（当前实现是 MySqlA2aPushConfigStore）
+                 * 保存每个 A2A Task 的 TaskPushNotificationConfig
+                 * 包括 task-service 的 callback URL、通知 Token 等
+                 */
                 .pushConfigStore(configStore)
+                /**
+                 * 主事件总线处理器：
+                 * 消费 AgentEmitter 发布的任务事件
+                 * 更新 TaskStore，并根据 pushConfigStore 中的配置
+                 * 触发外部 HTTP 回调（例如 startWork、addArtifact、complete、fail、cancel）
+                 */
                 .mainEventBusProcessor(processor)
+                /**
+                 * Agent 业务执行线程池：
+                 * 用于异步执行 agentExecutor.execute(...)
+                 * 避免 /a2a/message:send 请求线程直接阻塞整个 Agent 执行过程
+                 */
                 .executor(executionExecutor)
+                /**
+                 * 事件消费线程池：
+                 * 用于异步消费任务事件、更新 TaskStore、
+                 * 调用 PushNotificationSender 向 task-service 推送回调。
+                 */
                 .eventConsumerExecutor(eventExecutor)
+
+                /**
+                 * 构建 A2A SDK 默认请求处理器。
+                 * 它会统一处理 send、get task、list task、cancel、
+                 * push notification config 等标准 A2A 接口。
+                 */
                 .build();
         return new SpringA2aRequestHandler(delegate);
     }

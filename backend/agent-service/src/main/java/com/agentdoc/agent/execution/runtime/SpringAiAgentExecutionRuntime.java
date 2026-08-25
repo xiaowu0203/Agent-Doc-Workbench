@@ -5,28 +5,14 @@ import com.agentdoc.agent.execution.model.ModelAdapter;
 import com.agentdoc.agent.execution.model.ModelAdapterContext;
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.model.ModelCapabilities;
-import com.agentdoc.agent.execution.tool.CancellationAwareToolCallback;
 import com.agentdoc.agent.execution.tool.ProviderNeutralToolLoop;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.agent.service.PromptService;
-import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
-import io.modelcontextprotocol.client.McpClient;
-import io.modelcontextprotocol.client.McpSyncClient;
-import io.modelcontextprotocol.client.transport.WebClientStreamableHttpTransport;
-import io.modelcontextprotocol.spec.McpSchema;
-import org.springframework.ai.mcp.SyncMcpToolCallbackProvider;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
 
-import java.net.URI;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -40,7 +26,8 @@ import java.util.function.Consumer;
  * <p>取消机制：多处调用 requireNotCanceled() 轮询外部传入的cancelRequested回调，
  * 检测到取消标记立刻抛出 {@link AgentExecutionCanceledException} 终止执行。</p>
  */
-@Component
+@Component("customAgentExecutionRuntime")
+@ConditionalOnAgentRuntime(AgentRuntimeType.CUSTOM)
 public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
     /** 配置加密解密服务，解密模型存储的encryptedApiKey */
     private final AgentConfigCryptoService cryptoService;
@@ -61,13 +48,7 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
     }
 
     /**
-     * Agent执行入口：建立MCP连接，选择模型适配器，交由统一工具循环执行LLM会话
-     * @param agent Agent配置实体
-     * @param model LLM模型配置实体
-     * @param instruction 用户输入指令
-     * @param input 任务入参DTO，携带mcpServerUrl、taskCapability鉴权令牌等
-     * @param cancelRequested 外部取消信号回调，轮询判断是否需要终止
-     * @return 运行时结果，包含摘要文本、各类token消耗
+     * 同步执行入口，不开启流式文本delta回调
      */
     @Override
     public AgentRuntimeResult execute(AgentEntity agent, ModelEntity model, String instruction,
@@ -75,6 +56,10 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
         return executeInternal(agent, model, instruction, input, cancelRequested, ignored -> { }, false);
     }
 
+    /**
+     * 流式执行入口，支持onTextDelta增量文本回调
+     * @param onTextDelta 每收到一段模型输出文本片段就回调该消费者
+     */
     @Override
     public AgentRuntimeResult execute(AgentEntity agent, ModelEntity model, String instruction,
                                       AgentTaskInputDTO input, BooleanSupplier cancelRequested,
@@ -82,6 +67,17 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
         return executeInternal(agent, model, instruction, input, cancelRequested, onTextDelta, true);
     }
 
+    /**
+     * 内部统一执行入口：组装桥接控制器、用量收集器、包装ObservingChatModel，构建ReactAgent并执行
+     * @param agent agent配置实体
+     * @param model 模型配置实体
+     * @param instruction 用户顶层指令
+     * @param input 任务入参
+     * @param cancelRequested 外部取消信号
+     * @param onTextDelta 流式文本增量回调
+     * @param streaming 是否启用流式模式
+     * @return 标准化Agent执行结果
+     */
     private AgentRuntimeResult executeInternal(AgentEntity agent, ModelEntity model, String instruction,
                                                 AgentTaskInputDTO input, BooleanSupplier cancelRequested,
                                                 Consumer<String> onTextDelta, boolean streaming) {
@@ -89,38 +85,12 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
         requireNotCanceled(cancelRequested);
         // MCP任务依赖模型发起工具调用，能力不满足时在建立MCP连接前直接失败
         ModelAdapter adapter = adapterRegistry.require(model, ModelCapabilities.requiredToolCalling());
-        // 解析MCP服务端地址，拆分为baseUrl与path
-        McpEndpoint endpoint = McpEndpoint.from(input.mcpServerUrl());
-
-        // 构建WebClient，携带taskCapability令牌访问MCP服务
-        WebClient.Builder webClientBuilder = WebClient.builder()
-                .baseUrl(endpoint.baseUrl())
-                .defaultHeader(HttpHeaders.AUTHORIZATION,
-                        JwtConstant.TOKEN_TYPE_BEARER + " " + input.taskCapability());
-
-        // 构建MCP HTTP流式传输层
-        WebClientStreamableHttpTransport transport = WebClientStreamableHttpTransport.builder(webClientBuilder)
-                .endpoint(endpoint.path())
-                .build();
-
-        // try‑with‑resources：执行结束自动关闭MCP客户端连接
-        try (McpSyncClient mcpClient = McpClient.sync(transport)
-                .clientInfo(new McpSchema.Implementation(
-                        AgentConstant.MCP_CLIENT_NAME, AgentConstant.MCP_CLIENT_VERSION))
-                .requestTimeout(Duration.ofSeconds(agent.getExecutionTimeoutSeconds()))
-                .build()) {
-            // MCP握手初始化
-            mcpClient.initialize();
-            requireNotCanceled(cancelRequested);
-
-            List<ToolCallback> toolCallbacks = Arrays.stream(new SyncMcpToolCallbackProvider(mcpClient)
-                            .getToolCallbacks())
-                    .map(callback -> new CancellationAwareToolCallback(callback, cancelRequested))
-                    .map(ToolCallback.class::cast)
-                    .toList();
+        // 任务级MCP资源封装负责鉴权、初始化、取消检测和连接释放
+        try (TaskScopedMcpTools tools = TaskScopedMcpTools.open(input.mcpServerUrl(),
+                input.taskCapability(), timeoutSeconds(agent), cancelRequested)) {
             Integer maxOutputTokens = modelMaxOutputTokens(model);
             ModelAdapterContext adapterContext = new ModelAdapterContext(agent, model,
-                    cryptoService.decrypt(model.getEncryptedApiKey()), maxOutputTokens, toolCallbacks);
+                    cryptoService.decrypt(model.getEncryptedApiKey()), maxOutputTokens, tools.callbacks());
             Long tokenBudget = input.tokenBudget() == null ? agent.getTokenBudget() : input.tokenBudget();
             int maxIterations = agent.getMaxIterations() == null
                     ? AgentConstant.DEFAULT_MAX_ITERATIONS : agent.getMaxIterations();
@@ -134,6 +104,16 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
                     tokenBudget, maxIterations, cancelRequested);
         }
     }
+
+    /**
+     * 获取agent配置的执行超时秒数；null使用全局默认常量
+     */
+    private int timeoutSeconds(AgentEntity agent) {
+        return agent.getExecutionTimeoutSeconds() == null
+                ? AgentConstant.DEFAULT_EXECUTION_TIMEOUT_SECONDS
+                : agent.getExecutionTimeoutSeconds();
+    }
+
     /**
      * 读取模型自身的单轮输出Token上限。
      * <p>任务和Agent预算由 {@link ProviderNeutralToolLoop} 按累计用量统一熔断。</p>
@@ -155,27 +135,4 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
         }
     }
 
-    /**
-     * MCP服务端点记录类，把传入的完整serverUrl拆分为 baseUrl(协议+主机端口) 和 path(请求路径)
-     * @param baseUrl 协议+主机，例如 http://127.0.0.1:8080
-     * @param path http请求路径，例如 /mcp
-     */
-    private record McpEndpoint(String baseUrl, String path) {
-
-        /**
-         * 从完整MCP Server URL解析出McpEndpoint
-         * @param serverUrl 完整MCP服务地址
-         * @return McpEndpoint
-         */
-        private static McpEndpoint from(String serverUrl) {
-            URI uri = URI.create(serverUrl);
-            if (uri.getScheme() == null || uri.getAuthority() == null) {
-                throw new IllegalArgumentException("MCP Server URL 必须是绝对地址");
-            }
-            String path = uri.getRawPath();
-            return new McpEndpoint(
-                    uri.getScheme() + "://" + uri.getAuthority(),
-                    path == null || path.isBlank() ? AgentConstant.DEFAULT_MCP_ENDPOINT : path);
-        }
-    }
 }

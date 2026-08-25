@@ -69,7 +69,7 @@ public class AgentExecutionApplicationService {
         // 幂等：按workbench业务任务id查询是否已有执行记录
         AgentExecutionEntity existing = findByWorkbenchTaskId(input.workbenchTaskId());
         if (existing != null) {
-            // 任务已存在，直接回放状态事件，不再重新跑模型
+            // 任务已存在，触发回调task-service 进行任务状态同步
             emitExisting(existing, emitter);
             return;
         }
@@ -93,7 +93,7 @@ public class AgentExecutionApplicationService {
                 systemPrompt, promptService.hash(systemPrompt, instruction), objectMapper);
         executionMapper.insert(execution);
 
-        // 通知A2A协议层：任务开始工作
+        // 触发回调task-service，任务开始执行
         emitter.startWork();
         // 更新数据库状态为WORKING执行中
         AgentExecutionConvertor.markWorking(execution);
@@ -114,22 +114,30 @@ public class AgentExecutionApplicationService {
             // 执行成功，回填结果，更新数据库状态为COMPLETED
             AgentExecutionConvertor.complete(execution, result);
             executionMapper.updateById(execution);
-            // 产出Artifact产物：执行摘要，附带token消耗、执行ID等元数据
-            emitter.addArtifact(List.of(new TextPart(result.summary())),
-                    A2aMetadataConstant.EXECUTION_SUMMARY_ARTIFACT, "Execution Summary",
+            // 触发回调task-service，保存正式结果和元数据（无关状态），跟下面的complete区分开，一个处理数据，一个处理状态
+            emitter.addArtifact(
+                    // 内容
+                    List.of(new TextPart(result.summary())),
+                    //产物类型
+                    A2aMetadataConstant.EXECUTION_SUMMARY_ARTIFACT,
+                    // 展示名称
+                    "Execution Summary",
+                    // token元数据
                     tokenMetadata(execution, result));
-            // 通知A2A任务完成，返回Agent消息
+            // 触发回调task-service，任务已经完成了
             emitter.complete(agentMessage(result.summary()));
         } catch (AgentExecutionCanceledException exception) {
             // 捕获主动取消异常，状态置为CANCELED
             AgentExecutionConvertor.cancel(execution);
             executionMapper.updateById(execution);
+            // 触发回调task-service，任务取消了
             emitter.cancel(agentMessage(exception.getMessage()));
         } catch (RuntimeException exception) {
             // 运行时异常：模型报错、工具异常等，状态置为FAILED
             String errorMessage = safeMessage(exception);
             AgentExecutionConvertor.fail(execution, errorMessage);
             executionMapper.updateById(execution);
+            // 触发回调task-service，任务失败了
             emitter.fail(agentMessage(errorMessage));
         }
     }
@@ -149,7 +157,7 @@ public class AgentExecutionApplicationService {
         // 修改状态为已取消，写库
         AgentExecutionConvertor.cancel(execution);
         executionMapper.updateById(execution);
-        // 向A2A发送取消事件
+        // 触发回调task-service，任务开始执行
         emitter.cancel(agentMessage("任务已取消"));
     }
 
