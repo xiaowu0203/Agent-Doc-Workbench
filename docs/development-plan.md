@@ -2,7 +2,7 @@
 
 > 基于《Agent‑Doc‑Workbench 项目完整开发规划文档》与技术栈定稿（docs/tech/）
 >
-> 更新时间：2026‑08‑24・状态：Phase 0 / 1 / 2 / 3 已完成（Phase 3 真实外部 MCP Runtime 已接入）
+> 更新时间：2026‑08‑24・状态：Phase 0 / 1 / 2 / 3 已完成（Phase 3 Agent Server、A2A、Workbench MCP 已接入）
 
 ## 总体节奏
 
@@ -21,7 +21,7 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 
 -  初始化 Git 仓库 + `.gitignore` + Apache‑2.0 LICENSE + 根 README
 -  `docker‑compose.yml` 本地一键启动：MySQL 5.7 / Redis 5.0.14.1 / RabbitMQ 3‑management / MinIO / Nacos 3.2.2
--  后端 Maven 多模块骨架：`common`聚合工程（包含 common‑core、各技术 starter、common‑agent‑sdk） + gateway‑service /auth‑service /document‑service /task‑service；agent、audit 业务逻辑先内置在 task‑service，接口稳定后再拆独立子服务
+-  后端 Maven 多模块骨架：`common` 聚合工程（common-core 与技术 starter） + gateway-service / auth-service / document-service / task-service / agent-service
 -  前端脚手架：Vite + Vue 3 + TypeScript (strict) + Pinia + Vue Router + Element Plus + ESLint + Prettier + Husky + Vitest
 -  `.env.example`、开发环境变量模板
 
@@ -63,16 +63,17 @@ Phase 0 工程基建 → Phase 1 后端地基 → Phase 2 文档核心 → Phase
 
 ## Phase 3：Agent 与任务（5‑7 天，已完成）
 
-**目标**：单 Agent MCP 接入 + Token 预算熔断
+**目标**：独立 Agent Server + Workbench MCP Server + A2A 任务协议 + Token 预算熔断
 
--  agent 业务模块：Agent 配置、MCP 凭证加密存储、权限范围（空间 / 目录 / 文档）、工具白名单
--  `task‑service`：任务状态机（待运行→运行中→已完成 / 已终止 / 异常），RabbitMQ 异步消费
--  `AgentRuntime` 抽象 + `McpAgentRuntime` 实现（Spring AI MCP Client，Workbench 主动调用外部 Agent）
--  变更输出 → ChangeRequest 转换：正式文档入审批队列、草稿文档直写
+-  `agent-service`：Agent/Model 配置、提示词快照、A2A Server、Spring AI Runtime 和 MCP Client
+-  `task‑service`：任务状态机、RabbitMQ 异步消费、A2A Client、A2A 回调/对账和 Workbench MCP Server
+-  A2A 负责任务下发、查询、取消和 Push；MCP 负责 Agent 读取 Workbench 数据和提交变更
+-  A2A Task/Push Config 协议状态使用 MySQL 持久化，载荷加密保存
+-  变更输出 → ChangeRequest 转换：正式文档入审批队列
 -  Token 预算：任务级上限 + 空间全局预算 + 熔断 + 四维度用量统计（空间 / 文档 / 任务 / Agent）
 -  审计日志：操作主体（人 / Agent）、操作类型、关联任务、不可篡改
 
-**验收**：Mock 已走通统一的「下发任务→读取片段→产出变更→审批/草稿写入→熔断与统计」链路；真实 Runtime 已使用 Spring AI MCP Client 的 SSE 传输完成接入，凭证来自 Agent 加密配置，调用前校验工具白名单和远端工具发现结果，真实 endpoint 集成验证按环境配置执行。
+**验收**：核心 A2A/MCP 适配、MySQL A2A 持久化和任务状态对账已实现并通过核心测试；完整 LLM、协议互操作和端到端基础设施闭环仍需在部署环境验证。
 
 ## Phase 4：前端（5‑7 天）
 

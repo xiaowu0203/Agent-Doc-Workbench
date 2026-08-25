@@ -25,8 +25,8 @@ Agent-Doc-Workbench 把「文档」作为 Agent 任务的协作载体，让每�
 - **草稿 / 正式双文档模式**：草稿区允许 Agent 自由编辑快速试错；正式文档禁止 Agent 直接改写，杜绝内容篡改
 - **Diff 变更审批**：所有 Agent 修改统一生成结构化变更请求，支持全部接受 / 部分接受 / 拒绝 / 批注退回，合并后自动生成版本快照
 - **Token 预算熔断**：任务级预算 + 空间全局预算，超限自动熔断，彻底解决多 Agent 成本失控
-- **原生 MCP 协议**：兼容任意外部 MCP Server，本地/远程 Agent 均可接入，无模型绑定
-- **Agent 权限管控**：空间 + 文档范围 + 工具白名单组合授权，Agent 不直接拥有用户权限
+- **A2A + MCP 标准协议**：任务通过 A2A 分发到独立 Agent Server，Agent 通过 MCP 使用 Workbench 工具
+- **Agent 权限管控**：任务级 Capability 绑定空间、文档和动作，Agent 不直接继承用户权限
 - **全链路审计日志**：操作主体（人/Agent）、操作类型、关联任务，日志不可篡改
 - **版本快照与回滚**：每次合并变更自动生成版本，一键回滚任意历史版本
 
@@ -46,7 +46,7 @@ Agent-Doc-Workbench 把「文档」作为 Agent 任务的协作载体，让每�
 | 消息/缓存 | RabbitMQ · Redis 7 · Redisson |
 | 存储 | MinIO（对象存储） |
 | 注册/配置 | Nacos 3.2.2 |
-| Agent 接入 | Spring AI MCP Client + 官方 MCP Java SDK（业务编排自研） |
+| Agent 接入 | Spring AI · 官方 A2A Java SDK · MCP Java SDK |
 | 前端 | Vue 3 · TypeScript · Vite · Pinia · Element Plus · ProseMirror |
 | 鉴权 | Spring Authorization Server · OAuth2 · JWT（RS256） |
 
@@ -62,11 +62,11 @@ Gateway (Spring Cloud Gateway · WebFlux)
    │
    ├── auth-service       用户、OAuth2、JWT
    ├── document-service   空间、目录、文档、版本、Diff 审批
-   ├── task-service       Agent 任务、Token 预算、RabbitMQ 消费
-   └── (agent / audit 初期并入主服务)
+   ├── task-service       Agent 任务、A2A Client、Workbench MCP Server、Token 账本
+   └── agent-service      Agent/Model 配置、A2A Server、Spring AI Runtime、MCP Client
          │
-         ▼
-   外部 MCP Agent（通过 MCP 协议读取文档片段、提交变更）
+         ├── A2A：task-service → agent-service
+         └── MCP：agent-service → task-service
 ```
 
 ## 当前进度
@@ -100,7 +100,7 @@ pnpm install
 pnpm dev
 ```
 
-后端服务默认端口：Gateway `9090`、Auth `8081`、Document `8082`、Task `8083`。
+后端服务默认端口：Gateway `9090`、Auth `8081`、Document `8082`、Task `8083`、Agent `8084`。
 前端环境变量模板见 `frontend/.env.example`；基础设施与敏感配置模板见 `.env.example`。
 
 ## 开发路线图

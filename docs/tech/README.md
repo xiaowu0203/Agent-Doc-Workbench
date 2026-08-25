@@ -6,10 +6,10 @@
 
 |    领域    |                           核心结论                           |
 | :--------: | :----------------------------------------------------------: |
-|    后端    | Spring Boot 3.5 + Java 21 + Spring Cloud 2025；Maven 多模块，common 为聚合工程，包含 common‑core、多套技术 xxx‑spring‑boot‑starter、业务契约 common‑agent‑sdk；业务微服务 gateway/auth/document/task；v0.1 agent/audit 作为业务模块合并在 task‑service，接口稳定后再拆独立服务；Spring MVC + MyBatis‑Plus + MySQL；REST API |
+|    后端    | Spring Boot 3.5 + Java 21 + Spring Cloud 2025；Maven 多模块；业务微服务 gateway/auth/document/task/agent；task-service 负责任务编排与 Workbench MCP Server，agent-service 负责 Agent Server、Spring AI Runtime 与 MCP Client；Spring MVC + MyBatis‑Plus + MySQL；REST + A2A + MCP |
 |    前端    | Vue 3 + TypeScript + Vite + Pinia + Element Plus + ProseMirror |
 |    鉴权    | OAuth2 Authorization Code + PKCE + JWT（RSA RS256），外部 Agent 用 Client Credentials |
-| Agent 接入 | Spring AI MCP + 官方 MCP Java SDK，业务编排自研（AgentRuntime 抽象） |
+| Agent 接入 | Spring AI + 官方 A2A/MCP Java SDK，业务编排自研 |
 |  基础设施  | Nacos + Spring Cloud Gateway + RabbitMQ + Redis 5.0.14.1 + MinIO，Docker Compose 一键启动；定时任务 v0.1 用 Spring `@Scheduled` + Redisson 锁，XXL‑Job 待 v0.2 集群化后引入 |
 
 ## 文档导航
@@ -30,6 +30,6 @@
 
 ## v0.1 落地优先级
 
-- 后端模块：`gateway` → `auth` → `document` → `task`（`agent` / `audit` 先并入主服务）
+- 后端模块：`gateway` → `auth` → `document` → `task` / `agent`
 - 前端页面：登录 → 工作空间首页 → 文档树与编辑 → Agent 配置 → 任务创建 → Diff 审批 → 版本历史 → Token 用量与审计日志
 - 许可证：Apache‑2.0

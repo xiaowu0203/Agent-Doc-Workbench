@@ -1,5 +1,6 @@
 ﻿# === Java / Maven ===
 target/
+.m2-repository/
 *.class
 *.jar
 *.war
