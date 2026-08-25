@@ -64,7 +64,7 @@ public class TaskCapabilitySecurityAutoConfiguration {
      * <li>配置 {@code agent‑doc.security.task‑capability‑filter‑enabled=true} 显式开启该能力；</li>
      * <li>容器不存在同名Bean，允许业务自定义覆盖。</li>
      * </ul>
-     * 过滤器职责：解析请求头X‑TASK‑CAPABILITY，验签通过后临时设置Agent身份Security上下文，
+     * 过滤器职责：解析请求头X‑TASK‑CAPABILITY或配置端点的Bearer令牌，验签通过后临时设置Agent身份Security上下文，
      * 同时写入{@link com.agentdoc.common.context.TaskCapabilityContext}供Feign拦截器向下游透传令牌；
      * 使用「保存‑恢复原始SecurityContext」模式，避免线程池ThreadLocal身份泄露。
      * </p>
@@ -77,7 +77,7 @@ public class TaskCapabilitySecurityAutoConfiguration {
             havingValue = "true")
     @ConditionalOnMissingBean
     public TaskCapabilityAuthenticationFilter taskCapabilityAuthenticationFilter(
-            TaskCapabilityVerifier verifier) {
-        return new TaskCapabilityAuthenticationFilter(verifier);
+            TaskCapabilityVerifier verifier, SecurityVerifyProperties properties) {
+        return new TaskCapabilityAuthenticationFilter(verifier, properties);
     }
 }

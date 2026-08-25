@@ -32,6 +32,11 @@ agent-doc:
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
     # 是否开启TaskCapabilityAuthenticationFilter任务能力令牌鉴权过滤器
     task-capability-filter-enabled: true
+    capability-auth-endpoints:
+      - /mcp
+      - /mcp/**
+      - /a2a
+      - /a2a/**
   agent:
     # Agent服务对外公网可访问地址，用于A2A协议回调、生成Agent‑Card元信息
     public-url: ${AGENT_PUBLIC_URL:http://localhost:9090}

@@ -12,7 +12,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.a2aproject.sdk.spec.Task;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -37,18 +36,7 @@ public class A2aTaskReconciliationService {
     private final A2aTaskSynchronizationService synchronizationService;
     private final TaskCapabilityCryptoService cryptoService;
     private final RedisUtils redisUtils;
-
-    /**
-     * 判定任务心跳过期的时间阈值，单位秒；超过该时间未收到心跳则触发对账
-     */
-    @Value("${agent-doc.a2a.reconcile-stale-seconds}")
-    private long staleSeconds;
-
-    /**
-     * 单次定时任务查询处理的任务批次大小
-     */
-    @Value("${agent-doc.a2a.reconcile-batch-size}")
-    private int batchSize;
+    private final A2aProperties a2aProperties;
 
     /**
      * A2A过期任务定时对账入口
@@ -58,8 +46,8 @@ public class A2aTaskReconciliationService {
     @Scheduled(fixedDelayString = "${agent-doc.a2a.reconcile-delay-ms}")
     public void reconcileStaleTasks() {
         // 计算心跳截止时间：当前时间往前回溯 staleSeconds
-        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(staleSeconds);
-        taskMapper.selectPage(new Page<>(1, batchSize), new LambdaQueryWrapper<TaskEntity>()
+        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(a2aProperties.getReconcileStaleSeconds());
+        taskMapper.selectPage(new Page<>(1, a2aProperties.getReconcileBatchSize()), new LambdaQueryWrapper<TaskEntity>()
                         // 只筛选远端仍处于活跃中的任务状态
                         .in(TaskEntity::getStatus, TaskStatus.remoteActiveCodes())
                         // 必须存在远端A2A任务ID，才可以去远端查询

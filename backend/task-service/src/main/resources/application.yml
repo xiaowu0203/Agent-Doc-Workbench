@@ -45,6 +45,11 @@ agent-doc:
     # 从 Authorization 自行解析 JWT 身份（配置即启用；无效 token 由 Security 层直接 401）
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
     task-capability-filter-enabled: true
+    capability-auth-endpoints:
+      - /mcp
+      - /mcp/**
+      - /a2a
+      - /a2a/**
   openapi:
     title: Task Service API
     description: 任务服务：Agent 任务、变更审批、Token 用量与审计
@@ -55,6 +60,10 @@ agent-doc:
     agent-service-url: ${AGENT_SERVICE_URL:http://localhost:8084}
     task-callback-url: ${TASK_CALLBACK_URL:http://localhost:8083/api/task/internal/a2a/events}
     mcp-server-url: ${MCP_SERVER_URL:http://localhost:8083/mcp}
+    paths:
+      send: /a2a/message:send
+      task: /a2a/tasks/{taskId}
+      cancel: /a2a/tasks/{taskId}:cancel
     reconcile-delay-ms: ${A2A_RECONCILE_DELAY_MS:60000}
     reconcile-stale-seconds: ${A2A_RECONCILE_STALE_SECONDS:120}
     reconcile-batch-size: ${A2A_RECONCILE_BATCH_SIZE:50}

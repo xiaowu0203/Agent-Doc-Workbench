@@ -2,6 +2,7 @@ package com.agentdoc.common.security;
 
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import io.micrometer.common.util.StringUtils;
 import jakarta.servlet.FilterChain;
@@ -15,6 +16,7 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -25,7 +27,7 @@ import java.util.List;
  * <p>
  * 处理两种令牌来源：
  * 1. 请求头 {@link HeaderConstants#X_TASK_CAPABILITY} 携带任务能力令牌，全局接口生效
- * 2. /mcp、/a2a 接口从 Authorization: Bearer 头解析JWT令牌
+ * 2. 配置的能力端点从 Authorization: Bearer 头解析JWT令牌
  * <p>
  * 职责：JWT验签、构造Agent安全认证上下文、设置自定义任务能力线程上下文；
  * 验签失败直接返回401；无令牌直接放行走原有Spring Security认证链路；
@@ -41,22 +43,26 @@ public class TaskCapabilityAuthenticationFilter extends OncePerRequestFilter {
      */
     public static final int FILTER_ORDER = Ordered.LOWEST_PRECEDENCE - 10;
 
-    /** MCP协议接口根路径 */
-    private static final String MCP_ENDPOINT = "/mcp";
-    /** A2A Agent‑to‑Agent接口根路径 */
-    private static final String A2A_ENDPOINT = "/a2a";
     /** Bearer token前缀，和JWT常量保持一致 */
     private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
+    /** Ant 风格路径匹配器，支持 /mcp/**、/a2a/** 等配置 */
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
 
     /** Agent任务令牌验签器，负责JWT签名、过期、agent业务claim校验 */
     private final TaskCapabilityVerifier verifier;
+    /** 允许从Authorization头解析能力令牌的路径模式 */
+    private final List<String> capabilityAuthEndpoints;
 
     /**
      * Agent任务令牌验签器
      * 负责JWT签名校验、过期时间校验、Agent业务自定义Claim合法性校验
      */
-    public TaskCapabilityAuthenticationFilter(TaskCapabilityVerifier verifier) {
+    public TaskCapabilityAuthenticationFilter(TaskCapabilityVerifier verifier,
+                                              SecurityVerifyProperties properties) {
         this.verifier = verifier;
+        this.capabilityAuthEndpoints = properties.getCapabilityAuthEndpoints() == null
+                ? List.of()
+                : List.copyOf(properties.getCapabilityAuthEndpoints());
     }
 
     /**
@@ -118,7 +124,7 @@ public class TaskCapabilityAuthenticationFilter extends OncePerRequestFilter {
      * 解析Agent任务能力令牌
      * <ol>
      *  <li>优先读取请求头 {@link HeaderConstants#X_TASK_CAPABILITY}</li>
-     *  <li>如果是/mcp、/a2a系列接口，降级从Authorization Bearer头提取JWT令牌</li>
+     *  <li>如果请求路径命中配置的能力端点，降级从Authorization Bearer头提取JWT令牌</li>
      * </ol>
      *
      * @param request http请求
@@ -133,12 +139,12 @@ public class TaskCapabilityAuthenticationFilter extends OncePerRequestFilter {
 
         // 获取请求URI
         String requestUri = request.getRequestURI();
-        // 非MCP/A2A接口，不从Authorization头解析任务令牌，直接返回null
+        // 非配置能力端点，不从Authorization头解析任务令牌，直接返回null
         if (!isCapabilityEndpoint(requestUri)) {
             return null;
         }
 
-        // MCP/A2A接口，解析Authorization: Bearer xxx 头部
+        // 配置的能力端点，解析Authorization: Bearer xxx头部
         String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
         if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
             return null;
@@ -148,16 +154,19 @@ public class TaskCapabilityAuthenticationFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 判断当前URI是否属于MCP/A2A能力令牌专属端点
-     * 支持完全匹配根路径、子路径匹配（/mcp/**、/a2a/**）
+     * 判断当前URI是否命中配置的能力令牌端点
+     * 支持Ant风格路径匹配，例如 /mcp/**、/a2a/**。
      *
      * @param requestUri 请求URI
      * @return true=是MCP/A2A接口；false=普通业务接口
      */
     private boolean isCapabilityEndpoint(String requestUri) {
-        return MCP_ENDPOINT.equals(requestUri)
-                || requestUri.startsWith(MCP_ENDPOINT + "/")
-                || A2A_ENDPOINT.equals(requestUri)
-                || requestUri.startsWith(A2A_ENDPOINT + "/");
+        if (requestUri == null) {
+            return false;
+        }
+        return capabilityAuthEndpoints.stream()
+                .filter(StringUtils::isNotBlank)
+                .map(String::trim)
+                .anyMatch(pattern -> PATH_MATCHER.match(pattern, requestUri));
     }
 }

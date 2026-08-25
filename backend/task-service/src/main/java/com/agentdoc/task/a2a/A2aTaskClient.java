@@ -11,7 +11,6 @@ import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
 import org.a2aproject.sdk.spec.TextPart;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -47,18 +46,6 @@ public class A2aTaskClient {
      */
     private static final String A2A_VERSION = "1.0";
     /**
-     * 提交A2A消息/任务接口路径 POST
-     */
-    private static final String SEND_PATH = "/a2a/message:send";
-    /**
-     * 查询单个A2A任务接口路径 GET，占位符：taskId
-     */
-    private static final String TASK_PATH = "/a2a/tasks/{taskId}";
-    /**
-     * 取消A2A任务接口路径 POST，占位符：taskId
-     */
-    private static final String CANCEL_PATH = "/a2a/tasks/{taskId}:cancel";
-    /**
      * Bearer token鉴权前缀
      */
     private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
@@ -67,30 +54,19 @@ public class A2aTaskClient {
      * Spring RestClient HTTP客户端实例，指向远端Agent‑Service服务地址
      */
     private final RestClient restClient;
-    /**
-     * A2A任务回调地址，Agent‑Server状态变更时会POST到此地址
-     */
-    private final String callbackUrl;
-    /**
-     * MCP服务访问地址，透传给远端Agent，用于Agent调用本地MCP工具
-     */
-    private final String mcpServerUrl;
+    /** A2A 客户端和回调配置。 */
+    private final A2aProperties properties;
 
     /**
      * 构造A2A HTTP客户端
      *
      * @param builder            RestClient构建器
-     * @param agentServiceUrl    远端Agent‑Server服务根地址，配置项 agent‑doc.a2a.agent‑service‑url
-     * @param callbackUrl        A2A任务回调通知地址，配置项 agent‑doc.a2a.task‑callback‑url
-     * @param mcpServerUrl       本地MCP服务地址，配置项 agent‑doc.a2a.mcp‑server‑url
+     * @param properties         A2A 客户端、路径和回调配置
      */
     public A2aTaskClient(RestClient.Builder builder,
-                         @Value("${agent-doc.a2a.agent-service-url}") String agentServiceUrl,
-                         @Value("${agent-doc.a2a.task-callback-url}") String callbackUrl,
-                         @Value("${agent-doc.a2a.mcp-server-url}") String mcpServerUrl) {
-        this.restClient = builder.baseUrl(agentServiceUrl).build();
-        this.callbackUrl = callbackUrl;
-        this.mcpServerUrl = mcpServerUrl;
+                         A2aProperties properties) {
+        this.restClient = builder.baseUrl(properties.getAgentServiceUrl()).build();
+        this.properties = properties;
     }
 
     /**
@@ -106,7 +82,7 @@ public class A2aTaskClient {
         // 组装传给Agent的任务输入DTO，包含任务元信息、MCP服务地址
         AgentTaskInputDTO input = new AgentTaskInputDTO(
                 task.getId(), task.getAgentId(), task.getSpaceId(), task.getDocumentId(), task.getTokenBudget(),
-                mcpServerUrl, capability);
+                properties.getMcpServerUrl(), capability);
         // 构建A2A消息：用户指令文本 + 结构化任务输入数据Part
         Message message = Message.builder()
                 .role(Message.Role.ROLE_USER)
@@ -116,7 +92,7 @@ public class A2aTaskClient {
         // 配置远端回调推送：指定回调地址、回调鉴权令牌
         TaskPushNotificationConfig pushConfig = TaskPushNotificationConfig.builder()
                 .id(UUID.randomUUID().toString())
-                .url(callbackUrl)
+                .url(properties.getTaskCallbackUrl())
                 .token(capability)
                 .authentication(new AuthenticationInfo(JwtConstant.TOKEN_TYPE_BEARER, capability))
                 .build();
@@ -131,7 +107,7 @@ public class A2aTaskClient {
                 .build();
         // POST调用A2A send接口
         return restClient.post()
-                .uri(SEND_PATH)
+                .uri(properties.getPaths().getSend())
                 .header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + capability)
                 .header(A2A_VERSION_HEADER, A2A_VERSION)
                 .contentType(MediaType.parseMediaType(A2A_MEDIA_TYPE))
@@ -150,7 +126,7 @@ public class A2aTaskClient {
      */
     public Task get(String taskId, String capability) {
         return restClient.get()
-                .uri(TASK_PATH, taskId)
+                .uri(properties.getPaths().getTask(), taskId)
                 .header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + capability)
                 .header(A2A_VERSION_HEADER, A2A_VERSION)
                 .accept(MediaType.parseMediaType(A2A_MEDIA_TYPE))
@@ -167,7 +143,7 @@ public class A2aTaskClient {
      */
     public Task cancel(String taskId, String capability) {
         return restClient.post()
-                .uri(CANCEL_PATH, taskId)
+                .uri(properties.getPaths().getCancel(), taskId)
                 .header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + capability)
                 .header(A2A_VERSION_HEADER, A2A_VERSION)
                 .accept(MediaType.parseMediaType(A2A_MEDIA_TYPE))

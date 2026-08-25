@@ -3,6 +3,8 @@ package com.agentdoc.common.config;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.List;
+
 /**
  * 业务服务安全配置。
  */
@@ -19,4 +21,14 @@ public class SecurityVerifyProperties {
      * 是否启用任务能力令牌请求过滤器，默认关闭。
      */
     private boolean taskCapabilityFilterEnabled;
+
+    /**
+     * 允许从 Authorization: Bearer 头解析任务能力令牌的请求路径。
+     */
+    private List<String> capabilityAuthEndpoints = List.of(
+            "/mcp",
+            "/mcp/**",
+            "/a2a",
+            "/a2a/**"
+    );
 }
