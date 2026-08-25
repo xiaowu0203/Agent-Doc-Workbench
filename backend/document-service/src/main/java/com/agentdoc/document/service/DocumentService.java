@@ -1,19 +1,22 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ChangeOp;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
+import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.PageUtils;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.enums.DocStatus;
-import com.agentdoc.document.enums.DocType;
-import com.agentdoc.document.enums.SpaceRole;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
@@ -69,10 +72,6 @@ public class DocumentService {
         validateParent(dto.spaceId(), dto.parentId());
         // DTO转数据库实体，设置创建人
         DocumentEntity doc = dto.toEntity(userId);
-        // 设置初始版本号
-        doc.setVersion(DocumentConstant.INITIAL_VERSION);
-        // 文档状态：正常（未归档、不在回收站）
-        doc.setStatus(DocStatus.NORMAL.getCode());
         // 入库
         documentMapper.insert(doc);
         return doc.toVO();
@@ -135,7 +134,12 @@ public class DocumentService {
         // 校验文档必须存在，不存在抛404
         DocumentEntity doc = requireDoc(id);
         // 校验用户属于该空间成员
-        permissionService.requireMember(doc.getSpaceId());
+        if (AuthUtils.isAgent()) {
+            permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
+                    JwtConstant.ACTION_READ_FRAGMENT);
+        } else {
+            permissionService.requireMember(doc.getSpaceId());
+        }
         return doc.toDetailVO();
     }
 
@@ -308,7 +312,7 @@ public class DocumentService {
      */
     private void bumpVersion(DocumentEntity doc, String content, String summary, Long userId) {
         // 计算下一个版本号
-        long nextVersion = doc.getVersion() + 1;
+        long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
         // 更新文档主表版本号
         doc.setVersion(nextVersion);
         documentMapper.updateById(doc);
@@ -392,7 +396,7 @@ public class DocumentService {
                 ? "审批合并变更" : request.changeSummary();
         // 版本号+1，写入快照
         bumpVersion(doc, newContent, summary, operatorId);
-        return new MergeResultVO(doc.getId(), doc.getTitle(), doc.getVersion());
+        return doc.toMergeResultVO();
     }
 
     /**
@@ -443,6 +447,54 @@ public class DocumentService {
         int safeLength = (int) Math.min(Math.max(length, 0), total - safeStart);
         String fragment = safeLength == 0 ? "" : content.substring((int) safeStart, (int) safeStart + safeLength);
         return new DocumentFragmentVO(id, fragment, safeStart, safeLength, total);
+    }
+
+    /**
+     * 返回任务创建所需的文档上下文，并要求当前用户具备编辑权限。
+     */
+    public DocumentExecutionContextVO getExecutionContext(Long id) {
+        // 校验文档必须存在，不存在抛404
+        DocumentEntity doc = requireDoc(id);
+        if (AuthUtils.isAgent()) {
+            // 若当前请求为Agent，校验 Agent 是否拥有【阅读片段】能力
+            permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
+                    JwtConstant.ACTION_READ_FRAGMENT);
+        } else {
+            // 校验编辑权限
+            permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        }
+        return doc.toExecutionContextVO();
+    }
+
+    /**
+     * 将 Agent 变更直接应用到草稿文档，正式文档不允许走此入口。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public MergeResultVO applyAgentDraftChanges(MergeRequestDTO request) {
+        // 校验文档必须存在，不存在抛404
+        DocumentEntity doc = requireDoc(request.documentId());
+        // 校验 Agent 任务能力令牌
+        permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
+                JwtConstant.ACTION_WRITE_DRAFT);
+        // 若文档状态非【草稿】，抛出异常
+        if (doc.getDocType() != DocType.DRAFT.getCode()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "正式文档的 Agent 变更必须进入审批队列");
+        }
+        // 并发保护：客户端传入的基线版本号必须等于数据库当前版本，否则拒绝合并，防止覆盖别人编辑内容
+        if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档基线版本不匹配，请重新读取后生成变更");
+        }
+        // 构建新内容（全文替换/追加）
+        String newContent = applyChanges(doc.getContent(), request.changes());
+        // 设置并更新文档
+        doc.setContent(newContent);
+        doc.setUpdatedBy(AuthUtils.getAgentIdOrException());
+        documentMapper.updateById(doc);
+        // 版本号+1，生成新版本快照，记录回滚操作摘要
+        bumpVersion(doc, newContent,
+                request.changeSummary() == null ? "Agent 更新草稿" : request.changeSummary(),
+                doc.getUpdatedBy());
+        return doc.toMergeResultVO();
     }
 
     /**

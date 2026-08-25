@@ -48,12 +48,8 @@ public class DocumentVersionService {
     @Transactional(rollbackFor = Exception.class)
     public DocumentVersionVO createSnapshot(Long documentId, Long versionNo, String content,
                                             String changeSummary, Long userId) {
-        DocumentVersionEntity entity = new DocumentVersionEntity();
-        entity.setDocumentId(documentId);
-        entity.setVersionNo(versionNo);
-        entity.setContent(content);
-        entity.setChangeSummary(changeSummary);
-        entity.setCreatedBy(userId);
+        DocumentVersionEntity entity = DocumentVersionEntity.create(
+                documentId, versionNo, content, changeSummary, userId);
         // 插入版本快照记录
         versionMapper.insert(entity);
         return entity.toVO();

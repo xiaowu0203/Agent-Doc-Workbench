@@ -136,6 +136,7 @@ public interface AgentRuntime {
 15. **验证分级（禁止每次改动都跑全量+端到端）**：按改动影响面选择最小验证手段——纯注释/文档改动**不验证**；删除无引用死代码（先 grep 确认零引用、引用处已同步清理）**仅编译受影响模块**；业务逻辑改动**跑该模块测试**；只有鉴权/跨服务/公共层装配等高风险改动才**全量测试 + 端到端**。全量 reactor test（约 2 分钟）与端到端（启动 4 服务）是重武器，只在真正需要时使用
 16. **查询参数封装（除 path 变量外，请求参数 ≥ 3 个封装为 SearchParam）**：`@PathVariable`（资源定位）不计入，其余 query/body 参数达到 3 个及以上时封装为查询参数对象统一经 `@RequestBody` 传递；**查询参数统一命名 `XXXSearchParam`、放各业务服务 `pojo.param` 包**（写入载荷仍为 `pojo.dto` 的 `XXXDTO`）；**复杂查询接口（多过滤条件 + 分页）用 POST + Body**（"POST for search" 惯例，规避 GET + body 不规范），分页参数（PageParam）并入 SearchParam 一并传递；Service 层对应改收 SearchParam，避免 Controller 字段搬运
 17. **跨业务访问统一走 Service/Feign（禁止直连他域 Mapper）**：业务 Service 只允许使用**自身业务域**的 Mapper（如 document 域可查 space/member/document/document_version，task 域可查 change_request 等）；需要其他业务数据（如 task 查文档标题/按空间过滤）一律经对应业务的 **Feign 契约**（common-core `com.agentdoc.common.feign` 的 `XXXXFeign`）调用对方 Service 实现的能力，**禁止在 Service 中引入他域 Mapper 直连对方表**；批量场景契约应支持批量查询（如 `getDocumentRefs(List<Long>)` 一次回填标题，避免逐条 RPC）
+18. **Java 类型统一使用 import 导入**：类、接口、枚举及其静态成员统一在文件头部通过 `import` / `import static` 导入，业务代码（字段、方法签名、注解、泛型及方法体）只使用简单类名，**禁止直接书写全限定类名**（如 `java.time.LocalDate.now()`、`com.agentdoc.common.utils.AuthUtils.isAgent()`）；仅当同一文件确实存在多个同名类型、无法同时用简单类名区分时，允许其中必要的类型使用全限定名。注解中的包扫描字符串等本身要求包名字符串的配置不受此规则限制
 
 ### 开源规范
 - 目标开源，License 倾向 Apache-2.0；发布前补齐 README、CONTRIBUTING、安全说明
@@ -241,6 +242,12 @@ public interface AgentRuntime {
 ### 2026-08-23（评审教训：验证分级 + 死代码清理，未提交）
 - **RequirePermission 死代码**：注解定义三年无人使用（grep 零引用）、value 细粒度权限从未实现（拦截器只当登录处理）；Phase 2 细粒度权限实际走 `SpacePermissionService.requireRole()` Service 层显式校验（动态空间角色，注解静态 value 表达不了）；经用户确认**删除**该注解 + 清理 PermissionInterceptor / CommonWebAutoConfiguration 引用；未来方法级权限用 Spring Security 标准 `@PreAuthorize`，不自研注解轮子
 - **评审批评：过度验证**——删除无引用死代码也跑全量 reactor test（约 2 分钟）+ 频繁端到端，被用户指出「要有判断」；固化**规范 15（验证分级）**：按影响面选最小验证（注释不验证 / 删死代码仅编译 / 业务逻辑跑模块测试 / 高危改动才全量+端到端）
+
+### 2026-08-26（Phase 3 完成，Phase 4-8 路线拆分）
+- Phase 3 已完成独立 agent-service、A2A Client/Server、Workbench MCP、任务 Capability、异步任务、Token 预算/统计、审计、MySQL A2A 状态持久化、状态对账、多模型适配和可选 Spring AI Alibaba Runtime；准备由 `phase-3` PR 合并 `main`。
+- 路线拆分为 Phase 4 Skill 管理、Phase 5 细粒度权限、Phase 6 前端、Phase 7 闭环联调、Phase 8 开源发布；启动基线见 `docs/PHASE4-HANDOFF.md`。
+- Skill 采用 `SKILL.md` + `references/` / `assets/` / `scripts/` 目录包、版本与 Agent 绑定；Phase 4 只存储脚本，不在 Agent 进程任意执行。
+- Phase 5 保留“角色绑定权限标识符，用户通过空间角色获得权限”的方向；沿用 Spring Security `@PreAuthorize` / 业务授权服务，不恢复自研 `@RequirePermission`。
 
 ## 八、决策记录（ADR，倒序追加）
 

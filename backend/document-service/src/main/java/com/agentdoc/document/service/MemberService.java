@@ -1,8 +1,9 @@
 package com.agentdoc.document.service;
 
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.document.enums.SpaceRole;
+import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.pojo.dto.MemberAddDTO;
 import com.agentdoc.document.pojo.dto.MemberRoleUpdateDTO;
@@ -85,7 +86,7 @@ public class MemberService {
         // 业务防护：当前用户是OWNER，要降级，且空间仅有这一个OWNER → 禁止降级
         if (member.getRole() == SpaceRole.OWNER.getCode()
                 && newRole != SpaceRole.OWNER
-                && countOwners(spaceId) <= 1) {
+                && countOwners(spaceId) <= DocumentConstant.MIN_OWNER_COUNT) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "空间至少保留一名所有者");
         }
         // 更新角色编码到数据库
@@ -106,7 +107,8 @@ public class MemberService {
         // 校验该用户是本空间成员
         MemberEntity member = requireMember(spaceId, userId);
         // 禁止移除空间仅剩的所有者
-        if (member.getRole() == SpaceRole.OWNER.getCode() && countOwners(spaceId) <= 1) {
+        if (member.getRole() == SpaceRole.OWNER.getCode()
+                && countOwners(spaceId) <= DocumentConstant.MIN_OWNER_COUNT) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "空间至少保留一名所有者");
         }
         // 删除该条成员关系记录

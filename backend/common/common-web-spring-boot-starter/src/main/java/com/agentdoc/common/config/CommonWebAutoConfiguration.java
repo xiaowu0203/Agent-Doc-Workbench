@@ -5,16 +5,10 @@ import com.agentdoc.common.security.PermissionInterceptor;
 import com.agentdoc.common.web.TraceIdFilter;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-
-import java.net.MalformedURLException;
 
 /**
  * common‑web 模块自动装配类，Servlet Web环境生效。
@@ -25,13 +19,12 @@ import java.net.MalformedURLException;
  * <li>{@link TraceIdFilter}：TraceId链路过滤器</li>
  * <li>{@link PermissionInterceptor}：鉴权拦截器，仅拦截 /api/** 路径</li>
  * </ul>
- * 安全（JWT 解析与 401）由 {@link CommonSecurityAutoConfiguration} 承担（Spring Security Resource Server）。
+ * 安全（JWT 解析与 401）由 common-security-spring-boot-starter 承担（Spring Security Resource Server）。
  * <p>条件：仅 Servlet(SpringMVC) 环境加载；WebFlux环境不会实例化本配置。
  * </p>
  */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
-@EnableConfigurationProperties(SecurityVerifyProperties.class)
 public class CommonWebAutoConfiguration implements WebMvcConfigurer {
 
     /**
@@ -53,20 +46,6 @@ public class CommonWebAutoConfiguration implements WebMvcConfigurer {
     @ConditionalOnMissingBean(TraceIdFilter.class)
     public TraceIdFilter traceIdFilter() {
         return new TraceIdFilter();
-    }
-
-    /**
-     * JWT 解码器：配置 {@code agent-doc.security.jwks-url} 后启用（auth-service不用自认证），
-     * 从 auth-service 的 JWK Set 拉取并缓存 RSA 公钥，供 Spring Security Resource Server 验签解析。
-     * 未配置 jwks-url 的服务（如 auth-service 用自己的 SecurityConfig）不创建，避免与自定义解码器冲突。
-     * @param properties 安全校验配置
-     * @return JwtDecoder 实例
-     * @throws MalformedURLException jwks-url 非法时抛出
-     */
-    @Bean
-    @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
-    public JwtDecoder businessJwtDecoder(SecurityVerifyProperties properties) throws MalformedURLException {
-        return NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
     }
 
     /**

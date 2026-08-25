@@ -12,7 +12,7 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 │   ├── exception/     BusinessException
 │   ├── constant/      HeaderConstants（仅 X-Trace-Id；X-User-* 已废弃——身份由业务服务自行解析 JWT）
 │   │                  RedisKeyConstants / JwtConstant
-│   ├── context/       TraceContext
+│   ├── context/       TraceContext / TaskCapabilityContext
 │   ├── id/            SnowflakeIdGenerator
 │   ├── enums/         ErrorCode / ChangeOp
 │   ├── annotation/    @RequireLogin
@@ -22,16 +22,18 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 │   ├── pojo/dto/      PageParam（分页参数：pageNum/pageSize 默认 1/10 + validate()）
 │   └── pojo/vo/       PageVO（统一分页响应）
 ├── common-web-spring-boot-starter/    # Servlet Web 自动装配（仅横切基础设施，无业务形态代码；探活由 Actuator health 承担）
-│   ├── config/        CommonWebAutoConfiguration（含 businessJwtDecoder：agent-doc.security.jwks-url 配置）
-│   │                  CommonSecurityAutoConfiguration（Security Resource Server：permitAll + JWT 解析 + 401 JSON）
-│   │                  SecurityVerifyProperties
+│   ├── config/        CommonWebAutoConfiguration
 │   ├── handler/       GlobalExceptionHandler
 │   ├── web/           TraceIdFilter
 │   └── security/      PermissionInterceptor（@RequireLogin 注解驱动，检查 SecurityContext）
+├── common-security-spring-boot-starter/ # 安全自动装配（JWT Resource Server、任务能力 JWT 验签与过滤器）
+│   ├── config/        CommonSecurityAutoConfiguration / TaskCapabilitySecurityAutoConfiguration
+│   │                  SecurityVerifyProperties
+│   └── security/      TaskCapabilityVerifier / TaskCapabilityAuthenticationFilter
 ├── common-springdoc-spring-boot-starter/   # OpenAPI 模板（agent-doc.openapi.*）
 ├── common-mybatis-plus-spring-boot-starter # 分页插件 + 乐观锁（默认关）；CommonMetaObjectHandler 在 handler/；PageUtils 在 utils/（toPage，随技术栈落位）
 ├── common-redis-spring-boot-starter/       # jsonRedisTemplate + RedisUtils（utils/，条件装配）
-└── common-feign-spring-boot-starter/       # @EnableFeignClients 统一扫描契约 + 默认 AuthHeaderForwardInterceptor（透传用户 JWT）
+└── common-feign-spring-boot-starter/       # @EnableFeignClients 统一扫描契约 + 默认 AuthHeaderForwardInterceptor（透传用户 JWT/任务能力令牌）+ feign.context.AuthorizationContext
 ```
 
 ## 二、依赖矩阵
@@ -39,9 +41,9 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 | 模块 | 依赖 |
 | --- | --- |
 | gateway-service | `common-core` only（WebFlux，其余 starter 全不引） |
-| auth-service | core + web + springdoc + mybatis-plus + redis |
-| document-service | core + web + springdoc + mybatis-plus（redis 按需） |
-| task-service | core + web + springdoc + mybatis-plus + redis + feign |
+| auth-service | core + security + web + springdoc + mybatis-plus + redis |
+| document-service | core + security + web + springdoc + mybatis-plus（redis 按需） |
+| task-service | core + security + web + springdoc + mybatis-plus + redis + feign |
 
 约束：
 - **线程模型**：web starter 仅面向 Servlet MVC；gateway（WebFlux）不依赖任何 MVC starter

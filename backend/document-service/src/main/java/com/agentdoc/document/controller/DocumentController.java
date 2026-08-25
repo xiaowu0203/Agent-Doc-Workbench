@@ -12,6 +12,7 @@ import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
+import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
@@ -55,6 +56,12 @@ public class DocumentController {
         return Result.ok(documentService.mergeForFeign(request));
     }
 
+    @Operation(summary = "Agent 直接更新草稿文档（服务间调用）")
+    @PostMapping("/draft-agent-apply")
+    public Result<MergeResultVO> applyDraftAgent(@RequestBody MergeRequestDTO request) {
+        return Result.ok(documentService.applyAgentDraftChanges(request));
+    }
+
     @Operation(summary = "文档引用批量查询（服务间调用）")
     @GetMapping("/refs")
     public Result<List<DocumentRefVO>> listRefs(@RequestParam List<Long> documentIds) {
@@ -79,15 +86,21 @@ public class DocumentController {
         return Result.ok(documentService.trashList(spaceId, pageParam));
     }
 
-    @Operation(summary = "文档片段读取（按偏移，供 Agent 按需加载控 Token）")
+    @Operation(summary = "文档片段读取（按偏移，供 Agent 按需加载控 Token，服务间调用）")
     @GetMapping("/{id}/fragments")
     public Result<DocumentFragmentVO> readFragment(@PathVariable Long id,
                                                    @RequestParam(defaultValue = "0") long start,
-                                                   @RequestParam(defaultValue = "500")
+                                                   @RequestParam(defaultValue = DocumentConstant.DEFAULT_FRAGMENT_LENGTH)
                                                    @Max(value = DocumentConstant.FRAGMENT_MAX_LENGTH,
                                                            message = "单次读取长度不能超过 " + DocumentConstant.FRAGMENT_MAX_LENGTH)
                                                    int length) {
         return Result.ok(documentService.readFragment(id, start, length));
+    }
+
+    @Operation(summary = "查询 Agent 任务执行上下文（服务间调用）")
+    @GetMapping("/{id}/execution-context")
+    public Result<DocumentExecutionContextVO> executionContext(@PathVariable Long id) {
+        return Result.ok(documentService.getExecutionContext(id));
     }
 
     @Operation(summary = "文档详情（含正文）")

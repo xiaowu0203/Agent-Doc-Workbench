@@ -1,6 +1,6 @@
 package com.agentdoc.document.pojo.dto;
 
-import com.agentdoc.document.enums.SpaceRole;
+import com.agentdoc.common.enums.SpaceRole;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 

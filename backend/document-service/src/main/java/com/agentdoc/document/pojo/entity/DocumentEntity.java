@@ -1,8 +1,11 @@
 package com.agentdoc.document.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseLogicDeleteEntity;
+import com.agentdoc.common.feign.vo.DocumentRefVO;
+import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.document.enums.DocStatus;
-import com.agentdoc.document.enums.DocType;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
@@ -77,7 +80,21 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
      * 转换为文档引用投影（服务间标题回填用）。
      * @return 文档引用投影
      */
-    public com.agentdoc.common.feign.vo.DocumentRefVO toRefVO() {
-        return new com.agentdoc.common.feign.vo.DocumentRefVO(getId(), spaceId, title);
+    public DocumentRefVO toRefVO() {
+        return new DocumentRefVO(getId(), spaceId, title);
+    }
+
+    /**
+     * 转换为任务执行所需的文档上下文。
+     */
+    public DocumentExecutionContextVO toExecutionContextVO() {
+        return new DocumentExecutionContextVO(getId(), spaceId, docType, status, version);
+    }
+
+    /**
+     * 转换为文档合并结果。
+     */
+    public MergeResultVO toMergeResultVO() {
+        return new MergeResultVO(getId(), title, version);
     }
 }

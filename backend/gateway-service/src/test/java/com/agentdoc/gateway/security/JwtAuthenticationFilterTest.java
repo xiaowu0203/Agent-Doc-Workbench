@@ -5,6 +5,7 @@ import com.agentdoc.gateway.config.GatewayAuthProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
@@ -95,7 +96,7 @@ class JwtAuthenticationFilterTest {
         assertNull(captured[0].getResponse().getStatusCode(), "有效 token 不应返回 401");
         ServerHttpRequest downstream = captured[0].getRequest();
         assertEquals("Bearer signed.jwt.value",
-                downstream.getHeaders().getFirst(org.springframework.http.HttpHeaders.AUTHORIZATION),
+                downstream.getHeaders().getFirst(HttpHeaders.AUTHORIZATION),
                 "应透传原始 Authorization 头供业务服务自行解析");
         assertNull(downstream.getHeaders().getFirst("X-User-Id"),
                 "不应注入 X-User-Id 身份头");

@@ -1,8 +1,9 @@
-# Phase 3 交接文档（2026-08-22）
+# Phase 3 交接文档（2026-08-24）
 
-> 用途：供新会话（Agent / 协作者）快速进入状态，开始 Phase 3「Agent 与任务」开发。
-> 生成依据：当前仓库 `phase-2` 分支（Phase 2「文档核心」已完成并端到端实测通过，待合并入 main）；
+> 用途：供新会话（Agent / 协作者）快速了解 Phase 3「Agent 与任务」实现状态。
+> 生成依据：当前仓库 `phase-3` 分支（基于已合并 Phase 2 的 main）；
 > 规划来源：`docs/development-plan.md`（Phase 3）与《Agent-Doc-Workbench 项目完整开发规划文档》（2.3 Agent 协作能力 / 2.4 Token 成本管控）。
+> 状态：Phase 3 已完成，计划于 2026-08-26 通过 PR 合并 `main`；真实网站闭环验证统一放在 Phase 7。
 
 ## 一、项目一句话
 
@@ -10,7 +11,7 @@
 Agent 禁止直接改写正式文档，所有修改生成 Diff 变更请求，经人工审批后合并，支持版本回滚、
 Token 预算熔断与全链路审计。v0.1 仅实现单 Agent，多 Agent 编排后置 v0.2。
 
-## 二、Phase 2 已完成（本分支，待合并）
+## 二、Phase 2 已完成（已合并入 main）
 
 - **空间 / 成员**：空间 CRUD（创建者自动 OWNER）+ 成员角色（OWNER/EDITOR/VIEWER，最后一名 OWNER 不可移除）
 - **文档核心**：文档 CRUD / 树形目录（移动防环）/ 草稿-正式双模式 / 归档-回收站-恢复
@@ -29,8 +30,10 @@ backend/
 ├── common/
 │   ├── common-core/                    # + feign 包（DocumentFeign 完整客户端契约：@FeignClient+HTTP 注解 / MergeRequestDTO / MergeResultVO / ChangeItemDTO）
 │   │                                   # + enums.ChangeOp + pojo.vo.PageVO
-│   ├── common-web-spring-boot-starter/ # + config.CommonSecurityAutoConfiguration（Resource Server）
-│   │                                   # + config.SecurityVerifyProperties + web.TraceIdFilter
+│   ├── common-security-spring-boot-starter/ # + CommonSecurityAutoConfiguration（Resource Server）
+│   │                                       # + TaskCapabilityVerifier / TaskCapabilityAuthenticationFilter
+│   │                                       # + config.SecurityVerifyProperties
+│   ├── common-web-spring-boot-starter/ # + web.TraceIdFilter
 │   │                                   # + security.PermissionInterceptor（@RequireLogin 注解驱动）
 │   ├── common-springdoc-spring-boot-starter/
 │   ├── common-mybatis-plus-spring-boot-starter/  # + utils.PageUtils
@@ -51,39 +54,55 @@ backend/
     └── enums/       ChangeRequestStatus / ChangeRequestType
 ```
 
-## 四、Phase 3 任务清单（摘自 development-plan.md）
+## 四、Phase 3 任务清单（当前实现状态）
 
-**目标**：单 Agent MCP 接入 + Token 预算熔断（预计 5-7 天）
+**目标**：独立 Agent Server + Workbench MCP Server + A2A 1.0 远程任务协议。
 
-- agent 业务模块：Agent 配置、MCP 凭证加密存储（AES，`agent.mcp_config`）、权限范围（空间/目录/文档）、工具白名单
-- task-service：任务状态机（PENDING→RUNNING→COMPLETED/TERMINATED/FAILED），RabbitMQ 异步消费
-- `AgentRuntime` 抽象 + `McpAgentRuntime` 实现（Spring AI MCP Client，Workbench 主动调用外部 Agent）
-- 变更输出 → ChangeRequest 转换：**正式文档入审批队列（复用 Phase 2 已建链路）、草稿文档直写**
-- Token 预算：任务级上限 + 空间全局预算 + 熔断 + 四维度用量统计（空间/文档/任务/Agent）
-- 审计日志：操作主体（人/Agent）、操作类型、关联任务、不可篡改（audit_log 表已建，Insert-only）
+- ✅ 新增 `agent-service`，独立持有 Agent、Model、Prompt 和 AgentExecution。
+- ✅ `task-service` 作为 A2A Client，通过 RabbitMQ 异步分发并接收标准 Push Notification。
+- ✅ `agent-service` 使用官方 A2A Java SDK 暴露 Send/Get/List/Cancel/Stream/Subscribe/Push Config。
+- ✅ `agent-service` 使用 Spring AI 调用 OpenAI 兼容模型，并按任务创建 MCP Streamable HTTP Client。
+- ✅ `task-service` 作为 Workbench MCP Server，暴露任务上下文、文档片段读取和变更提案三个工具。
+- ✅ Task Capability 同时约束 A2A 与 MCP 的 task、agent、space、document 和 action 范围。
+- ✅ Agent 修改统一生成 ChangeRequest，正式内容不由 Agent 直接落库。
+- ✅ 旧 `McpAgentRuntime`、Mock Runtime 及 task-service 内的 Agent/Model 所有权已移除。
+- ✅ A2A TaskStore 与 PushNotificationConfigStore 已使用 MySQL 持久化，协议载荷 AES-GCM 加密，服务重启可恢复。
+- ✅ task-service 已接入定时 A2A Get Task 状态对账；按任务使用 Redis 锁，避免多实例重复对账。
 
-**验收**：对接一个真实/模拟 MCP Agent，走通「下发任务→Agent 读取片段→产出变更→熔断/预算生效」链路。
+完整设计和协议入口见 `docs/agent-server-a2a-mcp-design.md`。
+
+### Phase 3 配置
+
+- `TASK_CAPABILITY_KEY`：Base64 编码的 16/24/32 字节 AES 密钥，用于加密任务能力令牌。
+- `AGENT_CONFIG_KEY`：Base64 编码的 16/24/32 字节 AES 密钥，用于加密模型 API Key。
+- `AGENT_SERVICE_URL` / `AGENT_PUBLIC_URL`：Agent Service 内部调用地址和 Agent Card 公网地址。
+- `TASK_CALLBACK_URL` / `MCP_SERVER_URL`：A2A 回调地址和 Workbench MCP Streamable HTTP 地址。
+- `A2A_RECONCILE_DELAY_MS` / `A2A_RECONCILE_STALE_SECONDS` / `A2A_RECONCILE_BATCH_SIZE`：任务状态对账周期、无心跳阈值和单批扫描数量。
+- `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`：auth-service 的 RSA JWT 密钥对；任务能力 JWT 与登录 JWT 共用该密钥，由 auth-service 统一签发。
+- RabbitMQ：`agent-doc-workbench.task.execute` 队列，失败消息进入 `agent-doc-workbench.task.dead`。
+
+任务能力签发接口为 `/api/auth/internal/task-capabilities`，要求普通用户认证上下文；task-service 只在创建任务时远程调用一次，用户 `Authorization JWT` 由现有 Feign 拦截器透传，任务执行与 document-service 访问均通过 auth-service JWKS 本地验签。
 
 ## 五、Phase 2 → Phase 3 交接点（已就绪的复用资产）
 
 1. **审批链路可直接复用**：ChangeRequestService.submit（proposedBy 已支持 Agent ID 语义，sourceTaskId 字段 Phase 3 由任务提交时填充）
 2. **合并接口已通**：`common.feign.DocumentFeign` 即完整 Feign 客户端（统一入口，`@FeignClient` + HTTP 注解均标注在契约上），task-service 直接注入调用（经网关）；document-service 侧 `/api/document/documents/merge` 已实现并校验 EDITOR 角色；冲突 40900 语义已验证；合并操作人身份 = 审批人（JWT 透传，已实测 updatedBy 一致）
-3. **片段读取接口已通**：`readFragment` 供 MCP 工具调用（工具白名单需在 Phase 3 接入）
-4. **权限校验 Feign 契约待补**（Phase 3 明确要求）：document 需提供「空间成员角色校验」Feign 接口（如 `checkSpacePermission(spaceId, userId, minRole)`），task 侧任务创建等场景复用（合并接口的角色校验已就绪：document 侧直接 SpacePermissionService 校验）
+3. **片段读取接口已通**：Workbench MCP Tool 按需调用 `readFragment`，单次读取长度受服务端常量限制
+4. **权限校验 Feign 契约已就绪**：document 提供 `checkSpacePermission`，task 侧 Agent 配置、任务创建与执行链路复用；合并接口继续由 document 侧校验 EDITOR 角色
 5. **Token 统计三表实体已建**：ModelEntity / TokenUsageDetailEntity / TokenDailySnapshotEntity；聚合/快照/对账逻辑（凌晨聚合 + 3min 节流快照 + 任务级本地累计 + 明细 SUM 对账）见 `docs/database-design.md`
-6. **Agent 表结构已就绪**：`agent`（含 `model_id` 关联、`mcp_config` AES 加密预留）、`model` 表；Agent 实体已含 modelId
+6. **Agent 表结构已迁移**：Agent 增加系统提示词、配置版本和执行限制；Model 增加加密 API Key；新增 `agent_execution` 快照表
 
 ## 六、关键架构约束（必须遵守，沿用 Phase 1/2）
 
 1. **线程模型**：Gateway WebFlux；Auth/Document/Task 统一 Spring MVC + MyBatis-Plus，严禁混用
-2. **模块职责**：document = 空间/成员/文档/版本/Diff + 权限校验 Feign（Phase 3 补）；task = Agent 实例/MCP 客户端/异步任务/变更审批/Token 用量/审计日志
+2. **模块职责**：document = 空间/成员/文档/版本；task = 任务/A2A Client/MCP Server/审批/Token/审计；agent = Agent/Model/A2A Server/Spring AI Runtime/MCP Client
 3. **Redis 键前缀**：`agent-doc-workbench:`（RedisKeyConstants），禁止裸键；限流走自定义 ProjectRedisRateLimiter
 4. **BaseEntity 两层**：常规表继承 BaseLogicDeleteEntity；流水表（token_usage_detail / token_daily_snapshot / audit_log）继承 BaseEntity
 5. **审计日志只允许 Insert**，业务层禁止 Update / 物理 Delete
-6. **MQ 异步化**：MCP 调用全部异步，禁止同步阻塞 HTTP 调外部 Agent（Phase 3 生效）
-7. **v0.1 禁止**：A2A、流水线、编排引擎（数据库可预留字段，不写业务代码）
-8. **文档安全**：正式文档禁止 Agent 直改；Agent 改动统一 ChangeRequest 审批（Phase 2 链路已就绪）；草稿文档 Agent 可直写
-9. **服务间调用（统一入口 + 身份连续）**：Feign 客户端**只允许定义在 common-core 的 `com.agentdoc.common.feign` 包**（`@FeignClient` + HTTP 注解直接标注在契约接口上），业务服务禁止自建 FeignClient，直接注入契约接口调用；调用统一**经网关（9090）**，**用户 JWT 透传是 common-feign starter 默认装配**（`AuthHeaderForwardInterceptor`，任何服务依赖 starter 即自动具备，无需各自实现）；目标服务经 **Spring Security Resource Server 自行解析 JWT**，操作人身份从 SecurityContext 读取（`AuthUtils`）、**不可伪造**（合并接口已按此实现并校验 EDITOR 角色）。无用户上下文的系统级调用（定时任务 / MQ 消费者，Phase 3 再议）另行设计，**不引入共享静态令牌**。common-core 的 openfeign 依赖为 optional（不污染 gateway/auth 依赖树）
+6. **MQ 异步化**：MQ 消费者只负责 A2A 分发，不阻塞等待模型执行；结果通过 A2A Push 回调同步
+7. **协议边界**：Agent 任务控制使用 A2A；Agent 获取 Workbench 数据和提交操作使用 MCP，禁止混用
+8. **文档安全**：Agent 变更统一创建 ChangeRequest，必须经过人工审批后才能进入正式文档
+9. **服务间调用（统一入口 + 身份连续）**：Feign 客户端**只允许定义在 common-core 的 `com.agentdoc.common.feign` 包**（`@FeignClient` + HTTP 注解直接标注在契约接口上），业务服务禁止自建 FeignClient，直接注入契约接口调用；用户业务调用统一经网关（9090）并透传用户 JWT。A2A/MCP 任务调用使用 Task Capability Bearer，不依赖用户上下文，也不引入共享静态令牌。common-core 的 openfeign 依赖为 optional（不污染 gateway/auth 依赖树）
 10. **代码规范**：pojo 分层 / DTO-VO 全大写后缀 / 类转换收敛实体类 / enums+constant 包 / 禁止魔法值 / 字段 @Schema / PageParam+PageUtils 分页 / Lombok
 
 ## 七、环境与运行
@@ -97,22 +116,24 @@ backend/
   ./mvnw install '-Dmaven.test.skip=true'             # 改 common 后必做
   ./mvnw spring-boot:run '-pl' auth-service          # 单服务启动（先启动 auth，Flyway 迁移）
   ```
-- 服务端口：Gateway 9090 / Auth 8081 / Document 8082 / Task 8083
+- 服务端口：Gateway 9090 / Auth 8081 / Document 8082 / Task 8083 / Agent 8084
 - **注意**：全链路验证走网关 9090（`/api/document/**`、`/api/task/**`）；服务间 Feign 调用也经网关（`agent-doc.feign.gateway-url`），靠透传用户 JWT 保持身份连续
 
 ## 八、已知坑与注意事项
 
 - **Maven 双仓库**：IDEA 用系统 Maven（`D:\maven\...`），命令行 mvnw 用 `~/.m2`；新 artifact 解析失败先查仓库
 - **DSH 沙箱**：Maven 构建/文件删除需全权限（danger-full-access）；否则 `target/maven-status` 写入被拒
-- **Flyway**：已执行 V1-V5 不可修改（checksum）；新表/列一律 V6+ 增量脚本
+- **Flyway**：已存在 V1-V12，不可修改已执行迁移（checksum）；Phase 4 新表/列一律从 V13 开始追加
 - **Windows curl/脚本中文**：PowerShell 5.1 读 UTF-8 无 BOM 脚本会乱码，脚本保持纯 ASCII 或转 GBK
 - **业务错误语义**：业务失败统一 HTTP 200 + Result.code（如 40900 冲突）；服务间调用的目标接口（如 document 的 `/merge`）需把业务异常转 HTTP 状态码（ResponseStatusException，见 DocumentController.toStatusException）供 Feign 客户端按状态识别
 - **Feign 契约即客户端（统一入口）**：`com.agentdoc.common.feign` 的接口直接标注 `@FeignClient` 与 HTTP 方法注解（`@PostMapping` 等），业务服务注入使用即可；**不要**在业务服务内新建 FeignClient 接口（会分散契约、两处维护）
 - 本机中间件版本：MySQL 5.7（JSON 类型可用、无降序索引）/ Redis 5.0.14.1
 
-## 九、Phase 4 前瞻（Phase 3 需为其预留）
+## 九、Phase 4 前瞻：Skill 管理
 
-- 前端 8 页（登录/工作空间/文档树编辑/Agent 配置/任务创建/Diff 审批/版本历史/Token 用量审计）
-- 审批页依赖：ChangeRequest 队列查询（支持 spaceId/documentId/status 过滤）+ changes[] 结构化展示 + approve/reject/return/merge 操作（均已就绪）
-- 版本历史页依赖：版本列表/详情/对比（已就绪）
-- 文档编辑页依赖：detail（含 content）+ update（自动版本）+ fragments（已就绪）
+- Phase 4 独立建设可版本化 Skill 包，目录至少包含 `SKILL.md`，可选 `references/`、`assets/` 和受控 `scripts/`。
+- Skill 元数据和版本关系由 MySQL 保存，包本体进入 MinIO；当前仓库只有 MinIO 基础设施配置，尚未接入后端 SDK。
+- Agent 绑定明确的已发布 Skill 版本；任务创建执行记录时保存不可变 Skill 快照，禁止运行中跟随最新版本漂移。
+- 两种 Agent Runtime 必须共用 Skill 解析、提示词组合、资源读取和工具过滤逻辑。
+- `scripts/` 在 Phase 4 只保存、不直接执行；细粒度 RBAC 留 Phase 5，前端 Skill 页面留 Phase 6。
+- 详细启动基线、数据模型、接口和验收清单见 `docs/PHASE4-HANDOFF.md`。

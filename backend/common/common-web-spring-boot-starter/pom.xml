@@ -41,21 +41,6 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
-        <!-- JWT 验签：CommonSecurityAutoConfiguration 用 NimbusJwtDecoder（JWKS 拉取公钥） -->
-        <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-oauth2-jose</artifactId>
-        </dependency>
-        <!-- OAuth2 Resource Server：Security 自动解析 Authorization Bearer JWT 进 SecurityContext -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
-        </dependency>
-        <!-- JSON 序列化：CommonSecurityAutoConfiguration 输出统一 401 Result JSON -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-        </dependency>
         <!-- Spring Boot AutoConfiguration：@AutoConfiguration / 条件注解 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

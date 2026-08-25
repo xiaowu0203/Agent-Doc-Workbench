@@ -19,7 +19,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Component;
@@ -46,6 +45,8 @@ import java.util.UUID;
 @Slf4j
 @Component
 public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
+
+    private static final int FILTER_ORDER = -100;
 
     /** Authorization Bearer token前缀 */
     private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
@@ -118,7 +119,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        return -100;
+        return FILTER_ORDER;
     }
 
     /**

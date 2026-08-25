@@ -2,6 +2,7 @@ package com.agentdoc.document.controller;
 
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.document.pojo.dto.SpaceCreateDTO;
 import com.agentdoc.document.pojo.dto.SpaceUpdateDTO;
 import com.agentdoc.document.pojo.vo.SpaceVO;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -54,6 +56,19 @@ public class SpaceController {
     @PutMapping("/{id}")
     public Result<SpaceVO> update(@PathVariable Long id, @Valid @RequestBody SpaceUpdateDTO dto) {
         return Result.ok(spaceService.update(id, dto));
+    }
+
+    @Operation(summary = "校验当前用户空间角色（服务间调用）")
+    @GetMapping("/{id}/permission")
+    public Result<Void> checkPermission(@PathVariable Long id, @RequestParam Integer minRole) {
+        spaceService.requireRole(id, minRole);
+        return Result.ok();
+    }
+
+    @Operation(summary = "查询空间 Agent 执行预算")
+    @GetMapping("/{id}/execution-budget")
+    public Result<SpaceBudgetVO> executionBudget(@PathVariable Long id) {
+        return Result.ok(spaceService.getExecutionBudget(id));
     }
 
     @Operation(summary = "删除空间（OWNER 权限）：逻辑删除空间及其成员")

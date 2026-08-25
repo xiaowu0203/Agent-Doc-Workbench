@@ -8,6 +8,8 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.util.List;
+
 /**
  * 认证上下文工具类
  * <p>
@@ -84,5 +86,70 @@ public final class AuthUtils {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
         return agentId;
+    }
+
+    /**
+     * 获取当前上下文JWT中的任务ID
+     * <p>仅当当前令牌为 Task‑Capability 任务短时能力JWT时才有值；普通用户登录JWT返回null</p>
+     * @return 任务ID，无令牌或非任务令牌返回null
+     */
+    public static Long getTaskId() {
+        return getLongClaim(JwtConstant.CLAIM_TASK_ID);
+    }
+
+    /**
+     * 获取当前上下文JWT中的空间ID
+     * <p>仅当当前令牌为 Task‑Capability 任务短时能力JWT时才有值；普通用户登录JWT返回null</p>
+     * @return 空间ID，无令牌或非任务令牌返回null
+     */
+    public static Long getSpaceId() {
+        return getLongClaim(JwtConstant.CLAIM_SPACE_ID);
+    }
+
+    /**
+     * 获取当前上下文JWT中的文档ID
+     * <p>仅当当前令牌为 Task‑Capability 任务短时能力JWT时才有值；普通用户登录JWT返回null</p>
+     * @return 文档ID，无令牌或非任务令牌返回null
+     */
+    public static Long getDocumentId() {
+        return getLongClaim(JwtConstant.CLAIM_DOCUMENT_ID);
+    }
+
+    /**
+     * 判断当前上下文主体是否为Agent任务（依据JWT中actorType=AGENT）
+     * @return true=当前是Task‑Capability任务能力令牌；false=无令牌/普通用户登录JWT
+     */
+    public static boolean isAgent() {
+        Jwt jwt = currentJwt();
+        return jwt != null && JwtConstant.ACTOR_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_ACTOR_TYPE));
+    }
+
+    /**
+     * 校验Agent任务是否拥有指定操作权限
+     * <p>从JWT的agentActions列表判断是否包含目标动作；仅对Agent任务令牌生效</p>
+     * @param action 待校验动作，使用 {@link JwtConstant} 中ACTION_*常量
+     * @return true=拥有该动作权限；false=无令牌、非Agent、动作不在许可列表
+     */
+    public static boolean hasAgentAction(String action) {
+        Jwt jwt = currentJwt();
+        if (jwt == null) {
+            return false;
+        }
+        List<String> actions = jwt.getClaimAsStringList(JwtConstant.CLAIM_AGENT_ACTIONS);
+        return actions != null && actions.contains(action);
+    }
+
+    /**
+     * 读取JWT中Long类型声明值，做安全类型转换
+     * @param claim claim键名，来自 {@link JwtConstant}
+     * @return 转换后的Long；无JWT、不存在该claim、值为空返回null
+     */
+    private static Long getLongClaim(String claim) {
+        Jwt jwt = currentJwt();
+        if (jwt == null || !jwt.hasClaim(claim)) {
+            return null;
+        }
+        Object value = jwt.getClaim(claim);
+        return value == null ? null : Long.valueOf(String.valueOf(value));
     }
 }

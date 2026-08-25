@@ -34,11 +34,20 @@ public class TokenUsageDetailEntity extends BaseEntity {
     @Schema(description = "输入总 token")
     private Long inputTokens;
 
+    @Schema(description = "输入 Token 是否为本地估算值")
+    private Boolean inputTokensEstimated;
+
     @Schema(description = "缓存命中输入 token，MCP 不支持则为 NULL")
     private Long cachedInputTokens;
 
+    @Schema(description = "缓存输入 Token 是否为本地估算值")
+    private Boolean cachedInputTokensEstimated;
+
     @Schema(description = "输出 token")
     private Long outputTokens;
+
+    @Schema(description = "输出 Token 是否为本地估算值")
+    private Boolean outputTokensEstimated;
 
     @Schema(description = "MCP 调用发生时间")
     private LocalDateTime callTime;

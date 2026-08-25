@@ -6,9 +6,10 @@ import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.pojo.vo.UserVO;
 import com.agentdoc.auth.mapper.UserMapper;
-import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -122,6 +123,33 @@ public class AuthService {
     }
 
     /**
+     * 获取当前认证用户信息。
+     */
+    public UserVO currentUser() {
+        UserVO user = getById(AuthUtils.getUserIdOrException());
+        if (user == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+        return user;
+    }
+
+    /**
+     * 校验任务能力参数并签发短时令牌。
+     */
+    public String issueTaskCapability(TaskCapabilityIssueDTO request) {
+        if (request == null
+                || request.taskId() == null
+                || request.agentId() == null
+                || request.spaceId() == null
+                || request.actions() == null
+                || request.actions().isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "任务能力令牌参数无效");
+        }
+        return jwtService.createTaskCapabilityToken(request.taskId(), request.agentId(),
+                request.spaceId(), request.documentId(), request.actions());
+    }
+
+    /**
      * 签发令牌对：生成accessToken JWT，生成并存储refreshToken
      * @param user 用户数据库实体
      * @return AuthResponseVO 令牌响应对象
@@ -133,12 +161,7 @@ public class AuthService {
         String refreshToken = jwtService.createRefreshToken();
         // 将refreshToken存入服务端存储（Redis）
         refreshTokenService.store(refreshToken, user.getId());
-        return new AuthResponseVO(
-                accessToken,
-                refreshToken,
-                JwtConstant.TOKEN_TYPE_BEARER,
-                jwtService.props().accessTtl().toSeconds(),
-                user.toVO()
-        );
+        return AuthResponseVO.of(
+                accessToken, refreshToken, jwtService.props().accessTtl().toSeconds(), user.toVO());
     }
 }

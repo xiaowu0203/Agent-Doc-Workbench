@@ -3,12 +3,12 @@ package com.agentdoc.common.feign;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
+import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.DocumentFragmentVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
+import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -50,4 +50,37 @@ public interface DocumentFeign {
      */
     @GetMapping("/api/document/documents/ids")
     Result<List<Long>> listDocumentIdsBySpace(@RequestParam Long spaceId);
+
+    /**
+     * 查询 Agent 任务执行上下文
+     */
+    @GetMapping("/api/document/documents/{documentId}/execution-context")
+    Result<DocumentExecutionContextVO> getExecutionContext(@PathVariable Long documentId);
+
+    /**
+     * 校验当前用户在空间中的最低角色。
+     */
+    @GetMapping("/api/document/spaces/{spaceId}/permission")
+    Result<Void> checkSpacePermission(@PathVariable Long spaceId,
+                                      @RequestParam Integer minRole);
+
+    /**
+     * 查询空间 Agent 执行预算
+     */
+    @GetMapping("/api/document/spaces/{spaceId}/execution-budget")
+    Result<SpaceBudgetVO> getSpaceExecutionBudget(
+            @PathVariable Long spaceId);
+
+    /**
+     * 文档片段读取
+     */
+    @GetMapping("/api/document/documents/{documentId}/fragments")
+    Result<DocumentFragmentVO> readFragment(@PathVariable Long documentId,
+                                            @RequestParam long start, @RequestParam int length);
+
+    /**
+     * Agent 更新草稿文档
+     */
+    @PostMapping("/api/document/documents/draft-agent-apply")
+    Result<MergeResultVO> applyDraftAgentChanges(@RequestBody MergeRequestDTO request);
 }

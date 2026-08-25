@@ -1,6 +1,8 @@
 package com.agentdoc.document.pojo.dto;
 
-import com.agentdoc.document.enums.DocType;
+import com.agentdoc.document.constant.DocumentConstant;
+import com.agentdoc.document.enums.DocStatus;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -45,6 +47,8 @@ public record DocumentCreateDTO(
         entity.setTitle(title);
         entity.setDocType(docType.getCode());
         entity.setContent(content);
+        entity.setVersion(DocumentConstant.INITIAL_VERSION);
+        entity.setStatus(DocStatus.NORMAL.getCode());
         entity.setCreatedBy(userId);
         entity.setUpdatedBy(userId);
         return entity;

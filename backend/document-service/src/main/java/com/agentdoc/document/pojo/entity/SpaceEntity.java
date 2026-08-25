@@ -1,7 +1,8 @@
 package com.agentdoc.document.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseLogicDeleteEntity;
-import com.agentdoc.document.enums.SpaceRole;
+import com.agentdoc.common.enums.SpaceRole;
+import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.document.enums.SpaceStatus;
 import com.agentdoc.document.pojo.vo.SpaceVO;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -41,5 +42,12 @@ public class SpaceEntity extends BaseLogicDeleteEntity {
     public SpaceVO toVO(SpaceRole role) {
         return new SpaceVO(getId(), name, description, ownerId, tokenBudget,
                 SpaceStatus.fromCode(status), role, getCreatedAt());
+    }
+
+    /**
+     * 转换为空间执行预算投影。
+     */
+    public SpaceBudgetVO toBudgetVO() {
+        return new SpaceBudgetVO(getId(), tokenBudget);
     }
 }
