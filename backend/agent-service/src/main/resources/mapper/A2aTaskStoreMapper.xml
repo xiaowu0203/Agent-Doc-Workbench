@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.agent.mapper.A2aTaskStoreMapper">
+
+    <insert id="upsert">
+        INSERT INTO a2a_task_store
+            (task_id, context_id, state, status_timestamp, encrypted_payload, updated_at)
+        VALUES
+            (#{taskId}, #{contextId}, #{state}, #{statusTimestamp}, #{encryptedPayload}, #{updatedAt})
+        ON DUPLICATE KEY UPDATE
+            context_id = VALUES(context_id), state = VALUES(state),
+            status_timestamp = VALUES(status_timestamp), encrypted_payload = VALUES(encrypted_payload),
+            updated_at = VALUES(updated_at)
+    </insert>
+
+</mapper>

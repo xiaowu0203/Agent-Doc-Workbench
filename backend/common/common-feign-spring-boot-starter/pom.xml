@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.agentdoc</groupId>
+        <artifactId>agent-doc-common</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+    <artifactId>agent-doc-common-feign-spring-boot-starter</artifactId>
+    <name>agent-doc-common-feign-spring-boot-starter</name>
+    <description>Feign 远程调用自动装配：扫描 common-core feign 包契约接口，提供统一客户端能力（无服务发现，URL 静态直连）</description>
+
+    <dependencies>
+        <!-- 公共核心库：Feign 契约接口（com.agentdoc.common.feign.*） -->
+        <dependency>
+            <groupId>com.agentdoc</groupId>
+            <artifactId>agent-doc-common-core</artifactId>
+        </dependency>
+        <!-- OpenFeign：声明式 HTTP 客户端，版本由 spring-cloud-dependencies BOM 管理 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <!-- Servlet API：AuthHeaderForwardInterceptor 读取当前请求头编译用；provided，运行时由容器提供 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

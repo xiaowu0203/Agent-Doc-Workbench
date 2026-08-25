@@ -1,0 +1,2 @@
+com.agentdoc.common.config.CommonSecurityAutoConfiguration
+com.agentdoc.common.config.TaskCapabilitySecurityAutoConfiguration

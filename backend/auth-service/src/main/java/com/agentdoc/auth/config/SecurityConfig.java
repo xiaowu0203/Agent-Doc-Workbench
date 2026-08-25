@@ -84,7 +84,6 @@ public class SecurityConfig {
                                 "/api/auth/login",
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
-                                "/api/auth/ping",
                                 "/oauth2/jwks",
                                 "/actuator/health",
                                 "/actuator/info",

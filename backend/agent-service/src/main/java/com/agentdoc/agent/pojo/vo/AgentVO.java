@@ -1,0 +1,24 @@
+package com.agentdoc.agent.pojo.vo;
+
+import com.agentdoc.agent.enums.AgentStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
+
+import java.time.LocalDateTime;
+
+@Schema(description = "Agent 配置信息")
+public record AgentVO(
+        @Schema(description = "Agent ID") Long id,
+        @Schema(description = "空间 ID") Long spaceId,
+        @Schema(description = "Agent 名称") String name,
+        @Schema(description = "Agent 描述") String description,
+        @Schema(description = "系统提示词") String systemPrompt,
+        @Schema(description = "模型 ID") Long modelId,
+        @Schema(description = "Token 预算上限") Long tokenBudget,
+        @Schema(description = "文档访问范围") String documentScope,
+        @Schema(description = "最大工具迭代次数") Integer maxIterations,
+        @Schema(description = "执行超时时间（秒）") Integer executionTimeoutSeconds,
+        @Schema(description = "配置版本号") Long configVersion,
+        @Schema(description = "状态") AgentStatus status,
+        @Schema(description = "创建人用户 ID") Long createdBy,
+        @Schema(description = "创建时间") LocalDateTime createdAt) {
+}

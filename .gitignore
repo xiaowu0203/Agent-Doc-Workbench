@@ -1,5 +1,6 @@
 ﻿# === Java / Maven ===
 target/
+.m2-repository/
 *.class
 *.jar
 *.war
@@ -20,6 +21,7 @@ build/
 .classpath
 .sts4-cache/
 .vscode/
+.claude/settings.local.json
 
 # === Node / Frontend ===
 node_modules/

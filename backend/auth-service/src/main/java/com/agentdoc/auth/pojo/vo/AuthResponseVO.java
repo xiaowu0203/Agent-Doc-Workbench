@@ -1,5 +1,6 @@
 package com.agentdoc.auth.pojo.vo;
 
+import com.agentdoc.common.constant.JwtConstant;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -22,4 +23,8 @@ public record AuthResponseVO(
         @Schema(description = "用户信息")
         UserVO user
 ) {
+
+    public static AuthResponseVO of(String accessToken, String refreshToken, long expiresIn, UserVO user) {
+        return new AuthResponseVO(accessToken, refreshToken, JwtConstant.TOKEN_TYPE_BEARER, expiresIn, user);
+    }
 }

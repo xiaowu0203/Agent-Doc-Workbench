@@ -119,19 +119,24 @@ public interface AgentRuntime {
 - 重要技术决策记录到「决策记录」章节，形成项目记忆；技术选型细节以 `docs/` 文档为准
 
 ### 后端代码规范（全后端强制，含后续新代码）
-1. **DTO/VO 命名与分层**：DTO/VO 后缀必须全大写（`UserVO`，禁止 `UserDto`）；`entity` / `dto` / `vo` 三个包的父级包必须是 `pojo`（即 `pojo.entity` / `pojo.dto` / `pojo.vo`）；请求入参归 DTO、出参/展示对象归 VO
+1. **DTO/VO 命名与分层**：DTO/VO 后缀必须全大写（`UserVO`，禁止 `UserDto`）；`entity` / `dto` / `param` / `vo` 四个包的父级包必须是 `pojo`（即 `pojo.entity` / `pojo.dto` / `pojo.param` / `pojo.vo`）；**写入载荷（create/update 等）归 DTO（`XXXDTO`）、查询参数归 param（`XXXSearchParam`，见规范 16）、出参/展示对象归 VO**
 2. **禁止魔法值**：代码中不得出现硬编码数值/字符串（如 `user.setStatus(1)`），一律抽取为常量（`constant` 包，`XXXConstant` 命名）或枚举（`enums` 包）
 3. **枚举放 `enums` 包**
 4. **配置类放 `config` 包**，命名 `XXXConfig` / `XXXProperties`
 5. **常量类放 `constant` 包**，命名 `XXXConstant`
 6. **自定义注解放 `annotation` 包**
 7. **AOP 相关放 `aop` 包**（无 AOP 代码则不建）
-8. 分层示例：`controller` / `service` / `mapper` / `pojo{entity,dto,vo}` / `enums` / `aop` / `config` / `annotation` / `constant` / `utils` / `handler` / `executor`，按实际情况创建
+8. 分层示例：`controller` / `service` / `mapper` / `convertor` / `pojo{entity,dto,param,vo}` / `enums` / `aop` / `config` / `annotation` / `constant` / `utils` / `handler` / `executor`，按实际情况创建
 9. **Entity/VO/DTO/Enum 字段必须带注释或 `@Schema`**：业务服务（依赖 springdoc）字段统一加 `@Schema(description = "...")`；common-core 纯库不加 `@Schema`（避免反向依赖 springdoc），用 javadoc
 10. **分页参数统一用 `PageParam`**（`common-core` 的 `pojo.dto`）：`pageNum`（默认 1）/ `pageSize`（默认 10）+ `validate()` 校验（pageSize 上限 100），分页接口直接接收并先校验
-11. **Feign 远程调用规范**：新模块命名 `common-feign-spring-boot-starter`；接口落位 `common-core` 的 `com.agentdoc.common.feign` 包，一个业务一个 `XXXXFeign` 接口；待出现第一个跨服务调用（Phase 2）时再建
-12. **类转换全部封装进实体类**：Entity 自带 `toVO()`/`toDTO()`，DTO/VO 自带 `toEntity()` 等转换方法，Controller/Service 中禁止出现对象字段搬运
+11. **Feign 远程调用规范**：新模块命名 `common-feign-spring-boot-starter`；**客户端接口统一落位 common-core 的 `com.agentdoc.common.feign` 包，契约即客户端**——`@FeignClient` 与 HTTP 方法注解（`@PostMapping` 等）直接标注在契约接口上，一个业务一个 `XXXXFeign` 接口；**业务服务禁止自建 FeignClient**（会分散契约、两处维护），直接注入契约接口调用；common-core 的 openfeign 依赖设 optional（不污染 gateway/auth 依赖树），使用方经 common-feign starter 获得完整依赖
+12. **类转换分层（简单进实体、复杂抽 Convertor）**：简单字段映射可封装进实体类（Entity 自带 `toVO()`/`toDTO()` 等）；**复杂转换（涉及 JSON 解析/序列化、跨数据组装、批量映射）抽取 `XXXConvertor`（各业务服务 `convertor` 包，静态方法），Service 经 Convertor 完成转换**；Controller/Service 中禁止出现对象字段搬运；JSON 序列化机制统一走 common-core `JsonUtils`，实体/Convertor 不持有 ObjectMapper
 13. **实体类禁止手写 getter/setter**：VO/DTO/Entity 统一用 Lombok `@Data`/`@Getter`/`@Setter`（record 自动生成访问器），除非不得已（如实现框架接口的 `getOrder()`/`setApplicationContext()`）
+14. **Starter 职责纯净（只含装配/配置）**：`common-xxx-spring-boot-starter` 只承载自动装配（AutoConfiguration / Properties / 被装配的横切组件如 Filter、Interceptor、Advice）与**依赖该技术栈的配套工具**（如 RedisUtils 随 redis starter、PageUtils 随 mybatis starter——工具跟随其依赖的技术栈落位，避免污染 common-core 依赖树）；**禁止业务形态代码**（Controller 等业务接口不进 starter，探活统一用 Actuator health）；公共通用工具（无技术栈依赖）放 common-core
+15. **验证分级（禁止每次改动都跑全量+端到端）**：按改动影响面选择最小验证手段——纯注释/文档改动**不验证**；删除无引用死代码（先 grep 确认零引用、引用处已同步清理）**仅编译受影响模块**；业务逻辑改动**跑该模块测试**；只有鉴权/跨服务/公共层装配等高风险改动才**全量测试 + 端到端**。全量 reactor test（约 2 分钟）与端到端（启动 4 服务）是重武器，只在真正需要时使用
+16. **查询参数封装（除 path 变量外，请求参数 ≥ 3 个封装为 SearchParam）**：`@PathVariable`（资源定位）不计入，其余 query/body 参数达到 3 个及以上时封装为查询参数对象统一经 `@RequestBody` 传递；**查询参数统一命名 `XXXSearchParam`、放各业务服务 `pojo.param` 包**（写入载荷仍为 `pojo.dto` 的 `XXXDTO`）；**复杂查询接口（多过滤条件 + 分页）用 POST + Body**（"POST for search" 惯例，规避 GET + body 不规范），分页参数（PageParam）并入 SearchParam 一并传递；Service 层对应改收 SearchParam，避免 Controller 字段搬运
+17. **跨业务访问统一走 Service/Feign（禁止直连他域 Mapper）**：业务 Service 只允许使用**自身业务域**的 Mapper（如 document 域可查 space/member/document/document_version，task 域可查 change_request 等）；需要其他业务数据（如 task 查文档标题/按空间过滤）一律经对应业务的 **Feign 契约**（common-core `com.agentdoc.common.feign` 的 `XXXXFeign`）调用对方 Service 实现的能力，**禁止在 Service 中引入他域 Mapper 直连对方表**；批量场景契约应支持批量查询（如 `getDocumentRefs(List<Long>)` 一次回填标题，避免逐条 RPC）
+18. **Java 类型统一使用 import 导入**：类、接口、枚举及其静态成员统一在文件头部通过 `import` / `import static` 导入，业务代码（字段、方法签名、注解、泛型及方法体）只使用简单类名，**禁止直接书写全限定类名**（如 `java.time.LocalDate.now()`、`com.agentdoc.common.utils.AuthUtils.isAgent()`）；仅当同一文件确实存在多个同名类型、无法同时用简单类名区分时，允许其中必要的类型使用全限定名。注解中的包扫描字符串等本身要求包名字符串的配置不受此规则限制
 
 ### 开源规范
 - 目标开源，License 倾向 Apache-2.0；发布前补齐 README、CONTRIBUTING、安全说明
@@ -199,6 +204,50 @@ public interface AgentRuntime {
 - Phase 1 后端地基经 Gitee PR !2 合并入 main；README（中英）同步进度：状态徽章 Phase 1 ready、分支说明、快速开始提示、路线图 Phase 1 标记已完成、新增「当前进度」小节、文档导航补充 PHASE1/PHASE2 交接文档
 - `docs/development-plan.md` 更新头部状态（Phase 0/1 已完成）并为 Phase 1 补充实际交付说明（common 5 子模块 / auth 闭环 / gateway 限流与 OpenAPI / 14 张表 / 规范整改）
 - 下一步：Phase 2（前端鉴权接入、文档空间 CRUD API 等）
+
+### 2026-08-22（Phase 2 文档核心完成，未提交）
+- **Phase 2「文档核心」完成并端到端实测 20/20 通过**（分支 phase-2，待合并 main）：
+  - **common 增量**：common-web 可选 `JwtHeaderVerifyFilter`（配 `agent-doc.security.jwks-url` 启用，document/task 已启用，防绕过网关伪造 X-User-* 头）；新增 **common-feign-spring-boot-starter**（@EnableFeignClients 扫 `com.agentdoc.common.feign`，兑现规范 11 首个跨服务调用）+ `DocumentFeign` 契约（MergeRequestDTO/MergeResultVO/ChangeItemDTO/ChangeOp 落位 common-core）；`PageParam.toPage()` 落位为 mybatis-plus starter `PageUtils.toPage()`；新增 `PageVO` 统一分页
+  - **document-service**：空间 CRUD（创建者自动 OWNER）+ 成员角色（SpaceRole OWNER/EDITOR/VIEWER，最后一名 OWNER 不可移除，`SpacePermissionService` 统一权限校验）+ 文档 CRUD/树形（移动防环）/双模式（DocType FORMAL/DRAFT）/归档-回收站-恢复 + 版本快照（编辑自动生成、列表/详情/对比、**回滚=新版本不删历史**）+ 片段读取（`readFragment` 控 Token）+ 合并端点 `POST /api/document/documents/merge`（服务间调用，校验 EDITOR 角色，业务异常转 HTTP 状态码供 Feign 识别）
+  - **task-service**：ChangeRequest 审批队列（提交/分页查询[按空间-文档-状态]/approve/reject/return + 状态机仅 PENDING 可流转）+ **merge 合并闭环**（直接注入 common-core 契约 `DocumentFeign`——统一入口，`@FeignClient`/HTTP 注解均在契约上，经网关调用 document 合并接口，`base_version` 校验防并发覆盖 40900）+ 3 个新实体（ModelEntity/TokenUsageDetailEntity/TokenDailySnapshotEntity）+ `DocumentRefMapper`（跨域只读 document 表投影）
+  - **Flyway V4**：`change_request` 增 `base_version` 列；本机库 V1-V4 已执行
+  - **网关**：无需改动（静态路由 `/api/document/**` `/api/task/**` 原样转发，业务 Controller 自带服务前缀）；服务间 Feign 调用统一经网关 9090（`agent-doc.feign.gateway-url`）
+  - **服务间身份连续（关键架构决策）**：Feign 调用经网关 + 透传用户 JWT（**common-feign starter 默认装配 `AuthHeaderForwardInterceptor`**——任何服务依赖 starter 即自动具备透传能力，无需各自实现；可自定义 Bean 覆盖），目标服务经网关注入 X-User-* 头后从 UserContext 取操作人、**不可伪造**（合并后文档 updatedBy=审批人，已实测一致）；**不引入共享静态令牌**（曾用 X-Internal-Token + /internal/** 直连方案，评审后废弃：身份不可追溯、信任模型弱；系统级后台调用 Phase 3 再议）
+  - **关键经验**：①业务失败统一 HTTP 200 + Result.code（40900 等），服务间调用目标接口需 ResponseStatusException 转 HTTP 状态（见 DocumentController.toStatusException）；②**Feign 契约即客户端**：common-core feign 包接口直接标注 @FeignClient + HTTP 注解（common-core 引入 openfeign 为 optional），业务服务禁止自建 FeignClient，否则契约分散两处维护；③实体方法访问父类字段须用 getter（Lombok @Data private 字段子类不可直访）；④Maven 构建/文件删除需全权限（沙箱）
+  - 端到端验证脚本：注册→登录→建空间→建文档→编辑版本 1/2→版本列表→回滚(版本3)→提交变更→审批→合并(版本4)→冲突 40900→片段读取→草稿双模式→归档恢复，全 PASS；网关 401 / 伪造 X-User-Id 401 / 合并操作人=审批人 均验证通过
+  - 文档同步：development-plan Phase 2 标记完成、PHASE2-HANDOFF 更新状态、新增 **PHASE3-HANDOFF.md**（Phase 3 交接）、database-design 补 V4
+- 下一步：Phase 3（Agent 与任务：Agent 配置/MCP 接入/任务状态机/Token 预算熔断/审计日志），交接见 `docs/PHASE3-HANDOFF.md`
+
+### 2026-08-23（架构收尾：Feign 统一入口 + Starter 瘦身，未提交）
+- **Feign 客户端统一入口**：`@FeignClient` 与 HTTP 方法注解直接标注在 common-core 契约接口 `DocumentFeign` 上（契约即客户端），业务服务禁止自建 FeignClient；common-core 引入 `spring-cloud-openfeign-core`（optional，不污染 gateway/auth）；`@EnableFeignClients` 由 common-feign starter 统一扫描
+- **JWT 透传上移 starter**：`AuthHeaderForwardInterceptor`（透传当前请求 Authorization）从 task-service 移入 common-feign starter 作为默认装配（`@ConditionalOnMissingBean` 可覆盖）——任何服务依赖 starter 即自动具备，无需各自实现；starter 补 `jakarta.servlet-api`（provided）
+- **common-web 瘦身**：删除 `PingController`（业务形态 @RestController 混入基础设施 starter；探活由各服务 Actuator health 承担，网关白名单同步清理 `/api/*/ping`，auth SecurityConfig 放行列表同步）；common-web 现仅含 AutoConfiguration + Properties + 被装配的横切组件（Filter/Interceptor/Advice）
+- **新增规范 14（Starter 职责纯净）**：starter 只承载自动装配与依赖该技术栈的配套工具（如 RedisUtils/PageUtils 随技术栈落位），禁止业务形态代码（Controller 不进 starter）
+- 验证：全量 12 模块 BUILD SUCCESS + 端到端 20/20（探活改用 actuator health）
+- 待议：PageUtils（toPage）归属——曾讨论删除内联（两行工具）或随技术栈落位，最终用户倾向「保留现状亦可」，待后续定论；`DocumentRefMapper`（task-service 跨域只读 document 表投影）Phase 3 考虑收敛为 Feign 契约
+
+### 2026-08-23（模型 B 重构：彻底改用 Spring Security Resource Server，未提交）
+- **背景**：用户评审指出网关注入 X-User-* 自定义头的方案不合理（身份应由后端自动解析，自定义头可被绕过直连伪造）；经三轮确认（透传 JWT 走网关 → 业务服务自解析 → 纯 Resource Server），最终彻底落地模型 B
+- **核心变更**：
+  - **删除自研身份体系**：common-core `UserContext` / `LoginUser` / `JwtTokenParser` 删除；`HeaderConstants` 仅剩 `X-Trace-Id`（X-User-* 废弃）
+  - **新增 `AuthUtils`**（common-core utils）：从 `SecurityContextHolder` 读已认证 Jwt（排除 AnonymousAuthenticationToken），提供 `getUserId()` / `getAgentId()` / `currentJwt()`——业务代码身份入口，替代 UserContext
+  - **common-web 新增 `CommonSecurityAutoConfiguration`**：SecurityFilterChain（permitAll 注解驱动 + oauth2ResourceServer 解析 JWT + 401 Result JSON）；`@ConditionalOnMissingBean(SecurityFilterChain.class)` 让 auth 用自己的 SecurityConfig；JwtDecoder 用 `ObjectProvider` 容错（未配 jwks-url 降级为纯注解拦截）；`businessJwtDecoder`（@ConditionalOnProperty jwks-url）供 Resource Server 用
+  - **删除手写解析**：`UserContextFilter` / `JwtHeaderVerifyFilter`（+测试）删除；`PermissionInterceptor` 改检查 SecurityContext（认证且非匿名）
+  - **gateway 简化**：`JwtAuthenticationFilter` 去掉注入/剥离 X-User-*，仅保留 JWT 校验门禁 + traceId + 透传原始 Authorization
+  - **业务代码**：`UserContext.getUserId()` → `AuthUtils.getUserId()`（SpacePermissionService / ChangeRequestService）
+  - **语义**：`@RequireLogin` 注解驱动（无注解接口匿名可达）；无效/过期 token 由 Security 层直接 401（含无注解接口，用户已确认接受）
+- **关键坑**：`src/test/resources/application.yml`（H2 配置）会覆盖 main 的 application.yml（同名文件 classpath 只加载一个）→ 测试环境 jwks-url 丢失 → SecurityFilterChain 找不到 JwtDecoder 启动失败；修复：测试 yml 补 `agent-doc.security.jwks-url` + SecurityFilterChain 用 ObjectProvider 容错
+- **验证**：全量 12 模块 BUILD SUCCESS + 端到端 20/20（含「直连无效 token 401」Security 层验证）+ 合并操作人=审批人（SecurityContext 解析）实测通过
+
+### 2026-08-23（评审教训：验证分级 + 死代码清理，未提交）
+- **RequirePermission 死代码**：注解定义三年无人使用（grep 零引用）、value 细粒度权限从未实现（拦截器只当登录处理）；Phase 2 细粒度权限实际走 `SpacePermissionService.requireRole()` Service 层显式校验（动态空间角色，注解静态 value 表达不了）；经用户确认**删除**该注解 + 清理 PermissionInterceptor / CommonWebAutoConfiguration 引用；未来方法级权限用 Spring Security 标准 `@PreAuthorize`，不自研注解轮子
+- **评审批评：过度验证**——删除无引用死代码也跑全量 reactor test（约 2 分钟）+ 频繁端到端，被用户指出「要有判断」；固化**规范 15（验证分级）**：按影响面选最小验证（注释不验证 / 删死代码仅编译 / 业务逻辑跑模块测试 / 高危改动才全量+端到端）
+
+### 2026-08-26（Phase 3 完成，Phase 4-8 路线拆分）
+- Phase 3 已完成独立 agent-service、A2A Client/Server、Workbench MCP、任务 Capability、异步任务、Token 预算/统计、审计、MySQL A2A 状态持久化、状态对账、多模型适配和可选 Spring AI Alibaba Runtime；准备由 `phase-3` PR 合并 `main`。
+- 路线拆分为 Phase 4 Skill 管理、Phase 5 细粒度权限、Phase 6 前端、Phase 7 闭环联调、Phase 8 开源发布；启动基线见 `docs/PHASE4-HANDOFF.md`。
+- Skill 采用 `SKILL.md` + `references/` / `assets/` / `scripts/` 目录包、版本与 Agent 绑定；Phase 4 只存储脚本，不在 Agent 进程任意执行。
+- Phase 5 保留“角色绑定权限标识符，用户通过空间角色获得权限”的方向；沿用 Spring Security `@PreAuthorize` / 业务授权服务，不恢复自研 `@RequirePermission`。
 
 ## 八、决策记录（ADR，倒序追加）
 

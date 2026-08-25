@@ -4,6 +4,7 @@ import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.auth.constant.AuthConstant;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.common.constant.JwtConstant;
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
@@ -25,12 +26,15 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -176,6 +180,30 @@ public class JwtService {
     }
 
     /**
+     * 签发任务能力 JWT。任务能力令牌与用户登录令牌共用 auth-service 的 RSA 密钥和 JWKS，
+     * 通过 actorType/scope 与普通登录令牌区分；任务权限由 task-service 在签发前完成裁决。
+     */
+    public String createTaskCapabilityToken(Long taskId, Long agentId, Long spaceId,
+                                             Long documentId, List<String> actions) {
+        Instant now = Instant.now();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(props.issuer())
+                .issuedAt(now)
+                .expiresAt(now.plus(Duration.ofHours(AuthConstant.TASK_CAPABILITY_TTL_HOURS)))
+                .subject(String.valueOf(taskId))
+                .claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_AGENT)
+                .claim(JwtConstant.CLAIM_AGENT_ID, agentId)
+                .claim(JwtConstant.CLAIM_TASK_ID, taskId)
+                .claim(JwtConstant.CLAIM_SPACE_ID, spaceId)
+                .claim(JwtConstant.CLAIM_DOCUMENT_ID, documentId)
+                .claim(JwtConstant.CLAIM_AGENT_ACTIONS, actions == null ? List.of() : actions)
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_AGENT)
+                .id(UUID.randomUUID().toString())
+                .build();
+        return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+    }
+
+    /**
      * 生成Refresh‑Token：安全随机字节，Base64‑URL无填充编码。
      * <p>
      * 注意：refreshToken不是JWT，只是一串不透明随机字符串；真实信息保存在Redis。
@@ -183,7 +211,7 @@ public class JwtService {
      */
     public String createRefreshToken() {
         byte[] bytes = new byte[AuthConstant.REFRESH_TOKEN_BYTE_LENGTH];
-        new java.security.SecureRandom().nextBytes(bytes);
+        new SecureRandom().nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
@@ -218,7 +246,7 @@ public class JwtService {
     public RSAPublicKey getPublicKey() {
         try {
             return rsaKey.toRSAPublicKey();
-        } catch (com.nimbusds.jose.JOSEException ex) {
+        } catch (JOSEException ex) {
             throw new IllegalStateException("获取 RSA 公钥失败", ex);
         }
     }

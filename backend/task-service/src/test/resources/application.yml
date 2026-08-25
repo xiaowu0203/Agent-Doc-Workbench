@@ -5,6 +5,13 @@ spring:
     username: sa
     password:
 
+agent-doc:
+  openapi:
+    title: Task Service API
+    description: 任务服务：变更审批
+  security:
+    jwks-url: http://localhost:8081/oauth2/jwks
+
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

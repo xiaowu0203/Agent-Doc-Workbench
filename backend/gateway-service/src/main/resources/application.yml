@@ -68,6 +68,14 @@ spring:
                 - RewritePath=/api/task/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
               order: -30
 
+            - id: api-docs-agent
+              uri: http://localhost:${AGENT_SERVICE_PORT:8084}
+              predicates:
+                - Path=/api/agent/v3/api-docs/**
+              filters:
+                - RewritePath=/api/agent/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
+              order: -30
+
             # -------- 登录接口单独限流（会叠加全局限流，双重令牌桶校验） --------
             - id: login-rate-limit
               uri: http://localhost:${AUTH_SERVICE_PORT:8081}
@@ -105,6 +113,18 @@ spring:
                 - Path=/api/task/**
               order: 0
 
+            - id: agent-service
+              uri: http://localhost:${AGENT_SERVICE_PORT:8084}
+              predicates:
+                - Path=/api/agent/**,/.well-known/agent-card.json,/a2a/**
+              order: 0
+
+            - id: workbench-mcp-server
+              uri: http://localhost:${TASK_SERVICE_PORT:8083}
+              predicates:
+                - Path=/mcp,/mcp/**
+              order: 0
+
 # 网关鉴权配置（网关层做JWT校验）
 auth:
   gateway:
@@ -116,9 +136,6 @@ auth:
       - /api/auth/login
       - /api/auth/refresh
       - /api/auth/logout
-      - /api/auth/ping
-      - /api/document/ping
-      - /api/task/ping
       - /oauth2/jwks
       - /actuator/**
       - /swagger-ui.html
@@ -127,6 +144,7 @@ auth:
       - /api/*/v3/api-docs
       - /api/*/v3/api-docs/**
       - /favicon.ico
+      - /.well-known/agent-card.json
 
 # Actuator健康监控端点
 management:
@@ -150,3 +168,5 @@ springdoc:
         url: /api/document/v3/api-docs
       - name: task-service
         url: /api/task/v3/api-docs
+      - name: agent-service
+        url: /api/agent/v3/api-docs

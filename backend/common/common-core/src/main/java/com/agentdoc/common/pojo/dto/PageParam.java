@@ -20,6 +20,9 @@ public class PageParam {
     /** 默认每页条数 */
     public static final int DEFAULT_PAGE_SIZE = 10;
 
+    /** 每页条数下限 */
+    public static final int MIN_PAGE_SIZE = 1;
+
     /** 每页条数上限，防止一次拉取过多数据 */
     public static final int MAX_PAGE_SIZE = 100;
 
@@ -35,10 +38,12 @@ public class PageParam {
      */
     public void validate() {
         if (pageNum == null || pageNum < DEFAULT_PAGE_NUM) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "页码 pageNum 必须大于等于 1");
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "页码 pageNum 必须大于等于 " + DEFAULT_PAGE_NUM);
         }
-        if (pageSize == null || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "每页条数 pageSize 必须在 1~" + MAX_PAGE_SIZE + " 之间");
+        if (pageSize == null || pageSize < MIN_PAGE_SIZE || pageSize > MAX_PAGE_SIZE) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "每页条数 pageSize 必须在 " + MIN_PAGE_SIZE + "~" + MAX_PAGE_SIZE + " 之间");
         }
     }
 }

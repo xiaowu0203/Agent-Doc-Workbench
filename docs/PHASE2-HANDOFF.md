@@ -1,5 +1,8 @@
 # Phase 2 交接文档（2026-08-21）
 
+> **状态更新（2026-08-22）**：Phase 2「文档核心」已完成并端到端实测通过（20/20），
+> 交付与交接详见 `docs/PHASE3-HANDOFF.md`；本文件保留为 Phase 2 启动基线参考。
+>
 > 用途：供新会话（Agent / 协作者）快速进入状态，开始 Phase 2「文档核心」开发。
 > 生成依据：当前仓库 `phase-1` 分支（提交 `fd2ff79`，Phase 1 完成 + common 拆分已推送 gitee / github）；
 > 规划来源：`docs/development-plan.md`（Phase 2）与《Agent-Doc-Workbench 项目完整开发规划文档》（1.4 架构约束 / 2.1 空间与文档功能清单，用户已更新）。

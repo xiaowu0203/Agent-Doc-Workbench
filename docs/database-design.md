@@ -1,6 +1,6 @@
 # 数据库设计说明
 
-> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/`（`V1__init.sql` 11 张表 + `V2__model_and_token_stats.sql` 3 张新表 / 2 处变更 + `V3__token_stats_indexes.sql` 查询索引，共 14 张业务表，Flyway 由 auth-service 统一托管）。
+> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/`（V1-V8 增量迁移，包含 Agent Service、A2A 执行记录、A2A Task/Push Config 持久化，Flyway 由 auth-service 统一托管）。
 > 本文档与迁移 SQL 同步维护，业务口径变更须同时更新两侧。
 
 ## 整体说明
@@ -12,48 +12,53 @@
 - **时间口径**：统一 **Asia/Shanghai 东八区自然日**；DB 连接参数 `serverTimezone=Asia/Shanghai`
 - **版本迁移**：Flyway 由 auth-service 统一托管；新增 / 变更一律增量脚本，已执行的迁移不得修改（checksum 校验）
 
-## 表清单速览（14 张业务表）
+## 表清单速览（17 张业务表）
 
 | 表 | 归属域 | 一句话职责 |
 | --- | --- | --- |
 | `user` / `oauth2_client` | 认证 | 用户账号；OAuth2 客户端凭证（Agent Client‑Credentials 模式） |
 | `space` / `member` | 空间 | 工作空间；成员与角色（所有者 / 编辑者 / 观察者） |
 | `document` / `document_version` / `change_request` | 文档 | 树形文档 + 正式 / 草稿双模式；版本快照；变更审批流 |
-| `model` | 模型 | 模型元数据（厂商 / model_key / 预估价格），不存密钥 |
-| `agent` | 任务 | MCP‑Agent 实例；加密 MCP 配置 + `model_id` 关联模型 |
+| `model` | 模型 | 模型配置（厂商 / model_key / 预估价格 / 加密 API Key） |
+| `agent` | Agent | Agent 实例；系统提示词、执行限制与 `model_id` 关联模型 |
 | `task` | 任务 | 任务主表；三层 Token 预算熔断 |
 | `token_usage_detail` | 统计 | Token 调用明细【真相源】，无条件落库 |
 | `token_usage` | 统计 | 历史日聚合表（折线图，截止昨日） |
 | `token_daily_snapshot` | 统计 | 当日快照表（今日卡片，仅 UI 展示） |
-| `audit_log` | 审计 | 全链路审计，只 INSERT 不可篡改 |
+| `audit_log` | 审计 | 全链路审计，只 INSERT 不可篡改；V6 增加 `task_id` 关联 |
+| `agent_execution` | Agent | Agent Service 中的 A2A 执行快照、状态和 Token 用量 |
+| `a2a_task_store` | A2A | A2A Task 协议状态及加密载荷持久化 |
+| `a2a_push_config` | A2A | A2A Push Notification 配置及加密载荷持久化 |
 
 ## 表分工
 
 1. **user / oauth2_client**：用户与 OAuth2 客户端凭证，Agent 使用 Client‑Credentials 模式鉴权。
 2. **space / member**：工作空间、空间成员角色（所有者 / 编辑者 / 观察者）。
 3. **document / document_version / change_request**：树形文档、正式 / 草稿双模式；文档版本快照；Agent 变更审批流。
-4. **model**：模型元数据表，维护厂商、model_key、展示名、窗口大小、计价单价（**仅预估，不作为结算依据**）；不存储密钥，密钥在 `agent.mcp_config` 加密保存。
-5. **agent**：空间下 MCP‑Agent 实例；保存加密 MCP 连接配置；`model_id` 关联 model 表（逻辑外键）；任务执行时透传 `model.model_key` 给外部 MCP‑Server。
+4. **model**：Agent Service 的模型配置，维护厂商、model_key、展示名、窗口大小、计价单价和加密 API Key（**仅预估，不作为结算依据**）。
+5. **agent**：Agent Service 中的 Agent 实例；保存系统提示词、执行限制和配置版本，`model_id` 关联 model 表（逻辑外键）。
 6. **task**：Agent 任务主表；三层 Token 预算（任务 / Agent / 空间）全部基于**Token 数量**做熔断；**熔断逻辑完全不依赖任何统计报表表**（计数来源见「开放问题」）。
 7. **token_usage_detail【真相源】**：每次 MCP 调用插入一条原始明细，保存 input/output/cached token、调用时间、model_id、预估费用；所有统计、重算全部以此表为准。
 8. **token_usage【历史日聚合表】**：每日凌晨定时聚合**昨日以及更早完整自然日**；用于前端 7/30 天消耗折线图；**不包含今日数据**；联合唯一索引 `dimension+obj_id+usage_date`。
 9. **token_daily_snapshot【当日快照表】**：存储当日统计快照；支持系统自动快照、用户手动异步触发快照；页面【今日消耗卡片】读取本表最新快照（同 `space_id + snapshot_date` 取 `created_at` 最大一条）；**只做 UI 展示，不用于业务熔断**。
-10. **audit_log**：全链路审计记录，不可篡改。
+10. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
+11. **agent_execution**：保存一次 A2A 执行的配置快照、状态、结果摘要和 Token 用量，使用 `workbench_task_id` 保证幂等。
+12. **a2a_task_store / a2a_push_config**：由 agent-service 使用 AES-GCM 加密保存官方 A2A SDK 的任务和推送配置载荷，服务重启后可恢复协议状态。
 
 ## model 表对业务数据渲染的影响
 
 新增 model 表后，业务渲染从「无模型概念」变为「处处关联模型」：
 
 - **Agent 管理**：`agent.model_id` → Agent 列表 / 表单 / 详情渲染关联模型（厂商 + display_name），不再显示裸 ID；创建 Agent 需先选模型
-- **任务执行**：任务运行时经 `agent.model_id` 取 `model.model_key` 透传外部 MCP‑Server（model_key 为透传参数，不管控远端可用性）
+- **任务执行**：任务通过 A2A 下发到 agent-service，由 Agent Runtime 使用 `model.model_key` 调用模型；Workbench 数据与变更操作通过 MCP 访问 task-service。
 - **Token 明细**：`token_usage_detail.model_id` JOIN `model` 渲染"厂商 / 模型名"（可附单价）；聚合表与快照表**不含模型维度**，折线图 / 今日卡片为汇总口径
 - **模型管理页**：model 表支撑模型 CRUD（新增 / 启用禁用 / 预估单价录入）
 - **设计边界**：聚合维度 `dimension` 仅 空间 / 文档 / 任务 / Agent 四维，**无模型维度**；若需"按模型统计消耗"（如按模型折线、模型排行）需 v0.2 扩展聚合与快照结构
 
 ## 关键业务约束
 
-1. Agent 的 MCP 连接配置 `mcp_config` 应用层 AES 加密存储，数据库禁止明文保存密钥。
-2. model 表仅元数据，不管控远端 MCP‑Server 真实可用性；`model_key` 只是透传参数。
+1. Agent 的系统配置和模型 API Key 由 agent-service 在应用层 AES-GCM 加密存储，数据库禁止明文保存密钥；A2A Task/Push Config 载荷同样加密保存。
+2. model 表保存模型元数据和加密 API Key，不管控供应商真实可用性；`model_key` 是供应商模型标识。
 3. 所有人民币金额全部为**预估参考**，真实消费以 MCP 服务商账单为准；熔断只使用 Token 数量，绝对不使用预估金额。
 4. `token_usage_detail` 明细是唯一真相源；聚合表 `token_usage` 损坏可通过明细全量重建。
 5. 折线图只读取 `token_usage`，数据截止**前一天**；今日消耗从 `token_daily_snapshot` 快照获取；今日数据不参与折线图，避免图表抖动。
@@ -74,7 +79,7 @@
 
 ## 数据流
 
-- **任务执行 / 明细流**：任务下发 → 经 `agent.model_id` 取 `model.model_key` 透传外部 MCP‑Server → 每次调用**无条件插入** `token_usage_detail` → 任务级 `task.tokens_used` 本地累计熔断，任务结束 / 异常用明细 SUM 对账补偿 → 空间 / Agent 级熔断实时 SUM 明细。
+- **任务执行 / 明细流**：任务经 A2A 下发 → agent-service 调用模型并通过 MCP 访问 Workbench → 每次模型调用**无条件插入** `token_usage_detail` → 任务级 `task.tokens_used` 本地累计熔断，任务结束 / 异常用明细 SUM 对账补偿 → 空间 / Agent 级熔断实时 SUM 明细。
 - **统计展示流**：`token_usage_detail` → 每日凌晨聚合 → `token_usage`（折线图，昨日及以前）；访问今日页面懒加载 / 手动刷新 → `token_daily_snapshot`（今日卡片）；聚合表损坏可由明细全量重建。
 
 ## 页面表现
@@ -96,5 +101,10 @@
 | `V1__init.sql` | 11 张表基线（user / oauth2_client / space / member / document / document_version / change_request / agent / task / token_usage / audit_log） |
 | `V2__model_and_token_stats.sql` | 新增 `model`；`agent` 增 `model_id` 与索引；`token_usage` 重构为通用 `obj_id` + 唯一键；新增 `token_usage_detail` / `token_daily_snapshot` |
 | `V3__token_stats_indexes.sql` | 查询索引：`token_usage(space_id, usage_date)`；`token_daily_snapshot(space_id, snapshot_date, created_at)`（替换旧索引） |
+| `V4__change_request_base_version.sql` | `change_request` 新增 `base_version` 列（审批合并时校验基线版本，防止并发覆盖） |
+| `V5__document_parent_id_nullable.sql` | `document.parent_id` 改为可空；根目录由 `0` 约定迁移为 `NULL` |
+| `V6__phase3_task_agent_audit.sql` | Task、Agent 和审计字段；新增 Agent 执行所需状态与索引 |
+| `V7__agent_service_a2a_mcp.sql` | Agent/Model 配置扩展；新增 `agent_execution`；补充 Task 的 A2A 字段 |
+| `V8__persist_a2a_protocol_state.sql` | 新增 `a2a_task_store`、`a2a_push_config`，持久化 A2A 协议状态和 Push 配置 |
 
-已执行的迁移不可修改（Flyway checksum）；后续变更一律新增 V4+ 增量脚本。
+已执行的迁移不可修改（Flyway checksum）；后续变更一律新增 V9+ 增量脚本。
