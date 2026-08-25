@@ -3,6 +3,7 @@
 > 用途：供新会话（Agent / 协作者）快速了解 Phase 3「Agent 与任务」实现状态。
 > 生成依据：当前仓库 `phase-3` 分支（基于已合并 Phase 2 的 main）；
 > 规划来源：`docs/development-plan.md`（Phase 3）与《Agent-Doc-Workbench 项目完整开发规划文档》（2.3 Agent 协作能力 / 2.4 Token 成本管控）。
+> 状态：Phase 3 已完成，计划于 2026-08-26 通过 PR 合并 `main`；真实网站闭环验证统一放在 Phase 7。
 
 ## 一、项目一句话
 
@@ -122,15 +123,17 @@ backend/
 
 - **Maven 双仓库**：IDEA 用系统 Maven（`D:\maven\...`），命令行 mvnw 用 `~/.m2`；新 artifact 解析失败先查仓库
 - **DSH 沙箱**：Maven 构建/文件删除需全权限（danger-full-access）；否则 `target/maven-status` 写入被拒
-- **Flyway**：已执行 V1-V8 不可修改（checksum）；新表/列一律 V9+ 增量脚本
+- **Flyway**：已存在 V1-V12，不可修改已执行迁移（checksum）；Phase 4 新表/列一律从 V13 开始追加
 - **Windows curl/脚本中文**：PowerShell 5.1 读 UTF-8 无 BOM 脚本会乱码，脚本保持纯 ASCII 或转 GBK
 - **业务错误语义**：业务失败统一 HTTP 200 + Result.code（如 40900 冲突）；服务间调用的目标接口（如 document 的 `/merge`）需把业务异常转 HTTP 状态码（ResponseStatusException，见 DocumentController.toStatusException）供 Feign 客户端按状态识别
 - **Feign 契约即客户端（统一入口）**：`com.agentdoc.common.feign` 的接口直接标注 `@FeignClient` 与 HTTP 方法注解（`@PostMapping` 等），业务服务注入使用即可；**不要**在业务服务内新建 FeignClient 接口（会分散契约、两处维护）
 - 本机中间件版本：MySQL 5.7（JSON 类型可用、无降序索引）/ Redis 5.0.14.1
 
-## 九、Phase 4 前瞻（Phase 3 需为其预留）
+## 九、Phase 4 前瞻：Skill 管理
 
-- 前端 8 页（登录/工作空间/文档树编辑/Agent 配置/任务创建/Diff 审批/版本历史/Token 用量审计）
-- 审批页依赖：ChangeRequest 队列查询（支持 spaceId/documentId/status 过滤）+ changes[] 结构化展示 + approve/reject/return/merge 操作（均已就绪）
-- 版本历史页依赖：版本列表/详情/对比（已就绪）
-- 文档编辑页依赖：detail（含 content）+ update（自动版本）+ fragments（已就绪）
+- Phase 4 独立建设可版本化 Skill 包，目录至少包含 `SKILL.md`，可选 `references/`、`assets/` 和受控 `scripts/`。
+- Skill 元数据和版本关系由 MySQL 保存，包本体进入 MinIO；当前仓库只有 MinIO 基础设施配置，尚未接入后端 SDK。
+- Agent 绑定明确的已发布 Skill 版本；任务创建执行记录时保存不可变 Skill 快照，禁止运行中跟随最新版本漂移。
+- 两种 Agent Runtime 必须共用 Skill 解析、提示词组合、资源读取和工具过滤逻辑。
+- `scripts/` 在 Phase 4 只保存、不直接执行；细粒度 RBAC 留 Phase 5，前端 Skill 页面留 Phase 6。
+- 详细启动基线、数据模型、接口和验收清单见 `docs/PHASE4-HANDOFF.md`。
