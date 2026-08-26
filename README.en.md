@@ -78,7 +78,7 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 2 | Document core: spaces/documents/versions/Diff approval | ✅ Completed and merged into main (2026-08-23) |
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | ✅ Completed and merged into main (2026-08-26) |
 
-Handoff docs: [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) · [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) · [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md)
+Architecture documents are listed below; phase handoff materials remain local to the workspace.
 
 ## Getting Started
 
@@ -117,20 +117,18 @@ Frontend variables are documented in `frontend/.env.example`; infrastructure and
 | Phase 7 | Full-loop integration and testing | Planned |
 | Phase 8 | Open-source release preparation | Planned |
 
-See [docs/development-plan.md](docs/development-plan.md).
+The phase roadmap is kept as a local working document; long-lived technical constraints are documented in `docs/tech/` and the architecture documents below.
 
 ## Documentation
 
 | Doc | Description |
 | --- | --- |
 | [docs/Agent-Doc-Workbench 项目完整开发规划文档.md](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | Product planning: feature list, MVP scope, milestones (Chinese) |
-| [docs/development-plan.md](docs/development-plan.md) | Development roadmap (Phase 0-8) |
 | [docs/tech/README.md](docs/tech/README.md) | Finalized tech stack: backend, frontend, auth |
+| [docs/common-modules.md](docs/common-modules.md) | Common modules and infrastructure architecture |
+| [docs/database-design.md](docs/database-design.md) | Database design and migration constraints |
+| [docs/agent-server-a2a-mcp-design.md](docs/agent-server-a2a-mcp-design.md) | Agent, A2A, and MCP architecture |
 | [docs/ui-mockups/README.md](docs/ui-mockups/README.md) | UI mockups for all v0.1 pages |
-| [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) | Phase 1 backend handoff doc (completed) |
-| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 startup baseline (completed) |
-| [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) | Phase 3 agents & tasks handoff doc |
-| [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md) | Phase 4 Skill-management handoff doc |
 | [CLAUDE.md](CLAUDE.md) | Project memory & collaboration conventions (incl. ADRs) |
 
 ## Open Source Plans

@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.agent.constant.SkillConstant;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -39,15 +40,18 @@ public class PromptService {
     }
 
     /**
-     * 组装完整systemPrompt：平台公共提示词 拼接 Agent自定义提示词
-     * <p>中间用换行分隔；Agent自定义prompt为null则使用空字符串。</p>
+     * 组合平台、Agent 和执行时固定的 Skill 指令片段，生成最终完整系统提示词。
+     * <p>拼接顺序：平台全局提示词 → Agent自定义提示词 → Skill技能快照片段。
+     * 入参null安全，null会被转换为空字符串；各段之间使用换行符分隔。</p>
      *
-     * @param agentPrompt Agent配置的自定义系统提示词，可为null
-     * @return 拼接完成的完整系统提示文本
+     * @param agentPrompt  Agent自身配置的系统提示词，可为null
+     * @param skillSection 技能快照生成的技能提示片段，可为null
+     * @return 拼接完成的完整系统提示词字符串
      */
-    public String systemPrompt(String agentPrompt) {
+    public String systemPrompt(String agentPrompt, String skillSection) {
         String configuredPrompt = agentPrompt == null ? "" : agentPrompt;
-        return platformPrompt + System.lineSeparator() + System.lineSeparator() + configuredPrompt;
+        String configuredSkills = skillSection == null ? "" : skillSection;
+        return platformPrompt + "\n\n" + configuredPrompt + configuredSkills;
     }
 
     /**
@@ -64,9 +68,10 @@ public class PromptService {
      */
     public String hash(String systemPrompt, String instruction) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            MessageDigest digest = MessageDigest.getInstance(SkillConstant.SHA_256);
             return HexFormat.of().formatHex(digest.digest(
-                    (systemPrompt + System.lineSeparator() + instruction).getBytes(StandardCharsets.UTF_8)));
+                    (systemPrompt + SkillConstant.NORMALIZED_LINE_SEPARATOR + instruction)
+                            .getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("当前 JDK 不支持 SHA-256", exception);
         }

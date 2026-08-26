@@ -13,8 +13,8 @@ import com.agentdoc.agent.execution.tool.TokenUsageEstimator;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
-import com.agentdoc.agent.service.PromptService;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
@@ -47,15 +47,19 @@ import java.util.function.Consumer;
  * 实现自研顶层SPI接口 {@link AgentExecutionRuntime}，对外提供统一执行契约。
  * 底层不手写Re‑Act循环，复用Spring‑AI Alibaba {@link ReactAgent} 完成多轮Agent推理。
  *
- * 本层承担的适配职责：
- * 1. 领域对象转换：我方实体(AgentEntity/ModelEntity/AgentTaskInputDTO) ↔ Spring‑AI SDK对象
- * 2. 横切防护：任务取消信号检测、执行超时、最大模型调用次数熔断、Token预算管控
- * 3. Token用量采集：原始响应提取 + 缺失字段估算补齐，统一归集用量
- * 4. 流式增强：包装ChatModel，透出文本delta回调，流式chunk做消息拼接
- * 5. 异常翻译：SDK抛出的各种异常统一转换为我方业务异常体系向上抛出
- * 6. 返回值适配：SDK执行结果封装成我方统一DTO {@link AgentRuntimeResult}
- *
- * 生效条件：配置 agent‑doc.agent.runtime.type=SPRING_AI_ALIBABA 才会创建该Bean
+ * <p>本层承担的适配职责：
+ * <ol>
+ * <li>领域对象转换：我方实体(AgentEntity/ModelEntity/AgentTaskInputDTO) ↔ Spring‑AI SDK对象</li>
+ * <li>横切防护：任务取消信号检测、执行超时、最大模型调用次数熔断、Token预算管控</li>
+ * <li>Token用量采集：原始响应提取 + 缺失字段估算补齐，统一归集用量</li>
+ * <li>流式增强：包装ChatModel，透出文本delta回调，流式chunk做消息拼接</li>
+ * <li>异常翻译：SDK抛出的各种异常统一转换为我方业务异常体系向上抛出</li>
+ * <li>返回值适配：SDK执行结果封装成我方统一DTO {@link AgentRuntimeResult}</li>
+ * </ol>
+ * </p>
+ * <p>生效条件：配置 agent‑doc.agent.runtime.type=SPRING_AI_ALIBABA 才会创建该Bean</p>
+ * <p>资源管理：通过{@link ExecutionToolSessionFactory}构建任务工具会话，try‑with‑resources自动释放MCP连接。</p>
+ * <p>取消逻辑：组合外部取消信号 + 执行超时标记，多处轮询检测，触发后抛出{@link AgentExecutionCanceledException}终止任务。</p>
  */
 @Component("springAiAlibabaAgentExecutionRuntime")
 @ConditionalOnAgentRuntime(AgentRuntimeType.SPRING_AI_ALIBABA)
@@ -63,58 +67,66 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
 
     // Agent 配置加密解密服务
     private final AgentConfigCryptoService cryptoService;
-    // Prompt处理服务
-    private final PromptService promptService;
     // 模型适配器注册中心
     private final ModelAdapterRegistry adapterRegistry;
     // Token 本地估算器
     private final TokenUsageEstimator tokenUsageEstimator;
+    /** Skill资源与过滤后MCP工具的统一会话工厂；ObjectProvider做延迟获取，避免循环依赖 */
+    private final ObjectProvider<ExecutionToolSessionFactory> toolSessionFactoryProvider;
 
     public SpringAiAlibabaAgentExecutionRuntime(AgentConfigCryptoService cryptoService,
-                                                PromptService promptService,
                                                 ModelAdapterRegistry adapterRegistry,
-                                                TokenUsageEstimator tokenUsageEstimator) {
+                                                TokenUsageEstimator tokenUsageEstimator,
+                                                ObjectProvider<ExecutionToolSessionFactory>
+                                                        toolSessionFactoryProvider) {
         this.cryptoService = cryptoService;
-        this.promptService = promptService;
         this.adapterRegistry = adapterRegistry;
         this.tokenUsageEstimator = tokenUsageEstimator;
+        this.toolSessionFactoryProvider = toolSessionFactoryProvider;
     }
 
     /**
-     * 同步执行入口，不开启流式文本delta回调
+     * 同步阻塞执行Agent任务，无流式增量输出
+     *
+     * @param context        已经固化完成的Agent运行时上下文
+     * @param cancelRequested 外部任务取消信号断言
+     * @return Agent标准化执行结果
      */
     @Override
-    public AgentRuntimeResult execute(AgentEntity agent, ModelEntity model, String instruction,
-                                      AgentTaskInputDTO input, BooleanSupplier cancelRequested) {
-        return executeInternal(agent, model, instruction, input, cancelRequested, ignored -> { }, false);
+    public AgentRuntimeResult execute(AgentRuntimeContext context, BooleanSupplier cancelRequested) {
+        return executeInternal(context, cancelRequested, ignored -> { }, false);
     }
 
     /**
-     * 流式执行入口，支持onTextDelta增量文本回调
-     * @param onTextDelta 每收到一段模型输出文本片段就回调该消费者
+     * 执行Agent任务，开启流式输出，向外推送文本增量片段
+     *
+     * @param context        已经固化完成的Agent运行时上下文
+     * @param cancelRequested 外部任务取消信号断言
+     * @param onTextDelta    文本增量回调；允许null，内部兜底为空回调
+     * @return Agent标准化执行结果
      */
     @Override
-    public AgentRuntimeResult execute(AgentEntity agent, ModelEntity model, String instruction,
-                                      AgentTaskInputDTO input, BooleanSupplier cancelRequested,
+    public AgentRuntimeResult execute(AgentRuntimeContext context, BooleanSupplier cancelRequested,
                                       Consumer<String> onTextDelta) {
-        return executeInternal(agent, model, instruction, input, cancelRequested,
-                onTextDelta == null ? ignored -> { } : onTextDelta, true);
+        return executeInternal(context, cancelRequested, onTextDelta == null ? ignored -> { } : onTextDelta, true);
     }
 
     /**
-     * 内部统一执行入口：组装桥接控制器、用量收集器、包装ObservingChatModel，构建ReactAgent并执行
-     * @param agent agent配置实体
-     * @param model 模型配置实体
-     * @param instruction 用户顶层指令
-     * @param input 任务入参
+     * 内部统一执行入口：组装工具会话和模型适配上下文并执行 ReactAgent。
+     *
+     * @param context        固定的 Agent 执行上下文
      * @param cancelRequested 外部取消信号
-     * @param onTextDelta 流式文本增量回调
-     * @param streaming 是否启用流式模式
+     * @param onTextDelta    流式文本增量回调
+     * @param streaming      true‑流式模式；false‑同步非流式模式
      * @return 标准化Agent执行结果
+     * @throws IllegalStateException               工具会话工厂缺失
+     * @throws AgentExecutionCanceledException      任务被取消（外部信号/超时）
+     * @throws AgentExecutionLimitExceededException 模型调用次数超限
+     * @throws RuntimeException                    模型调用、SDK内部异常
      */
-    private AgentRuntimeResult executeInternal(AgentEntity agent, ModelEntity model, String instruction,
-                                               AgentTaskInputDTO input, BooleanSupplier cancelRequested,
-                                               Consumer<String> onTextDelta, boolean streaming) {
+    private AgentRuntimeResult executeInternal(AgentRuntimeContext context,
+                                                BooleanSupplier cancelRequested,
+                                                Consumer<String> onTextDelta, boolean streaming) {
         // 标记是否执行超时，timeout超时算子会置为true
         AtomicBoolean timedOut = new AtomicBoolean();
 
@@ -125,42 +137,48 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
         requireNotCanceled(executionCanceled);
 
         // 根据模型实体获取模型适配器，同时校验模型必须支持工具调用能力
-        ModelAdapter adapter = adapterRegistry.require(model, ModelCapabilities.requiredToolCalling());
+        ModelAdapter adapter = adapterRegistry.require(context.model(), ModelCapabilities.requiredToolCalling());
 
         // token预算优先级：task入参 > agent配置；入参为null才取agent上配置的预算
-        Long tokenBudget = input.tokenBudget() == null ? agent.getTokenBudget() : input.tokenBudget();
+        Long tokenBudget = context.taskInput().tokenBudget() == null
+                ? context.agent().getTokenBudget() : context.taskInput().tokenBudget();
 
         // 实例化桥接控制器：维护迭代计数、token预算、取消检测状态
-        AlibabaRuntimeControl control = new AlibabaRuntimeControl(agent, tokenBudget,
+        AlibabaRuntimeControl control = new AlibabaRuntimeControl(context.agent(), tokenBudget,
                 executionCanceled, tokenUsageEstimator);
 
         // 打开任务scope的MCP工具资源；try‑with‑resources保证执行结束自动关闭MCP连接
-        try (TaskScopedMcpTools tools = TaskScopedMcpTools.open(input.mcpServerUrl(),
-                input.taskCapability(), timeoutSeconds(agent), executionCanceled)) {
+        ExecutionToolSessionFactory toolSessionFactory = toolSessionFactoryProvider.getIfAvailable();
+        if (toolSessionFactory == null) {
+            throw new IllegalStateException("Skill 工具会话工厂未配置");
+        }
+        try (ExecutionToolSession tools = toolSessionFactory.open(context, executionCanceled)) {
 
             // 组装模型适配器上下文：解密api‑key、最大输出token、MCP工具回调列表
-            ModelAdapterContext context = new ModelAdapterContext(agent, model,
-                    cryptoService.decrypt(model.getEncryptedApiKey()), modelMaxOutputTokens(model), tools.callbacks());
+            ModelAdapterContext adapterContext = new ModelAdapterContext(
+                    context.agent(), context.model(),
+                    cryptoService.decrypt(context.model().getEncryptedApiKey()),
+                    modelMaxOutputTokens(context.model()), tools.callbacks());
 
             // 获取缓存好的ChatModel实例（由ModelAdapter做封装）
-            ChatModel chatModel = adapter.cachedChatModel(context);
+            ChatModel chatModel = adapter.cachedChatModel(adapterContext);
             // 用量收集器：接收ChatResponse，提取+估算token用量，回传给control做统计
             AlibabaRuntimeUsageCollector usage = new AlibabaRuntimeUsageCollector(control, adapter);
 
             // 【装饰器】包装原生ChatModel，植入横切逻辑：模型调用前后拦截、用量采集、流式回调、取消校验
-            ObservingChatModel observingModel = new ObservingChatModel(chatModel, context, tools.callbacks(),
+            ObservingChatModel observingModel = new ObservingChatModel(chatModel, adapterContext, tools.callbacks(),
                     control, usage, streaming ? onTextDelta : ignored -> { });
 
             // 构建Spring‑AI Alibaba原生ReactAgent
             ReactAgent reactAgent = ReactAgent.builder()
                     // 给agent实例一个标识名称，便于日志排查，id为null使用unknown占位
-                    .name("agent-" + safe(agent.getId()) + "-execution-" + safe(input.workbenchTaskId()))
+                    .name("agent-" + safe(context.agent().getId()) + "-execution-"
+                            + safe(context.taskInput().workbenchTaskId()))
                     // 使用我们装饰之后的ChatModel，而不是原生model
                     .model(observingModel)
                     // 构建chatOptions，临时剥离工具回调，options只携带模型参数
-                    .chatOptions(adapter.chatOptions(context.withToolCallbacks(List.of())))
-                    // 调用promptService生成业务层组装好的systemPrompt
-                    .systemPrompt(promptService.systemPrompt(agent.getSystemPrompt()))
+                    .chatOptions(adapter.chatOptions(adapterContext.withToolCallbacks(List.of())))
+                    .systemPrompt(context.systemPrompt())
                     // 注入MCP工具回调集合给ReactAgent
                     .tools(tools.callbacks())
                     // 挂载模型调用次数限制钩子，防止无限循环调用模型
@@ -173,14 +191,15 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                 // 使用Mono包装执行逻辑，调度到boundedElastic线程池；设置整体执行超时时间
                 AssistantMessage result = Mono.fromCallable(() -> streaming
                                 // 流式模式：调用自定义streamReactAgent消费ReactAgent图流
-                                ? streamReactAgent(reactAgent, observingModel, instruction, control, input)
+                                ? streamReactAgent(reactAgent, observingModel, context.instruction(),
+                                control, context.taskInput())
                                 // 同步模式：直接调用reactAgent.call执行
-                                : reactAgent.call(instruction))
+                                : reactAgent.call(context.instruction()))
 
                         // 切换到boundedElastic，避免阻塞http/webflux主线程
                         .subscribeOn(Schedulers.boundedElastic())
                         // 设置agent整体执行超时，超时后Mono抛出TimeoutException
-                        .timeout(Duration.ofSeconds(timeoutSeconds(agent)))
+                        .timeout(Duration.ofSeconds(timeoutSeconds(context.agent())))
                         // 捕获超时异常，标记timedOut为true，上层会识别该标记为任务取消
                         .doOnError(TimeoutException.class, ignored -> timedOut.set(true))
                         // 阻塞等待执行完成，这里是同步等待Reactor执行结果
@@ -196,7 +215,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                 TimeoutException timeout = findCause(exception, TimeoutException.class);
                 if (timeout != null || timedOut.get()) {
                     // 包装为桥接层内部异常，交给adapter翻译后向外抛出
-                    throw adapter.translateForRuntime(context,
+                    throw adapter.translateForRuntime(adapterContext,
                             new ModelInvocationException(timeout == null
                                     ? new TimeoutException("Agent 执行超时") : timeout));
                 }
@@ -217,7 +236,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                 // 4. 桥接层内部模型调用异常，交由ModelAdapter做错误翻译
                 ModelInvocationException modelException = findCause(exception, ModelInvocationException.class);
                 if (modelException != null)
-                    throw adapter.translateForRuntime(context, modelException);
+                    throw adapter.translateForRuntime(adapterContext, modelException);
 
                 // 其余未知异常直接透传
                 throw exception;

@@ -1,11 +1,12 @@
 package com.agentdoc.agent.execution.runtime;
 
+import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.tool.TokenUsageEstimator;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 
-import java.util.function.BooleanSupplier;
 import com.agentdoc.common.pojo.TokenValue;
+import java.util.function.BooleanSupplier;
 
 /**
  * Spring‑AI Alibaba桥接运行时的控制器
@@ -51,7 +52,7 @@ public final class AlibabaRuntimeControl {
         this.cancelRequested = cancelRequested;
         this.tokenBudget = requestedBudget;
         this.maxIterations = agent.getMaxIterations() == null
-                ? com.agentdoc.agent.constant.AgentConstant.DEFAULT_MAX_ITERATIONS : agent.getMaxIterations();
+                ? AgentConstant.DEFAULT_MAX_ITERATIONS : agent.getMaxIterations();
         this.estimator = estimator;
     }
 

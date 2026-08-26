@@ -26,6 +26,8 @@ public class AgentEntity extends BaseLogicDeleteEntity {
     private Long tokenBudget;
     @Schema(description = "文档访问范围")
     private String docScope;
+    @Schema(description = "MCP 工具白名单 JSON")
+    private String toolWhitelist;
     @Schema(description = "最大工具迭代次数")
     private Integer maxIterations;
     @Schema(description = "执行超时时间（秒）")

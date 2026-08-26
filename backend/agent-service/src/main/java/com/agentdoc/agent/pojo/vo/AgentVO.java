@@ -4,6 +4,7 @@ import com.agentdoc.agent.enums.AgentStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Schema(description = "Agent 配置信息")
 public record AgentVO(
@@ -15,6 +16,7 @@ public record AgentVO(
         @Schema(description = "模型 ID") Long modelId,
         @Schema(description = "Token 预算上限") Long tokenBudget,
         @Schema(description = "文档访问范围") String documentScope,
+        @Schema(description = "MCP 工具白名单") List<String> toolWhitelist,
         @Schema(description = "最大工具迭代次数") Integer maxIterations,
         @Schema(description = "执行超时时间（秒）") Integer executionTimeoutSeconds,
         @Schema(description = "配置版本号") Long configVersion,

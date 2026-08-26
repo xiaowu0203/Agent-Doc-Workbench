@@ -6,6 +6,10 @@ import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.vo.AgentVO;
+import com.agentdoc.common.utils.JsonUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
+
+import java.util.List;
 
 /**
  * Agent对象转换器
@@ -36,6 +40,7 @@ public final class AgentConvertor {
         entity.setModelId(dto.modelId());
         entity.setTokenBudget(dto.tokenBudget());
         entity.setDocScope(dto.documentScope());
+        entity.setToolWhitelist(toToolWhitelistJson(dto.toolWhitelist()));
         // 为空时使用全局默认最大迭代轮次
         entity.setMaxIterations(defaultValue(dto.maxIterations(), AgentConstant.DEFAULT_MAX_ITERATIONS));
         entity.setExecutionTimeoutSeconds(defaultValue(dto.executionTimeoutSeconds(),
@@ -62,6 +67,7 @@ public final class AgentConvertor {
         entity.setModelId(dto.modelId());
         entity.setTokenBudget(dto.tokenBudget());
         entity.setDocScope(dto.documentScope());
+        entity.setToolWhitelist(toToolWhitelistJson(dto.toolWhitelist()));
         entity.setMaxIterations(defaultValue(dto.maxIterations(), AgentConstant.DEFAULT_MAX_ITERATIONS));
         entity.setExecutionTimeoutSeconds(defaultValue(dto.executionTimeoutSeconds(),
                 AgentConstant.DEFAULT_EXECUTION_TIMEOUT_SECONDS));
@@ -83,6 +89,7 @@ public final class AgentConvertor {
     public static AgentVO toVO(AgentEntity entity) {
         return new AgentVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDescription(),
                 entity.getSystemPrompt(), entity.getModelId(), entity.getTokenBudget(), entity.getDocScope(),
+                parseToolWhitelist(entity.getToolWhitelist()),
                 entity.getMaxIterations(),
                 entity.getExecutionTimeoutSeconds(), entity.getConfigVersion(),
                 AgentStatus.fromCode(entity.getStatus()), entity.getCreatedBy(), entity.getCreatedAt());
@@ -97,5 +104,28 @@ public final class AgentConvertor {
      */
     private static int defaultValue(Integer value, int defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    /**
+     * 将工具名列表序列化为MCP工具白名单JSON字符串
+     * <p>自动去重并按字典序排序，保证相同集合生成的JSON字符串稳定，便于配置版本对比</p>
+     * @param tools 工具名称列表，允许为null
+     * @return JSON字符串；入参为null时返回null
+     */
+    private static String toToolWhitelistJson(List<String> tools) {
+        return tools == null ? null : JsonUtils.toJson(tools.stream().distinct().sorted().toList());
+    }
+
+    /**
+     * 解析MCP工具白名单JSON字符串为工具名列表
+     * @param value 数据库存储的JSON字符串，可为null/空白字符串
+     * @return 工具名称列表；输入null或空白返回null；解析结果为null返回空集合List.of()
+     */
+    private static List<String> parseToolWhitelist(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        List<String> tools = JsonUtils.parse(value, new TypeReference<List<String>>() { });
+        return tools == null ? List.of() : tools;
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -39,8 +40,10 @@ import reactor.core.scheduler.Schedulers;
  * <li>每个任务对应一个独立MCP客户端实例，任务结束必须close，避免连接泄露</li>
  * <li>全链路多处检测任务取消标记，初始化、循环等待阶段均可被中断</li>
  * <li>初始化使用独立线程执行，避免阻塞主线程，设置超时截止时间</li>
+ * <li>支持按工具白名单过滤远端工具，控制当前任务可调用的工具集合</li>
  * </ul>
  * </p>
+ * <p>使用方式：配合 try‑with‑resources 使用，保证会话资源自动回收。</p>
  */
 public final class TaskScopedMcpTools implements AutoCloseable {
     /** MCP同步客户端实例，任务专属会话 */
@@ -54,21 +57,22 @@ public final class TaskScopedMcpTools implements AutoCloseable {
     }
 
     /**
-     * 打开一个任务级别的MCP工具会话
-     * <p>执行链路：取消校验 → 解析服务地址 → 构建WebClient与Transport → 创建McpSyncClient → initialize握手
-     * → 获取远端工具列表并包装CancellationAwareToolCallback → 返回实例；发生异常会主动close客户端防止泄露。</p>
+     * 打开任务 MCP 会话，并按执行快照过滤模型可见工具；
      *
      * @param serverUrl MCP服务端完整绝对URL地址
      * @param taskCapability Task‑Capability鉴权令牌，放入Authorization Bearer头
      * @param timeoutSeconds MCP initialize握手超时时间(秒)
      * @param cancelRequested 任务取消状态源，返回true代表任务需要终止
-     * @return TaskScopedMcpTools 实例，使用完毕务必调用close()
+     * @param allowedToolNames 工具白名单，仅列表内工具对当前任务可见；null表示兼容旧行为全部可见
+     * @return TaskScopedMcpTools 实例，使用完毕务必调用close()，推荐try‑with‑resources
      * @throws AgentExecutionCanceledException 检测到任务已取消时抛出
      * @throws IllegalArgumentException URL格式非法抛出
-     * @throws RuntimeException MCP连接、握手失败抛出，内部会自动关闭client
+     * @throws RuntimeException MCP连接、握手失败抛出，内部会自动关闭client释放资源
      */
+    /** 打开任务 MCP 会话，并按执行快照过滤模型可见工具；null 表示兼容旧行为全部可见。 */
     public static TaskScopedMcpTools open(String serverUrl, String taskCapability,
-                                          int timeoutSeconds, BooleanSupplier cancelRequested) {
+                                          int timeoutSeconds, BooleanSupplier cancelRequested,
+                                          Collection<String> allowedToolNames) {
         // 校验是否任务取消
         requireNotCanceled(cancelRequested);
 
@@ -94,9 +98,11 @@ public final class TaskScopedMcpTools implements AutoCloseable {
             initialize(client, timeoutSeconds, cancelRequested);
             requireNotCanceled(cancelRequested);
 
-            // 获取远端MCP工具，全部包装任务取消装饰器
+            // 获取远端MCP工具，按白名单过滤，全部包装任务取消装饰器
             List<ToolCallback> callbacks = Arrays.stream(new SyncMcpToolCallbackProvider(client)
                             .getToolCallbacks())
+                    .filter(callback -> allowedToolNames == null
+                            || allowedToolNames.contains(callback.getToolDefinition().name()))
                     .map(callback -> new CancellationAwareToolCallback(callback, cancelRequested))
                     .map(ToolCallback.class::cast).toList();
             return new TaskScopedMcpTools(client, callbacks);

@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+import java.util.List;
+
 import static com.agentdoc.agent.constant.AgentConstant.MAX_EXECUTION_TIMEOUT_SECONDS;
 import static com.agentdoc.agent.constant.AgentConstant.MAX_MAX_ITERATIONS;
 import static com.agentdoc.agent.constant.AgentConstant.MIN_EXECUTION_TIMEOUT_SECONDS;
@@ -20,6 +22,7 @@ public record AgentUpdateDTO(
         @NotNull @Schema(description = "模型 ID", requiredMode = Schema.RequiredMode.REQUIRED) Long modelId,
         @Min(MIN_TOKEN_BUDGET) @Schema(description = "Token 预算上限") Long tokenBudget,
         @Schema(description = "文档访问范围") String documentScope,
+        @Schema(description = "MCP 工具白名单") List<String> toolWhitelist,
         @Min(MIN_MAX_ITERATIONS) @Max(MAX_MAX_ITERATIONS)
         @Schema(description = "最大工具迭代次数") Integer maxIterations,
         @Min(MIN_EXECUTION_TIMEOUT_SECONDS) @Max(MAX_EXECUTION_TIMEOUT_SECONDS)

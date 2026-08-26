@@ -28,6 +28,12 @@ public class AgentExecutionEntity extends BaseEntity {
     private String systemPromptSnapshot;
     @Schema(description = "模型配置快照")
     private String modelSnapshot;
+    @Schema(description = "Skill 版本快照 JSON")
+    private String skillSnapshotJson;
+    @Schema(description = "Skill 指令哈希")
+    private String skillInstructionHash;
+    @Schema(description = "执行时工具白名单快照 JSON")
+    private String toolWhitelistSnapshot;
     @Schema(description = "提示词哈希")
     private String promptHash;
     @Schema(description = "执行状态")

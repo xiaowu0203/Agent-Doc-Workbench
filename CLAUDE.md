@@ -245,7 +245,7 @@ public interface AgentRuntime {
 
 ### 2026-08-26（Phase 3 完成，Phase 4-8 路线拆分）
 - Phase 3 已完成独立 agent-service、A2A Client/Server、Workbench MCP、任务 Capability、异步任务、Token 预算/统计、审计、MySQL A2A 状态持久化、状态对账、多模型适配和可选 Spring AI Alibaba Runtime；准备由 `phase-3` PR 合并 `main`。
-- 路线拆分为 Phase 4 Skill 管理、Phase 5 细粒度权限、Phase 6 前端、Phase 7 闭环联调、Phase 8 开源发布；启动基线见 `docs/PHASE4-HANDOFF.md`。
+- 路线拆分为 Phase 4 Skill 管理、Phase 5 细粒度权限、Phase 6 前端、Phase 7 闭环联调、Phase 8 开源发布；架构基线见 `docs/agent-server-a2a-mcp-design.md`，阶段交接材料保留在本地。
 - Skill 采用 `SKILL.md` + `references/` / `assets/` / `scripts/` 目录包、版本与 Agent 绑定；Phase 4 只存储脚本，不在 Agent 进程任意执行。
 - Phase 5 保留“角色绑定权限标识符，用户通过空间角色获得权限”的方向；沿用 Spring Security `@PreAuthorize` / 业务授权服务，不恢复自研 `@RequirePermission`。
 

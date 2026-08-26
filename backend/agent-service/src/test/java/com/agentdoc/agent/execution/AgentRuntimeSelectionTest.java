@@ -7,13 +7,12 @@ import com.agentdoc.agent.execution.runtime.SpringAiAlibabaAgentExecutionRuntime
 import com.agentdoc.agent.execution.tool.ProviderNeutralToolLoop;
 import com.agentdoc.agent.execution.tool.TokenUsageEstimator;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
-import com.agentdoc.agent.service.PromptService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -60,7 +59,6 @@ class AgentRuntimeSelectionTest {
     @Import({SpringAiAgentExecutionRuntime.class, SpringAiAlibabaAgentExecutionRuntime.class})
     static class RuntimeConfiguration {
         @Bean AgentConfigCryptoService cryptoService() { return mock(AgentConfigCryptoService.class); }
-        @Bean PromptService promptService() { return mock(PromptService.class); }
         @Bean ModelAdapterRegistry modelAdapterRegistry() { return mock(ModelAdapterRegistry.class); }
         @Bean ProviderNeutralToolLoop providerNeutralToolLoop() { return mock(ProviderNeutralToolLoop.class); }
         @Bean TokenUsageEstimator tokenUsageEstimator() { return new TokenUsageEstimator(); }

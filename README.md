@@ -78,7 +78,7 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 2 | 文档核心：空间 / 文档 / 版本 / Diff 审批 | ✅ 已完成并合并入 main（2026-08-23） |
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | ✅ 已完成并合并入 main（2026-08-26） |
 
-交接文档：[docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) · [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) · [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md)
+架构设计文档见下方“文档导航”；阶段交接材料仅保留在本地工作区。
 
 ## 快速开始
 
@@ -117,20 +117,18 @@ pnpm dev
 | Phase 7 | 闭环联调与测试 | 待启动 |
 | Phase 8 | 开源发布准备 | 待启动 |
 
-详见 [docs/development-plan.md](docs/development-plan.md)。
+阶段路线仅作为本地工作记录；长期有效的技术约束以 `docs/tech/` 和下方架构设计文档为准。
 
 ## 文档导航
 
 | 文档 | 说明 |
 | --- | --- |
 | [docs/Agent-Doc-Workbench 项目完整开发规划文档.md](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | 产品规划：业务功能清单、MVP 范围、迭代里程碑 |
-| [docs/development-plan.md](docs/development-plan.md) | 开发路线图（Phase 0-8） |
 | [docs/tech/](docs/tech/README.md) | 技术栈定稿：后端、前端、鉴权方案 |
+| [docs/common-modules.md](docs/common-modules.md) | Common 模块与基础设施架构 |
+| [docs/database-design.md](docs/database-design.md) | 数据库设计与迁移约束 |
+| [docs/agent-server-a2a-mcp-design.md](docs/agent-server-a2a-mcp-design.md) | Agent、A2A 与 MCP 架构 |
 | [docs/ui-mockups/](docs/ui-mockups/README.md) | v0.1 全部页面 UI 效果图 |
-| [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) | Phase 1 后端地基交接文档（已完成） |
-| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 启动基线（已完成） |
-| [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) | Phase 3 Agent 与任务交接文档 |
-| [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md) | Phase 4 Skill 管理衔接文档 |
 | [CLAUDE.md](CLAUDE.md) | 项目记忆与协作规范（含 ADR 决策记录） |
 
 ## 开源计划

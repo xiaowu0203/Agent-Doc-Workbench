@@ -11,7 +11,7 @@ class TaskScopedMcpToolsTest {
     void rejectsRelativeMcpUrlsWithoutLeakingCapability() {
         String capability = "task-capability-secret";
 
-        assertThatThrownBy(() -> TaskScopedMcpTools.open("/mcp", capability, 1, () -> false))
+        assertThatThrownBy(() -> TaskScopedMcpTools.open("/mcp", capability, 1, () -> false, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("绝对地址")
                 .satisfies(error -> assertThat(error.getMessage()).doesNotContain(capability));
@@ -19,7 +19,7 @@ class TaskScopedMcpToolsTest {
 
     @Test
     void checksCancellationBeforeInitializingMcpClient() {
-        assertThatThrownBy(() -> TaskScopedMcpTools.open("http://localhost/mcp", "capability", 1, () -> true))
+        assertThatThrownBy(() -> TaskScopedMcpTools.open("http://localhost/mcp", "capability", 1, () -> true, null))
                 .isInstanceOf(AgentExecutionCanceledException.class);
     }
 }
