@@ -117,6 +117,10 @@ public class OpenAiChatModelAdapter extends AbstractSpringAiModelAdapter {
         if (context.maxOutputTokens() != null) {
             options.maxCompletionTokens(context.maxOutputTokens());
         }
+        // 温度设置
+        if (context.temperature() != null) {
+            options.temperature(context.temperature());
+        }
         return options.build();
     }
 

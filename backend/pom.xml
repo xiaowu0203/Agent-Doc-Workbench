@@ -39,6 +39,8 @@
         <spring-ai.version>1.1.2</spring-ai.version>
         <spring-ai-alibaba.version>1.1.2.2</spring-ai-alibaba.version>
         <a2a-java-sdk.version>1.2.0.Final</a2a-java-sdk.version>
+        <minio.version>8.5.17</minio.version>
+        <commons-compress.version>1.27.1</commons-compress.version>
     </properties>
 
     <dependencyManagement>
@@ -84,6 +86,21 @@
                 <groupId>com.agentdoc</groupId>
                 <artifactId>agent-doc-common-feign-spring-boot-starter</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.agentdoc</groupId>
+                <artifactId>agent-doc-common-minio-spring-boot-starter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.minio</groupId>
+                <artifactId>minio</artifactId>
+                <version>${minio.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons-compress.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>

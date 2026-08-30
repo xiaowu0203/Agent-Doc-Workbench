@@ -44,3 +44,8 @@ Thumbs.db
 # === Logs ===
 logs/
 *.log
+
+# === Local working documents ===
+/AGENTS.md
+/CLAUDE.md
+/docs/local/

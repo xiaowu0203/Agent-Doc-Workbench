@@ -25,6 +25,12 @@ spring:
     time-zone: Asia/Shanghai
 
 agent-doc:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:}
+    secret-key: ${MINIO_SECRET_KEY:}
+    bucket: ${MINIO_BUCKET:agent-doc}
+    auto-create-bucket: ${MINIO_AUTO_CREATE_BUCKET:true}
   security:
     # Agent内部配置访问密钥
     agent-config-key: ${AGENT_CONFIG_KEY:}
@@ -47,6 +53,40 @@ agent-doc:
     public-url: ${AGENT_PUBLIC_URL:http://localhost:9090}
     # Agent平台级System Prompt资源文件路径，classpath下md文件，作为大模型系统提示词
     platform-prompt-resource: classpath:prompts/platform-system-prompt.md
+  skill:
+    reconcile-delay-ms: ${SKILL_RECONCILE_DELAY_MS:21600000}
+    selection:
+      router:
+        max-selected-skills: ${SKILL_ROUTER_MAX_SELECTED:5}
+        timeout: ${SKILL_ROUTER_TIMEOUT:8s}
+        max-output-tokens: ${SKILL_ROUTER_MAX_OUTPUT_TOKENS:256}
+    package:
+      # 上传的技能归档压缩包最大总大小，默认 2MB
+      max-archive-size: ${SKILL_MAX_ARCHIVE_SIZE:2MB}
+      # 压缩包解压之后总占用大小上限，默认 6MB
+      max-uncompressed-size: ${SKILL_MAX_UNCOMPRESSED_SIZE:6MB}
+      # 压缩包内允许最大文件总数量，默认80个
+      max-file-count: ${SKILL_MAX_FILE_COUNT:80}
+      # 压缩包内单个文件最大尺寸，默认 2MB
+      max-single-file-size: ${SKILL_MAX_SINGLE_FILE_SIZE:2MB}
+      # 技能主定义文件 skill.md 文件大小上限，默认 128KB
+      max-skill-md-size: ${SKILL_MAX_SKILL_MD_SIZE:128KB}
+      # 单个可读资源文件最大大小，默认 256KB
+      max-readable-resource-size: ${SKILL_MAX_RESOURCE_SIZE:256KB}
+      # 全部可读资源文件合计总大小上限，默认 1MB
+      max-readable-resources-size: ${SKILL_MAX_RESOURCES_SIZE:1MB}
+      # 最大压缩比，默认15倍
+      max-compression-ratio: ${SKILL_MAX_COMPRESSION_RATIO:15}
+      # 压缩包内单条文件路径字符串最大长度，默认240字符
+      max-path-length: ${SKILL_MAX_PATH_LENGTH:240}
+      # 技能指令配置内容最大大小，默认64KB
+      max-skill-instructions-size: ${SKILL_MAX_INSTRUCTIONS_SIZE:64KB}
+      # 技能内置系统提示词 system‑prompt 内容大小上限，默认128KB
+      max-system-prompt-size: ${SKILL_MAX_SYSTEM_PROMPT_SIZE:128KB}
+      # YAML解析字符码点上限，独立于UTF‑8字节大小限制，默认32768(32k码点)
+      max-yaml-code-points: ${SKILL_MAX_YAML_CODE_POINTS:32768}
+      # YAML最大嵌套层级深度，默认12层
+      max-yaml-nesting-depth: ${SKILL_MAX_YAML_NESTING_DEPTH:12}
   openapi:
     # OpenAPI文档标题
     title: Agent Service API

@@ -1,0 +1,88 @@
+package com.agentdoc.agent.execution;
+
+import com.agentdoc.agent.execution.model.ModelAdapter;
+import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
+import com.agentdoc.agent.execution.context.AgentRuntimeContext;
+import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.execution.runtime.springai.SpringAiAgentExecutionRuntime;
+import com.agentdoc.agent.execution.tool.ExecutionToolSession;
+import com.agentdoc.agent.execution.tool.ExecutionToolSessionFactory;
+import com.agentdoc.agent.execution.tool.ProviderNeutralToolLoop;
+import com.agentdoc.agent.pojo.entity.AgentEntity;
+import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.agent.security.AgentConfigCryptoService;
+import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+
+import java.util.List;
+import java.util.ArrayList;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class RuntimeContextPropagationTest {
+
+    @Test
+    void runtimeContextDefensivelyCopiesMutableConfiguration() {
+        AgentEntity agent = new AgentEntity();
+        agent.setName("snapshot-agent");
+        ModelEntity model = new ModelEntity();
+        model.setModelKey("snapshot-model");
+        List<String> tools = new ArrayList<>(List.of("tool-a"));
+        AgentRuntimeContext context = new AgentRuntimeContext(99L, agent, model,
+                new AgentTaskInputDTO(1L, 2L, 3L, null, null, null, null),
+                "instruction", "prompt", null, tools, List.of());
+
+        agent.setName("changed");
+        model.setModelKey("changed");
+        tools.add("tool-b");
+        context.agent().setName("changed-through-accessor");
+
+        assertThat(context.agent().getName()).isEqualTo("snapshot-agent");
+        assertThat(context.model().getModelKey()).isEqualTo("snapshot-model");
+        assertThat(context.allowedMcpTools()).containsExactly("tool-a");
+        assertThatThrownBy(() -> context.allowedMcpTools().add("tool-c"))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void customRuntimePassesSnapshotPromptToToolLoop() {
+        AgentConfigCryptoService cryptoService = mock(AgentConfigCryptoService.class);
+        ModelAdapterRegistry adapterRegistry = mock(ModelAdapterRegistry.class);
+        ProviderNeutralToolLoop toolLoop = mock(ProviderNeutralToolLoop.class);
+        ObjectProvider<ExecutionToolSessionFactory> provider = mock(ObjectProvider.class);
+        ExecutionToolSessionFactory factory = mock(ExecutionToolSessionFactory.class);
+        ExecutionToolSession session = new ExecutionToolSession(List.of(), List.of());
+        ModelAdapter adapter = mock(ModelAdapter.class);
+        AgentRuntimeResult expected = mock(AgentRuntimeResult.class);
+        AgentEntity agent = new AgentEntity();
+        agent.setTokenBudget(100L);
+        agent.setMaxIterations(2);
+        ModelEntity model = new ModelEntity();
+        AgentTaskInputDTO input = new AgentTaskInputDTO(1L, 2L, 3L, null, null, null, null);
+        AgentRuntimeContext context = new AgentRuntimeContext(99L, agent, model, input,
+                "instruction", "fixed snapshot prompt", null, List.of(), List.of());
+
+        when(provider.getIfAvailable()).thenReturn(factory);
+        when(factory.open(eq(context), any())).thenReturn(session);
+        when(adapterRegistry.require(eq(model), any())).thenReturn(adapter);
+        when(toolLoop.execute(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
+                eq(100L), eq(2), any())).thenReturn(expected);
+
+        SpringAiAgentExecutionRuntime runtime = new SpringAiAgentExecutionRuntime(
+                cryptoService, adapterRegistry, toolLoop, provider);
+
+        AgentRuntimeResult actual = runtime.execute(context, () -> false);
+
+        assertThat(actual).isSameAs(expected);
+        verify(toolLoop).execute(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
+                eq(100L), eq(2), any());
+    }
+}

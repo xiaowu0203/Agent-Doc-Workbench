@@ -3,14 +3,14 @@
 > 面向个人/小团队的 Agent 活文档协作开源 Web 工作台
 > 文档，作为 AI Agent 任务的唯一协作载体。
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%204%20planned-blue)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%204%20completed-brightgreen)
 
 [English](./README.en.md) | 简体中文
 
 **仓库**
 - Gitee：https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub：https://github.com/xiaowu0203/Agent-Doc-Workbench
-- 分支：main（Phase 0-3 稳定）· 下一阶段：Phase 4 Skill 管理
+- 分支：main（稳定）· 当前交付：Phase 4 已完成 · 下一阶段：Phase 5 细粒度权限
 
 ---
 
@@ -26,17 +26,19 @@ Agent-Doc-Workbench 把「文档」作为 Agent 任务的协作载体，让每�
 - **Diff 变更审批**：所有 Agent 修改统一生成结构化变更请求，支持全部接受 / 部分接受 / 拒绝 / 批注退回，合并后自动生成版本快照
 - **Token 预算熔断**：任务级预算 + 空间全局预算，超限自动熔断，彻底解决多 Agent 成本失控
 - **A2A + MCP 标准协议**：任务通过 A2A 分发到独立 Agent Server，Agent 通过 MCP 使用 Workbench 工具
+- **版本化 Skill 与渐进加载**：Skill 包支持版本、发布、Agent 绑定和 Router 选择，正文与资源按需读取
+- **内置与外部多 MCP**：Agent 可绑定空间级外部 MCP，工具经过命名空间、白名单和任务 Capability 多层约束
 - **Agent 权限管控**：任务级 Capability 绑定空间、文档和动作，Agent 不直接继承用户权限
 - **全链路审计日志**：操作主体（人/Agent）、操作类型、关联任务，日志不可篡改
 - **版本快照与回滚**：每次合并变更自动生成版本，一键回滚任意历史版本
 
 ## UI 效果图
 
-| 登录页 | 工作空间首页 | Diff 审批页（核心） |
+| 登录页 | 空间总览 | Diff 审批页（核心） |
 | --- | --- | --- |
-| ![01-login](docs/ui-mockups/01-login.png) | ![02-workspace](docs/ui-mockups/02-workspace.png) | ![06-diff-review](docs/ui-mockups/06-diff-review.png) |
+| ![00-login](docs/ui-mockups/00-login.png) | ![01-space-overview](docs/ui-mockups/01-space-overview.png) | ![08-diff-review](docs/ui-mockups/08-diff-review.png) |
 
-完整 8 页效果图见 [docs/ui-mockups/README.md](docs/ui-mockups/README.md)。
+完整新版效果图见 [docs/ui-mockups/README.md](docs/ui-mockups/README.md)。
 
 ## 技术栈
 
@@ -63,7 +65,7 @@ Gateway (Spring Cloud Gateway · WebFlux)
    ├── auth-service       用户、OAuth2、JWT
    ├── document-service   空间、目录、文档、版本、Diff 审批
    ├── task-service       Agent 任务、A2A Client、Workbench MCP Server、Token 账本
-   └── agent-service      Agent/Model 配置、A2A Server、Spring AI Runtime、MCP Client
+   └── agent-service      Agent/Model/Skill/MCP 配置、A2A Server、Spring AI Runtime
          │
          ├── A2A：task-service → agent-service
          └── MCP：agent-service → task-service
@@ -77,12 +79,13 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 1 | 后端地基：common 5 子模块、auth 鉴权闭环（JWT RS256 + JWKS）、gateway 路由/限流/OpenAPI 聚合、14 张表（含 Token 统计三表架构） | ✅ 已完成并合并入 main（2026-08-22） |
 | Phase 2 | 文档核心：空间 / 文档 / 版本 / Diff 审批 | ✅ 已完成并合并入 main（2026-08-23） |
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | ✅ 已完成并合并入 main（2026-08-26） |
+| Phase 4 | Skill 管理、渐进式加载、外部多 MCP 与执行审计 | ✅ 已完成（2026-08-31） |
 
-交接文档：[docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) · [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) · [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md)
+架构设计文档见下方“文档导航”；阶段交接材料仅保留在本地工作区。
 
 ## 快速开始
 
-> Phase 0-3 已合并入 main；下一阶段为 Phase 4 Skill 管理。
+> Phase 0-4 已完成；下一阶段为 Phase 5 细粒度权限。
 
 ```bash
 # 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Nacos）
@@ -111,27 +114,27 @@ pnpm dev
 | Phase 1 | 后端地基：common、auth、gateway | 已完成 |
 | Phase 2 | 文档核心：空间/文档/版本/Diff | 已完成并合并 |
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | 已完成 |
-| Phase 4 | Skill 管理：目录包、版本、Agent 绑定与运行时加载 | 待启动 |
+| Phase 4 | Skill 管理：目录包、版本、Agent 绑定、渐进式加载与外部 MCP | 已完成 |
 | Phase 5 | 细粒度权限：角色绑定权限标识符、接口权限校验 | 待启动 |
 | Phase 6 | 前端：核心业务、Skill、角色与权限管理页面 | 待启动 |
 | Phase 7 | 闭环联调与测试 | 待启动 |
 | Phase 8 | 开源发布准备 | 待启动 |
 
-详见 [docs/development-plan.md](docs/development-plan.md)。
+阶段路线仅作为本地工作记录；长期有效的技术约束以 `docs/tech/` 和下方架构设计文档为准。
 
 ## 文档导航
 
 | 文档 | 说明 |
 | --- | --- |
 | [docs/Agent-Doc-Workbench 项目完整开发规划文档.md](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | 产品规划：业务功能清单、MVP 范围、迭代里程碑 |
-| [docs/development-plan.md](docs/development-plan.md) | 开发路线图（Phase 0-8） |
 | [docs/tech/](docs/tech/README.md) | 技术栈定稿：后端、前端、鉴权方案 |
-| [docs/ui-mockups/](docs/ui-mockups/README.md) | v0.1 全部页面 UI 效果图 |
-| [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) | Phase 1 后端地基交接文档（已完成） |
-| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 启动基线（已完成） |
-| [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) | Phase 3 Agent 与任务交接文档 |
-| [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md) | Phase 4 Skill 管理衔接文档 |
-| [CLAUDE.md](CLAUDE.md) | 项目记忆与协作规范（含 ADR 决策记录） |
+| [docs/common-modules.md](docs/common-modules.md) | Common 模块与基础设施架构 |
+| [docs/database-design.md](docs/database-design.md) | 数据库设计与迁移约束 |
+| [docs/agent-server-a2a-mcp-design.md](docs/agent-server-a2a-mcp-design.md) | Agent、A2A 与 MCP 架构 |
+| [docs/agent-task-execution-guide.md](docs/agent-task-execution-guide.md) | Agent 任务完整执行流程与具体 Skill/MCP 案例 |
+| [docs/external-mcp-architecture-design.md](docs/external-mcp-architecture-design.md) | Agent 多 MCP 架构、权限与安全约束 |
+| [docs/skill-selection-and-progressive-loading-design.md](docs/skill-selection-and-progressive-loading-design.md) | Skill 选择、路由与渐进式加载设计 |
+| [docs/ui-mockups/](docs/ui-mockups/README.md) | 当前架构对应的完整 UI 效果图与交互约束 |
 
 ## 开源计划
 

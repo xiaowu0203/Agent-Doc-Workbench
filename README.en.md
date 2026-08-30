@@ -3,14 +3,14 @@
 > An open-source, lightweight web workbench for AI-agent-powered document collaboration, built for individuals and small teams.
 > Documents as the single collaboration vehicle for AI Agent tasks.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%204%20planned-blue)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%204%20completed-brightgreen)
 
 English | [简体中文](./README.md)
 
 **Repository**
 - Gitee: https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub: https://github.com/xiaowu0203/Agent-Doc-Workbench
-- Branches: main (Phase 0-3 stable) · next: Phase 4 Skill management
+- Branches: main (stable) · current delivery: Phase 4 completed · next: Phase 5 fine-grained permissions
 
 ---
 
@@ -26,17 +26,19 @@ Agent-Doc-Workbench treats **documents** as the collaboration carrier for Agent 
 - **Diff-based change approval**: all Agent modifications become structured change requests supporting accept-all / partial accept / reject / comment-and-return; merging automatically creates a version snapshot
 - **Token budget circuit breaker**: per-task budgets plus a workspace-wide budget; automatic shutdown when limits are exceeded, keeping Agent costs under control
 - **Standard A2A + MCP protocols**: tasks are dispatched to an independent Agent Server over A2A; Agents use Workbench tools over MCP
+- **Versioned Skills with progressive loading**: Skill packages support versions, publishing, Agent binding, Router selection, and on-demand instruction/resource loading
+- **Built-in and external MCP servers**: Agents can bind space-scoped MCP servers under namespaced tools, layered allowlists, and task capabilities
 - **Agent permission control**: task capabilities bind workspace, document, and actions; Agents never inherit user permissions
 - **End-to-end audit log**: operator (human/Agent), operation type, linked task — immutable and traceable
 - **Version snapshots & rollback**: every merged change generates a version; one-click rollback to any historical version
 
 ## UI Mockups
 
-| Login | Workspace Home | Diff Review (Core) |
+| Login | Space Overview | Diff Review (Core) |
 | --- | --- | --- |
-| ![01-login](docs/ui-mockups/01-login.png) | ![02-workspace](docs/ui-mockups/02-workspace.png) | ![06-diff-review](docs/ui-mockups/06-diff-review.png) |
+| ![00-login](docs/ui-mockups/00-login.png) | ![01-space-overview](docs/ui-mockups/01-space-overview.png) | ![08-diff-review](docs/ui-mockups/08-diff-review.png) |
 
-All 8 screens: [docs/ui-mockups/README.md](docs/ui-mockups/README.md).
+Complete updated mockup set: [docs/ui-mockups/README.md](docs/ui-mockups/README.md).
 
 ## Tech Stack
 
@@ -63,7 +65,7 @@ Gateway (Spring Cloud Gateway · WebFlux)
    ├── auth-service       Users, OAuth2, JWT
    ├── document-service   Spaces, directories, documents, versions, Diff approval
    ├── task-service       Agent tasks, A2A Client, Workbench MCP Server, Token ledger
-   └── agent-service      Agent/Model config, A2A Server, Spring AI Runtime, MCP Client
+   └── agent-service      Agent/Model/Skill/MCP config, A2A Server, Spring AI Runtime
          │
          ├── A2A: task-service → agent-service
          └── MCP: agent-service → task-service
@@ -77,12 +79,13 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 1 | Backend foundation: common (5 sub-modules), auth loop (JWT RS256 + JWKS), gateway routing/rate-limiting/OpenAPI aggregation, 14 tables (incl. Token stats 3-table architecture) | ✅ Completed and merged into main (2026-08-22) |
 | Phase 2 | Document core: spaces/documents/versions/Diff approval | ✅ Completed and merged into main (2026-08-23) |
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | ✅ Completed and merged into main (2026-08-26) |
+| Phase 4 | Skill management, progressive loading, external MCP servers, and execution auditing | ✅ Completed (2026-08-31) |
 
-Handoff docs: [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) · [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) · [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) · [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md)
+Architecture documents are listed below; phase handoff materials remain local to the workspace.
 
 ## Getting Started
 
-> Phase 0-3 are merged into main. Phase 4 will add versioned Skill-package management.
+> Phase 0-4 are complete. Phase 5 will add fine-grained permissions.
 
 ```bash
 # 1. Start infrastructure (MySQL / Redis / RabbitMQ / MinIO / Nacos)
@@ -111,27 +114,27 @@ Frontend variables are documented in `frontend/.env.example`; infrastructure and
 | Phase 1 | Backend foundation: common, auth, gateway | Completed |
 | Phase 2 | Document core: spaces/documents/versions/Diff | Completed and merged |
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | Completed and merged |
-| Phase 4 | Skill management: packages, versions, Agent binding, runtime loading | Planned |
+| Phase 4 | Skill management: packages, versions, Agent binding, progressive loading, and external MCP | Completed |
 | Phase 5 | Fine-grained permissions: role-permission mapping and API authorization | Planned |
 | Phase 6 | Frontend: core business, Skill, role, and permission pages | Planned |
 | Phase 7 | Full-loop integration and testing | Planned |
 | Phase 8 | Open-source release preparation | Planned |
 
-See [docs/development-plan.md](docs/development-plan.md).
+The phase roadmap is kept as a local working document; long-lived technical constraints are documented in `docs/tech/` and the architecture documents below.
 
 ## Documentation
 
 | Doc | Description |
 | --- | --- |
 | [docs/Agent-Doc-Workbench 项目完整开发规划文档.md](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | Product planning: feature list, MVP scope, milestones (Chinese) |
-| [docs/development-plan.md](docs/development-plan.md) | Development roadmap (Phase 0-8) |
 | [docs/tech/README.md](docs/tech/README.md) | Finalized tech stack: backend, frontend, auth |
-| [docs/ui-mockups/README.md](docs/ui-mockups/README.md) | UI mockups for all v0.1 pages |
-| [docs/PHASE1-HANDOFF.md](docs/PHASE1-HANDOFF.md) | Phase 1 backend handoff doc (completed) |
-| [docs/PHASE2-HANDOFF.md](docs/PHASE2-HANDOFF.md) | Phase 2 startup baseline (completed) |
-| [docs/PHASE3-HANDOFF.md](docs/PHASE3-HANDOFF.md) | Phase 3 agents & tasks handoff doc |
-| [docs/PHASE4-HANDOFF.md](docs/PHASE4-HANDOFF.md) | Phase 4 Skill-management handoff doc |
-| [CLAUDE.md](CLAUDE.md) | Project memory & collaboration conventions (incl. ADRs) |
+| [docs/common-modules.md](docs/common-modules.md) | Common modules and infrastructure architecture |
+| [docs/database-design.md](docs/database-design.md) | Database design and migration constraints |
+| [docs/agent-server-a2a-mcp-design.md](docs/agent-server-a2a-mcp-design.md) | Agent, A2A, and MCP architecture |
+| [docs/agent-task-execution-guide.md](docs/agent-task-execution-guide.md) | End-to-end Agent task flow with a concrete Skill/MCP example |
+| [docs/external-mcp-architecture-design.md](docs/external-mcp-architecture-design.md) | Multi-MCP architecture, permissions, and security constraints |
+| [docs/skill-selection-and-progressive-loading-design.md](docs/skill-selection-and-progressive-loading-design.md) | Skill selection, routing, and progressive loading design |
+| [docs/ui-mockups/README.md](docs/ui-mockups/README.md) | Complete UI mockups and interaction constraints for the current architecture |
 
 ## Open Source Plans
 

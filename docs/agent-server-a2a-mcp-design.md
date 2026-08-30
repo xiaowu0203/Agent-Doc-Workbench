@@ -1,6 +1,6 @@
 # Agent Server + MCP Server + 标准远程协议总体设计
 
-> 状态：已确认，作为后续实现基线
+> 状态：Phase 3 基线已实现；Phase 4 的 Skill 渐进加载与外部多 MCP 扩展分别见 [`skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`external-mcp-architecture-design.md`](external-mcp-architecture-design.md)
 > 适用项目：Agent-Doc-Workbench
 > 目标：落地独立 Agent Server、Workbench MCP Server，以及基于 A2A 与 MCP 的完整远程调用链路。
 
@@ -65,12 +65,14 @@ flowchart LR
 新增独立 Maven 模块，默认端口 `8084`，负责：
 
 - Agent、Model 和模型供应商配置。
+- Skill 包、版本、Agent 绑定和运行时选择。
+- 空间级外部 MCP 配置、Agent 绑定和工具命名空间。
 - Agent 系统提示词和配置版本。
 - 模型密钥加密存储。
 - A2A Server 和 Agent Card。
 - Spring AI `ChatClient` 与模型调用。
 - MCP Client 和 MCP Tool Callback 装配。
-- 单次 Agent 执行记录、提示词快照和模型快照。
+- 单次 Agent 执行记录、不可变配置快照以及逐轮模型/工具调用审计。
 - 执行超时、迭代上限、Token 预算和协作式取消。
 
 `agent-service` 不直接访问文档、任务、变更请求和审计表。Agent 需要 Workbench 数据或操作能力时，必须通过 MCP Server。
@@ -122,10 +124,14 @@ flowchart LR
 | `config_version` | 配置版本，每次有效修改递增 |
 | `max_iterations` | 单次执行最大模型迭代次数 |
 | `execution_timeout_seconds` | 单次执行超时 |
+| `tool_whitelist` | Agent 允许向模型暴露的工具上限 |
+| `skill_selection_mode` | Skill 选择模式：全部绑定或 Router 筛选 |
+| `skill_router_model_id` | 可选的独立 Skill Router 模型 |
+| `external_mcp_enabled` | 外部 MCP 总开关 |
 | `created_by` | 创建人 |
 | `created_at`、`updated_at` | 审计时间 |
 
-原 `mcp_config`、固定远程工具名和 `tool_whitelist` 不再作为 Agent 执行入口配置。Workbench MCP Server 是运行时按任务注入的标准工具源。
+原 `mcp_config` 不再作为生效配置，只作为尚未执行删除迁移的历史字段保留。Workbench MCP Server 始终按任务注入；外部 MCP 从空间级 `mcp_server` 与 Agent 绑定加载。`tool_whitelist`、Skill `allowed-tools` 和 MCP 绑定白名单共同收紧模型可见工具，但不能扩大 Task Capability 权限。
 
 ### 4.2 ModelEntity
 
@@ -363,16 +369,15 @@ task-service 的 Spring AI MCP Server 根据 `@McpTool(name = "workbench_read_do
 
 `agent-service` 使用 Spring AI `ChatClient` 执行 Agent：
 
-1. 读取并冻结 Agent 与 Model 配置。
-2. 创建本次任务专属 MCP Client。
-3. 使用 Task Capability 设置 `Authorization` Header。
-4. 将 MCP 工具通过 `SyncMcpToolCallbackProvider` 提供给 `ChatClient`。
-5. 组合平台提示词、Agent 提示词和任务指令。
-6. 执行模型工具调用循环。
-7. 使用本次 Task 已冻结预算和模型输出上限共同限制 completion tokens，执行结束后回传实际用量。
-8. 检查取消标记、超时和最大迭代次数。
-9. 关闭任务专属 MCP Client。
-10. 通过 A2A 状态和 Artifact 返回摘要与 Token 用量。
+1. 冻结 Agent、Model、Skill、工具白名单和外部 MCP 配置。
+2. 根据 Agent 模式选择候选 Skill，生成唯一的执行系统提示词与脱敏快照。
+3. 创建携带 Task Capability 的 Workbench MCP Client，并连接本次有权限使用的外部 MCP。
+4. 合并 Skill 本地工具、Workbench MCP 工具和带命名空间的外部 MCP 工具，校验名称与权限边界。
+5. 执行统一的模型工具调用循环，按轮记录脱敏模型调用审计，按次记录工具调用审计。
+6. 使用本次 Task 已冻结预算和模型输出上限共同限制 completion tokens，执行结束后回传实际用量。
+7. 在迭代之间检查取消标记、超时和最大迭代次数。
+8. 逆序关闭全部任务专属工具会话。
+9. 通过 A2A 状态和 Artifact 返回摘要与 Token 用量。
 
 Task Capability 是任务级短期凭证，因此不使用应用启动时创建的全局 MCP Client。每个 AgentExecution 创建独立 Client，并在执行结束后关闭。
 

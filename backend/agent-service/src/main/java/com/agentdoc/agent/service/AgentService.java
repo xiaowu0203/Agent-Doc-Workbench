@@ -2,17 +2,15 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.AgentConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
+import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.mapper.AgentMapper;
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.pojo.vo.AgentVO;
-import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -27,8 +25,8 @@ import java.util.List;
  * <p>
  * 负责Agent的增删改查、空间权限校验、模型可用性校验；
  * 对外提供创建、列表、详情、更新、删除、执行配置概要查询；
- * 权限通过Feign远程调用document‑service做空间角色鉴权；
- * 更新时由{@link AgentConvertor}维护configVersion乐观锁版本号。
+ * 权限通过统一空间权限服务校验；
+ * 更新时由{@link AgentConvertor}维护 configVersion 配置版本号。
  * </p>
  */
 @Service
@@ -38,8 +36,8 @@ public class AgentService {
     private final AgentMapper agentMapper;
     /** 模型服务，用于校验模型是否启用 */
     private final ModelService modelService;
-    /** Feign客户端，远程调用文档空间服务，做空间权限校验 */
-    private final DocumentFeign documentFeign;
+    /** 空间权限校验服务 */
+    private final SpaceAccessService spaceAccessService;
 
     /**
      * 创建Agent配置
@@ -51,9 +49,10 @@ public class AgentService {
     @Transactional(rollbackFor = Exception.class)
     public AgentVO create(AgentCreateDTO dto) {
         // 校验当前用户具备该空间OWNER权限
-        requireSpaceRole(dto.spaceId(), SpaceRole.OWNER);
+        spaceAccessService.requireOwner(dto.spaceId());
         // 校验引用的大模型必须处于启用状态
         modelService.requireEnabled(dto.modelId());
+        validateSkillSelection(dto.skillSelectionMode(), dto.skillRouterModelId(), dto.modelId());
         AgentEntity entity = AgentConvertor.toEntity(dto, AuthUtils.getUserIdOrException());
         agentMapper.insert(entity);
         return AgentConvertor.toVO(entity);
@@ -68,7 +67,7 @@ public class AgentService {
      */
     public List<AgentVO> list(Long spaceId) {
         // 校验当前用户具备该空间VIEWER权限
-        requireSpaceRole(spaceId, SpaceRole.VIEWER);
+        spaceAccessService.requireViewer(spaceId);
         return agentMapper.selectList(new LambdaQueryWrapper<AgentEntity>()
                         .eq(AgentEntity::getSpaceId, spaceId)
                         .orderByDesc(AgentEntity::getCreatedAt))
@@ -86,13 +85,13 @@ public class AgentService {
         // 根据AgentId获取智能体信息
         AgentEntity entity = require(id);
         // 校验当前用户具备该空间VIEWER权限
-        requireSpaceRole(entity.getSpaceId(), SpaceRole.VIEWER);
+        spaceAccessService.requireViewer(entity.getSpaceId());
         return AgentConvertor.toVO(entity);
     }
 
     /**
      * 更新Agent配置
-     * <p>权限要求：空间OWNER；校验模型启用；更新自动递增configVersion乐观锁版本号。</p>
+     * <p>权限要求：空间 OWNER；校验模型启用；更新自动递增 configVersion。</p>
      *
      * @param id  Agent主键ID
      * @param dto Agent更新入参DTO
@@ -103,9 +102,10 @@ public class AgentService {
         // 根据AgentId获取智能体信息
         AgentEntity entity = require(id);
         // 校验当前用户具备该空间OWNER权限
-        requireSpaceRole(entity.getSpaceId(), SpaceRole.OWNER);
+        spaceAccessService.requireOwner(entity.getSpaceId());
         // 校验引用的大模型必须处于启用状态
         modelService.requireEnabled(dto.modelId());
+        validateSkillSelection(dto.skillSelectionMode(), dto.skillRouterModelId(), dto.modelId());
         // 更新Agent信息
         AgentConvertor.apply(entity, dto);
         agentMapper.updateById(entity);
@@ -123,7 +123,7 @@ public class AgentService {
         // 根据AgentId获取智能体信息
         AgentEntity entity = require(id);
         // 校验当前用户具备该空间OWNER权限
-        requireSpaceRole(entity.getSpaceId(), SpaceRole.OWNER);
+        spaceAccessService.requireOwner(entity.getSpaceId());
         agentMapper.deleteById(id);
     }
 
@@ -139,6 +139,31 @@ public class AgentService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 不存在");
         }
         return entity;
+    }
+
+    /**
+     * 根据ID查询Agent信息（FOR UPDATE）
+     *
+     * @param id Agent 主键 ID
+     * @return 已锁定的 Agent 实体
+     */
+    public AgentEntity requireForUpdate(Long id) {
+        AgentEntity entity = agentMapper.selectOne(new LambdaQueryWrapper<AgentEntity>()
+                .eq(AgentEntity::getId, id)
+                .last("FOR UPDATE"));
+        if (entity == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 不存在");
+        }
+        return entity;
+    }
+
+    /**
+     * 更新 Agent 信息
+     *
+     * @param entity Agent 实体
+     */
+    public void updateConfiguration(AgentEntity entity) {
+        agentMapper.updateById(entity);
     }
 
     /**
@@ -161,17 +186,18 @@ public class AgentService {
     }
 
     /**
-     * 远程校验当前用户在指定空间具备对应角色权限
-     * <p>Feign调用document‑service空间权限接口；校验不通过直接抛出业务异常。</p>
-     *
-     * @param spaceId 空间ID
-     * @param role    需要具备的最小角色
+     * 校验Skill路由配置是否合法
+     * @param mode 路由类型
+     * @param routerModelId 绑定的路由模型ID
+     * @param mainModelId 主模型ID
      */
-    private void requireSpaceRole(Long spaceId, SpaceRole role) {
-        Result<Void> result = documentFeign.checkSpacePermission(spaceId, role.getCode());
-        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
-            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
-                    result == null ? "空间权限校验失败" : result.message());
+    private void validateSkillSelection(SkillSelectionMode mode, Long routerModelId, Long mainModelId) {
+        if (mode == SkillSelectionMode.ALL_BOUND && routerModelId != null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "ALL_BOUND 模式不能配置 Skill Router 模型");
+        }
+        if (mode == SkillSelectionMode.ROUTER && routerModelId != null && !routerModelId.equals(mainModelId)) {
+            modelService.requireEnabled(routerModelId);
         }
     }
 }
