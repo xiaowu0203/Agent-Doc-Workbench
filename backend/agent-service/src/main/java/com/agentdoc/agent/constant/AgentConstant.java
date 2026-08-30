@@ -42,7 +42,7 @@ public final class AgentConstant {
      */
     public static final long INITIAL_CONFIG_VERSION = 1L;
     /**
-     * Agent配置版本号自增步长，更新配置时版本+1，用于乐观锁
+     * Agent 配置版本号自增步长，更新配置时版本 +1，供运行时识别配置变化
      */
     public static final long CONFIG_VERSION_INCREMENT = 1L;
     /**

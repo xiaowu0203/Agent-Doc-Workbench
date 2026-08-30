@@ -7,6 +7,9 @@ import com.agentdoc.agent.execution.model.ModelTurnResult;
 import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.enums.ModelAdapterType;
+import com.agentdoc.agent.pojo.entity.AgentExecutionModelCallEntity;
+import com.agentdoc.agent.execution.audit.AgentExecutionModelCallAuditService;
 import com.agentdoc.common.pojo.TokenValue;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -16,13 +19,20 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.ArrayList;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ProviderNeutralToolLoopTest {
 
@@ -31,8 +41,8 @@ class ProviderNeutralToolLoopTest {
         AtomicInteger calls = new AtomicInteger();
         ModelAdapter adapter = new ModelAdapter() {
             @Override
-            public Set<com.agentdoc.agent.enums.ModelAdapterType> supportedTypes() {
-                return Set.of(com.agentdoc.agent.enums.ModelAdapterType.OPENAI_CHAT);
+            public Set<ModelAdapterType> supportedTypes() {
+                return Set.of(ModelAdapterType.OPENAI_CHAT);
             }
 
             @Override
@@ -62,7 +72,7 @@ class ProviderNeutralToolLoopTest {
         });
         ModelAdapter adapter = sequenceAdapter();
 
-        AgentRuntimeResult result = new ProviderNeutralToolLoop(new TokenUsageEstimator()).execute(adapter,
+        AgentRuntimeResult result = toolLoop().execute(adapter,
                 context(tool), "system", "question", 100L, 3, () -> false);
 
         assertEquals("done", result.summary());
@@ -76,8 +86,8 @@ class ProviderNeutralToolLoopTest {
         List<String> deltas = new ArrayList<>();
         ModelAdapter adapter = new ModelAdapter() {
             @Override
-            public Set<com.agentdoc.agent.enums.ModelAdapterType> supportedTypes() {
-                return Set.of(com.agentdoc.agent.enums.ModelAdapterType.OPENAI_CHAT);
+            public Set<ModelAdapterType> supportedTypes() {
+                return Set.of(ModelAdapterType.OPENAI_CHAT);
             }
 
             @Override
@@ -92,7 +102,7 @@ class ProviderNeutralToolLoopTest {
 
             @Override
             public ModelTurnResult stream(ModelAdapterContext context, List<Message> messages,
-                                          java.util.function.Consumer<String> onTextDelta) {
+                                          Consumer<String> onTextDelta) {
                 onTextDelta.accept("hel");
                 onTextDelta.accept("lo");
                 return turn(new ChatResponse(List.of(new Generation(new AssistantMessage("hello")))),
@@ -100,7 +110,7 @@ class ProviderNeutralToolLoopTest {
             }
         };
 
-        AgentRuntimeResult result = new ProviderNeutralToolLoop(new TokenUsageEstimator()).execute(adapter,
+        AgentRuntimeResult result = toolLoop().execute(adapter,
                 new ModelAdapterContext(null, null, "key", 20, List.of()),
                 "system", "question", 100L, 3, () -> false, deltas::add);
 
@@ -112,7 +122,7 @@ class ProviderNeutralToolLoopTest {
     void stopsBeforeExecutingToolWhenIterationLimitReached() {
         ToolCallback tool = tool("lookup", input -> "tool-result");
 
-        assertThrows(IllegalStateException.class, () -> new ProviderNeutralToolLoop(new TokenUsageEstimator()).execute(
+        assertThrows(IllegalStateException.class, () -> toolLoop().execute(
                 toolOnlyAdapter(), context(tool), "system", "question", 100L, 0, () -> false));
     }
 
@@ -121,7 +131,7 @@ class ProviderNeutralToolLoopTest {
         ToolCallback tool = tool("lookup", input -> "tool-result");
         ToolCallback guardedTool = new CancellationAwareToolCallback(tool, () -> true);
 
-        assertThrows(AgentExecutionCanceledException.class, () -> new ProviderNeutralToolLoop(new TokenUsageEstimator()).execute(
+        assertThrows(AgentExecutionCanceledException.class, () -> toolLoop().execute(
                 toolOnlyAdapter(), context(guardedTool), "system", "question", 100L, 3, () -> false));
     }
 
@@ -130,8 +140,8 @@ class ProviderNeutralToolLoopTest {
             private int calls;
 
             @Override
-            public Set<com.agentdoc.agent.enums.ModelAdapterType> supportedTypes() {
-                return Set.of(com.agentdoc.agent.enums.ModelAdapterType.OPENAI_CHAT);
+            public Set<ModelAdapterType> supportedTypes() {
+                return Set.of(ModelAdapterType.OPENAI_CHAT);
             }
 
             @Override
@@ -154,11 +164,21 @@ class ProviderNeutralToolLoopTest {
         };
     }
 
+    private ProviderNeutralToolLoop toolLoop() {
+        AgentExecutionModelCallAuditService auditService = mock(AgentExecutionModelCallAuditService.class);
+        when(auditService.start(any(), anyInt(), any(), anyBoolean())).thenAnswer(invocation -> {
+            AgentExecutionModelCallEntity entity = new AgentExecutionModelCallEntity();
+            entity.setSequenceNo(invocation.getArgument(1));
+            return entity;
+        });
+        return new ProviderNeutralToolLoop(new TokenUsageEstimator(), auditService);
+    }
+
     private ModelAdapter toolOnlyAdapter() {
         return new ModelAdapter() {
             @Override
-            public Set<com.agentdoc.agent.enums.ModelAdapterType> supportedTypes() {
-                return Set.of(com.agentdoc.agent.enums.ModelAdapterType.OPENAI_CHAT);
+            public Set<ModelAdapterType> supportedTypes() {
+                return Set.of(ModelAdapterType.OPENAI_CHAT);
             }
 
             @Override
@@ -187,7 +207,7 @@ class ProviderNeutralToolLoopTest {
                         TokenValue.provider(outputTokens)));
     }
 
-    private ToolCallback tool(String name, java.util.function.Function<String, String> function) {
+    private ToolCallback tool(String name, Function<String, String> function) {
         return new ToolCallback() {
             @Override
             public ToolDefinition getToolDefinition() {

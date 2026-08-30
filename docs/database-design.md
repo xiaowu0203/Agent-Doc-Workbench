@@ -1,6 +1,6 @@
 # 数据库设计说明
 
-> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/`（V1-V8 增量迁移，包含 Agent Service、A2A 执行记录、A2A Task/Push Config 持久化，Flyway 由 auth-service 统一托管）。
+> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/V1__init.sql`。原 V1—V16 已合并为唯一的 v0.1 初始化基线，Flyway 由 auth-service 统一托管。
 > 本文档与迁移 SQL 同步维护，业务口径变更须同时更新两侧。
 
 ## 整体说明
@@ -10,9 +10,9 @@
 - **主键 / 删除**：主键统一雪花 ID（BIGINT）；业务表统一逻辑删除（`deleted` 0/1）；`audit_log` 审计日志**只允许 INSERT，禁止 UPDATE / DELETE，无逻辑删除**
 - **关联方式**：表间关联均为**逻辑外键（普通索引）**，不建物理外键约束（与全库既有风格一致）
 - **时间口径**：统一 **Asia/Shanghai 东八区自然日**；DB 连接参数 `serverTimezone=Asia/Shanghai`
-- **版本迁移**：Flyway 由 auth-service 统一托管；新增 / 变更一律增量脚本，已执行的迁移不得修改（checksum 校验）
+- **版本迁移**：当前完整基线为 `V1__init.sql`；基线重新执行后视为不可变历史，新增 / 变更一律使用 V2 及更高版本增量脚本
 
-## 表清单速览（17 张业务表）
+## 表清单速览（24 张业务表）
 
 | 表 | 归属域 | 一句话职责 |
 | --- | --- | --- |
@@ -29,6 +29,9 @@
 | `agent_execution` | Agent | Agent Service 中的 A2A 执行快照、状态和 Token 用量 |
 | `a2a_task_store` | A2A | A2A Task 协议状态及加密载荷持久化 |
 | `a2a_push_config` | A2A | A2A Push Notification 配置及加密载荷持久化 |
+| `skill` / `skill_version` / `agent_skill` | Skill | Skill 元数据、不可变版本包以及 Agent 当前绑定关系 |
+| `mcp_server` / `agent_mcp_binding` | MCP | 空间级外部 MCP 配置以及 Agent 工具白名单绑定 |
+| `agent_execution_model_call` / `agent_execution_tool_call` | 执行审计 | 逐轮模型调用与逐次工具调用的脱敏审计记录 |
 
 ## 表分工
 
@@ -44,6 +47,9 @@
 10. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
 11. **agent_execution**：保存一次 A2A 执行的配置快照、状态、结果摘要和 Token 用量，使用 `workbench_task_id` 保证幂等。
 12. **a2a_task_store / a2a_push_config**：由 agent-service 使用 AES-GCM 加密保存官方 A2A SDK 的任务和推送配置载荷，服务重启后可恢复协议状态。
+13. **skill / skill_version / agent_skill**：管理 Skill 稳定标识、不可变版本、对象存储信息和 Agent 绑定；执行时冻结实际候选与选择结果。
+14. **mcp_server / agent_mcp_binding**：管理空间级外部 MCP、加密认证令牌、配置版本和 Agent 绑定白名单。
+15. **agent_execution_model_call / agent_execution_tool_call**：按执行内序号保存模型和工具调用状态、耗时、哈希与字节数，不保存 Prompt、响应、工具参数、结果或密钥明文。
 
 ## model 表对业务数据渲染的影响
 
@@ -63,6 +69,9 @@
 4. `token_usage_detail` 明细是唯一真相源；聚合表 `token_usage` 损坏可通过明细全量重建。
 5. 折线图只读取 `token_usage`，数据截止**前一天**；今日消耗从 `token_daily_snapshot` 快照获取；今日数据不参与折线图，避免图表抖动。
 6. v0.1 暂不实现 `model_pricing` 计价子表，峰谷 / 缓存复杂计价放到 v0.2 迭代。
+7. Skill 版本发布后不可覆盖；Agent 执行只使用准备阶段冻结的 Skill、Prompt、工具和 MCP 快照。
+8. 外部 MCP Bearer Token 使用 AES-GCM 加密保存，执行快照和调用审计不得持久化秘密明文。
+9. 模型与工具调用审计采用追加写入和稳定哈希，用于执行核验，不承担正文恢复职责。
 
 ## 熔断与 Token 计数策略（已定稿）
 
@@ -87,24 +96,17 @@
 - 📈 消耗折线图：数据源 `token_usage`，时间范围 N 天前～昨日，数据稳定无抖动。
 - 📊 今日消耗卡片：读取 `token_daily_snapshot` 当天最新一条（`space_id + snapshot_date` 取 `created_at` 最大）；**无快照时提示用户手动刷新**；提示"今日为快照数据，折线统计截止昨日，金额仅为预估"。
 
-## 查询索引（V3 已建）
+## 查询索引
 
-- `token_usage (space_id, usage_date)`：折线图按空间 + 日期范围查询（V3 新增 `idx_tu_space_date`）。
-- `token_daily_snapshot (space_id, snapshot_date, created_at)`：今日卡片取最新快照（V3 新增 `idx_snap_space_date_created`，**替换** V2 的 `idx_snap_space_date`，避免冗余索引）。
-- V2 已执行不修改 DDL，索引统一走 `V3__token_stats_indexes.sql`；MySQL 5.7 无降序索引，最新快照查询靠 `ORDER BY created_at DESC` 反向扫描。
+- `token_usage (space_id, usage_date)`：折线图按空间 + 日期范围查询（`idx_tu_space_date`）。
+- `token_daily_snapshot (space_id, snapshot_date, created_at)`：今日卡片取最新快照（`idx_snap_space_date_created`）。
+- MySQL 5.7 无降序索引，最新快照查询靠 `ORDER BY created_at DESC` 反向扫描。
 - `token_usage_detail` 增长较快，v0.2 需定归档 / 冷备策略（预留）。
 
 ## 迁移版本演进
 
 | 版本 | 内容 |
 | --- | --- |
-| `V1__init.sql` | 11 张表基线（user / oauth2_client / space / member / document / document_version / change_request / agent / task / token_usage / audit_log） |
-| `V2__model_and_token_stats.sql` | 新增 `model`；`agent` 增 `model_id` 与索引；`token_usage` 重构为通用 `obj_id` + 唯一键；新增 `token_usage_detail` / `token_daily_snapshot` |
-| `V3__token_stats_indexes.sql` | 查询索引：`token_usage(space_id, usage_date)`；`token_daily_snapshot(space_id, snapshot_date, created_at)`（替换旧索引） |
-| `V4__change_request_base_version.sql` | `change_request` 新增 `base_version` 列（审批合并时校验基线版本，防止并发覆盖） |
-| `V5__document_parent_id_nullable.sql` | `document.parent_id` 改为可空；根目录由 `0` 约定迁移为 `NULL` |
-| `V6__phase3_task_agent_audit.sql` | Task、Agent 和审计字段；新增 Agent 执行所需状态与索引 |
-| `V7__agent_service_a2a_mcp.sql` | Agent/Model 配置扩展；新增 `agent_execution`；补充 Task 的 A2A 字段 |
-| `V8__persist_a2a_protocol_state.sql` | 新增 `a2a_task_store`、`a2a_push_config`，持久化 A2A 协议状态和 Push 配置 |
+| `V1__init.sql` | 合并原 V1—V16 的完整 v0.1 数据库基线，包括用户、空间、文档、任务、Agent、模型、Token 统计、Skill、外部 MCP 与执行审计结构 |
 
-已执行的迁移不可修改（Flyway checksum）；后续变更一律新增 V9+ 增量脚本。
+所有环境重建并执行该基线后，`V1__init.sql` 不再修改；后续变更一律新增 V2 及更高版本迁移。

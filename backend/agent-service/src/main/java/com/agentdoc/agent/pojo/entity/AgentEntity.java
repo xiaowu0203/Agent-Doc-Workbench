@@ -22,10 +22,18 @@ public class AgentEntity extends BaseLogicDeleteEntity {
     private String systemPrompt;
     @Schema(description = "模型 ID")
     private Long modelId;
+    @Schema(description = "Skill 选择模式：ALL_BOUND / ROUTER")
+    private String skillSelectionMode;
+    @Schema(description = "Skill Router 模型 ID；为空时复用 Agent 主模型")
+    private Long skillRouterModelId;
+    @Schema(description = "是否启用外部 MCP")
+    private Boolean externalMcpEnabled;
     @Schema(description = "Token 预算上限")
     private Long tokenBudget;
     @Schema(description = "文档访问范围")
     private String docScope;
+    @Schema(description = "MCP 工具白名单 JSON")
+    private String toolWhitelist;
     @Schema(description = "最大工具迭代次数")
     private Integer maxIterations;
     @Schema(description = "执行超时时间（秒）")

@@ -1,18 +1,16 @@
 package com.agentdoc.agent.execution.application;
 
-import com.agentdoc.agent.convertor.AgentExecutionConvertor;
+import com.agentdoc.agent.a2a.executor.WorkbenchAgentExecutor;
 import com.agentdoc.agent.enums.AgentExecutionStatus;
-import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
+import com.agentdoc.agent.execution.context.AgentRuntimeContext;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
-import com.agentdoc.agent.service.AgentService;
-import com.agentdoc.agent.service.ModelService;
-import com.agentdoc.agent.service.PromptService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
@@ -26,7 +24,6 @@ import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.TextPart;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.HashMap;
@@ -38,7 +35,7 @@ import static com.agentdoc.agent.constant.AgentConstant.MAX_ERROR_MESSAGE_LENGTH
 /**
  * Agent执行应用服务，业务层入口
  * <p>
- * 由 {@link com.agentdoc.agent.a2a.executor.WorkbenchAgentExecutor} 调用，承接A2A协议下发的Agent执行与取消请求；
+ * 由 {@link WorkbenchAgentExecutor} 调用，承接A2A协议下发的Agent执行与取消请求；
  * 职责：参数解析、幂等校验、加载Agent/模型、数据库落库、调用运行时执行大模型、
  * 捕获各类执行异常、状态流转、通过{@link AgentEmitter}向A2A协议层输出事件。
  * </p>
@@ -49,9 +46,8 @@ import static com.agentdoc.agent.constant.AgentConstant.MAX_ERROR_MESSAGE_LENGTH
 public class AgentExecutionApplicationService {
 
     private final AgentExecutionMapper executionMapper;
-    private final AgentService agentService;
-    private final ModelService modelService;
-    private final PromptService promptService;
+    private final ExecutionPreparationService preparationService;
+    private final AgentExecutionPersistenceService executionPersistenceService;
 
     /** Agent实际运行时，封装LLM调用、MCP工具调用、文档协作业务逻辑 */
     private final AgentExecutionRuntime runtime;
@@ -74,46 +70,37 @@ public class AgentExecutionApplicationService {
             return;
         }
 
-        // 校验Agent配置，校验Agent是否启用
-        AgentEntity agent = agentService.require(input.agentId());
-        if (!AgentStatus.ENABLED.matches(agent.getStatus())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Agent 已禁用");
-        }
-        // 获取启用的模型配置
-        ModelEntity model = modelService.requireEnabled(agent.getModelId());
-
         // 用户原始输入指令
         String instruction = context.getUserInput();
-        // 拼装System系统提示词
-        String systemPrompt = promptService.systemPrompt(agent.getSystemPrompt());
-
-        // 构建执行记录实体，写入数据库（初始状态）
-        AgentExecutionEntity execution = AgentExecutionConvertor.toEntity(
-                context.getTaskId(), context.getContextId(), input, agent, model,
-                systemPrompt, promptService.hash(systemPrompt, instruction), objectMapper);
-        executionMapper.insert(execution);
+        // 短事务捕获配置后，在事务外完成路由与快照，并通过独立短事务写入执行记录
+        ExecutionPreparationService.PreparedExecution prepared = preparationService.prepare(
+                context.getTaskId(), context.getContextId(), input, instruction);
+        AgentEntity agent = prepared.agent();
+        ModelEntity model = prepared.model();
+        SkillExecutionSnapshot skillSnapshot = prepared.skillSnapshot();
+        String systemPrompt = prepared.systemPrompt();
+        AgentExecutionEntity execution = prepared.execution();
 
         // 触发回调task-service，任务开始执行
         emitter.startWork();
         // 更新数据库状态为WORKING执行中
-        AgentExecutionConvertor.markWorking(execution);
-        executionMapper.updateById(execution);
+        executionPersistenceService.markWorking(execution);
         try {
             // 调用运行时执行业务逻辑；传入取消回调，运行时内部可轮询判断是否被取消
             boolean streaming = context.getCallContext() != null
                     && Boolean.TRUE.equals(context.getCallContext().getState()
                     .get(A2aMetadataConstant.STREAMING_REQUEST_STATE));
             AgentRuntimeResult result;
+            // 构建Agent运行时上下文
+            AgentRuntimeContext runtimeContext = new AgentRuntimeContext(execution.getId(), agent, model, input, instruction,
+                    systemPrompt, skillSnapshot, skillSnapshot.allowedMcpTools(), prepared.externalMcpConnections());
             if (streaming) {
-                result = runtime.execute(agent, model, instruction, input,
-                        () -> isCancelRequested(execution.getId()), emitter::sendMessage);
+                result = runtime.execute(runtimeContext, () -> isCancelRequested(execution.getId()), emitter::sendMessage);
             } else {
-                result = runtime.execute(agent, model, instruction, input,
-                        () -> isCancelRequested(execution.getId()));
+                result = runtime.execute(runtimeContext, () -> isCancelRequested(execution.getId()));
             }
             // 执行成功，回填结果，更新数据库状态为COMPLETED
-            AgentExecutionConvertor.complete(execution, result);
-            executionMapper.updateById(execution);
+            executionPersistenceService.markCompleted(execution, result);
             // 触发回调task-service，保存正式结果和元数据（无关状态），跟下面的complete区分开，一个处理数据，一个处理状态
             emitter.addArtifact(
                     // 内容
@@ -128,15 +115,13 @@ public class AgentExecutionApplicationService {
             emitter.complete(agentMessage(result.summary()));
         } catch (AgentExecutionCanceledException exception) {
             // 捕获主动取消异常，状态置为CANCELED
-            AgentExecutionConvertor.cancel(execution);
-            executionMapper.updateById(execution);
+            executionPersistenceService.markCanceled(execution);
             // 触发回调task-service，任务取消了
             emitter.cancel(agentMessage(exception.getMessage()));
         } catch (RuntimeException exception) {
             // 运行时异常：模型报错、工具异常等，状态置为FAILED
             String errorMessage = safeMessage(exception);
-            AgentExecutionConvertor.fail(execution, errorMessage);
-            executionMapper.updateById(execution);
+            executionPersistenceService.markFailed(execution, errorMessage);
             // 触发回调task-service，任务失败了
             emitter.fail(agentMessage(errorMessage));
         }
@@ -147,7 +132,6 @@ public class AgentExecutionApplicationService {
      * @param context A2A请求上下文
      * @param emitter A2A事件发射器
      */
-    @Transactional(rollbackFor = Exception.class)
     public void cancel(RequestContext context, AgentEmitter emitter) {
         // 通过A2A taskId查询执行记录
         AgentExecutionEntity execution = findByA2aTaskId(context.getTaskId());
@@ -155,8 +139,7 @@ public class AgentExecutionApplicationService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 执行不存在");
         }
         // 修改状态为已取消，写库
-        AgentExecutionConvertor.cancel(execution);
-        executionMapper.updateById(execution);
+        executionPersistenceService.markCanceled(execution);
         // 触发回调task-service，任务开始执行
         emitter.cancel(agentMessage("任务已取消"));
     }
@@ -264,4 +247,5 @@ public class AgentExecutionApplicationService {
         String message = exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
         return message.substring(0, Math.min(message.length(), MAX_ERROR_MESSAGE_LENGTH));
     }
+
 }

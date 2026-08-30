@@ -1,6 +1,6 @@
 # Agent‑Doc‑Workbench 项目完整开发规划文档
 
-> **基线说明（2026-08-24）**：本文保留早期产品规划，其中关于“仅 MCP Client”“v0.1 不实现 A2A”以及 Agent 合并在 task-service 的描述已被 Phase 3 实现取代。当前架构以 [`docs/agent-server-a2a-mcp-design.md`](agent-server-a2a-mcp-design.md) 和 [`docs/PHASE3-HANDOFF.md`](PHASE3-HANDOFF.md) 为准：`agent-service` 提供 A2A Agent Server，`task-service` 提供 A2A Client 与 Workbench MCP Server。
+> **基线说明（2026-08-31）**：本文保留早期产品规划，其中关于“仅 MCP Client”“v0.1 不实现 A2A”以及 Agent 合并在 task-service 的描述已被 Phase 3 实现取代。当前协议架构以 [`docs/agent-server-a2a-mcp-design.md`](agent-server-a2a-mcp-design.md) 为准；Phase 4 已增加版本化 Skill、渐进式加载与空间级外部 MCP，分别以 [`docs/skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`docs/external-mcp-architecture-design.md`](external-mcp-architecture-design.md) 为准。
 
 ## 一、项目基础概述
 

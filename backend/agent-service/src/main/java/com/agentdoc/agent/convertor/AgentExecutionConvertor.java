@@ -8,8 +8,7 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.common.enums.TokenValueSource;
 import com.agentdoc.common.pojo.TokenValue;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.agentdoc.common.utils.JsonUtils;
 
 import java.time.LocalDateTime;
 
@@ -40,13 +39,11 @@ public final class AgentExecutionConvertor {
      * @param model              大模型配置实体
      * @param systemPromptSnapshot 本次执行使用的systemPrompt快照文本
      * @param promptHash         提示词哈希值，用于追踪prompt版本
-     * @param objectMapper       JSON序列化器，用于生成模型配置快照
      * @return 待入库的AgentExecutionEntity，状态为SUBMITTED
      */
     public static AgentExecutionEntity toEntity(String a2aTaskId, String a2aContextId, AgentTaskInputDTO input,
-                                                AgentEntity agent, ModelEntity model,
-                                                String systemPromptSnapshot, String promptHash,
-                                                ObjectMapper objectMapper) {
+                                                 AgentEntity agent, ModelEntity model,
+                                                 String systemPromptSnapshot, String promptHash) {
         AgentExecutionEntity entity = new AgentExecutionEntity();
         entity.setA2aTaskId(a2aTaskId);
         entity.setA2aContextId(a2aContextId);
@@ -56,7 +53,7 @@ public final class AgentExecutionConvertor {
         entity.setAgentConfigVersion(agent.getConfigVersion());
         entity.setSystemPromptSnapshot(systemPromptSnapshot);
         // 将模型关键配置序列化为JSON快照保存
-        entity.setModelSnapshot(toModelSnapshot(model, objectMapper));
+        entity.setModelSnapshot(toModelSnapshot(model));
         entity.setPromptHash(promptHash);
         // 初始状态：已提交，还未开始执行
         entity.setStatus(AgentExecutionStatus.SUBMITTED.name());
@@ -136,14 +133,10 @@ public final class AgentExecutionConvertor {
      * @return JSON格式模型快照字符串
      * @throws IllegalStateException 序列化异常时抛出
      */
-    private static String toModelSnapshot(ModelEntity model, ObjectMapper objectMapper) {
-        try {
-            return objectMapper.writeValueAsString(new ModelSnapshot(model.getId(), model.getProvider(),
-                    model.getAdapterType(), model.getModelKey(), model.getDisplayName(), model.getBaseUrl(),
-                    model.getMaxOutputTokens()));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("模型快照序列化失败", exception);
-        }
+    private static String toModelSnapshot(ModelEntity model) {
+        return JsonUtils.toJson(new ModelSnapshot(model.getId(), model.getProvider(),
+                model.getAdapterType(), model.getModelKey(), model.getDisplayName(), model.getBaseUrl(),
+                model.getMaxOutputTokens()));
     }
 
     /**
