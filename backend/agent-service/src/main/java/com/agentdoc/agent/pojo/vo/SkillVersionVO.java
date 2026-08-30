@@ -12,6 +12,7 @@ public record SkillVersionVO(
         @Schema(description = "Skill ID") Long skillId,
         @Schema(description = "版本号") Integer versionNo,
         @Schema(description = "状态") SkillVersionStatus status,
+        @Schema(description = "版本级激活描述") String activationDescription,
         @Schema(description = "SHA-256") String sha256,
         @Schema(description = "ZIP 大小") Long packageSize,
         @Schema(description = "工具白名单") List<String> allowedTools,

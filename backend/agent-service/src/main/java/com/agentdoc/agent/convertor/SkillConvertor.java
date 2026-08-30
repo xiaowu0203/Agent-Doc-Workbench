@@ -21,7 +21,8 @@ public final class SkillConvertor {
      * @return 组装完成的 {@link SkillVO}
      */
     public static SkillVO toVO(SkillEntity entity, long versionCount) {
-        return new SkillVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDescription(),
+        return new SkillVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDisplayName(),
+                entity.getDescription(),
                 SkillStatus.fromCode(entity.getStatus()), versionCount, entity.getCreatedBy(), entity.getCreatedAt());
     }
 }

@@ -7,6 +7,10 @@ import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionLimitExceededException;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.pojo.entity.AgentExecutionModelCallEntity;
+import com.agentdoc.agent.execution.audit.AgentExecutionModelCallAuditService;
+import com.agentdoc.common.pojo.TokenValue;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -15,7 +19,6 @@ import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.resolution.StaticToolCallbackResolver;
-import com.agentdoc.common.pojo.TokenValue;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -43,13 +46,17 @@ import java.util.function.Consumer;
  * @see TokenUsageEstimator
  */
 @Component
+@Slf4j
 public class ProviderNeutralToolLoop {
 
     /** Token用量补齐、估算组件，当模型未返回usage时做字节估算 */
     private final TokenUsageEstimator tokenUsageEstimator;
+    private final AgentExecutionModelCallAuditService modelCallAuditService;
 
-    public ProviderNeutralToolLoop(TokenUsageEstimator tokenUsageEstimator) {
+    public ProviderNeutralToolLoop(TokenUsageEstimator tokenUsageEstimator,
+                                   AgentExecutionModelCallAuditService modelCallAuditService) {
         this.tokenUsageEstimator = tokenUsageEstimator;
+        this.modelCallAuditService = modelCallAuditService;
     }
 
     /**
@@ -129,6 +136,7 @@ public class ProviderNeutralToolLoop {
         // Token用量统计记录对象
         TokenUsage totalUsage = null;
         int toolIterations = 0;
+        int modelSequence = 0;
 
         while (true) {
             // 每轮循环入口检查任务取消
@@ -140,10 +148,27 @@ public class ProviderNeutralToolLoop {
             ModelAdapterContext turnContext = context.withMaxOutputTokens(
                     remainingOutputLimit(context.maxOutputTokens(), tokenBudget, totalUsage));
 
-            // 根据streaming标志选择同步或者流式调用LLM
-            ModelTurnResult turn = streaming
-                    ? adapter.stream(turnContext, prompt.getInstructions(), onTextDelta)
-                    : adapter.callOnce(turnContext, prompt.getInstructions());
+            // 创建并启动一条模型调用审计记录
+            AgentExecutionModelCallEntity modelCall = modelCallAuditService.start(
+                    turnContext, ++modelSequence, prompt.getInstructions(), streaming);
+            ModelTurnResult turn;
+            try {
+                // 根据streaming标志选择同步或者流式调用LLM
+                turn = streaming
+                        ? adapter.stream(turnContext, prompt.getInstructions(), onTextDelta)
+                        : adapter.callOnce(turnContext, prompt.getInstructions());
+            } catch (RuntimeException exception) {
+                // 标记模型调用审计为失败结束
+                finishFailed(modelCall, exception);
+                throw exception;
+            }
+            try {
+                // 标记模型调用审计为成功结束
+                modelCallAuditService.succeed(modelCall, turn.response());
+            } catch (RuntimeException exception) {
+                log.error("模型调用已成功但结束审计失败: executionId={}, auditId={}, sequence={}",
+                        turnContext.executionId(), modelCall.getId(), modelSequence, exception);
+            }
 
             // 补齐token用量，接口返回不足时执行估算
             TokenUsage turnUsage = tokenUsageEstimator.complete(turn.tokenUsage(), prompt.getInstructions(),
@@ -174,6 +199,15 @@ public class ProviderNeutralToolLoop {
         }
     }
 
+    private void finishFailed(AgentExecutionModelCallEntity modelCall, RuntimeException exception) {
+        try {
+            modelCallAuditService.fail(modelCall, exception.getClass().getSimpleName());
+        } catch (RuntimeException auditException) {
+            log.error("模型调用失败且结束审计失败: executionId={}, auditId={}, sequence={}",
+                    modelCall.getExecutionId(), modelCall.getId(), modelCall.getSequenceNo(), auditException);
+        }
+    }
+
     /**
      * 计算本轮模型可使用的输出token上限
      * @param modelLimit 模型本身最大输出token限制
@@ -196,9 +230,11 @@ public class ProviderNeutralToolLoop {
     }
 
     /**
-     * 统计输入+输出总消耗token
-     * @param usage token用量对象
-     * @return input + output合计token数量
+     * 校验累计 Token 用量是否超过执行预算。
+     *
+     * @param tokenBudget Token 总预算；为空表示不限制
+     * @param totalUsage  当前累计用量
+     * @throws IllegalStateException 累计用量超过预算时抛出
      */
     private void ensureBudget(Long tokenBudget, TokenUsage totalUsage) {
         if (tokenBudget != null && totalUsage != null && usedTokens(totalUsage) > tokenBudget) {

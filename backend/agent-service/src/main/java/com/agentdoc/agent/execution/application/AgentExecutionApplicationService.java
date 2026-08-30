@@ -4,15 +4,13 @@ import com.agentdoc.agent.a2a.executor.WorkbenchAgentExecutor;
 import com.agentdoc.agent.enums.AgentExecutionStatus;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
-import com.agentdoc.agent.execution.runtime.AgentRuntimeContext;
+import com.agentdoc.agent.execution.context.AgentRuntimeContext;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
-import com.agentdoc.agent.execution.runtime.SkillExecutionSnapshot;
+import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
-import com.agentdoc.agent.service.ExecutionPreparationService;
-import com.agentdoc.agent.service.AgentExecutionPersistenceService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
@@ -74,7 +72,7 @@ public class AgentExecutionApplicationService {
 
         // 用户原始输入指令
         String instruction = context.getUserInput();
-        // 在同一事务内锁定 Agent、生成快照并写入 SUBMITTED 执行记录
+        // 短事务捕获配置后，在事务外完成路由与快照，并通过独立短事务写入执行记录
         ExecutionPreparationService.PreparedExecution prepared = preparationService.prepare(
                 context.getTaskId(), context.getContextId(), input, instruction);
         AgentEntity agent = prepared.agent();
@@ -93,8 +91,9 @@ public class AgentExecutionApplicationService {
                     && Boolean.TRUE.equals(context.getCallContext().getState()
                     .get(A2aMetadataConstant.STREAMING_REQUEST_STATE));
             AgentRuntimeResult result;
-            AgentRuntimeContext runtimeContext = new AgentRuntimeContext(agent, model, input, instruction,
-                    systemPrompt, skillSnapshot, skillSnapshot.allowedMcpTools());
+            // 构建Agent运行时上下文
+            AgentRuntimeContext runtimeContext = new AgentRuntimeContext(execution.getId(), agent, model, input, instruction,
+                    systemPrompt, skillSnapshot, skillSnapshot.allowedMcpTools(), prepared.externalMcpConnections());
             if (streaming) {
                 result = runtime.execute(runtimeContext, () -> isCancelRequested(execution.getId()), emitter::sendMessage);
             } else {

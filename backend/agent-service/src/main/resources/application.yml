@@ -55,6 +55,11 @@ agent-doc:
     platform-prompt-resource: classpath:prompts/platform-system-prompt.md
   skill:
     reconcile-delay-ms: ${SKILL_RECONCILE_DELAY_MS:21600000}
+    selection:
+      router:
+        max-selected-skills: ${SKILL_ROUTER_MAX_SELECTED:5}
+        timeout: ${SKILL_ROUTER_TIMEOUT:8s}
+        max-output-tokens: ${SKILL_ROUTER_MAX_OUTPUT_TOKENS:256}
     package:
       # 上传的技能归档压缩包最大总大小，默认 2MB
       max-archive-size: ${SKILL_MAX_ARCHIVE_SIZE:2MB}

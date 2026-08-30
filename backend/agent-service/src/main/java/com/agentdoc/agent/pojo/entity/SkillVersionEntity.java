@@ -20,6 +20,8 @@ public class SkillVersionEntity extends BaseEntity {
     private Integer versionNo;
     @Schema(description = "状态：0 草稿 / 1 已发布")
     private Integer status;
+    @Schema(description = "版本级激活描述，来源于 SKILL.md")
+    private String activationDescription;
     @Schema(description = "对象存储键")
     private String storageKey;
     @Schema(description = "ZIP SHA-256")

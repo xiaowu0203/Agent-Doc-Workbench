@@ -6,6 +6,7 @@ import com.agentdoc.agent.mapper.SkillVersionMapper;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.service.SkillAuditLogService;
 import com.agentdoc.agent.service.SkillService;
+import com.agentdoc.agent.service.SpaceAccessService;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.DocumentFeign;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ class SkillLifecycleServiceTest {
         skill.setNextVersionNo(4);
         when(skillMapper.selectOne(any())).thenReturn(skill);
         SkillService service = new SkillService(skillMapper, mock(SkillVersionMapper.class),
-                permittedDocumentFeign(), mock(SkillAuditLogService.class));
+                new SpaceAccessService(permittedDocumentFeign()), mock(SkillAuditLogService.class));
 
         assertThat(service.reserveVersionNo(7L)).isEqualTo(4);
         assertThat(skill.getNextVersionNo()).isEqualTo(5);
@@ -45,7 +46,7 @@ class SkillLifecycleServiceTest {
         skill.setStatus(SkillStatus.DISABLED.getCode());
         when(skillMapper.selectOne(any())).thenReturn(skill);
         SkillService service = new SkillService(skillMapper, mock(SkillVersionMapper.class),
-                permittedDocumentFeign(), mock(SkillAuditLogService.class));
+                new SpaceAccessService(permittedDocumentFeign()), mock(SkillAuditLogService.class));
 
         assertThatThrownBy(() -> service.reserveVersionNo(7L))
                 .hasMessageContaining("停用");

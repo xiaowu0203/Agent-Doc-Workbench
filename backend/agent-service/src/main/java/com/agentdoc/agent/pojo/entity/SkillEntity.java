@@ -16,6 +16,8 @@ public class SkillEntity extends BaseLogicDeleteEntity {
     private Long spaceId;
     @Schema(description = "Skill 名称")
     private String name;
+    @Schema(description = "Skill 展示名称")
+    private String displayName;
     @Schema(description = "Skill 描述")
     private String description;
     @Schema(description = "状态：0 禁用 / 1 启用")

@@ -2,8 +2,8 @@ package com.agentdoc.agent.execution;
 
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeProperties;
-import com.agentdoc.agent.execution.runtime.SpringAiAgentExecutionRuntime;
-import com.agentdoc.agent.execution.runtime.SpringAiAlibabaAgentExecutionRuntime;
+import com.agentdoc.agent.execution.runtime.alibaba.SpringAiAlibabaAgentExecutionRuntime;
+import com.agentdoc.agent.execution.runtime.springai.SpringAiAgentExecutionRuntime;
 import com.agentdoc.agent.execution.tool.ProviderNeutralToolLoop;
 import com.agentdoc.agent.execution.tool.TokenUsageEstimator;
 import com.agentdoc.agent.security.AgentConfigCryptoService;

@@ -31,6 +31,14 @@ public final class SkillConstant {
     public static final String RESOURCE_READ_TOOL = "skill_read_resource";
 
     /**
+     * 读取技能指令的工具标识常量
+     * <p>
+     * 用于A2A/MCP工具调用时，指定调用【读取技能配置指令】的工具名称
+     * 对应工具：读取skill的prompt/instructions文本内容，供Agent上下文使用
+     */
+    public static final String INSTRUCTION_READ_TOOL = "skill_read_instructions";
+
+    /**
      * 文件哈希校验算法：SHA‑256，用于技能包完整性校验
      */
     public static final String SHA_256 = "SHA-256";
@@ -54,6 +62,15 @@ public final class SkillConstant {
      * 技能自定义工具名称最大字符长度
      */
     public static final int MAX_TOOL_NAME_LENGTH = 100;
+
+    /** Skill Router 最大输出 Token 上限。 */
+    public static final int MAX_ROUTER_OUTPUT_TOKENS = 1024;
+
+    /** Skill Router 最短超时时间，单位毫秒。 */
+    public static final long MIN_ROUTER_TIMEOUT_MILLIS = 100;
+
+    /** Skill Router 最长超时时间，单位毫秒。 */
+    public static final long MAX_ROUTER_TIMEOUT_MILLIS = 60_000;
 
     private SkillConstant() {
     }

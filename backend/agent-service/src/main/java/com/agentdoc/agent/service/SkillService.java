@@ -10,11 +10,8 @@ import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.pojo.param.SkillSearchParam;
 import com.agentdoc.agent.pojo.vo.SkillVO;
-import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.PageUtils;
@@ -54,7 +51,7 @@ public class SkillService {
 
     private final SkillMapper skillMapper;
     private final SkillVersionMapper skillVersionMapper;
-    private final DocumentFeign documentFeign;
+    private final SpaceAccessService spaceAccessService;
     private final SkillAuditLogService auditLogService;
 
     /**
@@ -82,6 +79,7 @@ public class SkillService {
         SkillEntity entity = new SkillEntity();
         entity.setSpaceId(dto.spaceId());
         entity.setName(dto.name());
+        entity.setDisplayName(dto.displayName());
         entity.setDescription(dto.description());
         entity.setStatus(SkillStatus.ACTIVE.getCode());
         entity.setNextVersionNo(1);
@@ -117,7 +115,10 @@ public class SkillService {
             wrapper.eq(SkillEntity::getStatus, param.getStatus());
         }
         if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
-            wrapper.like(SkillEntity::getName, param.getKeyword().trim());
+            String keyword = param.getKeyword().trim();
+            wrapper.and(query -> query.like(SkillEntity::getName, keyword)
+                    .or().like(SkillEntity::getDisplayName, keyword)
+                    .or().like(SkillEntity::getDescription, keyword));
         }
         Page<SkillEntity> page = skillMapper.selectPage(PageUtils.toPage(param), wrapper);
 
@@ -164,6 +165,7 @@ public class SkillService {
             validateName(dto.name());
         }
         entity.setName(dto.name());
+        entity.setDisplayName(dto.displayName());
         entity.setDescription(dto.description());
         skillMapper.updateById(entity);
         auditLogService.record(entity.getSpaceId(), "SKILL_UPDATED", "skill", entity.getId(), null);
@@ -209,14 +211,14 @@ public class SkillService {
      * 要求当前用户是空间所有者
      */
     public void requireOwner(Long spaceId) {
-        requireRole(spaceId, SpaceRole.OWNER);
+        spaceAccessService.requireOwner(spaceId);
     }
 
     /**
      * 要求当前用户至少拥有空间查看权限
      */
     public void requireViewer(Long spaceId) {
-        requireRole(spaceId, SpaceRole.VIEWER);
+        spaceAccessService.requireViewer(spaceId);
     }
 
     /**
@@ -284,17 +286,4 @@ public class SkillService {
         }
     }
 
-    /**
-     * 远程调用feign校验空间权限
-     *
-     * @param spaceId 空间ID
-     * @param role    需要的角色
-     */
-    private void requireRole(Long spaceId, SpaceRole role) {
-        Result<Void> result = documentFeign.checkSpacePermission(spaceId, role.getCode());
-        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
-            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
-                    result == null ? "空间权限校验失败" : result.message());
-        }
-    }
 }

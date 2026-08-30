@@ -1,6 +1,7 @@
 package com.agentdoc.agent.pojo.vo;
 
 import com.agentdoc.agent.enums.AgentStatus;
+import com.agentdoc.agent.enums.SkillSelectionMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
@@ -14,6 +15,9 @@ public record AgentVO(
         @Schema(description = "Agent 描述") String description,
         @Schema(description = "系统提示词") String systemPrompt,
         @Schema(description = "模型 ID") Long modelId,
+        @Schema(description = "Skill 选择模式") SkillSelectionMode skillSelectionMode,
+        @Schema(description = "Skill Router 模型 ID；为空时复用 Agent 主模型") Long skillRouterModelId,
+        @Schema(description = "是否启用外部 MCP") Boolean externalMcpEnabled,
         @Schema(description = "Token 预算上限") Long tokenBudget,
         @Schema(description = "文档访问范围") String documentScope,
         @Schema(description = "MCP 工具白名单") List<String> toolWhitelist,

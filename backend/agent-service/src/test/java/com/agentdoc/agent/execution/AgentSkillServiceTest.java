@@ -15,6 +15,7 @@ import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.agent.service.AgentSkillService;
 import com.agentdoc.agent.service.SkillAuditLogService;
 import com.agentdoc.agent.service.SkillService;
+import com.agentdoc.agent.service.SpaceAccessService;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -36,12 +37,13 @@ class AgentSkillServiceTest {
     void unchangedBindingDoesNotIncrementConfigVersion() {
         AgentService agentService = mock(AgentService.class);
         SkillService skillService = mock(SkillService.class);
+        SpaceAccessService spaceAccessService = mock(SpaceAccessService.class);
         AgentMapper agentMapper = mock(AgentMapper.class);
         AgentSkillMapper agentSkillMapper = mock(AgentSkillMapper.class);
         SkillMapper skillMapper = mock(SkillMapper.class);
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         SkillAuditLogService auditLogService = mock(SkillAuditLogService.class);
-        AgentSkillService service = new AgentSkillService(agentService, skillService, agentMapper,
+        AgentSkillService service = new AgentSkillService(agentService, skillService, spaceAccessService, agentMapper,
                 agentSkillMapper, skillMapper, versionMapper, auditLogService);
 
         AgentEntity agent = new AgentEntity();
@@ -67,7 +69,7 @@ class AgentSkillServiceTest {
             bindings.add(invocation.getArgument(0));
             return 1;
         }).when(agentSkillMapper).insert(any(AgentSkillEntity.class));
-        doNothing().when(skillService).requireOwner(20L);
+        doNothing().when(spaceAccessService).requireOwner(20L);
 
         AgentSkillReplaceDTO request = new AgentSkillReplaceDTO(List.of(40L));
         service.replace(10L, request);

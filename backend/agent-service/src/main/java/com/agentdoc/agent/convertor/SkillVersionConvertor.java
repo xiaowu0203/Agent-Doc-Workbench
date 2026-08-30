@@ -3,7 +3,7 @@ package com.agentdoc.agent.convertor;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.pojo.vo.SkillVersionVO;
-import com.agentdoc.agent.service.SkillPackageEntry;
+import com.agentdoc.agent.skill.archive.SkillPackageEntry;
 import com.agentdoc.common.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 
@@ -27,7 +27,8 @@ public final class SkillVersionConvertor {
      */
     public static SkillVersionVO toVO(SkillVersionEntity entity) {
         return new SkillVersionVO(entity.getId(), entity.getSkillId(), entity.getVersionNo(),
-                SkillVersionStatus.fromCode(entity.getStatus()), entity.getSha256(), entity.getPackageSize(),
+                SkillVersionStatus.fromCode(entity.getStatus()), entity.getActivationDescription(),
+                entity.getSha256(), entity.getPackageSize(),
                 readJsonList(entity.getAllowedToolsJson()), readReadablePaths(entity.getManifestJson()),
                 entity.getCreatedBy(), entity.getCreatedAt(), entity.getPublishedAt());
     }

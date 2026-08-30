@@ -119,6 +119,10 @@ public class AnthropicModelAdapter extends AbstractSpringAiModelAdapter {
         if (context.maxOutputTokens() != null) {
             options.maxTokens(context.maxOutputTokens());
         }
+        // 温度设置
+        if (context.temperature() != null) {
+            options.temperature(context.temperature());
+        }
         return options.build();
     }
 

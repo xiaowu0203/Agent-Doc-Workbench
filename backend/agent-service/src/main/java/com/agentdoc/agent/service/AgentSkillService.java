@@ -43,7 +43,7 @@ import java.util.stream.Collectors;
 public class AgentSkillService {
 
     private final AgentService agentService;
-    private final SkillService skillService;
+    private final SpaceAccessService spaceAccessService;
     private final AgentMapper agentMapper;
     private final AgentSkillMapper agentSkillMapper;
     private final SkillMapper skillMapper;
@@ -60,7 +60,7 @@ public class AgentSkillService {
         // 校验Agent存在性
         AgentEntity agent = agentService.require(agentId);
         // 校验空间查看权限
-        skillService.requireViewer(agent.getSpaceId());
+        spaceAccessService.requireViewer(agent.getSpaceId());
         // 加载已启用的绑定关系
         return loadBindings(agentId, true);
     }
@@ -88,7 +88,7 @@ public class AgentSkillService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 不存在");
         }
         // 校验空间所有者权限，只有空间拥有者可修改Agent的Skill绑定
-        skillService.requireOwner(agent.getSpaceId());
+        spaceAccessService.requireOwner(agent.getSpaceId());
 
         // 获取请求绑定的版本ID集合，null转为空列表
         List<Long> requestedIds = dto.skillVersionIds() == null ? List.of() : dto.skillVersionIds();

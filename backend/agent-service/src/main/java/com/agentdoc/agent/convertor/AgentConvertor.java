@@ -2,6 +2,7 @@ package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.enums.AgentStatus;
+import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
@@ -15,7 +16,7 @@ import java.util.List;
  * Agent对象转换器
  * <p>
  * 负责Agent相关DTO、Entity、VO之间互相转换；
- * 处理创建、更新时默认值填充、配置版本号乐观锁递增、状态枚举转换。
+ * 处理创建、更新时默认值填充、配置版本号递增、状态枚举转换。
  * </p>
  */
 public final class AgentConvertor {
@@ -38,6 +39,9 @@ public final class AgentConvertor {
         entity.setDescription(dto.description());
         entity.setSystemPrompt(dto.systemPrompt());
         entity.setModelId(dto.modelId());
+        entity.setSkillSelectionMode(dto.skillSelectionMode().name());
+        entity.setSkillRouterModelId(dto.skillRouterModelId());
+        entity.setExternalMcpEnabled(dto.externalMcpEnabled());
         entity.setTokenBudget(dto.tokenBudget());
         entity.setDocScope(dto.documentScope());
         entity.setToolWhitelist(toToolWhitelistJson(dto.toolWhitelist()));
@@ -55,7 +59,7 @@ public final class AgentConvertor {
 
     /**
      * 将更新DTO的字段应用到已有实体，执行实体原地修改
-     * <p>更新时配置版本号自动+1，用于乐观锁；同时更新状态、各项运行参数。</p>
+     * <p>更新时配置版本号自动 +1；同时更新状态、各项运行参数。</p>
      *
      * @param entity 待更新数据库实体
      * @param dto    Agent更新入参DTO
@@ -65,13 +69,16 @@ public final class AgentConvertor {
         entity.setDescription(dto.description());
         entity.setSystemPrompt(dto.systemPrompt());
         entity.setModelId(dto.modelId());
+        entity.setSkillSelectionMode(dto.skillSelectionMode().name());
+        entity.setSkillRouterModelId(dto.skillRouterModelId());
+        entity.setExternalMcpEnabled(dto.externalMcpEnabled());
         entity.setTokenBudget(dto.tokenBudget());
         entity.setDocScope(dto.documentScope());
         entity.setToolWhitelist(toToolWhitelistJson(dto.toolWhitelist()));
         entity.setMaxIterations(defaultValue(dto.maxIterations(), AgentConstant.DEFAULT_MAX_ITERATIONS));
         entity.setExecutionTimeoutSeconds(defaultValue(dto.executionTimeoutSeconds(),
                 AgentConstant.DEFAULT_EXECUTION_TIMEOUT_SECONDS));
-        // 配置版本号递增，乐观锁，防止并发覆盖
+        // 配置版本号递增，供运行时识别配置变化
         long currentVersion = entity.getConfigVersion() == null
                 ? AgentConstant.INITIAL_CONFIG_VERSION
                 : entity.getConfigVersion();
@@ -88,7 +95,10 @@ public final class AgentConvertor {
      */
     public static AgentVO toVO(AgentEntity entity) {
         return new AgentVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDescription(),
-                entity.getSystemPrompt(), entity.getModelId(), entity.getTokenBudget(), entity.getDocScope(),
+                entity.getSystemPrompt(), entity.getModelId(),
+                SkillSelectionMode.valueOf(entity.getSkillSelectionMode()), entity.getSkillRouterModelId(),
+                entity.getExternalMcpEnabled(),
+                entity.getTokenBudget(), entity.getDocScope(),
                 parseToolWhitelist(entity.getToolWhitelist()),
                 entity.getMaxIterations(),
                 entity.getExecutionTimeoutSeconds(), entity.getConfigVersion(),
@@ -119,13 +129,17 @@ public final class AgentConvertor {
     /**
      * 解析MCP工具白名单JSON字符串为工具名列表
      * @param value 数据库存储的JSON字符串，可为null/空白字符串
-     * @return 工具名称列表；输入null或空白返回null；解析结果为null返回空集合List.of()
+     * @return 工具名称列表；输入 null 或空白返回 null
+     * @throws IllegalStateException 已持久化内容不是合法 JSON 数组
      */
     private static List<String> parseToolWhitelist(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
         List<String> tools = JsonUtils.parse(value, new TypeReference<List<String>>() { });
-        return tools == null ? List.of() : tools;
+        if (tools == null) {
+            throw new IllegalStateException("Agent 工具白名单 JSON 无效");
+        }
+        return List.copyOf(tools);
     }
 }

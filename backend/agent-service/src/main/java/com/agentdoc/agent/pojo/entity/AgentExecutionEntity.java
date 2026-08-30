@@ -26,14 +26,30 @@ public class AgentExecutionEntity extends BaseEntity {
     private Long agentConfigVersion;
     @Schema(description = "系统提示词快照")
     private String systemPromptSnapshot;
+    @Schema(description = "初始用户指令快照")
+    private String userInstructionSnapshot;
     @Schema(description = "模型配置快照")
     private String modelSnapshot;
     @Schema(description = "Skill 版本快照 JSON")
     private String skillSnapshotJson;
     @Schema(description = "Skill 指令哈希")
     private String skillInstructionHash;
+    @Schema(description = "Agent 配置的 Skill 选择模式")
+    private String skillSelectionMode;
+    @Schema(description = "本次实际 Skill 选择模式")
+    private String skillSelectionEffectiveMode;
+    @Schema(description = "本次实际 Skill Router 模型 ID")
+    private Long skillRouterModelId;
+    @Schema(description = "本次选中的 SkillVersion ID JSON")
+    private String selectedSkillVersionIdsJson;
+    @Schema(description = "Skill Router 脱敏快照 JSON")
+    private String skillRouterSnapshotJson;
     @Schema(description = "执行时工具白名单快照 JSON")
     private String toolWhitelistSnapshot;
+    @Schema(description = "实际暴露给模型的工具定义快照 JSON")
+    private String toolDefinitionSnapshotJson;
+    @Schema(description = "外部 MCP 脱敏配置与绑定快照 JSON")
+    private String externalMcpSnapshotJson;
     @Schema(description = "提示词哈希")
     private String promptHash;
     @Schema(description = "执行状态")
