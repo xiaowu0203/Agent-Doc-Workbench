@@ -45,12 +45,7 @@ Thumbs.db
 logs/
 *.log
 
-# === Local phase notes ===
-/docs/PHASE1-HANDOFF.md
-/docs/PHASE2-HANDOFF.md
-/docs/PHASE2-PLAN.md
-/docs/PHASE3-HANDOFF.md
-/docs/PHASE4-HANDOFF.md
-/docs/PHASE4-SKILL-TECHNICAL-DESIGN.md
-/docs/development-plan.md
-/docs/spring-ai-alibaba-runtime-migration-plan.md
+# === Local working documents ===
+/AGENTS.md
+/CLAUDE.md
+/docs/local/
