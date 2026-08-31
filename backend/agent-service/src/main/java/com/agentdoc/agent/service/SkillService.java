@@ -26,6 +26,9 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_MANAGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
+
 /**
  * Skill元数据服务
  * <p>
@@ -59,11 +62,9 @@ public class SkillService {
      *
      * @param dto 创建参数，spaceId、name、description
      * @return 持久化后的Skill实体
-     */
+    */
     @Transactional(rollbackFor = Exception.class)
     public SkillEntity create(SkillCreateDTO dto) {
-        // 校验空间所有者权限
-        requireOwner(dto.spaceId());
         // 校验Skill名称
         validateName(dto.name());
 
@@ -106,7 +107,7 @@ public class SkillService {
         }
 
         // 校验空间查看权限
-        requireViewer(param.getSpaceId());
+        requireRead(param.getSpaceId());
 
         LambdaQueryWrapper<SkillEntity> wrapper = new LambdaQueryWrapper<SkillEntity>()
                 .eq(SkillEntity::getSpaceId, param.getSpaceId())
@@ -138,7 +139,7 @@ public class SkillService {
      */
     public SkillEntity detail(Long id) {
         SkillEntity entity = require(id);
-        requireViewer(entity.getSpaceId());
+        requireRead(entity.getSpaceId());
         return entity;
     }
 
@@ -152,7 +153,7 @@ public class SkillService {
     @Transactional(rollbackFor = Exception.class)
     public SkillEntity update(Long id, SkillUpdateDTO dto) {
         SkillEntity entity = require(id);
-        requireOwner(entity.getSpaceId());
+        requireManage(entity.getSpaceId());
 
         // 如果要修改名称，校验：只要存在任意版本，不允许改名
         if (!entity.getName().equals(dto.name())) {
@@ -182,7 +183,7 @@ public class SkillService {
     @Transactional(rollbackFor = Exception.class)
     public void setStatus(Long id, SkillStatus status) {
         SkillEntity entity = require(id);
-        requireOwner(entity.getSpaceId());
+        requireManage(entity.getSpaceId());
         // 状态无变化直接返回，避免产生不必要审计日志
         if (entity.getStatus().equals(status.getCode())) {
             return;
@@ -208,17 +209,17 @@ public class SkillService {
     }
 
     /**
-     * 要求当前用户是空间所有者
+     * 要求当前用户拥有 Skill 管理权限
      */
-    public void requireOwner(Long spaceId) {
-        spaceAccessService.requireOwner(spaceId);
+    public void requireManage(Long spaceId) {
+        spaceAccessService.requirePermission(spaceId, SKILL_MANAGE);
     }
 
     /**
-     * 要求当前用户至少拥有空间查看权限
+     * 要求当前用户拥有 Skill 查看权限
      */
-    public void requireViewer(Long spaceId) {
-        spaceAccessService.requireViewer(spaceId);
+    public void requireRead(Long spaceId) {
+        spaceAccessService.requirePermission(spaceId, SKILL_READ);
     }
 
     /**

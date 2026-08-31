@@ -8,7 +8,6 @@ import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.common.enums.DocType;
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
@@ -88,7 +87,6 @@ class DocumentServiceTest {
     @Test
     void shouldCreateVersionWhenContentChanged() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
-        when(permissionService.requireRole(anyLong(), any(SpaceRole.class))).thenReturn(SpaceRole.EDITOR);
         when(permissionService.requireUserId()).thenReturn(USER_ID);
 
         documentService.update(DOCUMENT_ID, new DocumentUpdateDTO(null, "新内容"));
@@ -101,7 +99,6 @@ class DocumentServiceTest {
     @Test
     void shouldNotCreateVersionWhenOnlyTitleChanged() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
-        when(permissionService.requireRole(anyLong(), any(SpaceRole.class))).thenReturn(SpaceRole.EDITOR);
         when(permissionService.requireUserId()).thenReturn(USER_ID);
 
         documentService.update(DOCUMENT_ID, new DocumentUpdateDTO("新标题", null));
@@ -113,7 +110,6 @@ class DocumentServiceTest {
     @Test
     void shouldRejectMergeWhenBaseVersionMismatch() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
-        when(permissionService.requireRole(anyLong(), any(SpaceRole.class))).thenReturn(SpaceRole.EDITOR);
         when(permissionService.requireUserId()).thenReturn(USER_ID);
         // 基线版本 1 ≠ 当前版本 2
         MergeRequestDTO request = new MergeRequestDTO(DOCUMENT_ID, 1L,
@@ -128,7 +124,6 @@ class DocumentServiceTest {
     @Test
     void shouldMergeAndCreateVersionWhenBaseVersionMatches() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
-        when(permissionService.requireRole(anyLong(), any(SpaceRole.class))).thenReturn(SpaceRole.EDITOR);
         when(permissionService.requireUserId()).thenReturn(USER_ID);
         MergeRequestDTO request = new MergeRequestDTO(DOCUMENT_ID, 2L,
                 List.of(new ChangeItemDTO(ChangeOp.REPLACE, null, "合并后的内容")), "审批合并变更");
@@ -144,7 +139,6 @@ class DocumentServiceTest {
     @Test
     void shouldAppendWhenAppendOp() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
-        when(permissionService.requireRole(anyLong(), any(SpaceRole.class))).thenReturn(SpaceRole.EDITOR);
         when(permissionService.requireUserId()).thenReturn(USER_ID);
         MergeRequestDTO request = new MergeRequestDTO(DOCUMENT_ID, 2L,
                 List.of(new ChangeItemDTO(ChangeOp.APPEND, null, "\n追加段落")), "追加");

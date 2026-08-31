@@ -1,7 +1,6 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.enums.ErrorCode;
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
@@ -29,6 +28,8 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.List;
+
+import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
 
 /**
  * Token用量统计服务
@@ -170,7 +171,7 @@ public class TokenUsageService {
      * @throws BusinessException 权限不足或调用文档服务异常抛出业务异常
      */
     private void requireMember(Long spaceId) {
-        var result = documentFeign.checkSpacePermission(spaceId, SpaceRole.VIEWER.getCode());
+        var result = documentFeign.checkSpacePermission(spaceId, USAGE_READ);
         if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
             throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
                     result == null ? "空间权限校验失败" : result.message());

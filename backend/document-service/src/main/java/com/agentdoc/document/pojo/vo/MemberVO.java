@@ -1,6 +1,5 @@
 package com.agentdoc.document.pojo.vo;
 
-import com.agentdoc.common.enums.SpaceRole;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
@@ -18,7 +17,7 @@ public record MemberVO(
         Long userId,
 
         @Schema(description = "成员角色")
-        SpaceRole role,
+        SpaceRoleSummaryVO role,
 
         @Schema(description = "加入时间")
         LocalDateTime createdAt

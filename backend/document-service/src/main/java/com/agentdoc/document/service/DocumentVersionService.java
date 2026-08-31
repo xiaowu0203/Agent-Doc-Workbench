@@ -18,6 +18,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
+
 /**
  * 文档版本服务
  * 能力：版本快照生成、版本分页列表、版本详情、版本对比，为文档回滚提供底层支撑
@@ -121,8 +123,7 @@ public class DocumentVersionService {
         if (doc == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
-        // 校验用户属于该空间成员
-        permissionService.requireMember(doc.getSpaceId());
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
     }
 
     /**

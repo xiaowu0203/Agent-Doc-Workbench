@@ -1,6 +1,5 @@
 package com.agentdoc.document.pojo.dto;
 
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
@@ -15,9 +14,9 @@ public record MemberAddDTO(
         @NotNull(message = "用户 ID 不能为空")
         Long userId,
 
-        @Schema(description = "成员角色", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "空间角色 ID", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull(message = "成员角色不能为空")
-        SpaceRole role
+        Long roleId
 ) {
 
     /**
@@ -29,7 +28,7 @@ public record MemberAddDTO(
         MemberEntity entity = new MemberEntity();
         entity.setSpaceId(spaceId);
         entity.setUserId(userId);
-        entity.setRole(role.getCode());
+        entity.setRoleId(roleId);
         return entity;
     }
 }
