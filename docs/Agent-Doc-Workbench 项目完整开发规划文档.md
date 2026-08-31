@@ -1,6 +1,13 @@
 # Agent‑Doc‑Workbench 项目完整开发规划文档
 
-> **基线说明（2026-08-31）**：本文保留早期产品规划，其中关于“仅 MCP Client”“v0.1 不实现 A2A”以及 Agent 合并在 task-service 的描述已被 Phase 3 实现取代。当前协议架构以 [`docs/agent-server-a2a-mcp-design.md`](agent-server-a2a-mcp-design.md) 为准；Phase 4 已增加版本化 Skill、渐进式加载与空间级外部 MCP，分别以 [`docs/skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`docs/external-mcp-architecture-design.md`](external-mcp-architecture-design.md) 为准。
+> **基线说明（2026-08-31）**：本文保留早期产品规划，其中关于“仅 MCP Client”“v0.1 不实现 A2A”以及 Agent 合并在 task-service 的描述已被 Phase 3 实现取代。当前协议架构以 [`docs/agent-server-a2a-mcp-design.md`](agent-server-a2a-mcp-design.md) 为准；Phase 4 已增加版本化 Skill、渐进式加载与空间级外部 MCP，分别以 [`docs/skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`docs/external-mcp-architecture-design.md`](external-mcp-architecture-design.md) 为准。Phase 5 的平台角色与空间 RBAC 已落地，权限细节以 [`docs/tech/security.md`](tech/security.md) 为准。
+
+### 当前实现状态（Phase 5）
+
+- `auth-service` 已提供 `/api/platform/roles` 平台角色 CRUD；所有接口要求当前用户具备 `PLATFORM_SUPER_ADMIN`，该平台角色由数据库初始化并保持受保护，首次绑定用户暂不提供业务接口。
+- `document-service` 已实现空间级 RBAC：每个空间默认创建 `OWNER`、`EDITOR`、`VIEWER`，仅 `OWNER` 受保护；`EDITOR`、`VIEWER` 可由拥有 `role:manage` 的用户调整或删除，`VIEWER` 默认不能查看空间成员和角色。
+- 用户 JWT 携带平台角色声明；普通业务接口通过 Controller 的 `@PreAuthorize` 进入权限校验，空间资源最终由空间成员关系和权限标识符判定。平台超级管理员只用于平台管理及约定的跨空间读取能力，不自动获得所有空间写权限。
+- 前端权限页面和按钮级权限接入属于 Phase 6；部门模型及按部门统计仍记录在技术迭代台账中，尚未实现。
 
 ## 一、项目基础概述
 
@@ -15,12 +22,12 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 > 核心范式：
 >
 > 1. Agent **禁止直接改写正式文档**，所有修改统一生成 Diff 变更请求，经人工审核、批注、确认后才可合并生效；
-> 2. 原生遵循 MCP 协议，仅作为 MCP Client 对接任意外部 Agent；**本项目不自托管、不运行任何大模型推理**；
+> 2. 原生遵循 MCP 与 A2A 协议：`agent-service` 运行本平台 Agent 并调用模型，`task-service` 提供 Workbench MCP Server；**本项目不自托管大模型服务，模型推理依赖外部模型供应商**；
 > 3. 自带多层 Token 预算熔断机制，解决个人 / 小团队多 Agent 成本失控问题。
 
-迭代核心策略：
+迭代核心策略（历史规划）：
 
-**v0.1 MVP 仅实现单 Agent 能力，多 Agent 编排、A2A 能力后置至 v0.2 迭代，严控初期开发复杂度，快速落地可用开源版本。**
+**早期 v0.1 MVP 仅实现单 Agent 能力，多 Agent 编排、A2A 能力后置；当前单任务仍只选择一个 Agent，A2A 基础通信已在 Phase 3 落地。**
 
 目标用户：独立开发者、小产品团队、内容创作团队、小型研发团队。
 
@@ -40,13 +47,13 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 2. 模块划分
 
-  - `auth‑service`：用户账号、认证、JWT 签发；
+  - `auth‑service`：用户账号、认证、JWT 签发、平台角色及用户平台角色绑定、平台角色管理 API；
 
   - `gateway‑service`：WebFlux 网关，请求入口、JWT 解析透传、路由转发；仅依赖基础 core 包，不引入任何业务 / ORM/MQ starter，不执行业务逻辑；
 
   - `document‑service`：空间、成员权限模型、文档树、文档存储、版本快照、Diff 生成、权限校验 Feign 接口；
 
-  - `task‑service`：Agent 实例管理、MCP 客户端、异步任务调度、变更审批队列、Token 用量统计、审计日志；
+  - `task‑service`：任务编排、A2A Client、Workbench MCP Server、异步调度、变更审批队列、Token 用量统计、审计日志；
 
   - ```
      common
@@ -60,11 +67,11 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 3. 演进约束
 
-  - v0.1：**禁止实现 A2A、流水线、编排引擎**；数据库可预留扩展字段，但不编写对应业务代码；
+  - 早期 v0.1 规划曾禁止实现 A2A、流水线和编排引擎；这些约束已由 Phase 3 的实际实现取代。当前仍不实现自主多 Agent 编排；
   - MQ 作为任务异步载体，MCP 调用全部异步化，禁止同步阻塞 HTTP 调用外部 Agent；
   - 审计日志只允许 Insert，业务层禁止 Update / 物理 Delete。
 
-4. 外部依赖约束：v0.1/v0.2 只作为 MCP Client；v0.3 才对外暴露本平台 MCP‑Server 能力。
+4. 外部依赖约束：当前由 `agent-service` 作为 MCP Client、`task-service` 提供 Workbench MCP Server；对外生态开放仍按 v0.3 规划推进。
 
 ## 二、全量业务功能清单
 
@@ -120,11 +127,11 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 #### 2.3.1 通用 Agent 基础体系
 
-> Agent 不是人类用户账号；属于可配置外部 MCP 执行器资源，鉴权依靠绑定空间 + 工具白名单，不使用用户登录身份。
+> Agent 不是人类用户账号；属于 `agent-service` 管理的可配置执行能力，运行时使用任务 Capability 鉴权，不使用用户登录身份。
 
-- Agent 元数据：名称、头像、简介、MCP 服务端点、绑定模型、启停状态、月度 Token 配额。
+- Agent 元数据：名称、头像、简介、绑定模型、系统提示词、Skill/MCP 能力、启停状态和执行预算。
 - 权限管控：限定 Agent 仅可操作指定空间 / 文件夹，禁止跨空间越权访问。
-- 原生 MCP 客户端：兼容任意外部 MCP Server，支持本地 / 远程 Agent 接入，无模型绑定限制。
+- 原生 MCP 客户端：兼容任意外部 MCP Server；Workbench MCP Server 由 `task-service` 提供，Agent 通过任务 Capability 访问。
 - 工具白名单机制：可手动限制 Agent 可调用的工具集合，规避越权操作风险。
 
 #### 2.3.2 Agent 任务生命周期管理
@@ -136,7 +143,7 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
   - 草稿文档：Agent 直接编辑执行，无审批流程，快速试错
   - 正式文档：Agent 仅生成 Diff 变更请求，进入审批队列，**不直接修改文档内容**
 
-> ⚠️v0.1 刚性约束：一个任务仅绑定**单个 Agent 实例**；不支持 Agent 调用 Agent (A2A)、不支持编排、不支持流水线。
+> ⚠️当前刚性约束：一个任务仅绑定**单个 Agent 实例**；A2A 已用于 task-service 与 agent-service 的任务通信，但暂不支持自主多 Agent 编排和流水线。
 >
 > 数据库预留`parent_task_id`字段用于未来父子任务，v0.1 业务逻辑不使用此字段。
 
@@ -185,7 +192,7 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 > 下面列表内，v0.1**不开发业务逻辑**，仅允许做数据库字段预留；禁止为未来功能提前编写业务代码，避免范围蔓延。
 
-1. ❌ 不做多 Agent 并行协同、A2A Agent 调用、流水线编排、Orchestrator 调度能力（延后 v0.2）
+1. ❌ 不做多 Agent 并行协同、自主编排、流水线和 Supervisor 调度能力（A2A 基础通信已在 Phase 3 落地）
 2. ❌ 不自托管、不自部署大模型推理服务，全程依赖外部 MCP / 第三方模型
 3. ❌ 不做大型企业多租户、组织架构、部门层级体系
 4. ❌ 不支持 Excel、PPT 解析渲染，专注 Markdown 文档核心场景
@@ -207,13 +214,13 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 ## 五、版本迭代里程碑规划
 
-### 4.1 v0.1 核心底座版本（可开源发布）
+### 5.1 Phase 5 / v0.1 核心底座版本（可开源发布）
 
 核心目标：跑通完整人机协作闭环，形成可用、稳定的开源基础版本
 
-覆盖能力：空间文档管理、双文档模式、ProseMirror 编辑器、单 Agent MCP 接入、Diff 审批流程、多层 Token 预算熔断、审计日志、基础导入导出、REST API。
+覆盖能力：空间文档管理、空间 RBAC、平台角色管理、双文档模式、ProseMirror 编辑器、单 Agent A2A/MCP 执行、Skill 渐进加载、外部多 MCP、Diff 审批流程、多层 Token 预算熔断、审计日志、基础导入导出、REST API。
 
-### 4.2 v0.2 功能增强版本
+### 5.2 Phase 6 / v0.2 功能增强版本
 
 核心目标：提升协作效率，拓展场景，优化成本控制
 
@@ -221,7 +228,7 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 > v0.2 重点解决：A2A 场景下身份继承、子任务 Trace 链路串联、总任务统一 Token 预算、防循环调用。
 
-### 4.3 v0.3 生态扩展版本
+### 5.3 v0.3 生态扩展版本
 
 核心目标：打通外部生态、提升性能、拓展场景边界
 

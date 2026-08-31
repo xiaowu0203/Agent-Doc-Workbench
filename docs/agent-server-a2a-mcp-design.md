@@ -1,6 +1,6 @@
 # Agent Server + MCP Server + 标准远程协议总体设计
 
-> 状态：Phase 3 基线已实现；Phase 4 的 Skill 渐进加载与外部多 MCP 扩展分别见 [`skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`external-mcp-architecture-design.md`](external-mcp-architecture-design.md)
+> 状态：Phase 3 基线、Phase 4 的 Skill 渐进加载与外部多 MCP、Phase 5 的平台角色与空间 RBAC 已实现；Skill/MCP 细节分别见 [`skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`external-mcp-architecture-design.md`](external-mcp-architecture-design.md)，权限细节见 [`tech/security.md`](tech/security.md)。
 > 适用项目：Agent-Doc-Workbench
 > 目标：落地独立 Agent Server、Workbench MCP Server，以及基于 A2A 与 MCP 的完整远程调用链路。
 
@@ -473,6 +473,8 @@ Task 完成和 ChangeRequest 审批是两个独立状态机。Agent 已提交正
 /api/document/**
 ```
 
+用户 JWT 包含 `scope=user`、`sub=userId` 和 `platformRoles`。普通业务接口先由 Resource Server 建立用户身份，再由 Controller 的 `@PreAuthorize` 和空间权限服务判定当前用户是否能访问目标空间。`PLATFORM_SUPER_ADMIN` 只用于平台角色管理及约定的跨空间读取能力，不自动授予所有空间写权限。
+
 ### 11.2 Task Capability JWT
 
 用于 `task-service → agent-service /a2a`、A2A 回调校验以及 `agent-service → task-service /mcp`。Claims：
@@ -500,7 +502,7 @@ Authorization: Bearer <task-capability>
 
 ## 12. 数据库迁移
 
-既有 V1 至 V8 脚本保持不变，新增迁移完成：
+既有 V1 基线保持不变，Phase 5 新增 V2/V3 增量迁移：
 
 ### agent 表
 
