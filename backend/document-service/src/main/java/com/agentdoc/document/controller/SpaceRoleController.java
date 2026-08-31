@@ -27,7 +27,7 @@ import java.util.List;
 
 @Tag(name = "空间角色与权限", description = "权限目录、自定义角色和角色权限绑定")
 @RestController
-@RequestMapping("/api/document")
+@RequestMapping("/api/document/spaces")
 @RequireLogin
 @Validated
 @RequiredArgsConstructor
@@ -36,28 +36,28 @@ public class SpaceRoleController {
     private final SpaceRoleService spaceRoleService;
 
     @Operation(summary = "查询空间权限目录")
-    @GetMapping("/spaces/{spaceId}/permissions")
+    @GetMapping("/{spaceId}/permissions")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_READ + "')")
     public Result<List<PermissionVO>> listPermissions(@PathVariable Long spaceId) {
         return Result.ok(spaceRoleService.listPermissions());
     }
 
     @Operation(summary = "查询空间角色")
-    @GetMapping("/spaces/{spaceId}/roles")
+    @GetMapping("/{spaceId}/roles")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_READ + "')")
     public Result<List<SpaceRoleVO>> listRoles(@PathVariable Long spaceId) {
         return Result.ok(spaceRoleService.listRoles(spaceId));
     }
 
     @Operation(summary = "查询空间角色详情")
-    @GetMapping("/spaces/{spaceId}/roles/{roleId}")
+    @GetMapping("/{spaceId}/roles/{roleId}")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_READ + "')")
     public Result<SpaceRoleVO> detail(@PathVariable Long spaceId, @PathVariable Long roleId) {
         return Result.ok(spaceRoleService.detail(spaceId, roleId));
     }
 
     @Operation(summary = "创建自定义空间角色")
-    @PostMapping("/spaces/{spaceId}/roles")
+    @PostMapping("/{spaceId}/roles")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_MANAGE + "')")
     public Result<SpaceRoleVO> create(@PathVariable Long spaceId,
                                       @Valid @RequestBody SpaceRoleCreateDTO dto) {
@@ -65,7 +65,7 @@ public class SpaceRoleController {
     }
 
     @Operation(summary = "修改空间角色（OWNER 受保护）")
-    @PutMapping("/spaces/{spaceId}/roles/{roleId}")
+    @PutMapping("/{spaceId}/roles/{roleId}")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_MANAGE + "')")
     public Result<SpaceRoleVO> update(@PathVariable Long spaceId, @PathVariable Long roleId,
                                       @Valid @RequestBody SpaceRoleUpdateDTO dto) {
@@ -73,7 +73,7 @@ public class SpaceRoleController {
     }
 
     @Operation(summary = "整体替换空间角色权限（OWNER 受保护）")
-    @PutMapping("/spaces/{spaceId}/roles/{roleId}/permissions")
+    @PutMapping("/{spaceId}/roles/{roleId}/permissions")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_MANAGE + "')")
     public Result<SpaceRoleVO> replacePermissions(@PathVariable Long spaceId,
                                                   @PathVariable Long roleId,
@@ -82,7 +82,7 @@ public class SpaceRoleController {
     }
 
     @Operation(summary = "删除空间角色（OWNER 受保护）")
-    @DeleteMapping("/spaces/{spaceId}/roles/{roleId}")
+    @DeleteMapping("/{spaceId}/roles/{roleId}")
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_MANAGE + "')")
     public Result<Void> delete(@PathVariable Long spaceId, @PathVariable Long roleId) {
         spaceRoleService.delete(spaceId, roleId);

@@ -5,10 +5,10 @@ import pinia from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 
-function parseSpaceId(value: unknown): number | null {
+function parseSpaceId(value: unknown): string | null {
   const rawValue = Array.isArray(value) ? value[0] : value
-  const spaceId = Number(rawValue)
-  return Number.isSafeInteger(spaceId) && spaceId > 0 ? spaceId : null
+  const spaceId = String(rawValue ?? '').trim()
+  return /^[1-9]\d*$/.test(spaceId) ? spaceId : null
 }
 
 export function installRouterGuards(router: Router): void {
@@ -33,14 +33,23 @@ export function installRouterGuards(router: Router): void {
       return { path: '/' }
     }
 
-    workspaceStore.setCurrentSpace(spaceId)
+    if (workspaceStore.spaces.length === 0) {
+      await workspaceStore.loadSpaces()
+    }
+
+    if (!workspaceStore.spaces.some((space) => String(space.id) === spaceId)) {
+      return { path: '/' }
+    }
+
     await workspaceStore.ensurePermissions(spaceId)
 
     const permission = to.meta.permission as SpacePermissionCode | undefined
-    if (permission && !workspaceStore.hasPermission(permission)) {
+    const effectivePermissions = workspaceStore.permissionsBySpace[spaceId]
+    if (permission && !effectivePermissions?.permissions.includes(permission)) {
       return { path: '/forbidden' }
     }
 
+    workspaceStore.setCurrentSpace(spaceId)
     return true
   })
 }

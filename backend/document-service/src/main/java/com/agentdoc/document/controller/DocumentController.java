@@ -11,9 +11,11 @@ import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
+import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
+import com.agentdoc.document.pojo.vo.RecentDocumentVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
 import com.agentdoc.document.service.DocumentService;
@@ -74,6 +76,12 @@ public class DocumentController {
     @GetMapping("/ids")
     public Result<List<Long>> listIdsBySpace(@RequestParam Long spaceId) {
         return Result.ok(documentService.listIdsBySpace(spaceId));
+    }
+
+    @Operation(summary = "查询最近文档")
+    @PostMapping("/recent/query")
+    public Result<PageVO<RecentDocumentVO>> listRecent(@Valid @RequestBody DocumentRecentSearchParam param) {
+        return Result.ok(documentService.listRecent(param));
     }
 
     @Operation(summary = "文档树")

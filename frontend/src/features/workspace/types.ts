@@ -1,14 +1,16 @@
+export type EntityId = string | number
+
 export interface SpaceRoleSummary {
-  roleId: number
+  roleId: EntityId
   roleKey: string
   displayName: string
 }
 
 export interface Space {
-  id: number
+  id: EntityId
   name: string
   description: string | null
-  ownerId: number
+  ownerId: EntityId
   tokenBudget: number | null
   status: string
   role: SpaceRoleSummary | null
@@ -17,7 +19,7 @@ export interface Space {
 }
 
 export interface EffectivePermission {
-  spaceId: number
+  spaceId: EntityId
   platformSuperAdmin: boolean
   role: SpaceRoleSummary | null
   permissions: string[]

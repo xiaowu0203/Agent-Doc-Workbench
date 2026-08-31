@@ -7,8 +7,10 @@ import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.pojo.vo.UserVO;
 import com.agentdoc.auth.service.AuthService;
 import com.agentdoc.auth.service.PlatformRoleService;
-import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -18,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * 认证接口：注册、登录、刷新、登出、当前用户。
@@ -77,5 +81,11 @@ public class AuthController {
     public Result<Void> checkPlatformRole(@RequestParam String roleKey) {
         platformRoleService.requireCurrentUserRole(roleKey);
         return Result.ok();
+    }
+
+    @Operation(summary = "内部批量查询用户展示信息")
+    @PostMapping("/internal/users/query")
+    public Result<List<UserRefVO>> queryUsers(@RequestBody UserBatchQueryDTO request) {
+        return Result.ok(authService.queryUsers(request));
     }
 }

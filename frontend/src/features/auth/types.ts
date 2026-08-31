@@ -1,5 +1,5 @@
 export interface User {
-  id: number
+  id: string | number
   username: string
   nickname: string | null
   email: string | null
@@ -8,6 +8,7 @@ export interface User {
 
 export interface AuthSession {
   accessToken: string
+  refreshToken?: string
   user: User
   platformRoles?: string[]
 }

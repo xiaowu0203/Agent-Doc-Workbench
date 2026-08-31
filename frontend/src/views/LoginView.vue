@@ -178,6 +178,8 @@ async function submitLogin(): Promise<void> {
   errorMessage.value = ''
   try {
     await authStore.login({ username: form.username.trim(), password: form.password })
+    authStore.remembered = rememberSession.value
+    authStore.persistSession(rememberSession.value)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.replace(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {

@@ -3,6 +3,7 @@ package com.agentdoc.task.controller;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.task.constant.TaskConstant;
+import com.agentdoc.task.pojo.vo.MonthlyTokenBudgetVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTodayVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTrendVO;
 import com.agentdoc.task.service.TokenUsageService;
@@ -29,6 +30,12 @@ public class TokenUsageController {
     @GetMapping("/today")
     public Result<TokenUsageTodayVO> today(@RequestParam Long spaceId) {
         return Result.ok(tokenUsageService.today(spaceId));
+    }
+
+    @Operation(summary = "查询空间本月 Token 用量与预算")
+    @GetMapping("/monthly")
+    public Result<MonthlyTokenBudgetVO> monthly(@RequestParam Long spaceId) {
+        return Result.ok(tokenUsageService.monthly(spaceId));
     }
 
     @Operation(summary = "查询空间历史 Token 趋势")

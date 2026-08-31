@@ -8,9 +8,11 @@ import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
@@ -23,7 +25,10 @@ import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
+import com.agentdoc.task.pojo.vo.TaskActivityVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
+import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -34,8 +39,12 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
@@ -145,7 +154,7 @@ public class TaskService {
      */
     public PageVO<TaskVO> list(Long spaceId, PageParam pageParam) {
         // Feign校验当前用户在该空间具备【读取】权限
-        requireData(documentFeign.checkSpacePermission(spaceId, TASK_READ));
+        requirePermission(spaceId, TASK_READ);
         // 分页校验
         pageParam.validate();
         Page<TaskEntity> page = taskMapper.selectPage(new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
@@ -153,6 +162,89 @@ public class TaskService {
                         .eq(TaskEntity::getSpaceId, spaceId)
                         .orderByDesc(TaskEntity::getCreatedAt));
         return PageVO.of(page.getRecords().stream().map(TaskVO::from).toList(), page.getTotal(), pageParam);
+    }
+
+    /**
+     * 查询空间最近任务执行动态，按最近心跳、结束、开始和创建时间倒序。
+     *
+     * @param param 查询参数（空间和分页）
+     * @return 执行动态分页结果
+     */
+    public PageVO<TaskActivityVO> listActivity(TaskActivitySearchParam param) {
+        requirePermission(param.spaceId(), TASK_READ);
+        PageParam pageParam = param.pageParam() == null ? new PageParam() : param.pageParam();
+        pageParam.validate();
+        Page<TaskEntity> page = taskMapper.selectPage(
+                new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
+                new LambdaQueryWrapper<TaskEntity>()
+                        .eq(TaskEntity::getSpaceId, param.spaceId())
+                        .orderByDesc(TaskEntity::getLastHeartbeatAt)
+                        .orderByDesc(TaskEntity::getEndTime)
+                        .orderByDesc(TaskEntity::getStartTime)
+                        .orderByDesc(TaskEntity::getCreatedAt));
+        Map<Long, UserRefVO> users = fetchUsers(page.getRecords().stream()
+                .map(TaskEntity::getCreatedBy)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        List<TaskActivityVO> records = page.getRecords().stream()
+                .map(task -> new TaskActivityVO(
+                        task.getId(),
+                        task.getName(),
+                        task.getAgentId(),
+                        TaskStatus.fromCode(task.getStatus()),
+                        displayName(users.get(task.getCreatedBy())),
+                        activityTime(task)))
+                .toList();
+        return PageVO.of(records, page.getTotal(), pageParam);
+    }
+
+    private Map<Long, UserRefVO> fetchUsers(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UserRefVO> users = authFeign.queryUsers(new UserBatchQueryDTO(userIds)).data();
+        if (users == null) {
+            return Map.of();
+        }
+        return users.stream().collect(Collectors.toMap(UserRefVO::id, user -> user));
+    }
+
+    private String displayName(UserRefVO user) {
+        if (user == null) {
+            return null;
+        }
+        return user.nickname() == null || user.nickname().isBlank() ? user.username() : user.nickname();
+    }
+
+    private LocalDateTime activityTime(TaskEntity task) {
+        if (task.getLastHeartbeatAt() != null) {
+            return task.getLastHeartbeatAt();
+        }
+        if (task.getEndTime() != null) {
+            return task.getEndTime();
+        }
+        if (task.getStartTime() != null) {
+            return task.getStartTime();
+        }
+        return task.getCreatedAt();
+    }
+
+    /**
+     * 查询空间任务总数与截至昨日的任务数。
+     *
+     * @param spaceId 空间 ID
+     * @return 两个原始数量，差值由前端计算
+     */
+    public TaskStatsVO getStats(Long spaceId) {
+        requirePermission(spaceId, TASK_READ);
+        LocalDateTime yesterdayStart = LocalDate.now().atStartOfDay();
+        long totalCount = taskMapper.selectCount(new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getSpaceId, spaceId));
+        long countAsOfYesterday = taskMapper.selectCount(new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getSpaceId, spaceId)
+                .lt(TaskEntity::getCreatedAt, yesterdayStart));
+        return new TaskStatsVO(totalCount, countAsOfYesterday);
     }
 
     /**
@@ -164,7 +256,7 @@ public class TaskService {
         // 校验任务是否存在
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【读取】权限
-        requireData(documentFeign.checkSpacePermission(entity.getSpaceId(), TASK_READ));
+        requirePermission(entity.getSpaceId(), TASK_READ);
         return TaskVO.from(entity);
     }
 
@@ -178,7 +270,7 @@ public class TaskService {
         // 校验任务是否存在
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【编辑】权限
-        requireData(documentFeign.checkSpacePermission(entity.getSpaceId(), TASK_TERMINATE));
+        requirePermission(entity.getSpaceId(), TASK_TERMINATE);
         // 任务状态转换
         TaskStatus current = TaskStatus.fromCode(entity.getStatus());
         // 若当前任务状态非【待运行】、【运行中】，则禁止【终止】
@@ -277,6 +369,17 @@ public class TaskService {
                     result == null ? "文档服务调用失败" : result.message());
         }
         return result.data();
+    }
+
+    /**
+     * 校验文档服务返回的空间权限结果。该契约成功时 data 为空，不能使用 requireData。
+     */
+    private void requirePermission(Long spaceId, String permissionCode) {
+        Result<Void> result = documentFeign.checkSpacePermission(spaceId, permissionCode);
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null ? "文档服务权限校验失败" : result.message());
+        }
     }
 
     /**

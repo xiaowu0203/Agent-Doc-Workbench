@@ -72,6 +72,12 @@ public interface DocumentFeign {
             @PathVariable Long spaceId);
 
     /**
+     * 查询空间 Token 预算（用量读取权限）。
+     */
+    @GetMapping("/api/document/spaces/{spaceId}/token-budget")
+    Result<SpaceBudgetVO> getSpaceTokenBudget(@PathVariable Long spaceId);
+
+    /**
      * 文档片段读取
      */
     @GetMapping("/api/document/documents/{documentId}/fragments")

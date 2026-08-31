@@ -12,6 +12,13 @@ const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15_000,
   withCredentials: true,
+  transformResponse: [
+    (data: unknown) => {
+      if (typeof data !== 'string' || data.length === 0) return data
+      const preserved = data.replace(/(:\s*)(-?\d{16,})(?=\s*[,}\]])/g, '$1"$2"')
+      return JSON.parse(preserved) as unknown
+    },
+  ],
 })
 
 apiClient.interceptors.request.use((config) => {

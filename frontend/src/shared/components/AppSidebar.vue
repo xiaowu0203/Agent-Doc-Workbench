@@ -4,33 +4,127 @@
       <BrandMark :compact="collapsed" stacked />
     </div>
 
-    <nav class="app-sidebar__navigation" aria-label="主导航">
-      <RouterLink class="app-sidebar__link" to="/">
-        <el-icon :size="20"><Grid /></el-icon>
-        <span v-if="!collapsed">基础层</span>
-      </RouterLink>
+    <div v-if="!collapsed" class="app-sidebar__space">
+      <el-icon :size="18"><Briefcase /></el-icon>
+      <el-select
+        v-model="selectedSpaceId"
+        aria-label="切换空间"
+        class="app-sidebar__space-select"
+        size="large"
+        @change="switchSpace"
+      >
+        <el-option
+          v-for="space in workspaceStore.spaces"
+          :key="space.id"
+          :label="space.name"
+          :value="space.id"
+        />
+      </el-select>
+    </div>
+
+    <nav class="app-sidebar__navigation" aria-label="空间导航">
+      <template v-for="item in visibleMenuItems" :key="item.label">
+        <RouterLink v-if="item.path" class="app-sidebar__link" :to="item.path">
+          <el-icon :size="20"><component :is="item.icon" /></el-icon>
+          <span v-if="!collapsed">{{ item.label }}</span>
+        </RouterLink>
+        <button v-else class="app-sidebar__link app-sidebar__link--disabled" type="button" disabled>
+          <el-icon :size="20"><component :is="item.icon" /></el-icon>
+          <span v-if="!collapsed">{{ item.label }}</span>
+        </button>
+      </template>
     </nav>
 
     <div class="app-sidebar__footer">
-      <span class="app-sidebar__avatar">AD</span>
+      <span class="app-sidebar__avatar">{{ initials }}</span>
       <div v-if="!collapsed">
-        <strong>Agent Doc</strong>
-        <span>Phase 6</span>
+        <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
+        <span>{{ workspaceStore.currentSpace?.role?.displayName || '空间成员' }}</span>
       </div>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { Grid } from '@element-plus/icons-vue'
-import { ElIcon } from 'element-plus'
-import { RouterLink } from 'vue-router'
+import {
+  Aim,
+  Briefcase,
+  Checked,
+  DataAnalysis,
+  Document,
+  Grid,
+  Operation,
+  SetUp,
+  Tickets,
+} from '@element-plus/icons-vue'
+import { ElIcon, ElOption, ElSelect } from 'element-plus'
+import type { Component } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { RouterLink, useRouter } from 'vue-router'
 
-import BrandMark from './BrandMark.vue'
+import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
+import type { EntityId } from '@/features/workspace/types'
+import { useAuthStore } from '@/stores/auth'
+import { useWorkspaceStore } from '@/stores/workspace'
 
-defineProps<{
-  collapsed: boolean
-}>()
+defineProps<{ collapsed: boolean }>()
+
+interface MenuItem {
+  label: string
+  icon: Component
+  permission: (typeof SPACE_PERMISSIONS)[keyof typeof SPACE_PERMISSIONS]
+  path: string | null
+}
+
+const authStore = useAuthStore()
+const workspaceStore = useWorkspaceStore()
+const router = useRouter()
+const selectedSpaceId = ref<EntityId | null>(workspaceStore.currentSpaceId)
+
+const menuItems: MenuItem[] = [
+  { label: '总览', icon: Grid, permission: SPACE_PERMISSIONS.SPACE_READ, path: 'overview' },
+  { label: '文档', icon: Document, permission: SPACE_PERMISSIONS.DOCUMENT_READ, path: null },
+  { label: '任务', icon: Tickets, permission: SPACE_PERMISSIONS.TASK_READ, path: null },
+  {
+    label: '变更审批',
+    icon: Checked,
+    permission: SPACE_PERMISSIONS.CHANGE_REQUEST_READ,
+    path: null,
+  },
+  { label: 'Agent', icon: Aim, permission: SPACE_PERMISSIONS.AGENT_READ, path: null },
+  { label: 'Skill', icon: SetUp, permission: SPACE_PERMISSIONS.SKILL_READ, path: null },
+  { label: 'MCP 服务', icon: Operation, permission: SPACE_PERMISSIONS.MCP_READ, path: null },
+  { label: '用量与审计', icon: DataAnalysis, permission: SPACE_PERMISSIONS.USAGE_READ, path: null },
+]
+
+const visibleMenuItems = computed(() =>
+  menuItems
+    .filter((item) => workspaceStore.hasPermission(item.permission))
+    .map((item) => ({
+      ...item,
+      path:
+        item.path && workspaceStore.currentSpaceId
+          ? `/spaces/${workspaceStore.currentSpaceId}/${item.path}`
+          : null,
+    })),
+)
+
+const initials = computed(() => {
+  const name = authStore.user?.nickname || authStore.user?.username || 'AD'
+  return name.slice(0, 2).toUpperCase()
+})
+
+watch(
+  () => workspaceStore.currentSpaceId,
+  (spaceId) => {
+    selectedSpaceId.value = spaceId
+  },
+)
+
+async function switchSpace(spaceId: EntityId): Promise<void> {
+  if (String(spaceId) === String(workspaceStore.currentSpaceId)) return
+  await router.push(`/spaces/${spaceId}/overview`)
+}
 </script>
 
 <style scoped>
@@ -57,13 +151,33 @@ defineProps<{
   border-bottom: 1px solid rgb(255 255 255 / 10%);
 }
 
-.app-sidebar__avatar {
-  display: inline-flex;
-  flex: 0 0 auto;
+.app-sidebar__space {
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: var(--adw-space-2);
+  margin: var(--adw-space-4) var(--adw-space-3) var(--adw-space-2);
+  padding: var(--adw-space-2) var(--adw-space-3);
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: var(--adw-radius-sm);
+}
+
+.app-sidebar__space-select {
+  min-width: 0;
+  flex: 1;
+}
+
+.app-sidebar__space-select :deep(.el-input__wrapper) {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-sidebar__space-select :deep(.el-input__inner) {
   color: #ffffff;
-  background: var(--adw-color-primary);
+}
+
+.app-sidebar__space-select :deep(.el-select__caret) {
+  color: rgb(255 255 255 / 80%);
 }
 
 .app-sidebar__navigation {
@@ -71,17 +185,20 @@ defineProps<{
   flex: 1;
   flex-direction: column;
   gap: var(--adw-space-2);
-  padding: var(--adw-space-6) var(--adw-space-3);
+  padding: var(--adw-space-5) var(--adw-space-3);
 }
 
 .app-sidebar__link {
   display: flex;
-  min-height: 48px;
+  min-height: 46px;
   align-items: center;
   gap: var(--adw-space-3);
   padding: 0 var(--adw-space-4);
+  border: 0;
   border-radius: var(--adw-radius-sm);
   color: rgb(255 255 255 / 78%);
+  background: transparent;
+  font: inherit;
   text-decoration: none;
 }
 
@@ -89,6 +206,11 @@ defineProps<{
 .app-sidebar__link.router-link-exact-active {
   color: #ffffff;
   background: var(--adw-sidebar-active-background);
+}
+
+.app-sidebar__link--disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .app-sidebar__footer {
@@ -101,9 +223,15 @@ defineProps<{
 }
 
 .app-sidebar__avatar {
+  display: inline-flex;
   width: 36px;
   height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
+  color: #ffffff;
+  background: var(--adw-color-primary);
   font-size: 12px;
 }
 
@@ -113,7 +241,13 @@ defineProps<{
   min-width: 0;
 }
 
-.app-sidebar__footer span {
+.app-sidebar__footer strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar__footer span:not(.app-sidebar__avatar) {
   color: rgb(255 255 255 / 60%);
   font-size: 12px;
 }

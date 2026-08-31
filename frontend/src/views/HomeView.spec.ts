@@ -1,18 +1,43 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { describe, expect, it, vi } from 'vitest'
 
 import HomeView from './HomeView.vue'
 
-describe('HomeView', () => {
-  it('renders the Phase 6 foundation summary', () => {
-    const wrapper = mount(HomeView, {
-      global: {
-        plugins: [createPinia()],
-      },
-    })
+import { useWorkspaceStore } from '@/stores/workspace'
 
-    expect(wrapper.text()).toContain('Phase 6 前端基础层')
-    expect(wrapper.text()).toContain('请求与会话')
+describe('HomeView', () => {
+  it('opens the first available space', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const workspaceStore = useWorkspaceStore()
+    vi.spyOn(workspaceStore, 'loadSpaces').mockResolvedValue([
+      {
+        id: 7,
+        name: '产品研发空间',
+        description: null,
+        ownerId: 1,
+        tokenBudget: null,
+        status: 'ACTIVE',
+        role: null,
+        platformSuperAdmin: false,
+        createdAt: '2026-08-31T00:00:00Z',
+      },
+    ])
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: HomeView },
+        { path: '/spaces/:spaceId/overview', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/')
+    await router.isReady()
+
+    mount(HomeView, { global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/spaces/7/overview')
   })
 })

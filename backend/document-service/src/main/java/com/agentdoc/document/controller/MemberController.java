@@ -40,7 +40,7 @@ public class MemberController {
         return Result.ok(memberService.add(spaceId, dto));
     }
 
-    @Operation(summary = "成员列表（空间成员可查看）")
+    @Operation(summary = "成员列表")
     @GetMapping
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_READ + "')")
     public Result<List<MemberVO>> list(@PathVariable Long spaceId) {

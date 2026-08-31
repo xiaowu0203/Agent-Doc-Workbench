@@ -9,12 +9,16 @@ import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 /**
  * 认证服务：注册、登录、刷新、登出。
@@ -131,6 +135,21 @@ public class AuthService {
     public UserVO getById(Long userId) {
         UserEntity user = userMapper.selectById(userId);
         return user == null ? null : user.toVO();
+    }
+
+    /**
+     * 批量查询用户最小展示信息，避免业务服务逐条查询用户。
+     *
+     * @param request 用户 ID 集合
+     * @return 用户展示信息；不存在的用户不返回
+     */
+    public List<UserRefVO> queryUsers(UserBatchQueryDTO request) {
+        if (request == null || request.userIds() == null || request.userIds().isEmpty()) {
+            return List.of();
+        }
+        return userMapper.selectBatchIds(request.userIds()).stream()
+                .map(user -> new UserRefVO(user.getId(), user.getUsername(), user.getNickname()))
+                .toList();
     }
 
     /**

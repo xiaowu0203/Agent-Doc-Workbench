@@ -23,21 +23,28 @@ const appStore = useAppStore()
 <style scoped>
 .workbench-layout {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   background: var(--adw-page-background);
 }
 
 .workbench-layout__main {
   display: flex;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
 }
 
 .workbench-layout__content {
+  min-height: 0;
   width: 100%;
   max-width: var(--adw-content-max-width);
+  flex: 1;
   margin: 0 auto;
+  overflow-y: auto;
   padding: var(--adw-space-7);
 }
 

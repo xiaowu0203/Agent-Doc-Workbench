@@ -7,17 +7,20 @@ import com.agentdoc.task.pojo.dto.ChangeRequestReviewDTO;
 import com.agentdoc.task.pojo.dto.ChangeRequestSubmitDTO;
 import com.agentdoc.task.pojo.param.ChangeRequestSearchParam;
 import com.agentdoc.task.pojo.vo.ChangeRequestVO;
+import com.agentdoc.task.pojo.vo.PendingChangeStatsVO;
 import com.agentdoc.task.service.ChangeRequestService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "变更审批", description = "变更请求提交、审批队列、通过/拒绝/退回/合并")
@@ -42,15 +45,23 @@ public class ChangeRequestController {
         return Result.ok(changeRequestService.list(param));
     }
 
+    @Operation(summary = "查询空间待审批变更数量统计")
+    @GetMapping("/stats")
+    public Result<PendingChangeStatsVO> stats(@RequestParam Long spaceId) {
+        return Result.ok(changeRequestService.getStats(spaceId));
+    }
+
     @Operation(summary = "审批通过")
     @PutMapping("/{id}/approve")
-    public Result<ChangeRequestVO> approve(@PathVariable Long id, @Valid @RequestBody ChangeRequestReviewDTO dto) {
+    public Result<ChangeRequestVO> approve(@PathVariable Long id,
+                                           @Valid @RequestBody ChangeRequestReviewDTO dto) {
         return Result.ok(changeRequestService.approve(id, dto));
     }
 
     @Operation(summary = "审批拒绝")
     @PutMapping("/{id}/reject")
-    public Result<ChangeRequestVO> reject(@PathVariable Long id, @Valid @RequestBody ChangeRequestReviewDTO dto) {
+    public Result<ChangeRequestVO> reject(@PathVariable Long id,
+                                          @Valid @RequestBody ChangeRequestReviewDTO dto) {
         return Result.ok(changeRequestService.reject(id, dto));
     }
 

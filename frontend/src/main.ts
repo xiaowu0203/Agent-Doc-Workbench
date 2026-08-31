@@ -15,12 +15,19 @@ const workspaceStore = useWorkspaceStore(pinia)
 
 configureAuthSession({
   getAccessToken: () => authStore.accessToken,
+  refreshAccessToken: () => authStore.refreshAccessToken(),
   clearSession: () => {
     authStore.clearSession()
     workspaceStore.clearWorkspace()
   },
 })
 
-app.use(pinia)
-app.use(router)
-app.mount('#app')
+async function bootstrap(): Promise<void> {
+  authStore.restoreSession()
+  app.use(pinia)
+  app.use(router)
+  await router.isReady()
+  app.mount('#app')
+}
+
+void bootstrap()

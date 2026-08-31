@@ -3,6 +3,7 @@ package com.agentdoc.document.service;
 import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
@@ -11,6 +12,7 @@ import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
+import com.agentdoc.document.pojo.vo.DocumentStatsVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,12 +50,14 @@ class DocumentServiceTest {
     private DocumentVersionService versionService;
     @Mock
     private SpacePermissionService permissionService;
+    @Mock
+    private AuthFeign authFeign;
 
     private DocumentService documentService;
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentMapper, versionService, permissionService);
+        documentService = new DocumentService(documentMapper, versionService, permissionService, authFeign);
         // 模拟已登录：SecurityContext 放入以 Jwt 为 principal 的认证信息
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")
@@ -147,5 +151,16 @@ class DocumentServiceTest {
 
         verify(versionService).createSnapshot(eq(DOCUMENT_ID), eq(3L), eq("旧内容\n追加段落"),
                 eq("追加"), eq(USER_ID));
+    }
+
+    @Test
+    void shouldReturnTotalAndLastMonthDocumentCounts() {
+        when(documentMapper.selectCount(any())).thenReturn(5L, 3L);
+
+        DocumentStatsVO result = documentService.getStats(2001L);
+
+        assertEquals(5L, result.totalCount());
+        assertEquals(3L, result.countAsOfLastMonth());
+        verify(documentMapper, times(2)).selectCount(any());
     }
 }

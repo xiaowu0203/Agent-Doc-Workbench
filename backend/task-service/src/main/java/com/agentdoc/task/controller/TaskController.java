@@ -5,6 +5,9 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
+import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
+import com.agentdoc.task.pojo.vo.TaskActivityVO;
+import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.service.TaskService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -39,6 +42,18 @@ public class TaskController {
     @GetMapping
     public Result<PageVO<TaskVO>> list(@RequestParam Long spaceId, PageParam pageParam) {
         return Result.ok(taskService.list(spaceId, pageParam));
+    }
+
+    @Operation(summary = "查询任务执行动态")
+    @PostMapping("/activity/query")
+    public Result<PageVO<TaskActivityVO>> activity(@Valid @RequestBody TaskActivitySearchParam param) {
+        return Result.ok(taskService.listActivity(param));
+    }
+
+    @Operation(summary = "查询空间任务数量统计")
+    @GetMapping("/stats")
+    public Result<TaskStatsVO> stats(@RequestParam Long spaceId) {
+        return Result.ok(taskService.getStats(spaceId));
     }
 
     @Operation(summary = "任务详情")

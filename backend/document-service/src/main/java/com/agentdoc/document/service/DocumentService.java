@@ -5,11 +5,14 @@ import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
@@ -21,16 +24,21 @@ import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
+import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
 import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
+import com.agentdoc.document.pojo.vo.DocumentStatsVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
+import com.agentdoc.document.pojo.vo.RecentDocumentVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -59,6 +67,7 @@ public class DocumentService {
     private final DocumentMapper documentMapper;
     private final DocumentVersionService versionService;
     private final SpacePermissionService permissionService;
+    private final AuthFeign authFeign;
 
     /**
      * 创建文档
@@ -121,6 +130,86 @@ public class DocumentService {
             }
         }
         return roots;
+    }
+
+    /**
+     * 查询空间最近更新的文档，分页返回。
+     * 权限：空间成员可读；仅返回正常状态文档。
+     *
+     * @param param 查询参数（空间和分页）
+     * @return 最近文档分页结果
+     */
+    public PageVO<RecentDocumentVO> listRecent(DocumentRecentSearchParam param) {
+        permissionService.requirePermission(param.spaceId(), DOCUMENT_READ);
+        PageParam pageParam = param.pageParam() == null ? new PageParam() : param.pageParam();
+        pageParam.validate();
+
+        Page<DocumentEntity> page = documentMapper.selectPage(
+                PageUtils.toPage(pageParam),
+                new LambdaQueryWrapper<DocumentEntity>()
+                        .eq(DocumentEntity::getSpaceId, param.spaceId())
+                        .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode())
+                        .orderByDesc(DocumentEntity::getUpdatedAt)
+                        .orderByDesc(DocumentEntity::getId));
+        Map<Long, UserRefVO> users = fetchUsers(page.getRecords().stream()
+                .map(DocumentEntity::getUpdatedBy)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList());
+        List<RecentDocumentVO> records = page.getRecords().stream()
+                .map(document -> new RecentDocumentVO(
+                        document.getId(),
+                        document.getTitle(),
+                        DocType.fromCode(document.getDocType()),
+                        document.getUpdatedAt(),
+                        displayName(users.get(document.getUpdatedBy())))
+                )
+                .toList();
+        return PageVO.of(records, page.getTotal(), pageParam);
+    }
+
+    private Map<Long, UserRefVO> fetchUsers(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UserRefVO> users = authFeign.queryUsers(new UserBatchQueryDTO(userIds)).data();
+        if (users == null) {
+            return Map.of();
+        }
+        return users.stream().collect(Collectors.toMap(UserRefVO::id, user -> user));
+    }
+
+    private String displayName(UserRefVO user) {
+        if (user == null) {
+            return null;
+        }
+        if (user.nickname() != null && !user.nickname().isBlank()) {
+            return user.nickname();
+        }
+        return user.username();
+    }
+
+    /**
+     * 查询空间文档数量统计。
+     * 当前总数与文档树保持一致，只统计正常且未逻辑删除的文档；历史数量按创建时间截取，
+     * 由于文档表未保存历史状态，仅能统计当前仍为正常状态且在本月开始前创建的文档。
+     *
+     * @param spaceId 空间 ID
+     * @return 当前总数与截至上月月底的数量
+     */
+    public DocumentStatsVO getStats(Long spaceId) {
+        LocalDateTime currentMonthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+        LambdaQueryWrapper<DocumentEntity> currentDocuments = new LambdaQueryWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getSpaceId, spaceId)
+                .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode());
+        long totalCount = documentMapper.selectCount(currentDocuments);
+
+        LambdaQueryWrapper<DocumentEntity> documentsAsOfLastMonth = new LambdaQueryWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getSpaceId, spaceId)
+                .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode())
+                .lt(DocumentEntity::getCreatedAt, currentMonthStart);
+        long countAsOfLastMonth = documentMapper.selectCount(documentsAsOfLastMonth);
+        return new DocumentStatsVO(totalCount, countAsOfLastMonth);
     }
 
     /**

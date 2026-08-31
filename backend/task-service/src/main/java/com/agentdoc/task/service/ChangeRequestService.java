@@ -20,6 +20,7 @@ import com.agentdoc.task.pojo.dto.ChangeRequestSubmitDTO;
 import com.agentdoc.task.pojo.param.ChangeRequestSearchParam;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
 import com.agentdoc.task.pojo.vo.ChangeRequestVO;
+import com.agentdoc.task.pojo.vo.PendingChangeStatsVO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -28,6 +29,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -117,6 +120,32 @@ public class ChangeRequestService {
                 .map(ChangeRequestEntity::getDocumentId).distinct().toList());
         List<ChangeRequestVO> changeRequestVOList = ChangeRequestConvertor.toVOList(records, refs);
         return PageVO.of(changeRequestVOList, page.getTotal(), pageParam);
+    }
+
+    /**
+     * 查询空间当前待审批变更数与截至昨日的数量。
+     * 变更表通过文档 ID 归属空间，因此先批量读取空间文档 ID，再统计变更记录。
+     *
+     * @param spaceId 空间 ID
+     * @return 两个原始数量，差值由前端计算
+     */
+    public PendingChangeStatsVO getStats(Long spaceId) {
+        requireSpacePermission(spaceId, CHANGE_REQUEST_READ);
+        List<Long> documentIds = requireData(documentFeign.listDocumentIdsBySpace(spaceId));
+        if (documentIds.isEmpty()) {
+            return new PendingChangeStatsVO(0, 0);
+        }
+        LocalDateTime yesterdayStart = LocalDate.now().atStartOfDay();
+        LambdaQueryWrapper<ChangeRequestEntity> current = new LambdaQueryWrapper<ChangeRequestEntity>()
+                .in(ChangeRequestEntity::getDocumentId, documentIds)
+                .eq(ChangeRequestEntity::getStatus, ChangeRequestStatus.PENDING.getCode());
+        long pendingCount = changeRequestMapper.selectCount(current);
+        LambdaQueryWrapper<ChangeRequestEntity> historical = new LambdaQueryWrapper<ChangeRequestEntity>()
+                .in(ChangeRequestEntity::getDocumentId, documentIds)
+                .eq(ChangeRequestEntity::getStatus, ChangeRequestStatus.PENDING.getCode())
+                .lt(ChangeRequestEntity::getCreatedAt, yesterdayStart);
+        long pendingCountAsOfYesterday = changeRequestMapper.selectCount(historical);
+        return new PendingChangeStatsVO(pendingCount, pendingCountAsOfYesterday);
     }
 
     /**

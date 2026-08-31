@@ -1,5 +1,6 @@
 package com.agentdoc.task.service;
 
+import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
@@ -15,6 +16,7 @@ import com.agentdoc.task.mapper.TokenUsageMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageEntity;
+import com.agentdoc.task.pojo.vo.MonthlyTokenBudgetVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTodayVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTrendVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -144,6 +146,20 @@ public class TokenUsageService {
     }
 
     /**
+     * 查询空间本月 Token 用量与空间预算。
+     *
+     * @param spaceId 空间 ID
+     * @return 两个原始数值，使用率由前端计算
+     */
+    public MonthlyTokenBudgetVO monthly(Long spaceId) {
+        requireMember(spaceId);
+        LocalDate start = LocalDate.now().withDayOfMonth(1);
+        Long used = detailMapper.sumTokensBySpaceAndDate(spaceId, start, start.plusMonths(1));
+        Long budget = requireData(documentFeign.getSpaceTokenBudget(spaceId)).tokenBudget();
+        return new MonthlyTokenBudgetVO(used == null ? 0 : used, budget);
+    }
+
+    /**
      * 查询空间Token用量历史趋势
      * <p>对入参days做范围钳位，限制在最小/最大可查询天数之间；读取预聚合表{@link TokenUsageEntity}。</p>
      * @param spaceId 空间ID
@@ -176,6 +192,21 @@ public class TokenUsageService {
             throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
                     result == null ? "空间权限校验失败" : result.message());
         }
+    }
+
+    /**
+     * Feign 返回结果包装工具，非成功或无 data 时抛出业务异常。
+     *
+     * @param result Feign 远程调用结果
+     * @param <T> data 类型
+     * @return 远程结果中的 data
+     */
+    private <T> T requireData(Result<T> result) {
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode() || result.data() == null) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null ? "文档服务调用失败" : result.message());
+        }
+        return result.data();
     }
 
     /**

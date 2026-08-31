@@ -21,7 +21,7 @@ public record SpaceCreateDTO(
         @Size(max = 500, message = "空间描述最长 500 字符")
         String description,
 
-        @Schema(description = "空间全局 Token 预算（Phase 3 熔断用）")
+        @Schema(description = "空间全局 Token 预算")
         Long tokenBudget
 ) {
 
