@@ -8,7 +8,7 @@
 | :--------: | :----------------------------------------------------------: |
 |    后端    | Spring Boot 3.5 + Java 21 + Spring Cloud 2025；Maven 多模块；业务微服务 gateway/auth/document/task/agent；task-service 负责任务编排与 Workbench MCP Server，agent-service 负责 Agent Server、Spring AI Runtime 与 MCP Client；Spring MVC + MyBatis‑Plus + MySQL；REST + A2A + MCP |
 |    前端    | Vue 3 + TypeScript + Vite + Pinia + Element Plus + ProseMirror |
-|    鉴权    | OAuth2 Authorization Code + PKCE + JWT（RSA RS256），外部 Agent 用 Client Credentials |
+|    鉴权    | OAuth2 Authorization Code + PKCE + JWT（RSA RS256），平台角色 + 空间 RBAC，外部 Agent 用 Client Credentials |
 | Agent 接入 | Spring AI + 官方 A2A/MCP Java SDK，业务编排自研 |
 |  基础设施  | Nacos + Spring Cloud Gateway + RabbitMQ + Redis 5.0.14.1 + MinIO，Docker Compose 一键启动；定时任务 v0.1 用 Spring `@Scheduled` + Redisson 锁，XXL‑Job 待 v0.2 集群化后引入 |
 
@@ -27,9 +27,12 @@
 3. **文档三格式**：Markdown 持久化为主，ProseMirror JSON 用于编辑与结构化 Diff，HTML 仅按需生成展示，不以 HTML 为主存储。
 4. **协同编辑延后**：v0.1 用 REST + 轮询，Yjs WebSocket 实时协同留到 v0.2，避免拖慢 MVP。
 5. **前端权限只是 UI 控制**：最终权限必须由后端校验。
+6. **人类用户采用两级权限模型**：平台角色（当前用于超级管理员）与空间角色（`OWNER / EDITOR / VIEWER` 及自定义角色）分离；仅 `OWNER` 是受保护空间角色。
 
 ## v0.1 落地优先级
 
 - 后端模块：`gateway` → `auth` → `document` → `task` / `agent`
 - 前端页面：登录 → 工作空间首页 → 文档树与编辑 → Agent 配置 → 任务创建 → Diff 审批 → 版本历史 → Token 用量与审计日志
 - 许可证：Apache‑2.0
+
+Phase 5 已完成平台角色 CRUD 和空间 RBAC 基础能力；Phase 6 再接入角色、成员和平台管理页面。部门模型与按部门统计不属于当前实现范围。
