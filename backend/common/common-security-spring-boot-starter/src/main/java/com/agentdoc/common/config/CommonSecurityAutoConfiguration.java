@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -36,6 +37,7 @@ import java.nio.charset.StandardCharsets;
  * - {@code @ConditionalOnMissingBean(SecurityFilterChain.class)}：业务服务可以自定义SecurityFilterChain覆盖此默认配置
  */
 @AutoConfiguration
+@EnableMethodSecurity
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @ConditionalOnMissingBean(SecurityFilterChain.class)
 @EnableConfigurationProperties(SecurityVerifyProperties.class)

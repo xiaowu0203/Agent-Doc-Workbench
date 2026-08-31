@@ -27,6 +27,7 @@ class AuthServiceTest {
     private UserMapper userMapper;
     private JwtService jwtService;
     private RefreshTokenService refreshTokenService;
+    private PlatformRoleService platformRoleService;
     private AuthService authService;
 
     @BeforeEach
@@ -34,10 +35,12 @@ class AuthServiceTest {
         userMapper = mock(UserMapper.class);
         jwtService = mock(JwtService.class);
         refreshTokenService = mock(RefreshTokenService.class);
+        platformRoleService = mock(PlatformRoleService.class);
         // issueTokens 会读取 props().accessTtl()，此处 stub 掉避免 mock 返回 null 导致 NPE
         when(jwtService.props()).thenReturn(
                 new JwtProperties("", "", Duration.ofMinutes(30), Duration.ofDays(7), "test"));
-        authService = new AuthService(userMapper, new BCryptPasswordEncoder(), jwtService, refreshTokenService);
+        authService = new AuthService(userMapper, new BCryptPasswordEncoder(), jwtService,
+                refreshTokenService, platformRoleService);
     }
 
     @Test
@@ -60,7 +63,8 @@ class AuthServiceTest {
         user.setStatus(UserStatus.ENABLED.getCode());
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
-        when(jwtService.createAccessToken(user)).thenReturn("access-token");
+        when(platformRoleService.listRoleKeys(user.getId())).thenReturn(java.util.List.of());
+        when(jwtService.createAccessToken(user, java.util.List.of())).thenReturn("access-token");
         when(jwtService.createRefreshToken()).thenReturn("refresh-token");
 
         AuthResponseVO response = authService.login("alice", rawPassword);
