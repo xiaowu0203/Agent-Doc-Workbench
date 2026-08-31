@@ -72,15 +72,23 @@ public class AuthService {
         // 根据用户名查询用户
         UserEntity user = userMapper.selectOne(
                 new LambdaQueryWrapper<UserEntity>().eq(UserEntity::getUsername, username));
-        // 用户不存在 或者密码校验失败，抛出异常
-        if (user == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
+        // 用户不存在，抛出异常；日志不记录用户名，避免泄露登录标识
+        if (user == null) {
+            log.warn("登录失败：用户不存在");
+            throw new BusinessException(ErrorCode.LOGIN_FAILED);
+        }
+        // 密码校验失败，抛出异常；禁止记录明文密码或密码哈希
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            log.warn("登录失败：密码校验未通过，userId={}", user.getId());
             throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
         // 账号禁用，抛出异常
         if (!UserStatus.isEnabled(user.getStatus())) {
+            log.warn("登录失败：账号已禁用，userId={}", user.getId());
             throw new BusinessException(ErrorCode.USER_DISABLED);
         }
         // 下发全新一对令牌
+        log.info("登录成功，userId={}", user.getId());
         return issueTokens(user);
     }
 

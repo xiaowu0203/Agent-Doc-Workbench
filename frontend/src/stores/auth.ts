@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 
-import type { AuthSession, User } from '@/features/auth/types'
+import { login as requestLogin } from '@/features/auth/api/auth-api'
+import type { AuthSession, LoginRequest, User } from '@/features/auth/types'
 
 interface AuthState {
   accessToken: string | null
@@ -21,6 +22,10 @@ export const useAuthStore = defineStore('auth', {
     isPlatformSuperAdmin: (state) => state.platformRoles.includes('PLATFORM_SUPER_ADMIN'),
   },
   actions: {
+    async login(credentials: LoginRequest) {
+      const session = await requestLogin(credentials)
+      this.setSession(session)
+    },
     setSession(session: AuthSession) {
       this.accessToken = session.accessToken
       this.user = session.user

@@ -13,6 +13,7 @@ interface ImportMeta {
 
 declare module 'vue-router' {
   interface RouteMeta {
+    guestOnly?: boolean
     requiresAuth?: boolean
     requiresSpace?: boolean
     permission?: SpacePermissionCode

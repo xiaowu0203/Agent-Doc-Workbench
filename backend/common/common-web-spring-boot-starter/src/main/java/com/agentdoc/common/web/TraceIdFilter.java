@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -28,6 +29,7 @@ import java.util.UUID;
  * <strong>仅Servlet(SpringMVC)环境生效，WebFlux网关环境不使用本过滤器</strong>。
  */
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@Slf4j
 public class TraceIdFilter extends OncePerRequestFilter {
     /** HTTP 请求/响应头名称，透传链路TraceId */
     public static final String TRACE_HEADER = "X-Trace-Id";
@@ -54,9 +56,14 @@ public class TraceIdFilter extends OncePerRequestFilter {
         MDC.put("traceId", traceId);
         // 响应头回写traceId，方便调用方拿到链路标识排查问题
         response.setHeader(TRACE_HEADER, traceId);
+        long startedNanos = System.nanoTime();
+        log.info("收到请求 method={} path={} traceId={}", request.getMethod(), request.getRequestURI(), traceId);
         try {
             filterChain.doFilter(request, response);
         } finally {
+            long durationMs = (System.nanoTime() - startedNanos) / 1_000_000L;
+            log.info("请求完成 method={} path={} status={} durationMs={} traceId={}",
+                    request.getMethod(), request.getRequestURI(), response.getStatus(), durationMs, traceId);
             // 清理上下文，防止Tomcat线程池复用线程，上下文残留污染下一次请求
             TraceContext.clear();
             MDC.remove("traceId");

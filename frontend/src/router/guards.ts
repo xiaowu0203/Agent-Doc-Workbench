@@ -20,6 +20,10 @@ export function installRouterGuards(router: Router): void {
       return { path: '/login', query: { redirect: to.fullPath } }
     }
 
+    if (to.meta.guestOnly && authStore.isAuthenticated) {
+      return { path: '/' }
+    }
+
     if (!to.meta.requiresSpace) {
       return true
     }

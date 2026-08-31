@@ -1,8 +1,7 @@
 <template>
   <aside class="app-sidebar" :class="{ 'app-sidebar--collapsed': collapsed }">
     <div class="app-sidebar__brand">
-      <span class="app-sidebar__logo">A</span>
-      <span v-if="!collapsed" class="app-sidebar__name">Agent Doc<br />Workbench</span>
+      <BrandMark :compact="collapsed" stacked />
     </div>
 
     <nav class="app-sidebar__navigation" aria-label="主导航">
@@ -26,6 +25,8 @@
 import { Grid } from '@element-plus/icons-vue'
 import { ElIcon } from 'element-plus'
 import { RouterLink } from 'vue-router'
+
+import BrandMark from './BrandMark.vue'
 
 defineProps<{
   collapsed: boolean
@@ -56,7 +57,6 @@ defineProps<{
   border-bottom: 1px solid rgb(255 255 255 / 10%);
 }
 
-.app-sidebar__logo,
 .app-sidebar__avatar {
   display: inline-flex;
   flex: 0 0 auto;
@@ -64,20 +64,6 @@ defineProps<{
   justify-content: center;
   color: #ffffff;
   background: var(--adw-color-primary);
-}
-
-.app-sidebar__logo {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--adw-radius-md);
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.app-sidebar__name {
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1.2;
 }
 
 .app-sidebar__navigation {

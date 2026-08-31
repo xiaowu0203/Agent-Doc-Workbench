@@ -88,3 +88,16 @@ springdoc:
   api-docs:
     # OpenAPI JSON元数据接口路径
     path: /v3/api-docs
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.agentdoc.task: DEBUG
+    org.springframework: INFO
+    org.springframework.ai: INFO
+
+# SQL日志打印
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
