@@ -90,21 +90,33 @@ v0.1 使用普通 REST 接口加轮询同步，保留协同编辑的数据结构
 | markdown-it | Markdown 预览/渲染 |
 | DOMPurify | 清理 HTML，防止 XSS |
 | file-saver | Markdown / JSON 文件下载 |
+| JSZip | 浏览器端组装 Skill 标准 ZIP 包 |
 
 MinIO 文件通过后端生成临时签名 URL，前端不直接持有永久对象存储凭证。
+
+## 数据可视化
+
+| 库 | 用途 |
+| ---- | ---- |
+| ECharts | Token 用量、趋势和后续审计统计图表 |
+
+ECharts 在用量页面开始开发时引入，不在前端基础层提前安装。
 
 ## 状态管理
 
 ```
 stores/
+├── app.ts           # 侧栏折叠、全局加载等少量应用状态
 ├── auth.ts          # 用户、Token、登录状态
 ├── workspace.ts     # 当前空间、成员、角色、有效权限
-├── document.ts      # 文档树、当前文档、版本
-├── editor.ts        # 编辑器状态、保存状态
-├── task.ts          # Agent 任务和执行状态
-├── approval.ts      # Diff 审批队列
-└── notification.ts  # 站内通知
+├── document.ts      # 文档树、当前文档、版本（文档页面接入时创建）
+├── editor.ts        # 编辑器状态、保存状态（编辑器接入时创建）
+├── task.ts          # 跨页面任务和执行状态（任务页面接入时创建）
+├── approval.ts      # 跨页面 Diff 审批状态（审批页面接入时创建）
+└── notification.ts  # 站内通知（通知能力具备后创建）
 ```
+
+Store 按页面需要逐步创建，不为了目录完整提前增加空 Store。只有跨路由或需要统一生命周期的状态进入 Pinia；列表筛选、分页、抽屉开关和临时表单默认保留在页面或 composable 内。
 
 ## 测试与代码质量
 
@@ -112,29 +124,28 @@ stores/
 | ---- | ---- |
 | Vitest | 单元测试 |
 | Vue Test Utils | 组件测试 |
-| Playwright / Tiptap | 端到端测试 |
+| Playwright | 端到端测试 |
 | ESLint | 代码检查 |
 | Prettier | 代码格式化 |
 | Husky + lint-staged | 提交前检查 |
 | pnpm | 依赖管理 |
 
-## 建议的前端目录结构
+## 前端目录结构
 
 ```
 frontend/
 ├── src/
-│   ├── api/             # Axios 实例和接口请求
+│   ├── api/             # Axios 实例、Result 解包、认证刷新和错误模型
 │   ├── assets/          # 图片、字体、全局资源
-│   ├── components/      # 通用组件
-│   ├── composables/     # Vue composables
 │   ├── layouts/         # 主布局、登录布局
 │   ├── router/          # 路由和权限守卫
-│   ├── stores/          # Pinia 状态
-│   ├── types/           # TypeScript 类型
-│   ├── views/           # 页面
-│   ├── editor/          # ProseMirror 编辑器
-│   ├── diff/            # Diff 展示和审批组件
-│   ├── utils/           # 工具函数
+│   ├── stores/          # Pinia 跨页面状态
+│   ├── shared/          # 无业务归属的组件、composable、常量、类型和工具
+│   ├── features/        # auth/workspace/document/agent/skill/mcp/task/approval 等业务切片
+│   ├── editor/          # ProseMirror 编辑器核心、schema 和转换逻辑
+│   ├── diff/            # 可被审批和版本历史复用的 Diff 展示原语
+│   ├── views/           # 轻量路由页，组合 feature 组件
+│   ├── styles/          # 设计令牌、Element Plus 覆盖和全局样式
 │   ├── App.vue
 │   └── main.ts
 ├── public/
@@ -176,5 +187,6 @@ Vue 3 / TypeScript / Vite / Vue Router / Pinia / Element Plus / Axios
 ProseMirror（state/view/model/schema-basic/schema-list/tables/markdown/history/keymap）
 prosemirror-markdown / Yjs（v0.2）/ diff-match-patch / prosemirror-changeset
 markdown-it / DOMPurify / file-saver
+JSZip / ECharts
 Vitest / Vue Test Utils / Playwright / ESLint / Prettier / Husky / pnpm
 ```

@@ -1,127 +1,135 @@
 <template>
-  <main class="home-page">
-    <section class="home-shell">
-      <div class="home-header">
-        <div>
-          <p class="eyebrow">DOCUMENT COLLABORATION WORKBENCH</p>
-          <h1>{{ appStore.name }}</h1>
-          <p class="subtitle">面向个人与小团队的 Agent 活文档协作工作台。</p>
-        </div>
-        <el-tag type="success" effect="plain">Phase 0 · Ready</el-tag>
-      </div>
+  <section class="foundation-page">
+    <PageHeader
+      title="Phase 6 前端基础层"
+      description="统一布局、请求、会话、权限与视觉规范已经进入可复用基线。"
+    >
+      <template #actions>
+        <el-tag type="success" effect="plain">Foundation Ready</el-tag>
+      </template>
+    </PageHeader>
 
-      <el-card class="welcome-card" shadow="never">
-        <template #header>
-          <div class="card-title">
-            <span>工程基建已就绪</span>
-            <span class="version">v{{ appStore.version }}</span>
-          </div>
-        </template>
-        <p>
-          前端脚手架已连接 Pinia、Vue Router 与 Element
-          Plus，后续页面将围绕文档、任务和审批流程展开。
-        </p>
-        <div class="stack-list">
-          <el-tag v-for="item in stack" :key="item" effect="plain">{{ item }}</el-tag>
+    <div class="foundation-grid">
+      <article v-for="item in foundations" :key="item.title" class="foundation-card surface-card">
+        <div class="foundation-card__icon">
+          <el-icon :size="22"><component :is="item.icon" /></el-icon>
         </div>
-      </el-card>
-    </section>
-  </main>
+        <div>
+          <h2>{{ item.title }}</h2>
+          <p>{{ item.description }}</p>
+        </div>
+      </article>
+    </div>
+
+    <el-card class="foundation-next" shadow="never">
+      <template #header>
+        <div class="foundation-next__header">
+          <strong>下一交付切片</strong>
+          <span>v{{ appStore.version }}</span>
+        </div>
+      </template>
+      <p>登录页将直接复用本次建立的会话桥接、错误模型、设计令牌和路由守卫。</p>
+    </el-card>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ElCard, ElTag } from 'element-plus'
+import { Connection, Key, Lock, Monitor } from '@element-plus/icons-vue'
+import { ElCard, ElIcon, ElTag } from 'element-plus'
+
+import PageHeader from '@/shared/components/PageHeader.vue'
 
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
-const stack = ['Vue 3', 'TypeScript strict', 'Pinia', 'Vue Router', 'Element Plus', 'Vitest']
+const foundations = [
+  {
+    title: '应用布局',
+    description: '统一侧栏、顶栏、内容容器和页面标题结构。',
+    icon: Monitor,
+  },
+  {
+    title: '请求与会话',
+    description: '统一 Result 解包、错误语义、认证头和刷新并发控制。',
+    icon: Connection,
+  },
+  {
+    title: '空间权限',
+    description: '权限标识符、空间缓存、路由守卫和组件权限门使用同一来源。',
+    icon: Lock,
+  },
+  {
+    title: '安全基线',
+    description: 'Access Token 只保留在内存，会话存储策略不散落到页面。',
+    icon: Key,
+  },
+]
 </script>
 
 <style scoped>
-.home-page {
-  min-height: 100vh;
-  padding: 64px 24px;
-  background: #f5f7fa;
+.foundation-page {
+  display: grid;
+  gap: var(--adw-space-7);
 }
 
-.home-shell {
-  width: min(960px, 100%);
-  margin: 0 auto;
+.foundation-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--adw-space-5);
 }
 
-.home-header {
+.foundation-card {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
+  min-height: 154px;
+  gap: var(--adw-space-4);
+  padding: var(--adw-space-5);
 }
 
-.eyebrow {
-  margin: 0 0 10px;
-  color: #909399;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-h1 {
-  margin: 0;
-  color: #1f2937;
-  font-size: 48px;
-  line-height: 1.15;
-}
-
-.subtitle {
-  margin: 14px 0 0;
-  color: #606266;
-  font-size: 16px;
-}
-
-.welcome-card {
-  border-color: #e4e7ed;
-}
-
-.card-title {
-  display: flex;
+.foundation-card__icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  color: #303133;
-  font-weight: 700;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--adw-color-primary);
+  background: #edf3ff;
 }
 
-.version {
-  color: #909399;
-  font-size: 13px;
-  font-weight: 400;
+.foundation-card h2 {
+  margin: 2px 0 var(--adw-space-2);
+  color: var(--adw-text-primary);
+  font-size: var(--adw-font-size-subtitle);
 }
 
-.welcome-card p {
+.foundation-card p,
+.foundation-next p {
   margin: 0;
-  color: #606266;
+  color: var(--adw-text-secondary);
   line-height: 1.7;
 }
 
-.stack-list {
+.foundation-next__header {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 24px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.foundation-next__header span {
+  color: var(--adw-text-tertiary);
+  font-size: var(--adw-font-size-caption);
+}
+
+@media (max-width: 1100px) {
+  .foundation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
-  .home-page {
-    padding: 32px 16px;
-  }
-
-  .home-header {
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  h1 {
-    font-size: 34px;
+  .foundation-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

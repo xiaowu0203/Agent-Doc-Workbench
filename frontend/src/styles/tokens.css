@@ -1,0 +1,38 @@
+:root {
+  --adw-color-primary: #245bdb;
+  --adw-color-primary-hover: #1f50c5;
+  --adw-color-success: #18a572;
+  --adw-color-warning: #e89a18;
+  --adw-color-danger: #dc3f45;
+  --adw-color-info: #64748b;
+  --adw-page-background: #f5f4f1;
+  --adw-surface: #ffffff;
+  --adw-surface-muted: #f8fafc;
+  --adw-sidebar-background: #061f43;
+  --adw-sidebar-active-background: linear-gradient(90deg, #174aa8 0%, #245bdb 100%);
+  --adw-text-primary: #162033;
+  --adw-text-secondary: #667085;
+  --adw-text-tertiary: #98a2b3;
+  --adw-border-color: #dfe3ea;
+  --adw-border-color-light: #eaecf0;
+  --adw-shadow-card: 0 1px 3px rgb(16 24 40 / 5%);
+  --adw-radius-sm: 6px;
+  --adw-radius-md: 10px;
+  --adw-radius-lg: 14px;
+  --adw-space-1: 4px;
+  --adw-space-2: 8px;
+  --adw-space-3: 12px;
+  --adw-space-4: 16px;
+  --adw-space-5: 20px;
+  --adw-space-6: 24px;
+  --adw-space-7: 32px;
+  --adw-space-8: 40px;
+  --adw-font-size-caption: 12px;
+  --adw-font-size-body: 14px;
+  --adw-font-size-subtitle: 18px;
+  --adw-font-size-title: 30px;
+  --adw-sidebar-width: 232px;
+  --adw-sidebar-collapsed-width: 72px;
+  --adw-topbar-height: 64px;
+  --adw-content-max-width: 1600px;
+}
