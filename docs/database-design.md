@@ -1,6 +1,6 @@
 # 数据库设计说明
 
-> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/V1__init.sql`。原 V1—V16 已合并为唯一的 v0.1 初始化基线，Flyway 由 auth-service 统一托管。
+> 建表 SQL 见 `backend/auth-service/src/main/resources/db/migration/V1__init.sql` 及后续 V2/V3 增量迁移。原 V1—V16 已合并为唯一的 v0.1 初始化基线，Flyway 由 auth-service 统一托管。
 > 本文档与迁移 SQL 同步维护，业务口径变更须同时更新两侧。
 
 ## 整体说明
@@ -12,12 +12,14 @@
 - **时间口径**：统一 **Asia/Shanghai 东八区自然日**；DB 连接参数 `serverTimezone=Asia/Shanghai`
 - **版本迁移**：当前完整基线为 `V1__init.sql`；基线重新执行后视为不可变历史，新增 / 变更一律使用 V2 及更高版本增量脚本
 
-## 表清单速览（24 张业务表）
+## 表清单速览（V1 基线 24 张，Phase 5 增加 5 张权限相关表）
 
 | 表 | 归属域 | 一句话职责 |
 | --- | --- | --- |
 | `user` / `oauth2_client` | 认证 | 用户账号；OAuth2 客户端凭证（Agent Client‑Credentials 模式） |
+| `platform_role` / `user_platform_role` | 认证 | 平台角色定义及用户平台角色绑定 |
 | `space` / `member` | 空间 | 工作空间；成员与角色（所有者 / 编辑者 / 观察者） |
+| `permission` / `space_role` / `space_role_permission` | 空间权限 | 权限标识符目录、空间角色及角色权限绑定 |
 | `document` / `document_version` / `change_request` | 文档 | 树形文档 + 正式 / 草稿双模式；版本快照；变更审批流 |
 | `model` | 模型 | 模型配置（厂商 / model_key / 预估价格 / 加密 API Key） |
 | `agent` | Agent | Agent 实例；系统提示词、执行限制与 `model_id` 关联模型 |
@@ -36,20 +38,22 @@
 ## 表分工
 
 1. **user / oauth2_client**：用户与 OAuth2 客户端凭证，Agent 使用 Client‑Credentials 模式鉴权。
-2. **space / member**：工作空间、空间成员角色（所有者 / 编辑者 / 观察者）。
-3. **document / document_version / change_request**：树形文档、正式 / 草稿双模式；文档版本快照；Agent 变更审批流。
-4. **model**：Agent Service 的模型配置，维护厂商、model_key、展示名、窗口大小、计价单价和加密 API Key（**仅预估，不作为结算依据**）。
-5. **agent**：Agent Service 中的 Agent 实例；保存系统提示词、执行限制和配置版本，`model_id` 关联 model 表（逻辑外键）。
-6. **task**：Agent 任务主表；三层 Token 预算（任务 / Agent / 空间）全部基于**Token 数量**做熔断；**熔断逻辑完全不依赖任何统计报表表**（计数来源见「开放问题」）。
-7. **token_usage_detail【真相源】**：每次 MCP 调用插入一条原始明细，保存 input/output/cached token、调用时间、model_id、预估费用；所有统计、重算全部以此表为准。
-8. **token_usage【历史日聚合表】**：每日凌晨定时聚合**昨日以及更早完整自然日**；用于前端 7/30 天消耗折线图；**不包含今日数据**；联合唯一索引 `dimension+obj_id+usage_date`。
-9. **token_daily_snapshot【当日快照表】**：存储当日统计快照；支持系统自动快照、用户手动异步触发快照；页面【今日消耗卡片】读取本表最新快照（同 `space_id + snapshot_date` 取 `created_at` 最大一条）；**只做 UI 展示，不用于业务熔断**。
-10. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
-11. **agent_execution**：保存一次 A2A 执行的配置快照、状态、结果摘要和 Token 用量，使用 `workbench_task_id` 保证幂等。
-12. **a2a_task_store / a2a_push_config**：由 agent-service 使用 AES-GCM 加密保存官方 A2A SDK 的任务和推送配置载荷，服务重启后可恢复协议状态。
-13. **skill / skill_version / agent_skill**：管理 Skill 稳定标识、不可变版本、对象存储信息和 Agent 绑定；执行时冻结实际候选与选择结果。
-14. **mcp_server / agent_mcp_binding**：管理空间级外部 MCP、加密认证令牌、配置版本和 Agent 绑定白名单。
-15. **agent_execution_model_call / agent_execution_tool_call**：按执行内序号保存模型和工具调用状态、耗时、哈希与字节数，不保存 Prompt、响应、工具参数、结果或密钥明文。
+2. **platform_role / user_platform_role**：平台级角色及用户绑定；当前用于平台超级管理员，不写入 Space 成员关系。
+3. **space / member / space_role / space_role_permission**：工作空间、成员角色、角色权限绑定；每个 Space 默认创建 OWNER、EDITOR、VIEWER，只有 OWNER 受保护。
+4. **permission**：全局权限标识符目录；权限码由后端协议和迁移脚本固化，空间角色引用已有权限码。
+5. **document / document_version / change_request**：树形文档、正式 / 草稿双模式；文档版本快照；Agent 变更审批流。
+6. **model**：Agent Service 的模型配置，维护厂商、model_key、展示名、窗口大小、计价单价和加密 API Key（**仅预估，不作为结算依据**）。
+7. **agent**：Agent Service 中的 Agent 实例；保存系统提示词、执行限制和配置版本，`model_id` 关联 model 表（逻辑外键）。
+8. **task**：Agent 任务主表；三层 Token 预算（任务 / Agent / 空间）全部基于**Token 数量**做熔断；**熔断逻辑完全不依赖任何统计报表表**（计数来源见「开放问题」）。
+9. **token_usage_detail【真相源】**：每次 MCP 调用插入一条原始明细，保存 input/output/cached token、调用时间、model_id、预估费用；所有统计、重算全部以此表为准。
+10. **token_usage【历史日聚合表】**：每日凌晨定时聚合**昨日以及更早完整自然日**；用于前端 7/30 天消耗折线图；**不包含今日数据**；联合唯一索引 `dimension+obj_id+usage_date`。
+11. **token_daily_snapshot【当日快照表】**：存储当日统计快照；支持系统自动快照、用户手动异步触发快照；页面【今日消耗卡片】读取本表最新快照（同 `space_id + snapshot_date` 取 `created_at` 最大一条）；**只做 UI 展示，不用于业务熔断**。
+12. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
+13. **agent_execution**：保存一次 A2A 执行的配置快照、状态、结果摘要和 Token 用量，使用 `workbench_task_id` 保证幂等。
+14. **a2a_task_store / a2a_push_config**：由 agent-service 使用 AES-GCM 加密保存官方 A2A SDK 的任务和推送配置载荷，服务重启后可恢复协议状态。
+15. **skill / skill_version / agent_skill**：管理 Skill 稳定标识、不可变版本、对象存储信息和 Agent 绑定；执行时冻结实际候选与选择结果。
+16. **mcp_server / agent_mcp_binding**：管理空间级外部 MCP、加密认证令牌、配置版本和 Agent 绑定白名单。
+17. **agent_execution_model_call / agent_execution_tool_call**：按执行内序号保存模型和工具调用状态、耗时、哈希与字节数，不保存 Prompt、响应、工具参数、结果或密钥明文。
 
 ## model 表对业务数据渲染的影响
 
