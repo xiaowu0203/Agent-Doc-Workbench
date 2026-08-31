@@ -36,8 +36,9 @@ public class SpaceRoleController {
     private final SpaceRoleService spaceRoleService;
 
     @Operation(summary = "查询空间权限目录")
-    @GetMapping("/permissions")
-    public Result<List<PermissionVO>> listPermissions() {
+    @GetMapping("/spaces/{spaceId}/permissions")
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.ROLE_READ + "')")
+    public Result<List<PermissionVO>> listPermissions(@PathVariable Long spaceId) {
         return Result.ok(spaceRoleService.listPermissions());
     }
 

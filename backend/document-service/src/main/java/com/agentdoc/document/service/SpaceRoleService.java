@@ -29,24 +29,6 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.AUDIT_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_APPROVE;
-import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_MERGE;
-import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_SUBMIT;
-import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_CREATE;
-import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT;
-import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.MCP_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.ROLE_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.SPACE_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
-import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
-import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
-import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
 import static com.agentdoc.document.constant.DefaultSpaceRoleConstant.EDITOR;
 import static com.agentdoc.document.constant.DefaultSpaceRoleConstant.OWNER;
 import static com.agentdoc.document.constant.DefaultSpaceRoleConstant.VIEWER;
@@ -78,11 +60,8 @@ public class SpaceRoleService {
      * 获取系统全部可用权限列表
      *
      * @return 权限VO有序列表，按sortOrder排序
-     * @throws BusinessException 未登录
      */
     public List<PermissionVO> listPermissions() {
-        // 校验当前用户ID
-        AuthUtils.getUserIdOrException();
         return permissionMapper.selectList(new LambdaQueryWrapper<PermissionEntity>()
                         .orderByAsc(PermissionEntity::getSortOrder))
                 .stream()
@@ -351,9 +330,13 @@ public class SpaceRoleService {
      * @param permissionCodes 权限编码集合
      */
     private void insertPermissions(Long roleId, Collection<String> permissionCodes) {
-        for (String permissionCode : permissionCodes) {
-            rolePermissionMapper.insert(SpaceRolePermissionEntity.of(roleId, permissionCode));
+        if (permissionCodes.isEmpty()) {
+            return;
         }
+        List<SpaceRolePermissionEntity> entities = permissionCodes.stream()
+                .map(permissionCode -> SpaceRolePermissionEntity.of(roleId, permissionCode))
+                .toList();
+        rolePermissionMapper.insertBatch(entities);
     }
 
     /**
