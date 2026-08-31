@@ -4,6 +4,8 @@
 
 当前 V0.1 采用手动触发模式：用户创建任务时明确选择一个 Agent；一个任务只由一个 Agent 执行。多个 Agent 的自动规划与编排属于后续演进范围。
 
+任务创建使用用户 Access Token。接口入口由 Controller 的 `@PreAuthorize` 声明所需空间权限，业务层继续校验空间成员、Agent 归属、文档范围和预算；任务启动后再签发独立的 Task Capability JWT。用户 JWT 的平台角色不会替代任务能力令牌，Agent 也不会继承用户的空间权限。
+
 ## 1. Agent 任务完整执行流程
 
 ```mermaid
