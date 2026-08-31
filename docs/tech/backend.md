@@ -63,8 +63,8 @@
 ```plaintext
 backend/
 ├── gateway‑service       # Gateway、鉴权入口、路由、限流
-├── auth‑service          # 用户、OAuth2、JWT、客户端管理
-├── document‑service      # 空间、目录、文档、版本、Diff
+├── auth‑service          # 用户、OAuth2、JWT、客户端管理、平台角色管理
+├── document‑service      # 空间、成员、空间角色、目录、文档、版本、Diff
 ├── task‑service          # 任务编排、A2A Client、Workbench MCP Server、审批、Token、RabbitMQ消费
 ├── agent‑service         # Agent/Model配置、A2A Server、Spring AI Runtime、MCP Client
 └── common                # Maven聚合Pom工程
@@ -86,6 +86,13 @@ backend/
 5. `agent‑service`
 
 `agent‑service` 是独立的 Agent 运行中心；`audit` 仍归 task-service 负责。
+
+### 当前权限实现（Phase 5）
+
+- `auth-service` 维护平台角色及用户平台角色绑定，并提供 `/api/platform/roles` 的列表、详情、创建、修改和删除接口。接口统一要求 `PLATFORM_SUPER_ADMIN`；该角色由数据库初始化，受保护角色不可通过接口修改或删除。
+- `document-service` 维护空间成员、空间角色和权限标识符。每个空间默认创建 `OWNER`、`EDITOR`、`VIEWER`，只有 `OWNER` 受保护；`VIEWER` 默认不能查看成员和角色。
+- 业务 Controller 使用 Spring Security `@PreAuthorize` 声明接口入口权限，`SpacePermissionService` 负责当前用户的平台超级管理员特例、空间成员关系和权限标识符判定；Service 保留业务规则与事务边界。
+- 平台超级管理员不是所有空间写操作的替代授权。除平台管理接口和约定的跨空间读取能力外，空间写入仍须满足对应空间权限。
 
 ### 线程模型约束
 

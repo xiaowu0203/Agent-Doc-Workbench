@@ -8,7 +8,7 @@
 
 | 令牌 | 签发位置 | 主要使用者 | 核心标识 |
 | --- | --- | --- | --- |
-| 用户 Access JWT | `auth-service` 的 `JwtService.createAccessToken` | 浏览器和普通业务 API | `scope=user`、`sub=userId` |
+| 用户 Access JWT | `auth-service` 的 `JwtService.createAccessToken` | 浏览器和普通业务 API | `scope=user`、`sub=userId`、`platformRoles` |
 | Task Capability JWT | `auth-service` 的 `JwtService.createTaskCapabilityToken` | 异步任务、A2A、MCP | `scope=agent`、`actorType=AGENT`、`taskId`、`agentId`、`spaceId`、`documentId`、`agentActions` |
 
 两类 JWT 共用 Auth-Service 的 RSA 私钥和 JWKS 公钥，但用途和业务语义不同。`Refresh Token` 是 Redis 中维护的随机不透明字符串，不是 JWT，不进行 JWT 签名验签。
@@ -66,7 +66,8 @@ sequenceDiagram
     Note over G: 登录接口在 Gateway 白名单中，不验 Access JWT
     G->>A: 转发登录请求
     A->>A: 校验用户名和密码
-    A->>A: JwtService.createAccessToken(user)
+    A->>A: 查询用户平台角色
+    A->>A: JwtService.createAccessToken(user, platformRoles)
     A->>A: JwtService.createRefreshToken()
     A->>R: 保存 refreshToken -> userId
     A-->>U: accessToken + refreshToken
@@ -106,8 +107,9 @@ sequenceDiagram
         RS->>S: 创建 JwtAuthenticationToken
         RS->>S: 写入 SecurityContextHolder
         S->>P: 检查 @RequireLogin
-        P->>B: 进入业务逻辑
-        B->>B: 空间角色 / 资源归属等业务授权
+        S->>S: Controller @PreAuthorize 进入接口权限判定
+        S->>B: SpacePermissionService 校验空间角色 / 平台角色
+        B->>B: 执行业务规则和资源归属校验
     end
 ```
 
@@ -128,6 +130,8 @@ common-security-spring-boot-starter
 - 根据 `SecurityContext` 检查登录：`backend/common/common-web-spring-boot-starter/.../security/PermissionInterceptor.java:60`
 - 从 `SecurityContext` 读取用户 ID：`backend/common/common-core/.../utils/AuthUtils.java:32`
 
+用户 JWT 还包含 `platformRoles`。平台角色管理接口 `/api/platform/roles` 仅允许 `PLATFORM_SUPER_ADMIN`；平台角色不会替代空间成员关系，空间写操作仍须满足对应空间权限。平台角色变更通常在重新登录或刷新令牌后反映到 JWT 声明。
+
 `task-service`、`document-service`、`agent-service` 通过以下配置开启这套能力：
 
 ```yaml
@@ -137,6 +141,8 @@ agent-doc:
 ```
 
 `auth-service` 使用自己的 `SecurityConfig` 配置 Resource Server，位置是 `backend/auth-service/.../config/SecurityConfig.java:61` 和 `:99`。
+
+`common-security-spring-boot-starter` 默认通过 `@EnableMethodSecurity` 开启方法级安全；Auth Service 自定义 `SecurityConfig` 时也显式开启该能力。平台角色来自用户 JWT 的 `platformRoles` 声明，空间权限仍以 `document-service` 的成员关系和权限标识符为准。
 
 ### 3.3 `/me` 和 `/logout`
 
@@ -261,8 +267,8 @@ flowchart TD
 
 | 场景 | 基础 JWT 验签 | Agent 令牌校验 | 业务授权 |
 | --- | --- | --- | --- |
-| 普通用户 API，经 Gateway | Gateway Filter + 下游 Resource Server | 不适用 | `@RequireLogin`、空间/资源权限 |
-| 普通用户 API，直连业务服务 | 下游 Resource Server | 不适用 | `PermissionInterceptor` 和业务 Service |
+| 普通用户 API，经 Gateway | Gateway Filter + 下游 Resource Server | 不适用 | `@RequireLogin`、Controller `@PreAuthorize`、空间/资源权限 |
+| 普通用户 API，直连业务服务 | 下游 Resource Server | 不适用 | `PermissionInterceptor`、Controller `@PreAuthorize` 和业务 Service |
 | A2A `/a2a/**` | Gateway（仅经 Gateway 时）+ 下游 Resource Server | `TaskCapabilityAuthenticationFilter` | `A2aRequestAuthorizationService` |
 | MCP `/mcp/**` | Gateway（仅经 Gateway 时）+ 下游 Resource Server | `TaskCapabilityAuthenticationFilter` | `McpTaskScopeService` |
 | `X-Task-Capability` 内部 HTTP 请求 | 下游 Resource Server 只处理 Authorization；Capability 由任务 Filter 处理 | `TaskCapabilityAuthenticationFilter` | Task / 文档业务服务 |
@@ -310,6 +316,7 @@ JWT 验签成功并不代表业务操作一定被允许。
 5. A2A 回调使用 `X-A2A-Notification-Token`，当前由 `A2aCallbackService` 手动验签，不经过 `TaskCapabilityAuthenticationFilter`。
 6. MQ 只传递 `taskId`，不会自动传递 Web 请求上下文；Capability 由消费者从数据库解密后用于 A2A 调用。
 7. `/api/auth/logout` 是白名单接口，实际执行的是 Refresh Token 撤销，不是 Access JWT 验签。
+8. 方法级安全由 `@EnableMethodSecurity` 开启；Controller 注解是接口权限入口，Service 仍负责事务和业务规则。
 
 ## 9. 关键代码索引
 

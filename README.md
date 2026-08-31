@@ -3,14 +3,14 @@
 > 面向个人/小团队的 Agent 活文档协作开源 Web 工作台
 > 文档，作为 AI Agent 任务的唯一协作载体。
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%204%20completed-brightgreen)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%205%20completed-brightgreen)
 
 [English](./README.en.md) | 简体中文
 
 **仓库**
 - Gitee：https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub：https://github.com/xiaowu0203/Agent-Doc-Workbench
-- 分支：main（稳定）· 当前交付：Phase 4 已完成 · 下一阶段：Phase 5 细粒度权限
+- 分支：main（稳定）· 当前交付：Phase 5 已完成 · 下一阶段：Phase 6 前端权限页面
 
 ---
 
@@ -31,6 +31,7 @@ Agent-Doc-Workbench 把「文档」作为 Agent 任务的协作载体，让每�
 - **Agent 权限管控**：任务级 Capability 绑定空间、文档和动作，Agent 不直接继承用户权限
 - **全链路审计日志**：操作主体（人/Agent）、操作类型、关联任务，日志不可篡改
 - **版本快照与回滚**：每次合并变更自动生成版本，一键回滚任意历史版本
+- **平台角色与空间 RBAC**：平台超级管理员管理平台角色，空间通过 `OWNER / EDITOR / VIEWER` 和权限标识符控制成员操作
 
 ## UI 效果图
 
@@ -80,12 +81,13 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 2 | 文档核心：空间 / 文档 / 版本 / Diff 审批 | ✅ 已完成并合并入 main（2026-08-23） |
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | ✅ 已完成并合并入 main（2026-08-26） |
 | Phase 4 | Skill 管理、渐进式加载、外部多 MCP 与执行审计 | ✅ 已完成（2026-08-31） |
+| Phase 5 | 平台角色、空间 RBAC、权限标识符和接口权限校验 | ✅ 已完成（2026-08-31） |
 
 架构设计文档见下方“文档导航”；阶段交接材料仅保留在本地工作区。
 
 ## 快速开始
 
-> Phase 0-4 已完成；下一阶段为 Phase 5 细粒度权限。
+> Phase 0-5 已完成；下一阶段为 Phase 6 前端权限页面与核心业务接入。
 
 ```bash
 # 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Nacos）
@@ -115,8 +117,8 @@ pnpm dev
 | Phase 2 | 文档核心：空间/文档/版本/Diff | 已完成并合并 |
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | 已完成 |
 | Phase 4 | Skill 管理：目录包、版本、Agent 绑定、渐进式加载与外部 MCP | 已完成 |
-| Phase 5 | 细粒度权限：角色绑定权限标识符、接口权限校验 | 待启动 |
-| Phase 6 | 前端：核心业务、Skill、角色与权限管理页面 | 待启动 |
+| Phase 5 | 平台角色、空间 RBAC、角色绑定权限标识符、接口权限校验 | 已完成 |
+| Phase 6 | 前端：核心业务、Skill、角色与权限管理页面 | 规划中 |
 | Phase 7 | 闭环联调与测试 | 待启动 |
 | Phase 8 | 开源发布准备 | 待启动 |
 

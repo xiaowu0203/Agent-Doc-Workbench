@@ -9,7 +9,8 @@
   → 返回 Access Token + Refresh Token
   → 携带 Access Token 调用 Gateway
   → Gateway 校验 JWT → 路由到业务服务
-  → 业务服务再次校验 JWT
+  → 业务服务 Resource Server 再次校验 JWT
+  → Controller 的 @PreAuthorize 校验接口权限
 ```
 
 ## 外部 Agent 接入流程（Client Credentials）
@@ -49,12 +50,18 @@
 | 维度 | 说明 |
 | ---- | ---- |
 | scope | JWT 内置 scope 声明，控制基础权限范围 |
-| 平台角色 | 平台级角色，例如 `PLATFORM_SUPER_ADMIN`；不写入空间成员关系 |
+| 平台角色 | 平台级角色，例如 `PLATFORM_SUPER_ADMIN`；写入用户 JWT 的 `platformRoles`，不写入空间成员关系 |
 | 空间角色 | 绑定到具体 Space 的 `OWNER / EDITOR / VIEWER` 或自定义角色；通过权限标识符授权 |
 | 空间成员关系 | 用户通过 `member.role_id` 绑定某个 Space 的角色，才能操作该空间下的资源 |
 | Agent 范围白名单 | Agent 不直接拥有用户权限，必须绑定空间、文档范围和工具白名单 |
 
 平台角色管理接口位于 Auth Service 的 `/api/platform/roles`，列表、详情、创建、修改和删除均要求 `PLATFORM_SUPER_ADMIN`。平台超级管理员角色由数据库初始化并保持受保护，首次将用户绑定为平台超级管理员也通过数据库完成。
+
+## 方法级权限入口
+
+业务服务通过 Spring Security `@EnableMethodSecurity` 启用 `@PreAuthorize`。Controller 负责声明接口所需的权限标识符，例如空间角色读取使用 `role:read`，角色维护使用 `role:manage`；`/api/document/spaces/{spaceId}/permissions` 是按空间权限保护的权限目录接口。注解只负责进入权限判定，空间成员、角色绑定和平台超级管理员特例由 `SpacePermissionService` 统一判断。
+
+平台超级管理员可用于平台角色管理及约定的跨空间读取场景，但不会自动获得所有空间的写权限；空间写入仍需满足对应空间权限。
 
 ## 有关 Agent 的权限约束
 

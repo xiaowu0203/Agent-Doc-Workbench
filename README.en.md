@@ -3,14 +3,14 @@
 > An open-source, lightweight web workbench for AI-agent-powered document collaboration, built for individuals and small teams.
 > Documents as the single collaboration vehicle for AI Agent tasks.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%204%20completed-brightgreen)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%205%20completed-brightgreen)
 
 English | [简体中文](./README.md)
 
 **Repository**
 - Gitee: https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub: https://github.com/xiaowu0203/Agent-Doc-Workbench
-- Branches: main (stable) · current delivery: Phase 4 completed · next: Phase 5 fine-grained permissions
+- Branches: main (stable) · current delivery: Phase 5 completed · next: Phase 6 frontend permission pages
 
 ---
 
@@ -31,6 +31,7 @@ Agent-Doc-Workbench treats **documents** as the collaboration carrier for Agent 
 - **Agent permission control**: task capabilities bind workspace, document, and actions; Agents never inherit user permissions
 - **End-to-end audit log**: operator (human/Agent), operation type, linked task — immutable and traceable
 - **Version snapshots & rollback**: every merged change generates a version; one-click rollback to any historical version
+- **Platform roles and workspace RBAC**: platform administrators manage platform roles, while workspaces use `OWNER / EDITOR / VIEWER` and permission identifiers for member access
 
 ## UI Mockups
 
@@ -80,12 +81,13 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 2 | Document core: spaces/documents/versions/Diff approval | ✅ Completed and merged into main (2026-08-23) |
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | ✅ Completed and merged into main (2026-08-26) |
 | Phase 4 | Skill management, progressive loading, external MCP servers, and execution auditing | ✅ Completed (2026-08-31) |
+| Phase 5 | Platform roles, workspace RBAC, permission identifiers, and API authorization | ✅ Completed (2026-08-31) |
 
 Architecture documents are listed below; phase handoff materials remain local to the workspace.
 
 ## Getting Started
 
-> Phase 0-4 are complete. Phase 5 will add fine-grained permissions.
+> Phase 0-5 are complete. Phase 6 will integrate frontend permission pages and core business flows.
 
 ```bash
 # 1. Start infrastructure (MySQL / Redis / RabbitMQ / MinIO / Nacos)
@@ -115,8 +117,8 @@ Frontend variables are documented in `frontend/.env.example`; infrastructure and
 | Phase 2 | Document core: spaces/documents/versions/Diff | Completed and merged |
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | Completed and merged |
 | Phase 4 | Skill management: packages, versions, Agent binding, progressive loading, and external MCP | Completed |
-| Phase 5 | Fine-grained permissions: role-permission mapping and API authorization | Planned |
-| Phase 6 | Frontend: core business, Skill, role, and permission pages | Planned |
+| Phase 5 | Platform roles, workspace RBAC, role-permission mapping, and API authorization | Completed |
+| Phase 6 | Frontend: core business, Skill, role, and permission pages | In progress |
 | Phase 7 | Full-loop integration and testing | Planned |
 | Phase 8 | Open-source release preparation | Planned |
 

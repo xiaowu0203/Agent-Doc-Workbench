@@ -26,7 +26,7 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 │   ├── handler/       GlobalExceptionHandler
 │   ├── web/           TraceIdFilter
 │   └── security/      PermissionInterceptor（@RequireLogin 注解驱动，检查 SecurityContext）
-├── common-security-spring-boot-starter/ # 安全自动装配（JWT Resource Server、任务能力 JWT 验签与过滤器）
+├── common-security-spring-boot-starter/ # 安全自动装配（JWT Resource Server、方法级安全、任务能力 JWT 验签与过滤器）
 │   ├── config/        CommonSecurityAutoConfiguration / TaskCapabilitySecurityAutoConfiguration
 │   │                  SecurityVerifyProperties
 │   └── security/      TaskCapabilityVerifier / TaskCapabilityAuthenticationFilter
@@ -54,12 +54,13 @@ backend/common/                        # 聚合 POM（com.agentdoc:agent-doc-com
 
 | 基类 | 字段 | 适用 |
 | --- | --- | --- |
-| `BaseEntity` | id（@TableId ASSIGN_ID）+ createdAt | 全部 14 张表 |
+| `BaseEntity` | id（@TableId ASSIGN_ID）+ createdAt | 无 updated_at/deleted 的流水、日志及基础表 |
 | `BaseLogicDeleteEntity extends BaseEntity` | + updatedAt + @TableLogic deleted | 9 张常规业务表 |
 
 - `TokenUsageEntity` / `AuditLogEntity`（流水/日志表，无 deleted/updated_at）→ 继承 `BaseEntity`
-- `token_usage_detail` / `token_daily_snapshot`（V2 新增流水表，无 deleted/updated_at）→ 继承 `BaseEntity`（Phase 2 建实体）
-- `model`（V2 新增，含 updated_at/deleted）→ 继承 `BaseLogicDeleteEntity`（Phase 2 建实体）
+- `token_usage_detail` / `token_daily_snapshot`（V1 基线中的流水表，无 deleted/updated_at）→ 继承 `BaseEntity`
+- `model`（V1 基线中的模型表，含 updated_at/deleted）→ 继承 `BaseLogicDeleteEntity`
+- Phase 5 的平台角色、用户平台角色绑定、权限目录、空间角色和角色权限表沿用两层基类，不改变 common 的领域边界。
 - `DocumentVersionEntity`（无 updated_at）→ 继承 `BaseEntity` + 自持 `@TableLogic deleted`
 - 逻辑删除/雪花 ID 由字段注解承担，无需 yml 全局配置
 
