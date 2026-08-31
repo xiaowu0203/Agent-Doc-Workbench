@@ -1,9 +1,13 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.common.enums.SpaceRole;
+import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.document.mapper.MemberMapper;
+import com.agentdoc.document.mapper.PermissionMapper;
+import com.agentdoc.document.mapper.SpaceRoleMapper;
+import com.agentdoc.document.mapper.SpaceRolePermissionMapper;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.AfterEach;
@@ -16,36 +20,49 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import java.util.List;
+
+import static com.agentdoc.common.constant.JwtConstant.CLAIM_PLATFORM_ROLES;
+import static com.agentdoc.common.constant.JwtConstant.CLAIM_SCOPE;
+import static com.agentdoc.common.constant.JwtConstant.SCOPE_USER;
+import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_MANAGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
- * {@link SpacePermissionService} 单元测试：空间成员角色校验逻辑。
+ * {@link SpacePermissionService} 核心权限回归测试。
  */
 @ExtendWith(MockitoExtension.class)
 class SpacePermissionServiceTest {
 
     private static final long USER_ID = 1001L;
     private static final long SPACE_ID = 2001L;
+    private static final long ROLE_ID = 3001L;
 
     @Mock
     private MemberMapper memberMapper;
+    @Mock
+    private SpaceRoleMapper spaceRoleMapper;
+    @Mock
+    private SpaceRolePermissionMapper rolePermissionMapper;
+    @Mock
+    private PermissionMapper permissionMapper;
+    @Mock
+    private AuthFeign authFeign;
 
     private SpacePermissionService permissionService;
 
     @BeforeEach
     void setUp() {
-        permissionService = new SpacePermissionService(memberMapper, null, null, null);
-        // 模拟已登录：SecurityContext 放入以 Jwt 为 principal 的认证信息
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "RS256")
-                .subject(String.valueOf(USER_ID))
-                .claim("username", "tester")
-                .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        permissionService = new SpacePermissionService(memberMapper, spaceRoleMapper,
+                rolePermissionMapper, permissionMapper, authFeign, null, null, null);
+        login(List.of());
     }
 
     @AfterEach
@@ -53,57 +70,51 @@ class SpacePermissionServiceTest {
         SecurityContextHolder.clearContext();
     }
 
-    /** 构造指定角色的成员实体 */
-    private MemberEntity member(SpaceRole role) {
-        MemberEntity entity = new MemberEntity();
-        entity.setSpaceId(SPACE_ID);
-        entity.setUserId(USER_ID);
-        entity.setRole(role.getCode());
-        return entity;
+    @Test
+    void shouldAllowSkillManageWithoutOwnerWhenRoleHasPermission() {
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        when(rolePermissionMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+
+        assertTrue(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
+        permissionService.requirePermission(SPACE_ID, SKILL_MANAGE);
     }
 
     @Test
-    void shouldReturnNullRoleWhenNotMember() {
+    void shouldRejectSkillManageWhenRoleDoesNotHavePermission() {
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        when(rolePermissionMapper.selectCount(any(Wrapper.class))).thenReturn(0L);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> permissionService.requirePermission(SPACE_ID, SKILL_MANAGE));
+
+        assertEquals(ErrorCode.FORBIDDEN.getCode(), exception.getCode());
+    }
+
+    @Test
+    void platformSuperAdminShouldOnlyBypassCrossSpaceRead() {
+        login(List.of(SUPER_ADMIN));
+        when(authFeign.checkPlatformRole(SUPER_ADMIN)).thenReturn(Result.ok());
         when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        assertNull(permissionService.getRole(SPACE_ID, USER_ID));
+
+        assertTrue(permissionService.hasPermission(SPACE_ID, SKILL_READ));
+        assertFalse(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
     }
 
-    @Test
-    void shouldReturnRoleWhenMember() {
-        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member(SpaceRole.EDITOR));
-        assertEquals(SpaceRole.EDITOR, permissionService.getRole(SPACE_ID, USER_ID));
+    private MemberEntity member() {
+        MemberEntity member = new MemberEntity();
+        member.setSpaceId(SPACE_ID);
+        member.setUserId(USER_ID);
+        member.setRoleId(ROLE_ID);
+        return member;
     }
 
-    @Test
-    void shouldRejectNonMemberWithForbidden() {
-        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> permissionService.requireMember(SPACE_ID));
-        assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
-    }
-
-    @Test
-    void shouldRejectWhenRoleBelowRequired() {
-        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member(SpaceRole.VIEWER));
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> permissionService.requireRole(SPACE_ID, SpaceRole.EDITOR));
-        assertEquals(ErrorCode.FORBIDDEN.getCode(), ex.getCode());
-    }
-
-    @Test
-    void shouldPassWhenRoleMeetsRequired() {
-        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member(SpaceRole.OWNER));
-        assertEquals(SpaceRole.OWNER, permissionService.requireRole(SPACE_ID, SpaceRole.EDITOR));
-        // EDITOR 满足 VIEWER 要求
-        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member(SpaceRole.EDITOR));
-        assertEquals(SpaceRole.EDITOR, permissionService.requireRole(SPACE_ID, SpaceRole.VIEWER));
-    }
-
-    @Test
-    void shouldRejectWhenNotLoggedIn() {
-        SecurityContextHolder.clearContext();
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> permissionService.requireMember(SPACE_ID));
-        assertEquals(ErrorCode.UNAUTHORIZED.getCode(), ex.getCode());
+    private void login(List<String> platformRoles) {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .subject(String.valueOf(USER_ID))
+                .claim(CLAIM_SCOPE, SCOPE_USER)
+                .claim(CLAIM_PLATFORM_ROLES, platformRoles)
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
     }
 }

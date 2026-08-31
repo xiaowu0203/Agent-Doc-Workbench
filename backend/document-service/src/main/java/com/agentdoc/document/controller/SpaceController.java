@@ -6,12 +6,14 @@ import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.document.pojo.dto.SpaceCreateDTO;
 import com.agentdoc.document.pojo.dto.SpaceUpdateDTO;
 import com.agentdoc.document.pojo.vo.SpaceVO;
+import com.agentdoc.document.pojo.vo.EffectivePermissionVO;
 import com.agentdoc.document.service.SpaceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -48,31 +50,42 @@ public class SpaceController {
 
     @Operation(summary = "空间详情")
     @GetMapping("/{id}")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.SPACE_READ + "')")
     public Result<SpaceVO> detail(@PathVariable Long id) {
         return Result.ok(spaceService.detail(id));
     }
 
-    @Operation(summary = "更新空间（OWNER 权限）")
+    @Operation(summary = "更新空间（space:manage）")
     @PutMapping("/{id}")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.SPACE_MANAGE + "')")
     public Result<SpaceVO> update(@PathVariable Long id, @Valid @RequestBody SpaceUpdateDTO dto) {
         return Result.ok(spaceService.update(id, dto));
     }
 
-    @Operation(summary = "校验当前用户空间角色（服务间调用）")
+    @Operation(summary = "校验当前用户空间权限（服务间调用）")
     @GetMapping("/{id}/permission")
-    public Result<Void> checkPermission(@PathVariable Long id, @RequestParam Integer minRole) {
-        spaceService.requireRole(id, minRole);
+    public Result<Void> checkPermission(@PathVariable Long id, @RequestParam String permissionCode) {
+        spaceService.requirePermission(id, permissionCode);
         return Result.ok();
+    }
+
+    @Operation(summary = "查询当前用户在空间中的有效权限")
+    @GetMapping("/{id}/me/permissions")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.SPACE_READ + "')")
+    public Result<EffectivePermissionVO> effectivePermissions(@PathVariable Long id) {
+        return Result.ok(spaceService.getEffectivePermissions(id));
     }
 
     @Operation(summary = "查询空间 Agent 执行预算")
     @GetMapping("/{id}/execution-budget")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE + "')")
     public Result<SpaceBudgetVO> executionBudget(@PathVariable Long id) {
         return Result.ok(spaceService.getExecutionBudget(id));
     }
 
-    @Operation(summary = "删除空间（OWNER 权限）：逻辑删除空间及其成员")
+    @Operation(summary = "删除空间（space:delete）：逻辑删除空间及其成员")
     @DeleteMapping("/{id}")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.SPACE_DELETE + "')")
     public Result<Void> delete(@PathVariable Long id) {
         spaceService.delete(id);
         return Result.ok();

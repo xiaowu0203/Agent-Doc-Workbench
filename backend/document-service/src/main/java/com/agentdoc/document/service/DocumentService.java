@@ -4,7 +4,6 @@ import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
@@ -40,6 +39,11 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_MERGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
+
 /**
  * 文档服务
  * 能力：文档CRUD、树形目录构建、草稿/正式双模式、文档移动、归档/恢复、回收站、版本快照、版本回滚
@@ -66,8 +70,6 @@ public class DocumentService {
     public DocumentVO create(DocumentCreateDTO dto) {
         // 获取当前登录用户ID，未登录直接抛出异常
         Long userId = permissionService.requireUserId();
-        // 校验当前用户在该空间具备EDITOR及以上权限
-        permissionService.requireRole(dto.spaceId(), SpaceRole.EDITOR);
         // 校验父目录合法性：同空间、父ID对应的文档存在
         validateParent(dto.spaceId(), dto.parentId());
         // DTO转数据库实体，设置创建人
@@ -85,8 +87,6 @@ public class DocumentService {
      * @return 树形节点集合，返回所有一级根节点，节点内部携带children子节点
      */
     public List<DocumentTreeNodeVO> listTree(Long spaceId) {
-        // 校验用户属于该空间成员
-        permissionService.requireMember(spaceId);
         // 查询该空间下所有正常状态文档，按创建时间升序
         List<DocumentEntity> docs = documentMapper.selectList(new LambdaQueryWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getSpaceId, spaceId)
@@ -138,7 +138,7 @@ public class DocumentService {
             permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
                     JwtConstant.ACTION_READ_FRAGMENT);
         } else {
-            permissionService.requireMember(doc.getSpaceId());
+            permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
         }
         return doc.toDetailVO();
     }
@@ -157,7 +157,7 @@ public class DocumentService {
         // 校验文档存在
         DocumentEntity doc = requireDoc(id);
         // 校验编辑权限
-        permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_EDIT);
         Long userId = permissionService.requireUserId();
 
         // 更新前旧的文档正文，用于判断内容是否发生改变
@@ -187,7 +187,7 @@ public class DocumentService {
         // 校验文档存在
         DocumentEntity doc = requireDoc(id);
         // 校验编辑权限
-        permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_EDIT);
         // 获取新的父节点ID
         Long newParentId = dto.parentId();
 
@@ -225,7 +225,7 @@ public class DocumentService {
         // 校验文档必须存在，不存在抛404
         DocumentEntity doc = requireDoc(id);
         // 校验编辑权限
-        permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_EDIT);
         // 修改状态为归档（回收站）
         doc.setStatus(DocStatus.ARCHIVED.getCode());
         // 设置更新人
@@ -244,7 +244,7 @@ public class DocumentService {
         // 校验文档必须存在，不存在抛404
         DocumentEntity doc = requireDoc(id);
         // 校验编辑权限
-        permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_EDIT);
         // 修改状态为正常
         doc.setStatus(DocStatus.NORMAL.getCode());
         doc.setUpdatedBy(permissionService.requireUserId());
@@ -261,7 +261,7 @@ public class DocumentService {
      */
     public PageVO<DocumentVO> trashList(Long spaceId, PageParam pageParam) {
         // 校验编辑权限
-        permissionService.requireRole(spaceId, SpaceRole.EDITOR);
+        permissionService.requirePermission(spaceId, DOCUMENT_READ);
         // 分页查询归档文档
         Page<DocumentEntity> page = documentMapper.selectPage(
                 PageUtils.toPage(pageParam),
@@ -288,7 +288,7 @@ public class DocumentService {
         // 校验文档必须存在，不存在抛404
         DocumentEntity doc = requireDoc(id);
         // 校验编辑权限
-        permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_EDIT);
         // 获取当前用户ID
         Long userId = permissionService.requireUserId();
         // 获取目标历史版本快照，不存在抛异常
@@ -379,7 +379,7 @@ public class DocumentService {
     public MergeResultVO mergeForFeign(MergeRequestDTO request) {
         DocumentEntity doc = requireDoc(request.documentId());
         // 合并操作等同于编辑文档，需要EDITOR权限
-        permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+        permissionService.requirePermission(doc.getSpaceId(), CHANGE_REQUEST_MERGE);
         Long operatorId = permissionService.requireUserId();
         // 并发保护：客户端传入的基线版本号必须等于数据库当前版本，否则拒绝合并，防止覆盖别人编辑内容
         if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
@@ -437,7 +437,14 @@ public class DocumentService {
      */
     public DocumentFragmentVO readFragment(Long id, long start, int length) {
         DocumentEntity doc = requireDoc(id);
-        permissionService.requireMember(doc.getSpaceId());
+        // 若为Agent发起的请求，则按【校验 Agent 任务能力令牌、操作权限】
+        if (AuthUtils.isAgent()) {
+            permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
+                    JwtConstant.ACTION_READ_FRAGMENT);
+        } else {
+            // 若为普通用户发起的请求，则校验用户是否拥有该空间的查看权限
+            permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
+        }
         String content = doc.getContent() == null ? "" : doc.getContent();
         long total = content.length();
 
@@ -461,7 +468,7 @@ public class DocumentService {
                     JwtConstant.ACTION_READ_FRAGMENT);
         } else {
             // 校验编辑权限
-            permissionService.requireRole(doc.getSpaceId(), SpaceRole.EDITOR);
+            permissionService.requirePermission(doc.getSpaceId(), TASK_CREATE);
         }
         return doc.toExecutionContextVO();
     }
@@ -509,7 +516,12 @@ public class DocumentService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        return documentMapper.selectBatchIds(ids).stream()
+        List<DocumentEntity> documents = documentMapper.selectBatchIds(ids);
+        documents.stream()
+                .map(DocumentEntity::getSpaceId)
+                .distinct()
+                .forEach(spaceId -> permissionService.requirePermission(spaceId, DOCUMENT_READ));
+        return documents.stream()
                 .map(DocumentEntity::toRefVO)
                 .toList();
     }
@@ -522,7 +534,7 @@ public class DocumentService {
      * @return 该空间下所有文档主键ID列表
      */
     public List<Long> listIdsBySpace(Long spaceId) {
-        permissionService.requireMember(spaceId);
+        permissionService.requirePermission(spaceId, DOCUMENT_READ);
         return documentMapper.selectList(new LambdaQueryWrapper<DocumentEntity>()
                         .eq(DocumentEntity::getSpaceId, spaceId)
                         .select(DocumentEntity::getId))

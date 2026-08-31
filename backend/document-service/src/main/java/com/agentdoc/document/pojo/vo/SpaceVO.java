@@ -1,6 +1,5 @@
 package com.agentdoc.document.pojo.vo;
 
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.document.enums.SpaceStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -31,7 +30,10 @@ public record SpaceVO(
         SpaceStatus status,
 
         @Schema(description = "当前登录用户在该空间的角色")
-        SpaceRole role,
+        SpaceRoleSummaryVO role,
+
+        @Schema(description = "当前用户是否为平台超级管理员")
+        boolean platformSuperAdmin,
 
         @Schema(description = "创建时间")
         LocalDateTime createdAt

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -69,7 +70,7 @@ class AgentSkillServiceTest {
             bindings.add(invocation.getArgument(0));
             return 1;
         }).when(agentSkillMapper).insert(any(AgentSkillEntity.class));
-        doNothing().when(spaceAccessService).requireOwner(20L);
+        doNothing().when(spaceAccessService).requirePermission(20L, AGENT_BIND_SKILL);
 
         AgentSkillReplaceDTO request = new AgentSkillReplaceDTO(List.of(40L));
         service.replace(10L, request);

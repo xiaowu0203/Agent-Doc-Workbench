@@ -20,6 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_MANAGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
+
 /**
  * Agent配置管理服务
  * <p>
@@ -49,7 +52,7 @@ public class AgentService {
     @Transactional(rollbackFor = Exception.class)
     public AgentVO create(AgentCreateDTO dto) {
         // 校验当前用户具备该空间OWNER权限
-        spaceAccessService.requireOwner(dto.spaceId());
+        spaceAccessService.requirePermission(dto.spaceId(), AGENT_MANAGE);
         // 校验引用的大模型必须处于启用状态
         modelService.requireEnabled(dto.modelId());
         validateSkillSelection(dto.skillSelectionMode(), dto.skillRouterModelId(), dto.modelId());
@@ -67,7 +70,7 @@ public class AgentService {
      */
     public List<AgentVO> list(Long spaceId) {
         // 校验当前用户具备该空间VIEWER权限
-        spaceAccessService.requireViewer(spaceId);
+        spaceAccessService.requirePermission(spaceId, AGENT_READ);
         return agentMapper.selectList(new LambdaQueryWrapper<AgentEntity>()
                         .eq(AgentEntity::getSpaceId, spaceId)
                         .orderByDesc(AgentEntity::getCreatedAt))
@@ -85,7 +88,7 @@ public class AgentService {
         // 根据AgentId获取智能体信息
         AgentEntity entity = require(id);
         // 校验当前用户具备该空间VIEWER权限
-        spaceAccessService.requireViewer(entity.getSpaceId());
+        spaceAccessService.requirePermission(entity.getSpaceId(), AGENT_READ);
         return AgentConvertor.toVO(entity);
     }
 
@@ -102,7 +105,7 @@ public class AgentService {
         // 根据AgentId获取智能体信息
         AgentEntity entity = require(id);
         // 校验当前用户具备该空间OWNER权限
-        spaceAccessService.requireOwner(entity.getSpaceId());
+        spaceAccessService.requirePermission(entity.getSpaceId(), AGENT_MANAGE);
         // 校验引用的大模型必须处于启用状态
         modelService.requireEnabled(dto.modelId());
         validateSkillSelection(dto.skillSelectionMode(), dto.skillRouterModelId(), dto.modelId());
@@ -123,7 +126,7 @@ public class AgentService {
         // 根据AgentId获取智能体信息
         AgentEntity entity = require(id);
         // 校验当前用户具备该空间OWNER权限
-        spaceAccessService.requireOwner(entity.getSpaceId());
+        spaceAccessService.requirePermission(entity.getSpaceId(), AGENT_MANAGE);
         agentMapper.deleteById(id);
     }
 

@@ -25,6 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Collection;
 import java.util.List;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.MCP_MANAGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.MCP_READ;
+
 /**
  * MCP服务实例业务服务
  * <p>
@@ -55,7 +58,7 @@ public class McpServerService {
     public McpServerVO create(McpServerCreateDTO dto) {
         // 事务外执行权限和网络校验，避免长期占用数据库连接。
         // 校验空间所有者权限
-        spaceAccessService.requireOwner(dto.spaceId());
+        spaceAccessService.requirePermission(dto.spaceId(), MCP_MANAGE);
         // 校验外部端点URL安全
         endpointValidator.validateExternal(dto.endpointUrl());
         return transactionTemplate.execute(status -> createLocked(dto));
@@ -99,7 +102,7 @@ public class McpServerService {
         // 参数校验
         param.validate();
         // 校验用户具备该空间查看权限
-        spaceAccessService.requireViewer(param.getSpaceId());
+        spaceAccessService.requirePermission(param.getSpaceId(), MCP_READ);
 
         // 构建查询
         LambdaQueryWrapper<McpServerEntity> query = new LambdaQueryWrapper<McpServerEntity>()
@@ -134,7 +137,7 @@ public class McpServerService {
         // 查询并校验实体是否存在
         McpServerEntity entity = require(id);
         // 校验空间查看权限
-        spaceAccessService.requireViewer(entity.getSpaceId());
+        spaceAccessService.requirePermission(entity.getSpaceId(), MCP_READ);
         return McpServerConvertor.toVO(entity);
     }
 
@@ -151,7 +154,7 @@ public class McpServerService {
     public McpServerVO update(Long id, McpServerUpdateDTO dto) {
         McpServerEntity current = require(id);
         // 校验用户是空间所有者
-        spaceAccessService.requireOwner(current.getSpaceId());
+        spaceAccessService.requirePermission(current.getSpaceId(), MCP_MANAGE);
         // 校验更新后的外部端点URL安全性
         endpointValidator.validateExternal(dto.endpointUrl());
         // 事务内执行更新
@@ -188,7 +191,7 @@ public class McpServerService {
     public void delete(Long id) {
         McpServerEntity current = require(id);
         // 校验空间所有者权限
-        spaceAccessService.requireOwner(current.getSpaceId());
+        spaceAccessService.requirePermission(current.getSpaceId(), MCP_MANAGE);
         // 事务内执行删除逻辑，无返回值
         transactionTemplate.executeWithoutResult(status -> deleteLocked(id));
     }

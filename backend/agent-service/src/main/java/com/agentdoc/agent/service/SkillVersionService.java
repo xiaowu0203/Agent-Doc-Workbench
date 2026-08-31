@@ -66,7 +66,7 @@ public class SkillVersionService {
     public SkillVersionVO upload(Long skillId, MultipartFile multipartFile) {
         SkillEntity skill = skillService.require(skillId);
         // 校验空间所有者权限
-        skillService.requireOwner(skill.getSpaceId());
+        skillService.requireManage(skill.getSpaceId());
 
         // Skill必须处于启用状态才能上传新版本
         if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
@@ -188,7 +188,7 @@ public class SkillVersionService {
     public List<SkillVersionVO> list(Long skillId) {
         SkillEntity skill = skillService.require(skillId);
         // 校验空间查看权限
-        skillService.requireViewer(skill.getSpaceId());
+        skillService.requireRead(skill.getSpaceId());
         return versionMapper.selectList(new LambdaQueryWrapper<SkillVersionEntity>()
                         .eq(SkillVersionEntity::getSkillId, skillId)
                         .orderByDesc(SkillVersionEntity::getVersionNo))
@@ -205,7 +205,7 @@ public class SkillVersionService {
     public SkillVersionEntity detail(Long skillId, Long versionId) {
         SkillEntity skill = skillService.require(skillId);
         // 校验空间查看权限
-        skillService.requireViewer(skill.getSpaceId());
+        skillService.requireRead(skill.getSpaceId());
         SkillVersionEntity entity = versionMapper.selectById(versionId);
         if (entity == null || !skillId.equals(entity.getSkillId())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 版本不存在");
@@ -249,7 +249,7 @@ public class SkillVersionService {
         // 查询并校验Skill存在
         SkillEntity skill = skillService.require(skillId);
         // 校验空间所有者权限
-        skillService.requireOwner(skill.getSpaceId());
+        skillService.requireManage(skill.getSpaceId());
 
         // 校验Skill信息
         if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
