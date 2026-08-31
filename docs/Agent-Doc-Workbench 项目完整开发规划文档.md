@@ -81,8 +81,10 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
   ，不属于用户全局属性
 
   - `OWNER` 所有者：全权管理，配置 Agent 凭证、全局 Token 预算、成员权限、空间设置
-  - `EDITOR` 编辑者：编辑文档、发起 Agent 任务、审批 Agent 变更请求
-  - `VIEWER` 观察者：仅只读查看，无任何编辑、审批、操作权限
+  - `EDITOR` 编辑者：默认可编辑文档、发起 Agent 任务、审批 Agent 变更请求；角色权限可由空间 OWNER 调整
+  - `VIEWER` 观察者：默认只读查看空间资源，不可查看空间成员和角色；角色权限可由空间 OWNER 调整
+
+- 默认角色创建规则：每个 Space 自动创建 `OWNER`、`EDITOR`、`VIEWER`；仅 `OWNER` 为受保护角色，`EDITOR` 和 `VIEWER` 可调整权限或删除（删除前不能仍有成员绑定）。
 
 - 空间全局配置：
 

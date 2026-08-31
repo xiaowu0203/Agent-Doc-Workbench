@@ -3,7 +3,6 @@ package com.agentdoc.task.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
-import com.agentdoc.common.enums.SpaceRole;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.AgentFeign;
@@ -37,6 +36,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
 
 /**
  * 任务业务服务
@@ -143,7 +145,7 @@ public class TaskService {
      */
     public PageVO<TaskVO> list(Long spaceId, PageParam pageParam) {
         // Feign校验当前用户在该空间具备【读取】权限
-        documentFeign.checkSpacePermission(spaceId, SpaceRole.VIEWER.getCode());
+        requireData(documentFeign.checkSpacePermission(spaceId, TASK_READ));
         // 分页校验
         pageParam.validate();
         Page<TaskEntity> page = taskMapper.selectPage(new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
@@ -162,7 +164,7 @@ public class TaskService {
         // 校验任务是否存在
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【读取】权限
-        documentFeign.checkSpacePermission(entity.getSpaceId(), SpaceRole.VIEWER.getCode());
+        requireData(documentFeign.checkSpacePermission(entity.getSpaceId(), TASK_READ));
         return TaskVO.from(entity);
     }
 
@@ -176,7 +178,7 @@ public class TaskService {
         // 校验任务是否存在
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【编辑】权限
-        documentFeign.checkSpacePermission(entity.getSpaceId(), SpaceRole.EDITOR.getCode());
+        requireData(documentFeign.checkSpacePermission(entity.getSpaceId(), TASK_TERMINATE));
         // 任务状态转换
         TaskStatus current = TaskStatus.fromCode(entity.getStatus());
         // 若当前任务状态非【待运行】、【运行中】，则禁止【终止】

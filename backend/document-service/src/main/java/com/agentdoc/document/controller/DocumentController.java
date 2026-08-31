@@ -23,6 +23,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,6 +47,7 @@ public class DocumentController {
 
     @Operation(summary = "创建文档")
     @PostMapping
+    @PreAuthorize("@SpacePermission.hasPermission(#dto.spaceId(), '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_CREATE + "')")
     public Result<DocumentVO> create(@Valid @RequestBody DocumentCreateDTO dto) {
         return Result.ok(documentService.create(dto));
     }
@@ -76,6 +78,7 @@ public class DocumentController {
 
     @Operation(summary = "文档树")
     @GetMapping("/tree")
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ + "')")
     public Result<List<DocumentTreeNodeVO>> listTree(@RequestParam Long spaceId) {
         return Result.ok(documentService.listTree(spaceId));
     }

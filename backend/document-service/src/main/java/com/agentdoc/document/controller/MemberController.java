@@ -11,6 +11,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,27 +33,31 @@ public class MemberController {
 
     private final MemberService memberService;
 
-    @Operation(summary = "添加成员（OWNER 权限）")
+    @Operation(summary = "添加成员（member:manage；分配 OWNER 仍需 OWNER 身份）")
     @PostMapping
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_MANAGE + "')")
     public Result<MemberVO> add(@PathVariable Long spaceId, @Valid @RequestBody MemberAddDTO dto) {
         return Result.ok(memberService.add(spaceId, dto));
     }
 
     @Operation(summary = "成员列表（空间成员可查看）")
     @GetMapping
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_READ + "')")
     public Result<List<MemberVO>> list(@PathVariable Long spaceId) {
         return Result.ok(memberService.list(spaceId));
     }
 
-    @Operation(summary = "修改成员角色（OWNER 权限，空间至少保留一名 OWNER）")
+    @Operation(summary = "修改成员角色（member:manage，空间至少保留一名 OWNER）")
     @PutMapping("/{userId}")
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_MANAGE + "')")
     public Result<MemberVO> changeRole(@PathVariable Long spaceId, @PathVariable Long userId,
                                        @Valid @RequestBody MemberRoleUpdateDTO dto) {
         return Result.ok(memberService.changeRole(spaceId, userId, dto));
     }
 
-    @Operation(summary = "移除成员（OWNER 权限，空间至少保留一名 OWNER）")
+    @Operation(summary = "移除成员（member:manage，空间至少保留一名 OWNER）")
     @DeleteMapping("/{userId}")
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_MANAGE + "')")
     public Result<Void> remove(@PathVariable Long spaceId, @PathVariable Long userId) {
         memberService.remove(spaceId, userId);
         return Result.ok();

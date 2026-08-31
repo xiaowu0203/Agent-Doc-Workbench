@@ -3,7 +3,6 @@ package com.agentdoc.task.controller;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.pojo.vo.PageVO;
-import com.agentdoc.task.enums.ChangeRequestStatus;
 import com.agentdoc.task.pojo.dto.ChangeRequestReviewDTO;
 import com.agentdoc.task.pojo.dto.ChangeRequestSubmitDTO;
 import com.agentdoc.task.pojo.param.ChangeRequestSearchParam;
@@ -39,7 +38,7 @@ public class ChangeRequestController {
 
     @Operation(summary = "分页查询审批队列（可按空间 / 文档 / 状态过滤）")
     @PostMapping("/query")
-    public Result<PageVO<ChangeRequestVO>> list(@RequestBody ChangeRequestSearchParam param) {
+    public Result<PageVO<ChangeRequestVO>> list(@Valid @RequestBody ChangeRequestSearchParam param) {
         return Result.ok(changeRequestService.list(param));
     }
 

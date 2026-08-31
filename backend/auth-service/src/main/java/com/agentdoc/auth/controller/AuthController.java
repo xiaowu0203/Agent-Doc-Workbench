@@ -6,6 +6,7 @@ import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.pojo.vo.UserVO;
 import com.agentdoc.auth.service.AuthService;
+import com.agentdoc.auth.service.PlatformRoleService;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.api.Result;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -26,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final PlatformRoleService platformRoleService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, PlatformRoleService platformRoleService) {
         this.authService = authService;
+        this.platformRoleService = platformRoleService;
     }
 
     @Operation(summary = "注册")
@@ -66,5 +70,12 @@ public class AuthController {
     @PostMapping("/internal/task-capabilities")
     public Result<String> issueTaskCapability(@RequestBody TaskCapabilityIssueDTO request) {
         return Result.ok(authService.issueTaskCapability(request));
+    }
+
+    @Operation(summary = "校验当前用户是否拥有roleKey角色（远程调用，目前作用仅仅只是查看是否为平台超级管理员）")
+    @GetMapping("/internal/platform-role")
+    public Result<Void> checkPlatformRole(@RequestParam String roleKey) {
+        platformRoleService.requireCurrentUserRole(roleKey);
+        return Result.ok();
     }
 }

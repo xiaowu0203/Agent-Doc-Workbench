@@ -29,13 +29,14 @@ class JwtServiceTest {
         user.setUsername("alice");
         user.setNickname("Alice");
 
-        String token = jwtService.createAccessToken(user);
+        String token = jwtService.createAccessToken(user, List.of("PLATFORM_SUPER_ADMIN"));
         assertNotNull(token);
 
         Jwt jwt = decoder.decode(token);
         assertEquals("123", jwt.getSubject());
         assertEquals("alice", jwt.getClaimAsString("username"));
         assertEquals("Alice", jwt.getClaimAsString("nickname"));
+        assertEquals(List.of("PLATFORM_SUPER_ADMIN"), jwt.getClaimAsStringList("platformRoles"));
         assertEquals("http://localhost:8081", jwt.getIssuer().toString());
     }
 

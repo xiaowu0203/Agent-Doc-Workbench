@@ -41,18 +41,22 @@ public final class AuthUtils {
     }
 
     /**
-     * 获取当前登录用户ID，取自JWT的sub字段
-     * @return 用户ID；未登录/匿名返回null
+     * 获取当前人类用户 ID，取自用户 JWT 的 sub 字段。
+     * <p>Agent 任务 Token 的 sub 是 taskId，不会被当作用户 ID 返回。</p>
+     * @return 人类用户 ID；未登录、匿名或 Agent 任务 Token 返回null
      */
     public static Long getUserId() {
         Jwt jwt = currentJwt();
-        return jwt == null ? null : Long.valueOf(jwt.getSubject());
+        if (!isHumanToken(jwt)) {
+            return null;
+        }
+        return Long.valueOf(jwt.getSubject());
     }
 
     /**
-     * 获取当前登录用户ID，未登录抛 {@link ErrorCode#UNAUTHORIZED}。
+     * 获取当前人类用户 ID，未登录或当前为 Agent 任务 Token 时抛 {@link ErrorCode#UNAUTHORIZED}。
      * @return 用户ID
-     * @throws BusinessException 未登录/匿名，{@link ErrorCode#UNAUTHORIZED}
+     * @throws BusinessException 未登录、匿名或当前为 Agent 任务 Token，{@link ErrorCode#UNAUTHORIZED}
      */
     public static Long getUserIdOrException() {
         Long userId = getUserId();
@@ -69,7 +73,7 @@ public final class AuthUtils {
      */
     public static Long getAgentId() {
         Jwt jwt = currentJwt();
-        if (jwt == null || !jwt.hasClaim(JwtConstant.CLAIM_AGENT_ID)) {
+        if (!isAgentToken(jwt) || !jwt.hasClaim(JwtConstant.CLAIM_AGENT_ID)) {
             return null;
         }
         return Long.valueOf(jwt.getClaimAsString(JwtConstant.CLAIM_AGENT_ID));
@@ -94,7 +98,7 @@ public final class AuthUtils {
      * @return 任务ID，无令牌或非任务令牌返回null
      */
     public static Long getTaskId() {
-        return getLongClaim(JwtConstant.CLAIM_TASK_ID);
+        return getTaskClaim(JwtConstant.CLAIM_TASK_ID);
     }
 
     /**
@@ -103,7 +107,7 @@ public final class AuthUtils {
      * @return 空间ID，无令牌或非任务令牌返回null
      */
     public static Long getSpaceId() {
-        return getLongClaim(JwtConstant.CLAIM_SPACE_ID);
+        return getTaskClaim(JwtConstant.CLAIM_SPACE_ID);
     }
 
     /**
@@ -112,7 +116,7 @@ public final class AuthUtils {
      * @return 文档ID，无令牌或非任务令牌返回null
      */
     public static Long getDocumentId() {
-        return getLongClaim(JwtConstant.CLAIM_DOCUMENT_ID);
+        return getTaskClaim(JwtConstant.CLAIM_DOCUMENT_ID);
     }
 
     /**
@@ -125,6 +129,21 @@ public final class AuthUtils {
     }
 
     /**
+     * 判断当前用户 JWT 是否声明指定平台角色。
+     * <p>该方法只用于远程实时确认前的快速判断，最终高权限授权仍需回查 auth-service。</p>
+     * @param roleKey 平台角色标识
+     * @return true 当前用户 JWT 声明该平台角色
+     */
+    public static boolean hasPlatformRole(String roleKey) {
+        Jwt jwt = currentJwt();
+        if (jwt == null || getUserId() == null) {
+            return false;
+        }
+        List<String> roles = jwt.getClaimAsStringList(JwtConstant.CLAIM_PLATFORM_ROLES);
+        return roles != null && roles.contains(roleKey);
+    }
+
+    /**
      * 校验Agent任务是否拥有指定操作权限
      * <p>从JWT的agentActions列表判断是否包含目标动作；仅对Agent任务令牌生效</p>
      * @param action 待校验动作，使用 {@link JwtConstant} 中ACTION_*常量
@@ -132,7 +151,7 @@ public final class AuthUtils {
      */
     public static boolean hasAgentAction(String action) {
         Jwt jwt = currentJwt();
-        if (jwt == null) {
+        if (!isAgentToken(jwt)) {
             return false;
         }
         List<String> actions = jwt.getClaimAsStringList(JwtConstant.CLAIM_AGENT_ACTIONS);
@@ -144,12 +163,26 @@ public final class AuthUtils {
      * @param claim claim键名，来自 {@link JwtConstant}
      * @return 转换后的Long；无JWT、不存在该claim、值为空返回null
      */
-    private static Long getLongClaim(String claim) {
+    private static Long getTaskClaim(String claim) {
         Jwt jwt = currentJwt();
-        if (jwt == null || !jwt.hasClaim(claim)) {
+        if (!isAgentToken(jwt) || !jwt.hasClaim(claim)) {
             return null;
         }
         Object value = jwt.getClaim(claim);
         return value == null ? null : Long.valueOf(String.valueOf(value));
+    }
+
+    /** 判断当前JWT是否为完整的Agent任务Token。 */
+    private static boolean isAgentToken(Jwt jwt) {
+        return jwt != null
+                && JwtConstant.ACTOR_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_ACTOR_TYPE))
+                && JwtConstant.SCOPE_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SCOPE));
+    }
+
+    /** 判断当前JWT是否为人类用户Token。 */
+    private static boolean isHumanToken(Jwt jwt) {
+        return jwt != null
+                && JwtConstant.SCOPE_USER.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SCOPE))
+                && !JwtConstant.ACTOR_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_ACTOR_TYPE));
     }
 }

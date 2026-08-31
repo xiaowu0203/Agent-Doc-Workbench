@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_MCP;
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
+
 /**
  * Agent与MCP服务绑定业务服务
  * <p>
@@ -51,7 +54,7 @@ public class AgentMcpBindingService {
         // 校验Agent存在性
         AgentEntity agent = agentService.require(agentId);
         // 空间查看权限校验
-        spaceAccessService.requireViewer(agent.getSpaceId());
+        spaceAccessService.requirePermission(agent.getSpaceId(), AGENT_READ);
         return bindingViews(agentId);
     }
 
@@ -70,7 +73,7 @@ public class AgentMcpBindingService {
      */
     public List<AgentMcpBindingVO> replace(Long agentId, AgentMcpBindingReplaceDTO dto) {
         AgentEntity permissionAgent = agentService.require(agentId);
-        spaceAccessService.requireOwner(permissionAgent.getSpaceId());
+        spaceAccessService.requirePermission(permissionAgent.getSpaceId(), AGENT_BIND_MCP);
         return transactionTemplate.execute(status -> replaceLocked(agentId, dto));
     }
 

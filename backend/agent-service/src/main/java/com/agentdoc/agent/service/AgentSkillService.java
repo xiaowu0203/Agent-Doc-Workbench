@@ -30,6 +30,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
+import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
+
 /**
  * Agent‑Skill绑定关系服务
  * <p>
@@ -60,7 +63,7 @@ public class AgentSkillService {
         // 校验Agent存在性
         AgentEntity agent = agentService.require(agentId);
         // 校验空间查看权限
-        spaceAccessService.requireViewer(agent.getSpaceId());
+        spaceAccessService.requirePermission(agent.getSpaceId(), AGENT_READ);
         // 加载已启用的绑定关系
         return loadBindings(agentId, true);
     }
@@ -88,7 +91,7 @@ public class AgentSkillService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 不存在");
         }
         // 校验空间所有者权限，只有空间拥有者可修改Agent的Skill绑定
-        spaceAccessService.requireOwner(agent.getSpaceId());
+        spaceAccessService.requirePermission(agent.getSpaceId(), AGENT_BIND_SKILL);
 
         // 获取请求绑定的版本ID集合，null转为空列表
         List<Long> requestedIds = dto.skillVersionIds() == null ? List.of() : dto.skillVersionIds();

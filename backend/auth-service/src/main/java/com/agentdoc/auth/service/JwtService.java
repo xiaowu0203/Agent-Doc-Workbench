@@ -163,7 +163,7 @@ public class JwtService {
      * @param user 用户实体
      * @return JWT字符串
      */
-    public String createAccessToken(UserEntity user) {
+    public String createAccessToken(UserEntity user, List<String> platformRoles) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(props.accessTtl());
         JwtClaimsSet claims = JwtClaimsSet.builder()
@@ -174,6 +174,8 @@ public class JwtService {
                 .claim(JwtConstant.CLAIM_USERNAME, user.getUsername())
                 .claim(JwtConstant.CLAIM_NICKNAME, user.getNickname() == null ? user.getUsername() : user.getNickname())
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
+                .claim(JwtConstant.CLAIM_PLATFORM_ROLES,
+                        platformRoles == null ? List.of() : List.copyOf(platformRoles))
                 .id(UUID.randomUUID().toString())
                 .build();
         return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();

@@ -58,11 +58,11 @@ public interface DocumentFeign {
     Result<DocumentExecutionContextVO> getExecutionContext(@PathVariable Long documentId);
 
     /**
-     * 校验当前用户在空间中的最低角色。
+     * 校验当前用户空间权限（是否拥有该空间、该权限）
      */
     @GetMapping("/api/document/spaces/{spaceId}/permission")
     Result<Void> checkSpacePermission(@PathVariable Long spaceId,
-                                      @RequestParam Integer minRole);
+                                      @RequestParam String permissionCode);
 
     /**
      * 查询空间 Agent 执行预算

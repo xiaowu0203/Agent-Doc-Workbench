@@ -27,13 +27,16 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final PlatformRoleService platformRoleService;
 
     public AuthService(UserMapper userMapper, PasswordEncoder passwordEncoder,
-                       JwtService jwtService, RefreshTokenService refreshTokenService) {
+                       JwtService jwtService, RefreshTokenService refreshTokenService,
+                       PlatformRoleService platformRoleService) {
         this.userMapper = userMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
+        this.platformRoleService = platformRoleService;
     }
 
     /**
@@ -156,7 +159,8 @@ public class AuthService {
      */
     private AuthResponseVO issueTokens(UserEntity user) {
         // 生成短期访问JWT
-        String accessToken = jwtService.createAccessToken(user);
+        String accessToken = jwtService.createAccessToken(
+                user, platformRoleService.listRoleKeys(user.getId()));
         // 生成refreshToken字符串
         String refreshToken = jwtService.createRefreshToken();
         // 将refreshToken存入服务端存储（Redis）

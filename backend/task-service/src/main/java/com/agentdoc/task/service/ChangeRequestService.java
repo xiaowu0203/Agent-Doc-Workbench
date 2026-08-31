@@ -33,6 +33,11 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_APPROVE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_MERGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_SUBMIT;
+
 /**
  * 变更请求服务（审批队列）。
  * <p>状态机：PENDING → APPROVED → MERGED；PENDING → REJECTED / RETURNED。
@@ -53,11 +58,13 @@ public class ChangeRequestService {
      */
     public ChangeRequestVO submit(ChangeRequestSubmitDTO dto) {
         Long userId = AuthUtils.getUserIdOrException();
+        // 校验文档是否存在
+        DocumentRefVO document = requireDocumentRef(dto.documentId());
+        // 校验用户是否拥有该空间的提交权限
+        requireSpacePermission(document.spaceId(), CHANGE_REQUEST_SUBMIT);
         ChangeRequestEntity entity = ChangeRequestConvertor.fromHumanSubmission(dto, userId);
         changeRequestMapper.insert(entity);
-        String title = fetchTitle(entity.getDocumentId());
-
-        return ChangeRequestConvertor.toVO(entity, title);
+        return ChangeRequestConvertor.toVO(entity, document.title());
     }
 
     /**
@@ -78,6 +85,8 @@ public class ChangeRequestService {
     public PageVO<ChangeRequestVO> list(ChangeRequestSearchParam param) {
         // 获取空间Id
         Long spaceId = param.spaceId();
+        // 校验用户是否拥有该空间的查询权限
+        requireSpacePermission(spaceId, CHANGE_REQUEST_READ);
         // 获取文档Id
         Long documentId = param.documentId();
         // 获取状态
@@ -150,6 +159,10 @@ public class ChangeRequestService {
     public ChangeRequestVO merge(Long id) {
         // 根据变更请求Id查询变更请求实体（不存在抛异常）
         ChangeRequestEntity entity = requireRequest(id);
+        // 校验文档是否存在
+        DocumentRefVO document = requireDocumentRef(entity.getDocumentId());
+        // 查看用户是否具备该空间的合并权限
+        requireSpacePermission(document.spaceId(), CHANGE_REQUEST_MERGE);
         // 根据变更请求状态 -> 变更请求状态枚举
         ChangeRequestStatus current = ChangeRequestStatus.fromCode(entity.getStatus());
         // 若状态非【通过】，抛出异常
@@ -185,6 +198,10 @@ public class ChangeRequestService {
     private ChangeRequestVO transition(Long id, ChangeRequestStatus from, ChangeRequestStatus to, String comment) {
         // 根据变更请求Id查询变更请求实体（不存在抛异常）
         ChangeRequestEntity entity = requireRequest(id);
+        // 校验文档是否存在
+        DocumentRefVO document = requireDocumentRef(entity.getDocumentId());
+        // 校验用户是否具备该空间的变更请求审批权限
+        requireSpacePermission(document.spaceId(), CHANGE_REQUEST_APPROVE);
         // 根据变更请求状态 -> 变更请求状态枚举
         ChangeRequestStatus current = ChangeRequestStatus.fromCode(entity.getStatus());
         // 若【数据库记录状态】与【传入的当前状态】不一致，则抛出异常
@@ -250,5 +267,27 @@ public class ChangeRequestService {
         Map<Long, DocumentRefVO> refs = fetchRefs(List.of(documentId));
         DocumentRefVO ref = refs.get(documentId);
         return ref == null ? null : ref.title();
+    }
+
+    /**
+     * 根据文档ID查询文档信息，不存在抛出异常
+     * @param documentId 文档Id
+     * @return 文档信息
+     */
+    private DocumentRefVO requireDocumentRef(Long documentId) {
+        DocumentRefVO document = fetchRefs(List.of(documentId)).get(documentId);
+        if (document == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
+        }
+        return document;
+    }
+
+    /**
+     * 校验用户是否具备该空间的【permissionCode】权限
+     * @param spaceId 空间ID
+     * @param permissionCode 指定的权限标识符
+     */
+    private void requireSpacePermission(Long spaceId, String permissionCode) {
+        requireData(documentFeign.checkSpacePermission(spaceId, permissionCode));
     }
 }

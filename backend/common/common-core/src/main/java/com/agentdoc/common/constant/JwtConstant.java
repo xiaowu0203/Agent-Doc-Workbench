@@ -23,6 +23,9 @@ public final class JwtConstant {
     /** 默认用户权限作用域 */
     public static final String SCOPE_USER = "user";
 
+    /** 声明键：平台角色标识符列表。 */
+    public static final String CLAIM_PLATFORM_ROLES = "platformRoles";
+
     // ===================== Task‑Capability 任务短时能力JWT 专用 =====================
 
     /** 声明键：Agent ID（外部 Agent 访问场景） */
