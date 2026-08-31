@@ -54,6 +54,8 @@
 | 空间成员关系 | 用户通过 `member.role_id` 绑定某个 Space 的角色，才能操作该空间下的资源 |
 | Agent 范围白名单 | Agent 不直接拥有用户权限，必须绑定空间、文档范围和工具白名单 |
 
+平台角色管理接口位于 Auth Service 的 `/api/platform/roles`，列表、详情、创建、修改和删除均要求 `PLATFORM_SUPER_ADMIN`。平台超级管理员角色由数据库初始化并保持受保护，首次将用户绑定为平台超级管理员也通过数据库完成。
+
 ## 有关 Agent 的权限约束
 
 - Agent 通过 OAuth2 Client Credentials 获取专属 Access Token

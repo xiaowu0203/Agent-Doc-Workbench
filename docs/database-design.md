@@ -39,6 +39,8 @@
 
 1. **user / oauth2_client**：用户与 OAuth2 客户端凭证，Agent 使用 Client‑Credentials 模式鉴权。
 2. **platform_role / user_platform_role**：平台级角色及用户绑定；当前用于平台超级管理员，不写入 Space 成员关系。
+
+   - 平台角色定义通过 Auth Service 的 `/api/platform/roles` 提供 CRUD，所有接口均要求当前用户具备 `PLATFORM_SUPER_ADMIN` 平台角色。`PLATFORM_SUPER_ADMIN` 为迁移脚本初始化的受保护角色，不允许通过接口修改或删除；用户与平台角色的首次绑定仍由数据库初始化完成。
 3. **space / member / space_role / space_role_permission**：工作空间、成员角色、角色权限绑定；每个 Space 默认创建 OWNER、EDITOR、VIEWER，只有 OWNER 受保护。
 4. **permission**：全局权限标识符目录；权限码由后端协议和迁移脚本固化，空间角色引用已有权限码。
 5. **document / document_version / change_request**：树形文档、正式 / 草稿双模式；文档版本快照；Agent 变更审批流。
