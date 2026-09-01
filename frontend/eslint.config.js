@@ -3,6 +3,28 @@ import prettier from 'eslint-config-prettier'
 import vue from 'eslint-plugin-vue'
 import typescript from 'typescript-eslint'
 
+const browserGlobals = Object.fromEntries(
+  [
+    'AbortController',
+    'AbortSignal',
+    'clearTimeout',
+    'document',
+    'Element',
+    'Event',
+    'HTMLElement',
+    'HTMLImageElement',
+    'HTMLInputElement',
+    'HTMLTableElement',
+    'HTMLTextAreaElement',
+    'Node',
+    'PointerEvent',
+    'requestAnimationFrame',
+    'setTimeout',
+    'URL',
+    'window',
+  ].map((name) => [name, 'readonly']),
+)
+
 export default typescript.config(
   {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**', '*.d.ts'],
@@ -13,6 +35,7 @@ export default typescript.config(
   {
     files: ['**/*.vue'],
     languageOptions: {
+      globals: browserGlobals,
       parserOptions: {
         parser: typescript.parser,
       },

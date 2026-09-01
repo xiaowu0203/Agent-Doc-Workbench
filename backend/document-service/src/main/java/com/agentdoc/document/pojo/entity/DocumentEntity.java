@@ -15,7 +15,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 /**
- * 文档实体（树形目录 / 草稿正式双模式）。
+ * 文档实体。目录是独立资源，不存储在文档表中。
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -26,8 +26,8 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
     @Schema(description = "所属空间 ID")
     private Long spaceId;
 
-    @Schema(description = "父目录 ID，null 为根")
-    private Long parentId;
+    @Schema(description = "所属目录 ID，null 为空间根层")
+    private Long directoryId;
 
     @Schema(description = "标题")
     private String title;
@@ -38,7 +38,7 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
     @Schema(description = "类型：1 正式 / 2 草稿")
     private Integer docType;
 
-    @Schema(description = "当前版本号（业务层维护，非乐观锁）")
+    @Schema(description = "当前版本号，同时用于更新时的乐观锁校验")
     private Long version;
 
     @Schema(description = "状态：1 正常 / 0 归档")
@@ -55,8 +55,8 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
      * @return 文档列表视图
      */
     public DocumentVO toVO() {
-        return new DocumentVO(getId(), spaceId, parentId, title, DocType.fromCode(docType),
-                version, DocStatus.fromCode(status), getUpdatedAt(), updatedBy);
+        return new DocumentVO(getId(), spaceId, directoryId, title, DocType.fromCode(docType), version,
+                DocStatus.fromCode(status), getUpdatedAt(), updatedBy);
     }
 
     /**
@@ -64,8 +64,17 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
      * @return 文档详情视图
      */
     public DocumentDetailVO toDetailVO() {
-        return new DocumentDetailVO(getId(), spaceId, parentId, title, DocType.fromCode(docType),
-                content, version, DocStatus.fromCode(status), getUpdatedAt(), updatedBy);
+        return toDetailVO(null);
+    }
+
+    /**
+     * 转换为详情视图并补充创建人名称。
+     * @param creatorName 创建人展示名称
+     * @return 文档详情视图
+     */
+    public DocumentDetailVO toDetailVO(String creatorName) {
+        return new DocumentDetailVO(getId(), spaceId, directoryId, title, DocType.fromCode(docType), content, version,
+                DocStatus.fromCode(status), getUpdatedAt(), updatedBy, createdBy, creatorName);
     }
 
     /**
@@ -73,7 +82,7 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
      * @return 树节点视图
      */
     public DocumentTreeNodeVO toTreeNodeVO() {
-        return DocumentTreeNodeVO.of(getId(), parentId, title, DocType.fromCode(docType));
+        return DocumentTreeNodeVO.ofDocument(getId(), directoryId, title, DocType.fromCode(docType));
     }
 
     /**

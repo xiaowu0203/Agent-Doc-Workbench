@@ -1,6 +1,7 @@
 package com.agentdoc.document.pojo.vo;
 
 import com.agentdoc.common.enums.DocType;
+import com.agentdoc.document.enums.DocumentNodeType;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.ArrayList;
@@ -21,8 +22,11 @@ public record DocumentTreeNodeVO(
         @Schema(description = "标题")
         String title,
 
-        @Schema(description = "文档类型")
+        @Schema(description = "文档类型；目录节点为空")
         DocType docType,
+
+        @Schema(description = "节点类型")
+        DocumentNodeType nodeType,
 
         @Schema(description = "子节点列表")
         List<DocumentTreeNodeVO> children
@@ -36,7 +40,13 @@ public record DocumentTreeNodeVO(
      * @param docType 文档类型
      * @return 树节点（children 为空列表）
      */
-    public static DocumentTreeNodeVO of(Long id, Long parentId, String title, DocType docType) {
-        return new DocumentTreeNodeVO(id, parentId, title, docType, new ArrayList<>());
+    public static DocumentTreeNodeVO ofDocument(Long id, Long directoryId, String title, DocType docType) {
+        return new DocumentTreeNodeVO(id, directoryId, title, docType, DocumentNodeType.DOCUMENT,
+                new ArrayList<>());
+    }
+
+    public static DocumentTreeNodeVO ofDirectory(Long id, Long parentId, String title) {
+        return new DocumentTreeNodeVO(id, parentId, title, null, DocumentNodeType.DIRECTORY,
+                new ArrayList<>());
     }
 }

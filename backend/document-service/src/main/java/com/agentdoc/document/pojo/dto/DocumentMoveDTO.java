@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(description = "移动文档请求")
 public record DocumentMoveDTO(
 
-        @Schema(description = "目标父目录 ID，null 为根目录")
-        Long parentId
+        @Schema(description = "目标目录 ID，null 为空间根层")
+        Long directoryId
 ) {
 }

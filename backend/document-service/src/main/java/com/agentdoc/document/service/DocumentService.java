@@ -23,8 +23,10 @@ import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
+import com.agentdoc.document.pojo.entity.DocumentDirectoryEntity;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
 import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
+import com.agentdoc.document.pojo.param.DocumentTreeSearchParam;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
 import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
 import com.agentdoc.document.pojo.vo.DocumentStatsVO;
@@ -32,6 +34,7 @@ import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
 import com.agentdoc.document.pojo.vo.RecentDocumentVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -65,13 +68,14 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
 public class DocumentService {
 
     private final DocumentMapper documentMapper;
+    private final DocumentDirectoryService directoryService;
     private final DocumentVersionService versionService;
     private final SpacePermissionService permissionService;
     private final AuthFeign authFeign;
 
     /**
      * 创建文档
-     * 权限：EDITOR及以上；父目录必须属于同一个空间且真实存在
+     * 权限：EDITOR及以上；目标目录为空时文档创建在空间根层
      *
      * @param dto 创建文档请求DTO
      * @return 文档简单视图VO
@@ -79,8 +83,8 @@ public class DocumentService {
     public DocumentVO create(DocumentCreateDTO dto) {
         // 获取当前登录用户ID，未登录直接抛出异常
         Long userId = permissionService.requireUserId();
-        // 校验父目录合法性：同空间、父ID对应的文档存在
-        validateParent(dto.spaceId(), dto.parentId());
+        // 目录 ID 为空表示空间根层，否则必须是同空间的正常目录。
+        directoryService.requireNormal(dto.spaceId(), dto.directoryId());
         // DTO转数据库实体，设置创建人
         DocumentEntity doc = dto.toEntity(userId);
         // 入库
@@ -92,44 +96,129 @@ public class DocumentService {
      * 查询空间文档树
      * 权限：空间成员可读；只返回NORMAL正常状态文档，归档文档进入回收站，不在树形结构展示
      *
-     * @param spaceId 空间ID
+     * @param param 查询参数（空间、关键词、文档类型和状态）
      * @return 树形节点集合，返回所有一级根节点，节点内部携带children子节点
      */
-    public List<DocumentTreeNodeVO> listTree(Long spaceId) {
-        // 查询该空间下所有正常状态文档，按创建时间升序
+    public List<DocumentTreeNodeVO> listTree(DocumentTreeSearchParam param) {
+        // 文档与目录来自两张独立的表，先分别查询再组装为一棵树。
+        DocStatus status = param.status() == null ? DocStatus.NORMAL : param.status();
         List<DocumentEntity> docs = documentMapper.selectList(new LambdaQueryWrapper<DocumentEntity>()
-                .eq(DocumentEntity::getSpaceId, spaceId)
-                .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode())
+                .eq(DocumentEntity::getSpaceId, param.spaceId())
+                .eq(DocumentEntity::getStatus, status.getCode())
                 .orderByAsc(DocumentEntity::getCreatedAt));
+        List<DocumentDirectoryEntity> directories = directoryService.list(param.spaceId(), status);
+        String keyword = param.keyword() == null ? "" : param.keyword().trim().toLowerCase();
+        Set<Long> matchedDocumentIds = docs.stream()
+                .filter(doc -> keyword.isEmpty() || (doc.getTitle() != null
+                        && doc.getTitle().toLowerCase().contains(keyword)))
+                .filter(doc -> param.docType() == null
+                        || Objects.equals(doc.getDocType(), param.docType().getCode()))
+                .map(DocumentEntity::getId)
+                .collect(Collectors.toSet());
+        Set<Long> matchedDirectoryIds = directories.stream()
+                .filter(directory -> keyword.isEmpty() || (directory.getTitle() != null
+                        && directory.getTitle().toLowerCase().contains(keyword)))
+                .map(DocumentDirectoryEntity::getId)
+                .collect(Collectors.toSet());
 
-        // 无文档直接返回空集合
-        if (docs.isEmpty()) {
-            return List.of();
+        Map<Long, DocumentDirectoryEntity> directoryMap = directories.stream()
+                .collect(Collectors.toMap(DocumentDirectoryEntity::getId, directory -> directory));
+        Set<Long> includedDirectoryIds = new HashSet<>();
+        if (keyword.isEmpty()) {
+            includedDirectoryIds.addAll(directoryMap.keySet());
+        } else {
+            includedDirectoryIds.addAll(matchedDirectoryIds);
+        }
+        boolean directoryOnlySearch = !keyword.isEmpty()
+                && !matchedDirectoryIds.isEmpty()
+                && matchedDocumentIds.isEmpty();
+        if (directoryOnlySearch) {
+            for (DocumentDirectoryEntity directory : directories) {
+                if (isDirectoryInSubtree(directory.getId(), matchedDirectoryIds, directoryMap)) {
+                    includedDirectoryIds.add(directory.getId());
+                }
+            }
+        }
+        if (!directoryOnlySearch && (!keyword.isEmpty() || param.docType() != null)) {
+            for (DocumentEntity document : docs) {
+                if (!matchedDocumentIds.contains(document.getId())) {
+                    continue;
+                }
+                includeDirectoryAncestors(document.getDirectoryId(), directoryMap, includedDirectoryIds);
+            }
+            for (Long directoryId : new HashSet<>(includedDirectoryIds)) {
+                includeDirectoryAncestors(directoryMap.get(directoryId) == null
+                        ? null : directoryMap.get(directoryId).getParentId(), directoryMap, includedDirectoryIds);
+            }
         }
 
-        // 将所有文档转换为树节点VO，key=文档ID
-        Map<Long, DocumentTreeNodeVO> nodeMap = docs.stream()
-                .collect(Collectors.toMap(DocumentEntity::getId, DocumentEntity::toTreeNodeVO));
-        // 根节点结果集合
+        Map<Long, DocumentTreeNodeVO> nodeMap = directories.stream()
+                .filter(directory -> includedDirectoryIds.contains(directory.getId()))
+                .collect(Collectors.toMap(DocumentDirectoryEntity::getId,
+                        directory -> DocumentTreeNodeVO.ofDirectory(directory.getId(), directory.getParentId(),
+                                directory.getTitle())));
         List<DocumentTreeNodeVO> roots = new ArrayList<>();
-        // 遍历组装父子关系
-        for (DocumentEntity doc : docs) {
-            DocumentTreeNodeVO node = nodeMap.get(doc.getId());
-            // parentId为null：一级根节点
-            if (doc.getParentId() == null) {
-                roots.add(node);
+        for (DocumentDirectoryEntity directory : directories) {
+            DocumentTreeNodeVO node = nodeMap.get(directory.getId());
+            if (node == null) {
                 continue;
             }
-            // 找到父节点，加入父节点children列表
-            DocumentTreeNodeVO parent = nodeMap.get(doc.getParentId());
-            if (parent != null) {
-                parent.children().add(node);
-            } else {
-                // 防御逻辑：父节点被删除/归档/不存在，该节点直接挂到根，避免树丢失节点
+            DocumentTreeNodeVO parent = nodeMap.get(directory.getParentId());
+            if (parent == null) {
                 roots.add(node);
+            } else {
+                parent.children().add(node);
+            }
+        }
+        for (DocumentEntity document : docs) {
+            boolean matchedDocument = matchedDocumentIds.contains(document.getId());
+            boolean belongsToMatchedDirectory = directoryOnlySearch
+                    && document.getDirectoryId() != null
+                    && includedDirectoryIds.contains(document.getDirectoryId())
+                    && (param.docType() == null
+                    || Objects.equals(document.getDocType(), param.docType().getCode()));
+            if (!matchedDocument && !belongsToMatchedDirectory) {
+                continue;
+            }
+            DocumentTreeNodeVO node = document.toTreeNodeVO();
+            DocumentTreeNodeVO parent = nodeMap.get(document.getDirectoryId());
+            if (parent == null) {
+                roots.add(node);
+            } else {
+                parent.children().add(node);
             }
         }
         return roots;
+    }
+
+    private void includeDirectoryAncestors(Long directoryId,
+                                           Map<Long, DocumentDirectoryEntity> directoryMap,
+                                           Set<Long> includedDirectoryIds) {
+        Set<Long> visited = new HashSet<>();
+        Long current = directoryId;
+        while (current != null && visited.add(current)) {
+            DocumentDirectoryEntity directory = directoryMap.get(current);
+            if (directory == null) {
+                break;
+            }
+            includedDirectoryIds.add(current);
+            current = directory.getParentId();
+        }
+    }
+
+    private boolean isDirectoryInSubtree(Long directoryId,
+                                         Set<Long> rootDirectoryIds,
+                                         Map<Long, DocumentDirectoryEntity> directoryMap) {
+        Set<Long> visited = new HashSet<>();
+        Long current = directoryId;
+        while (current != null && visited.add(current)) {
+            if (rootDirectoryIds.contains(current)) {
+                return true;
+            }
+            DocumentDirectoryEntity directory = directoryMap.get(current);
+            current = directory == null ? null : directory.getParentId();
+        }
+        return false;
     }
 
     /**
@@ -172,10 +261,11 @@ public class DocumentService {
         if (userIds.isEmpty()) {
             return Map.of();
         }
-        List<UserRefVO> users = authFeign.queryUsers(new UserBatchQueryDTO(userIds)).data();
-        if (users == null) {
+        var result = authFeign.queryUsers(new UserBatchQueryDTO(userIds));
+        if (result == null || result.data() == null) {
             return Map.of();
         }
+        List<UserRefVO> users = result.data();
         return users.stream().collect(Collectors.toMap(UserRefVO::id, user -> user));
     }
 
@@ -201,7 +291,8 @@ public class DocumentService {
         LocalDateTime currentMonthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
         LambdaQueryWrapper<DocumentEntity> currentDocuments = new LambdaQueryWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getSpaceId, spaceId)
-                .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode());
+                .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode())
+                ;
         long totalCount = documentMapper.selectCount(currentDocuments);
 
         LambdaQueryWrapper<DocumentEntity> documentsAsOfLastMonth = new LambdaQueryWrapper<DocumentEntity>()
@@ -229,7 +320,7 @@ public class DocumentService {
         } else {
             permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
         }
-        return doc.toDetailVO();
+        return toDetailVO(doc);
     }
 
     /**
@@ -238,7 +329,7 @@ public class DocumentService {
      * 事务：异常全部回滚
      *
      * @param id 待更新文档ID
-     * @param dto 更新请求DTO
+     * @param dto 更新请求DTO；按baseVersion执行乐观锁更新
      * @return 更新完成后的文档详情VO
      */
     @Transactional(rollbackFor = Exception.class)
@@ -251,56 +342,51 @@ public class DocumentService {
 
         // 更新前旧的文档正文，用于判断内容是否发生改变
         String oldContent = doc.getContent();
+        checkBaseVersion(doc, dto.baseVersion());
+        boolean contentChanged = dto.content() != null && !Objects.equals(oldContent, dto.content());
+        long nextVersion = contentChanged
+                ? (doc.getVersion() == null ? 0L : doc.getVersion()) + DocumentConstant.VERSION_INCREMENT
+                : (doc.getVersion() == null ? 0L : doc.getVersion());
         // 将dto字段应用到实体
         dto.applyTo(doc);
         // 设置最后编辑人
         doc.setUpdatedBy(userId);
         // 更新数据库
-        documentMapper.updateById(doc);
-        // 如果传入了content，并且正文发生变化，则版本号自增，生成版本快照
-        if (dto.content() != null && !Objects.equals(oldContent, dto.content())) {
-            bumpVersion(doc, dto.content(), "编辑更新内容", userId);
+        int updated = documentMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, id)
+                .eq(DocumentEntity::getVersion, dto.baseVersion())
+                .set(dto.title() != null, DocumentEntity::getTitle, dto.title())
+                .set(dto.content() != null, DocumentEntity::getContent, dto.content())
+                .set(DocumentEntity::getUpdatedBy, userId)
+                .set(contentChanged, DocumentEntity::getVersion, nextVersion));
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请刷新后重试");
         }
-        return doc.toDetailVO();
+        doc.setVersion(nextVersion);
+        // 如果传入了content，并且正文发生变化，则生成版本快照
+        if (contentChanged) {
+            versionService.createSnapshot(doc.getId(), nextVersion, dto.content(), "编辑更新内容", userId);
+        }
+        return toDetailVO(doc);
     }
 
     /**
-     * 移动文档（修改父目录）
-     * 权限：EDITOR及以上；目标父目录必须同空间，禁止移动到自身或者自己后代节点下，防止循环树
-     *
-     * @param id 需要移动的文档ID
-     * @param dto 移动请求，携带新的parentId
-     * @return 移动完成后的文档简单VO
+     * 移动文档到指定目录；directoryId 为空表示空间根层。
      */
     public DocumentVO move(Long id, DocumentMoveDTO dto) {
-        // 校验文档存在
         DocumentEntity doc = requireDoc(id);
-        // 校验编辑权限
         permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_EDIT);
-        // 获取新的父节点ID
-        Long newParentId = dto.parentId();
-
-        // 如果新父节点不为null，做合法性校验
-        if (newParentId != null) {
-            // 根据父节点查询文档
-            DocumentEntity parent = documentMapper.selectById(newParentId);
-            // 父节点不存在，或者父节点不在同一个空间
-            if (parent == null || !Objects.equals(parent.getSpaceId(), doc.getSpaceId())) {
-                throw new BusinessException(ErrorCode.NOT_FOUND, "目标父目录不存在");
-            }
-            // 禁止移动到自己下面
-            if (Objects.equals(newParentId, doc.getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "不能移动到自身");
-            }
-            // 禁止移动到自己的后代节点，避免树出现循环
-            if (isDescendant(newParentId, doc.getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "不能移动到自己的子目录下");
-            }
-        }
-        // 更新父ID、更新人
-        doc.setParentId(newParentId);
-        doc.setUpdatedBy(permissionService.requireUserId());
-        documentMapper.updateById(doc);
+        directoryService.requireNormal(doc.getSpaceId(), dto.directoryId());
+        Long userId = permissionService.requireUserId();
+        LocalDateTime updatedAt = LocalDateTime.now();
+        doc.setDirectoryId(dto.directoryId());
+        doc.setUpdatedBy(userId);
+        doc.setUpdatedAt(updatedAt);
+        documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, id)
+                .set(DocumentEntity::getDirectoryId, dto.directoryId())
+                .set(DocumentEntity::getUpdatedBy, userId)
+                .set(DocumentEntity::getUpdatedAt, updatedAt));
         return doc.toVO();
     }
 
@@ -388,7 +474,20 @@ public class DocumentService {
         documentMapper.updateById(doc);
         // 版本号+1，生成新版本快照，记录回滚操作摘要
         bumpVersion(doc, target.getContent(), "回滚至版本 " + versionNo, userId);
-        return doc.toDetailVO();
+        return toDetailVO(doc);
+    }
+
+    private void checkBaseVersion(DocumentEntity doc, Long baseVersion) {
+        if (baseVersion != null && !Objects.equals(baseVersion, doc.getVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请刷新后重试");
+        }
+    }
+
+    private DocumentDetailVO toDetailVO(DocumentEntity doc) {
+        UserRefVO creator = doc.getCreatedBy() == null
+                ? null
+                : fetchUsers(List.of(doc.getCreatedBy())).get(doc.getCreatedBy());
+        return doc.toDetailVO(displayName(creator));
     }
 
     /**
@@ -407,52 +506,6 @@ public class DocumentService {
         documentMapper.updateById(doc);
         // 调用版本服务插入快照
         versionService.createSnapshot(doc.getId(), nextVersion, content, summary, userId);
-    }
-
-    /**
-     * 校验父目录合法性
-     * 规则：parentId=null代表根节点直接放行；不为null时，父文档必须存在，并且和当前文档属于同一个空间
-     *
-     * @param spaceId 空间ID
-     * @param parentId 父文档ID，null表示根目录
-     */
-    private void validateParent(Long spaceId, Long parentId) {
-        // parentId为空，根目录，无需校验
-        if (parentId == null) {
-            return;
-        }
-        DocumentEntity parent = documentMapper.selectById(parentId);
-        // 父文档不存在，或者父文档不属于当前空间
-        if (parent == null || !Objects.equals(parent.getSpaceId(), spaceId)) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "父目录不存在");
-        }
-    }
-
-    /**
-     * 判断 candidateId 是否是 ancestorId 的后代节点
-     * 用于移动文档防循环引用：向上遍历parent链，如果命中ancestorId说明是后代
-     * 使用visited集合防御数据库脏数据导致死循环
-     *
-     * @param candidateId 待检测节点ID
-     * @param ancestorId 疑似祖先节点ID
-     * @return true candidateId是ancestorId后代；false 不是后代
-     */
-    private boolean isDescendant(Long candidateId, Long ancestorId) {
-        Set<Long> visited = new HashSet<>();
-        Long current = candidateId;
-        while (current != null) {
-            // 向上追溯找到了目标祖先，判定为后代
-            if (current.equals(ancestorId)) {
-                return true;
-            }
-            // 已经访问过该节点，出现循环链，直接跳出，防止死循环
-            if (!visited.add(current)) {
-                break;
-            }
-            DocumentEntity node = documentMapper.selectById(current);
-            current = node == null ? null : node.getParentId();
-        }
-        return false;
     }
 
     /**

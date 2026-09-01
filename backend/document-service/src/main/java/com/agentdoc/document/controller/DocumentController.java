@@ -9,16 +9,20 @@ import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
+import com.agentdoc.document.pojo.dto.DocumentDraftSaveDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
+import com.agentdoc.document.pojo.param.DocumentTreeSearchParam;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
+import com.agentdoc.document.pojo.vo.DocumentDraftVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
 import com.agentdoc.document.pojo.vo.RecentDocumentVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
 import com.agentdoc.document.service.DocumentService;
+import com.agentdoc.document.service.DocumentDraftService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -27,6 +31,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -46,6 +51,7 @@ import java.util.List;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final DocumentDraftService documentDraftService;
 
     @Operation(summary = "创建文档")
     @PostMapping
@@ -84,11 +90,11 @@ public class DocumentController {
         return Result.ok(documentService.listRecent(param));
     }
 
-    @Operation(summary = "文档树")
-    @GetMapping("/tree")
-    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ + "')")
-    public Result<List<DocumentTreeNodeVO>> listTree(@RequestParam Long spaceId) {
-        return Result.ok(documentService.listTree(spaceId));
+    @Operation(summary = "文档树查询")
+    @PostMapping("/tree")
+    @PreAuthorize("@SpacePermission.hasPermission(#param.spaceId(), '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ + "')")
+    public Result<List<DocumentTreeNodeVO>> listTree(@Valid @RequestBody DocumentTreeSearchParam param) {
+        return Result.ok(documentService.listTree(param));
     }
 
     @Operation(summary = "回收站列表")
@@ -118,6 +124,26 @@ public class DocumentController {
     @GetMapping("/{id}")
     public Result<DocumentDetailVO> detail(@PathVariable Long id) {
         return Result.ok(documentService.detail(id));
+    }
+
+    @Operation(summary = "查询文档未提交草稿")
+    @GetMapping("/{id}/draft")
+    public Result<DocumentDraftVO> draft(@PathVariable Long id) {
+        return Result.ok(documentDraftService.get(id));
+    }
+
+    @Operation(summary = "保存文档未提交草稿")
+    @PutMapping("/{id}/draft")
+    public Result<DocumentDraftVO> saveDraft(@PathVariable Long id,
+                                             @Valid @RequestBody DocumentDraftSaveDTO dto) {
+        return Result.ok(documentDraftService.save(id, dto));
+    }
+
+    @Operation(summary = "删除文档未提交草稿")
+    @DeleteMapping("/{id}/draft")
+    public Result<Void> deleteDraft(@PathVariable Long id) {
+        documentDraftService.delete(id);
+        return Result.ok();
     }
 
     @Operation(summary = "更新文档（内容变化自动生成版本快照）")

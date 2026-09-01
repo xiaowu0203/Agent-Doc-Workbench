@@ -51,13 +51,16 @@ class DocumentServiceTest {
     @Mock
     private SpacePermissionService permissionService;
     @Mock
+    private DocumentDirectoryService directoryService;
+    @Mock
     private AuthFeign authFeign;
 
     private DocumentService documentService;
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentMapper, versionService, permissionService, authFeign);
+        documentService = new DocumentService(documentMapper, directoryService, versionService, permissionService,
+                authFeign);
         // 模拟已登录：SecurityContext 放入以 Jwt 为 principal 的认证信息
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")
@@ -77,7 +80,7 @@ class DocumentServiceTest {
         DocumentEntity entity = new DocumentEntity();
         entity.setId(DOCUMENT_ID);
         entity.setSpaceId(2001L);
-        entity.setParentId(0L);
+        entity.setDirectoryId(null);
         entity.setTitle("测试文档");
         entity.setContent(content);
         entity.setDocType(DocType.FORMAL.getCode());
@@ -93,10 +96,11 @@ class DocumentServiceTest {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
         when(permissionService.requireUserId()).thenReturn(USER_ID);
 
-        documentService.update(DOCUMENT_ID, new DocumentUpdateDTO(null, "新内容"));
+        when(documentMapper.update(any(), any())).thenReturn(1);
+        documentService.update(DOCUMENT_ID, new DocumentUpdateDTO(2L, null, "新内容"));
 
-        // 主更新 + bumpVersion 各 update 一次，版本递增至 3 并生成快照
-        verify(documentMapper, times(2)).updateById(any(DocumentEntity.class));
+        // 携带基线版本的原子更新，版本递增至 3 并生成快照
+        verify(documentMapper).update(any(), any());
         verify(versionService).createSnapshot(eq(DOCUMENT_ID), eq(3L), eq("新内容"), any(String.class), eq(USER_ID));
     }
 
@@ -105,7 +109,8 @@ class DocumentServiceTest {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
         when(permissionService.requireUserId()).thenReturn(USER_ID);
 
-        documentService.update(DOCUMENT_ID, new DocumentUpdateDTO("新标题", null));
+        when(documentMapper.update(any(), any())).thenReturn(1);
+        documentService.update(DOCUMENT_ID, new DocumentUpdateDTO(2L, "新标题", null));
 
         verify(versionService, never()).createSnapshot(anyLong(), anyLong(), any(String.class),
                 any(String.class), anyLong());

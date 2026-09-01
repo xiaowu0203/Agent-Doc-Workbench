@@ -7,6 +7,7 @@ import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import SpaceOverviewView from '@/views/SpaceOverviewView.vue'
 import AccessControlView from '@/views/AccessControlView.vue'
+import DocumentEditorView from '@/views/DocumentEditorView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -32,6 +33,15 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.SPACE_READ,
+        },
+      },
+      {
+        path: 'spaces/:spaceId/documents/:documentId?',
+        name: 'space-documents',
+        component: DocumentEditorView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.DOCUMENT_READ,
         },
       },
       {

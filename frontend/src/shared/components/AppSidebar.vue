@@ -91,7 +91,7 @@ const selectedSpaceId = ref<EntityId | null>(workspaceStore.currentSpaceId)
 
 const menuItems: MenuItem[] = [
   { label: '总览', icon: Grid, permission: SPACE_PERMISSIONS.SPACE_READ, path: 'overview' },
-  { label: '文档', icon: Document, permission: SPACE_PERMISSIONS.DOCUMENT_READ, path: null },
+  { label: '文档', icon: Document, permission: SPACE_PERMISSIONS.DOCUMENT_READ, path: 'documents' },
   { label: '任务', icon: Tickets, permission: SPACE_PERMISSIONS.TASK_READ, path: null },
   {
     label: '变更审批',
