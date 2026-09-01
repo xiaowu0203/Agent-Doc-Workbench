@@ -1,6 +1,8 @@
 package com.agentdoc.document.constant;
 
 import java.util.List;
+import java.util.Set;
+
 import static com.agentdoc.common.constant.SpacePermissionConstant.*;
 
 /**
@@ -16,6 +18,13 @@ public final class DefaultSpaceRoleConstant {
     public static final String EDITOR = "EDITOR";
     // 观察者
     public static final String VIEWER = "VIEWER";
+
+    /** 系统初始化的默认角色标识集合，与角色是否受保护是两个独立概念。 */
+    public static final Set<String> SYSTEM_ROLE_KEYS = Set.of(OWNER, EDITOR, VIEWER);
+
+    public static boolean isSystemRole(String roleKey) {
+        return SYSTEM_ROLE_KEYS.contains(roleKey);
+    }
 
     /** 观察者默认权限集合：只读空间资源，不包含成员和角色查看权限。 */
     public static final List<String> VIEWER_PERMISSIONS = List.of(

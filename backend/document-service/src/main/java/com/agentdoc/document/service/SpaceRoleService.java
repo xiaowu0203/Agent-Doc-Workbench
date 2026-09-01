@@ -84,8 +84,10 @@ public class SpaceRoleService {
         // 批量查询所有角色对应的权限
         Map<Long, List<String>> permissionMap = listPermissionMap(
                 roles.stream().map(SpaceRoleEntity::getId).toList());
+        Map<Long, Long> memberCountMap = listMemberCountMap(spaceId);
         return roles.stream()
                 .map(role -> SpaceRoleVO.from(role,
+                        memberCountMap.getOrDefault(role.getId(), 0L),
                         permissionMap.getOrDefault(role.getId(), List.of())))
                 .toList();
     }
@@ -100,7 +102,10 @@ public class SpaceRoleService {
      */
     public SpaceRoleVO detail(Long spaceId, Long roleId) {
         SpaceRoleEntity role = requireRole(spaceId, roleId);
-        return SpaceRoleVO.from(role, listPermissionCodes(roleId));
+        long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<MemberEntity>()
+                .eq(MemberEntity::getSpaceId, spaceId)
+                .eq(MemberEntity::getRoleId, roleId));
+        return SpaceRoleVO.from(role, memberCount, listPermissionCodes(roleId));
     }
 
     /**
@@ -132,7 +137,7 @@ public class SpaceRoleService {
         spaceRoleMapper.insert(role);
         // 批量插入角色权限关联
         insertPermissions(role.getId(), permissions);
-        return SpaceRoleVO.from(role, permissions);
+        return SpaceRoleVO.from(role, 0L, permissions);
     }
 
     /**
@@ -149,7 +154,10 @@ public class SpaceRoleService {
         role.setDisplayName(dto.displayName());
         role.setDescription(dto.description());
         spaceRoleMapper.updateById(role);
-        return SpaceRoleVO.from(role, listPermissionCodes(roleId));
+        long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<MemberEntity>()
+                .eq(MemberEntity::getSpaceId, spaceId)
+                .eq(MemberEntity::getRoleId, roleId));
+        return SpaceRoleVO.from(role, memberCount, listPermissionCodes(roleId));
     }
 
     /**
@@ -170,7 +178,10 @@ public class SpaceRoleService {
                 .eq(SpaceRolePermissionEntity::getRoleId, roleId));
         // 写入全新权限集合
         insertPermissions(roleId, permissions);
-        return SpaceRoleVO.from(role, permissions);
+        long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<MemberEntity>()
+                .eq(MemberEntity::getSpaceId, spaceId)
+                .eq(MemberEntity::getRoleId, roleId));
+        return SpaceRoleVO.from(role, memberCount, permissions);
     }
 
     /**
@@ -371,5 +382,19 @@ public class SpaceRoleService {
                 .collect(Collectors.groupingBy(SpaceRolePermissionEntity::getRoleId,
                         Collectors.mapping(SpaceRolePermissionEntity::getPermissionCode,
                                 Collectors.toList())));
+    }
+
+    /**
+     * 一次查询空间成员并按角色汇总成员数量，避免角色列表逐角色查询成员。
+     *
+     * @param spaceId 空间 ID
+     * @return 角色 ID → 成员数量
+     */
+    private Map<Long, Long> listMemberCountMap(Long spaceId) {
+        return memberMapper.selectList(new LambdaQueryWrapper<MemberEntity>()
+                        .select(MemberEntity::getRoleId)
+                        .eq(MemberEntity::getSpaceId, spaceId))
+                .stream()
+                .collect(Collectors.groupingBy(MemberEntity::getRoleId, Collectors.counting()));
     }
 }

@@ -2,21 +2,27 @@ package com.agentdoc.document.service;
 
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.mapper.SpaceRoleMapper;
 import com.agentdoc.document.pojo.dto.MemberAddDTO;
 import com.agentdoc.document.pojo.dto.MemberRoleUpdateDTO;
+import com.agentdoc.document.pojo.dto.MemberUserQueryDTO;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import com.agentdoc.document.pojo.entity.SpaceRoleEntity;
-import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.agentdoc.document.pojo.vo.MemberVO;
+import com.agentdoc.document.pojo.vo.MemberUserVO;
+import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -36,6 +42,7 @@ public class MemberService {
     private final SpaceRoleMapper spaceRoleMapper;
     private final SpacePermissionService permissionService;
     private final SpaceRoleService spaceRoleService;
+    private final AuthFeign authFeign;
 
     /**
      * 添加空间成员
@@ -80,6 +87,34 @@ public class MemberService {
         return members.stream()
                 .map(member -> member.toVO(SpaceRoleSummaryVO.from(
                         roleMap.get(member.getRoleId()))))
+                .toList();
+    }
+
+    /**
+     * 批量查询空间成员的用户摘要。
+     * <p>仅返回当前空间已有成员，避免借此接口查询空间外用户。</p>
+     *
+     * @param spaceId 空间 ID
+     * @param dto 用户 ID 查询请求
+     * @return 用户摘要列表
+     */
+    public List<MemberUserVO> queryUsers(Long spaceId, MemberUserQueryDTO dto) {
+        Set<Long> memberUserIds = memberMapper.selectList(new LambdaQueryWrapper<MemberEntity>()
+                        .select(MemberEntity::getUserId)
+                        .eq(MemberEntity::getSpaceId, spaceId)
+                        .in(MemberEntity::getUserId, dto.userIds()))
+                .stream()
+                .map(MemberEntity::getUserId)
+                .collect(Collectors.toSet());
+        if (memberUserIds.isEmpty()) {
+            return List.of();
+        }
+        List<UserRefVO> users = authFeign.queryUsers(new UserBatchQueryDTO(memberUserIds.stream().toList())).data();
+        if (users == null) {
+            return List.of();
+        }
+        return users.stream()
+                .map(user -> new MemberUserVO(user.id(), user.username(), user.nickname()))
                 .toList();
     }
 

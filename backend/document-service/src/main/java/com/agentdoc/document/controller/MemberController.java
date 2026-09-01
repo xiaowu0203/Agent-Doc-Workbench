@@ -4,7 +4,9 @@ import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.document.pojo.dto.MemberAddDTO;
 import com.agentdoc.document.pojo.dto.MemberRoleUpdateDTO;
+import com.agentdoc.document.pojo.dto.MemberUserQueryDTO;
 import com.agentdoc.document.pojo.vo.MemberVO;
+import com.agentdoc.document.pojo.vo.MemberUserVO;
 import com.agentdoc.document.service.MemberService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,6 +47,14 @@ public class MemberController {
     @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_READ + "')")
     public Result<List<MemberVO>> list(@PathVariable Long spaceId) {
         return Result.ok(memberService.list(spaceId));
+    }
+
+    @Operation(summary = "批量查询空间成员用户信息")
+    @PostMapping("/users/query")
+    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.MEMBER_READ + "')")
+    public Result<List<MemberUserVO>> queryUsers(@PathVariable Long spaceId,
+                                                 @Valid @RequestBody MemberUserQueryDTO dto) {
+        return Result.ok(memberService.queryUsers(spaceId, dto));
     }
 
     @Operation(summary = "修改成员角色（member:manage，空间至少保留一名 OWNER）")

@@ -23,7 +23,13 @@
     </div>
 
     <nav class="app-sidebar__navigation" aria-label="空间导航">
-      <template v-for="item in visibleMenuItems" :key="item.label">
+      <template v-for="(item, index) in visibleMenuItems" :key="item.label">
+        <div
+          v-if="!collapsed && item.group && visibleMenuItems[index - 1]?.group !== item.group"
+          class="app-sidebar__group-label"
+        >
+          {{ item.group }}
+        </div>
         <RouterLink v-if="item.path" class="app-sidebar__link" :to="item.path">
           <el-icon :size="20"><component :is="item.icon" /></el-icon>
           <span v-if="!collapsed">{{ item.label }}</span>
@@ -53,6 +59,7 @@ import {
   DataAnalysis,
   Document,
   Grid,
+  Lock,
   Operation,
   SetUp,
   Tickets,
@@ -74,6 +81,7 @@ interface MenuItem {
   icon: Component
   permission: (typeof SPACE_PERMISSIONS)[keyof typeof SPACE_PERMISSIONS]
   path: string | null
+  group?: string
 }
 
 const authStore = useAuthStore()
@@ -95,6 +103,20 @@ const menuItems: MenuItem[] = [
   { label: 'Skill', icon: SetUp, permission: SPACE_PERMISSIONS.SKILL_READ, path: null },
   { label: 'MCP 服务', icon: Operation, permission: SPACE_PERMISSIONS.MCP_READ, path: null },
   { label: '用量与审计', icon: DataAnalysis, permission: SPACE_PERMISSIONS.USAGE_READ, path: null },
+  {
+    label: '角色与权限',
+    icon: Lock,
+    permission: SPACE_PERMISSIONS.ROLE_READ,
+    path: 'access/roles',
+    group: '组织与权限',
+  },
+  {
+    label: '成员管理',
+    icon: Briefcase,
+    permission: SPACE_PERMISSIONS.MEMBER_READ,
+    path: 'access/members',
+    group: '组织与权限',
+  },
 ]
 
 const visibleMenuItems = computed(() =>
@@ -186,6 +208,13 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
   flex-direction: column;
   gap: var(--adw-space-2);
   padding: var(--adw-space-5) var(--adw-space-3);
+}
+
+.app-sidebar__group-label {
+  margin: var(--adw-space-5) var(--adw-space-4) var(--adw-space-1);
+  color: rgb(255 255 255 / 56%);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .app-sidebar__link {
