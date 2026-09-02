@@ -60,14 +60,15 @@ class McpConcurrencyContractTest {
         McpServerMapper mapper = mock(McpServerMapper.class);
         McpServerService service = new McpServerService(mapper, mock(AgentMcpBindingQueryService.class),
                 mock(SpaceAccessService.class), mock(AgentConfigCryptoService.class),
-                mock(McpEndpointSecurityValidator.class), immediateTransaction());
+                mock(McpEndpointSecurityValidator.class), mock(McpConnectionTester.class),
+                immediateTransaction());
         McpServerEntity server = server(3L, 2L);
         server.setConfigVersion(4L);
         when(mapper.selectById(3L)).thenReturn(server);
         when(mapper.selectOne(any())).thenReturn(server);
 
         service.update(3L, new McpServerUpdateDTO(
-                "Updated", "https://example.com/mcp", McpAuthType.NONE, null, 1));
+                "Updated", "https://example.com/mcp", McpAuthType.NONE, null, null, 1));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Wrapper<McpServerEntity>> captor = ArgumentCaptor.forClass(Wrapper.class);
@@ -81,7 +82,8 @@ class McpConcurrencyContractTest {
         McpServerMapper mapper = mock(McpServerMapper.class);
         McpServerService service = new McpServerService(mapper, mock(AgentMcpBindingQueryService.class),
                 mock(SpaceAccessService.class), mock(AgentConfigCryptoService.class),
-                mock(McpEndpointSecurityValidator.class), immediateTransaction());
+                mock(McpEndpointSecurityValidator.class), mock(McpConnectionTester.class),
+                immediateTransaction());
         when(mapper.selectList(any())).thenReturn(List.of());
 
         service.findByIdsForUpdate(List.of(5L, 3L));
@@ -98,12 +100,13 @@ class McpConcurrencyContractTest {
         McpServerMapper mapper = mock(McpServerMapper.class);
         McpServerService service = new McpServerService(mapper, mock(AgentMcpBindingQueryService.class),
                 mock(SpaceAccessService.class), mock(AgentConfigCryptoService.class),
-                mock(McpEndpointSecurityValidator.class), immediateTransaction());
+                mock(McpEndpointSecurityValidator.class), mock(McpConnectionTester.class),
+                immediateTransaction());
         when(mapper.selectCount(any())).thenReturn(0L);
         when(mapper.insert(any())).thenThrow(new DuplicateKeyException("duplicate"));
 
         assertThatThrownBy(() -> service.create(new McpServerCreateDTO(
-                2L, "example", "Example", "https://example.com/mcp", McpAuthType.NONE, null)))
+                2L, "example", "Example", "https://example.com/mcp", McpAuthType.NONE, null, null)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("serverKey");
     }
@@ -118,6 +121,8 @@ class McpConcurrencyContractTest {
         server.setAuthType(McpAuthType.NONE.name());
         server.setStatus(1);
         server.setConfigVersion(1L);
+        server.setConnectionStatus("UNTESTED");
+        server.setDiscoveredToolCount(0);
         return server;
     }
 

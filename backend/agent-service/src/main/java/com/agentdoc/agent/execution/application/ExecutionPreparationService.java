@@ -143,6 +143,7 @@ public class ExecutionPreparationService {
             value.put("configVersion", connection.configVersion());
             value.put("endpointSha256", sha256(connection.endpointUrl()));
             value.put("authType", connection.authType());
+            value.put("authParamName", connection.authParamName());
             value.put("toolWhitelist", connection.bindingToolWhitelist());
             return value;
         }).toList());

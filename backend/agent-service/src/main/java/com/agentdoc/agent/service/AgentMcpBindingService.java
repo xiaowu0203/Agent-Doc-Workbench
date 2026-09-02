@@ -189,7 +189,8 @@ public class AgentMcpBindingService {
                             || !agent.getSpaceId().equals(server.getSpaceId()))
                         return null;
                     return new ExternalMcpConnection(server.getId(), server.getServerKey(), server.getDisplayName(),
-                            server.getEndpointUrl(), server.getAuthType(), server.getEncryptedAuthToken(),
+                            server.getEndpointUrl(), server.getAuthType(), server.getAuthParamName(),
+                            server.getEncryptedAuthToken(),
                             server.getConfigVersion(), AgentMcpBindingConvertor.parseWhitelist(
                                     binding.getToolWhitelistJson()));
                 }).filter(Objects::nonNull)

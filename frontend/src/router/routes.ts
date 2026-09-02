@@ -9,6 +9,7 @@ import SpaceOverviewView from '@/views/SpaceOverviewView.vue'
 import AccessControlView from '@/views/AccessControlView.vue'
 import DocumentEditorView from '@/views/DocumentEditorView.vue'
 import SkillManagementView from '@/views/SkillManagementView.vue'
+import McpManagementView from '@/views/McpManagementView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -61,6 +62,15 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.SKILL_READ,
+        },
+      },
+      {
+        path: 'spaces/:spaceId/mcp-servers',
+        name: 'space-mcp-servers',
+        component: McpManagementView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.MCP_READ,
         },
       },
       {

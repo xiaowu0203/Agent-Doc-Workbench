@@ -207,10 +207,14 @@ public class ExecutionToolSessionFactory {
 
     private OpenedExternal openExternal(ExternalMcpConnection connection, List<String> allowedTools,
                                         int timeoutSeconds, BooleanSupplier cancelRequested) {
-        String token = McpAuthType.BEARER.name().equals(connection.authType())
-                ? cryptoService.decrypt(connection.encryptedAuthToken()) : null;
-        return new OpenedExternal(connection, TaskScopedMcpTools.openExternal(connection.endpointUrl(), token,
-                connection.serverKey(), timeoutSeconds, cancelRequested, allowedTools,
+        String credential = McpAuthType.NONE.name().equals(connection.authType())
+                ? null : cryptoService.decrypt(connection.encryptedAuthToken());
+        String bearerToken = McpAuthType.BEARER.name().equals(connection.authType()) ? credential : null;
+        String queryParamValue = McpAuthType.QUERY_PARAM.name().equals(connection.authType())
+                ? credential : null;
+        return new OpenedExternal(connection, TaskScopedMcpTools.openExternal(connection.endpointUrl(), bearerToken,
+                connection.authParamName(), queryParamValue, connection.serverKey(),
+                timeoutSeconds, cancelRequested, allowedTools,
                 endpointValidator::validateResolved));
     }
 

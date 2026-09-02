@@ -10,6 +10,7 @@ import java.util.List;
  * @param displayName          展示名称
  * @param endpointUrl          服务端点
  * @param authType             认证类型
+ * @param authParamName        Query API Key 参数名
  * @param encryptedAuthToken   加密认证令牌
  * @param configVersion        配置版本
  * @param bindingToolWhitelist Agent 绑定层工具白名单
@@ -20,6 +21,7 @@ public record ExternalMcpConnection(
         String displayName,
         String endpointUrl,
         String authType,
+        String authParamName,
         String encryptedAuthToken,
         Long configVersion,
         List<String> bindingToolWhitelist) {
@@ -31,7 +33,8 @@ public record ExternalMcpConnection(
     public String toString() {
         return "ExternalMcpConnection[serverId=" + serverId + ", serverKey=" + serverKey
                 + ", displayName=" + displayName + ", endpointUrl=" + endpointUrl
-                + ", authType=" + authType + ", encryptedAuthToken=<redacted>, configVersion="
+                + ", authType=" + authType + ", authParamName=" + authParamName
+                + ", encryptedAuthToken=<redacted>, configVersion="
                 + configVersion + ", bindingToolWhitelist=" + bindingToolWhitelist + "]";
     }
 }

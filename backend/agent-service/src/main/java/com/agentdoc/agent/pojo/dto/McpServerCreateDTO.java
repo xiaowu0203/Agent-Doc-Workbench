@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import static com.agentdoc.agent.constant.McpConstant.MAX_AUTH_TOKEN_LENGTH;
+import static com.agentdoc.agent.constant.McpConstant.MAX_AUTH_PARAM_NAME_LENGTH;
 import static com.agentdoc.agent.constant.McpConstant.MAX_DISPLAY_NAME_LENGTH;
 import static com.agentdoc.agent.constant.McpConstant.MAX_ENDPOINT_URL_LENGTH;
 import static com.agentdoc.agent.constant.McpConstant.MAX_SERVER_KEY_LENGTH;
@@ -24,12 +25,16 @@ public record McpServerCreateDTO(
         @NotBlank @Size(max = MAX_ENDPOINT_URL_LENGTH) String endpointUrl,
         @Schema(description = "认证类型")
         @NotNull McpAuthType authType,
+        @Schema(description = "Query API Key 参数名；QUERY_PARAM 认证时必填")
+        @Size(max = MAX_AUTH_PARAM_NAME_LENGTH)
+        @Pattern(regexp = "^[A-Za-z][A-Za-z0-9_.-]*$") String authParamName,
         @Schema(description = "认证令牌，只写不回显", accessMode = Schema.AccessMode.WRITE_ONLY)
         @Size(max = MAX_AUTH_TOKEN_LENGTH) String authToken) {
     @Override
     public String toString() {
         return "McpServerCreateDTO[spaceId=" + spaceId + ", serverKey=" + serverKey
                 + ", displayName=" + displayName + ", endpointUrl=" + endpointUrl
-                + ", authType=" + authType + ", authToken=<redacted>]";
+                + ", authType=" + authType + ", authParamName=" + authParamName
+                + ", authToken=<redacted>]";
     }
 }

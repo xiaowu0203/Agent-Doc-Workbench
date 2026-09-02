@@ -1,15 +1,16 @@
 # Agent 多 MCP 技术架构设计
 
-> 状态：后端已实现，待 Phase 6 前端接入与真实外部 MCP 端到端验证
+> 状态：后端与 Phase 6 前端已实现，待真实外部 MCP 端到端验证
 
 ## 1. 目标与边界
 
-每个 Agent 始终保留 Workbench 内置 MCP，并可通过 `externalMcpEnabled` 开关启用零到十个外部 MCP。外部 MCP 配置归属空间，可被同空间多个 Agent 复用。本阶段仅支持 Streamable HTTP、`NONE` 和 `BEARER` 认证，不支持服务端启动本地 stdio 进程。
+每个 Agent 始终保留 Workbench 内置 MCP，并可通过 `externalMcpEnabled` 开关启用零到十个外部 MCP。外部 MCP 配置归属空间，可被同空间多个 Agent 复用。本阶段仅支持 Streamable HTTP，以及 `NONE`、`BEARER` 和 `QUERY_PARAM` 认证，不支持服务端启动本地 stdio 进程。
 
 ## 2. 数据模型
 
 - `agent.external_mcp_enabled`：Agent 级总开关，创建和更新时必填。
-- `mcp_server`：保存 `serverKey`、展示名、HTTPS 地址、认证类型、加密令牌、配置版本和状态。
+- `mcp_server`：保存 `serverKey`、展示名、无 query 的 HTTPS 地址、认证类型、Query 参数名、加密凭证、配置版本和状态。
+- `mcp_server` 同时保存最近一次连接测试状态、时间、耗时、错误摘要，以及最近一次成功发现的工具快照；配置地址或认证变化时快照失效。
 - `agent_mcp_binding`：Agent 与 MCP Server 多对多绑定，包含远端原始工具名白名单。
 - `agent_execution.external_mcp_snapshot_json`：保存 Server ID、`serverKey`、配置版本、地址哈希、认证类型和绑定白名单，不保存地址与令牌明文。
 - `agent_execution_tool_call`：增加 `tool_source_key` 和 `mcp_server_id`，定位工具来源。
@@ -26,12 +27,16 @@ POST   /api/agent/mcp-servers/search
 GET    /api/agent/mcp-servers/{id}
 PUT    /api/agent/mcp-servers/{id}
 DELETE /api/agent/mcp-servers/{id}
+POST   /api/agent/mcp-servers/{id}/test-connect
+GET    /api/agent/mcp-servers/{id}/tools
 
 GET /api/agent/agents/{agentId}/mcp-bindings
 PUT /api/agent/agents/{agentId}/mcp-bindings
 ```
 
-认证令牌只写不回显。更新时空令牌表示保留已有密文；切换到 `NONE` 会清除密文。`serverKey` 创建后不可修改，因为它参与模型工具名和 Skill 权限契约。
+认证凭证只写不回显。认证类型不变时，更新使用空凭证表示保留已有密文；切换认证方式时必须提供新凭证，切换到 `NONE` 会清除密文。`QUERY_PARAM` 只将参数名作为普通配置保存，参数值使用与 Bearer Token 相同的 AES-GCM 加密列保存，并仅在建立连接时临时拼入 URL。`serverKey` 创建后不可修改，因为它参与模型工具名和 Skill 权限契约。
+
+连接测试同步执行真实的 initialize 握手与工具发现，保存最近一次结果。测试失败会保存失败状态和错误摘要，但保留上一次成功工具快照；端点、认证类型或 Token 变化时清除旧测试结果和工具快照。读取工具接口只返回缓存快照，不在 GET 请求中触发外部网络访问。
 
 ## 4. 工具命名和权限
 
@@ -55,7 +60,7 @@ Workbench MCP 保留原始工具名。外部 MCP 暴露给模型的名称固定�
 
 ## 6. 安全约束
 
-- 外部地址必须为公网 HTTPS，禁止用户信息、查询参数和 URL 片段。
+- 持久化的外部地址必须为公网 HTTPS，禁止用户信息、查询参数和 URL 片段；Query API Key 必须拆分为参数名与加密凭证，不得写入地址字段。
 - 创建、更新和每次连接前解析 DNS，拒绝环回、私网、链路本地、任意地址和组播地址。
 - MCP Server 必须属于 Agent 所在空间且处于启用状态。
 - Bearer Token 使用现有 Agent AES-GCM 配置密钥加密，VO、日志和执行快照不得回显。
