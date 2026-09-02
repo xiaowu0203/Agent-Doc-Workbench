@@ -208,7 +208,7 @@
                 v-if="canCreateTask && !isDirectory"
                 plain
                 :icon="VideoPlay"
-                @click="showTaskPlaceholder"
+                @click="openTaskDialog"
               >
                 发起 Agent 任务
               </el-button>
@@ -603,6 +603,141 @@
         <el-button type="primary" @click="insertTableContent">插入表格</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="documentInfoDialogVisible" title="文档详情" width="520px">
+      <div v-if="documentDetail || directoryDetail" class="document-detail">
+        <div class="document-detail__hero">
+          <span class="document-detail__hero-icon">
+            <el-icon :size="21"><Folder v-if="isDirectory" /><Document v-else /></el-icon>
+          </span>
+          <div class="document-detail__hero-content">
+            <strong class="document-detail__title">{{ selectedTitle }}</strong>
+            <span class="document-detail__type">{{ infoTypeLabel }}</span>
+          </div>
+          <el-tag
+            size="small"
+            effect="light"
+            :type="infoStatus === 'ARCHIVED' ? 'info' : 'success'"
+          >
+            {{ documentStatusLabel(infoStatus) }}
+          </el-tag>
+        </div>
+        <dl class="document-detail__grid">
+          <div class="document-detail__item document-detail__item--wide">
+            <dt>所在位置</dt>
+            <dd>{{ documentLocation }}</dd>
+          </div>
+          <div v-if="!isDirectory" class="document-detail__item">
+            <dt>当前版本</dt>
+            <dd>v{{ documentDetail?.version }}</dd>
+          </div>
+          <div v-if="!isDirectory" class="document-detail__item">
+            <dt>负责人</dt>
+            <dd>{{ responsibleName }}</dd>
+          </div>
+          <div v-if="!isDirectory" class="document-detail__item">
+            <dt>最后修改人</dt>
+            <dd>{{ lastUpdatedByName }}</dd>
+          </div>
+          <div class="document-detail__item">
+            <dt>最后更新时间</dt>
+            <dd>{{ formatDateTime(infoUpdatedAt) }}</dd>
+          </div>
+          <div class="document-detail__item document-detail__item--wide">
+            <dt>{{ isDirectory ? '目录 ID' : '文档 ID' }}</dt>
+            <dd>{{ isDirectory ? directoryDetail?.id : documentDetail?.id }}</dd>
+          </div>
+        </dl>
+      </div>
+      <p v-else class="document-info-card__empty">暂无详情</p>
+    </el-dialog>
+
+    <el-dialog
+      v-model="taskDialogVisible"
+      title="发起 Agent 任务"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <el-form label-position="top" @submit.prevent="createDocumentTask">
+        <el-form-item label="目标文档" required>
+          <el-tree-select
+            v-model="taskForm.documentId"
+            :data="taskDocumentOptions"
+            :props="directoryTreeProps"
+            check-strictly
+            default-expand-all
+            :loading="taskDocumentsLoading"
+            :disabled="taskCreating"
+            placeholder="选择目标文档"
+            style="width: 100%"
+          />
+          <p v-if="taskDocumentsError" class="dialog-error">{{ taskDocumentsError }}</p>
+        </el-form-item>
+        <el-form-item label="Agent" required>
+          <el-select
+            v-model="taskForm.agentId"
+            placeholder="选择要执行任务的 Agent"
+            :loading="taskAgentsLoading"
+            :disabled="taskCreating"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="agent in enabledAgents"
+              :key="agent.id"
+              :label="agent.name"
+              :value="agent.id"
+            />
+          </el-select>
+          <p v-if="taskAgentsError" class="dialog-error">{{ taskAgentsError }}</p>
+          <p v-else-if="!taskAgentsLoading && !enabledAgents.length" class="dialog-help">
+            当前空间没有可用的 Agent，请先在 Agent 管理中启用一个 Agent。
+          </p>
+        </el-form-item>
+        <el-form-item label="任务名称" required>
+          <el-input
+            v-model="taskForm.name"
+            maxlength="100"
+            show-word-limit
+            placeholder="例如：审阅这篇文档"
+            :disabled="taskCreating"
+          />
+        </el-form-item>
+        <el-form-item label="任务指令" required>
+          <el-input
+            v-model="taskForm.instruction"
+            type="textarea"
+            :rows="5"
+            maxlength="4000"
+            show-word-limit
+            placeholder="告诉 Agent 需要如何处理这篇文档"
+            :disabled="taskCreating"
+          />
+        </el-form-item>
+        <el-form-item label="Token 预算（可选）">
+          <el-input-number
+            v-model="taskForm.tokenBudget"
+            :min="1"
+            :max="100000000"
+            controls-position="right"
+            placeholder="不填写则使用 Agent 或空间预算"
+            :disabled="taskCreating"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <p class="dialog-help">正式文档的 Agent 修改会生成变更请求，审批后才会合并。</p>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="taskCreating" @click="taskDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="taskCreating"
+          :disabled="!enabledAgents.length"
+          @click="createDocumentTask"
+        >
+          创建任务
+        </el-button>
+      </template>
+    </el-dialog>
   </section>
 </template>
 
@@ -641,10 +776,11 @@ import {
 } from 'element-plus'
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import { ApiError, normalizeApiError } from '@/api/errors'
+import { listAgents, type AgentOption } from '@/features/agent/api/agent-api'
 import {
   archiveDirectory,
   archiveDocument,
@@ -672,10 +808,12 @@ import type {
   DocumentDetail,
   DirectoryDetail,
   DocumentNodeType,
+  DocumentStatus,
   DocumentTreeNode as DocumentTreeNodeData,
   DocumentVersion,
   PageResult,
 } from '@/features/document/types'
+import { createTask } from '@/features/task/api/task-api'
 import type { EntityId } from '@/features/workspace/types'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -683,6 +821,16 @@ import { useWorkspaceStore } from '@/stores/workspace'
 const route = useRoute()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
+
+const ACTIVITY_POLL_INTERVAL_MS = 5000
+const ACTIVE_ACTIVITY_STATUSES = new Set([
+  '待运行',
+  '已分发',
+  '运行中',
+  '等待输入',
+  '等待授权',
+  '取消中',
+])
 
 const keyword = ref('')
 const tree = ref<DocumentTreeNodeData[]>([])
@@ -719,6 +867,15 @@ const saving = ref(false)
 const creating = ref(false)
 const createDialogVisible = ref(false)
 const tableDialogVisible = ref(false)
+const documentInfoDialogVisible = ref(false)
+const taskDialogVisible = ref(false)
+const taskAgentsLoading = ref(false)
+const taskAgentsError = ref('')
+const taskCreating = ref(false)
+const taskAgents = ref<AgentOption[]>([])
+const taskDocumentsLoading = ref(false)
+const taskDocumentsError = ref('')
+const taskDocuments = ref<DocumentTreeNodeData[]>([])
 const tableRows = ref(3)
 const tableColumns = ref(3)
 const imageInput = ref<HTMLInputElement | null>(null)
@@ -726,7 +883,7 @@ const contentInput = ref<HTMLTextAreaElement | null>(null)
 const previewHost = ref<HTMLElement | null>(null)
 const richEditorHost = ref<HTMLElement | null>(null)
 const richEditorHtml = ref('')
-const resolvedImageUrls = ref(new Map<string, string>())
+const resolvedImageUrls = new Map<string, string>()
 const imageResolutionPromises = new Map<string, Promise<string | null>>()
 let outlineScrollContainer: HTMLElement | null = null
 let draftSaveTimer: ReturnType<typeof setTimeout> | null = null
@@ -744,6 +901,21 @@ const createForm = reactive<{
   nodeType: 'DOCUMENT',
   parentId: null,
 })
+const taskForm = reactive<{
+  agentId: EntityId | null
+  documentId: EntityId | null
+  name: string
+  instruction: string
+  tokenBudget: number | null
+}>({
+  agentId: null,
+  documentId: null,
+  name: '',
+  instruction: '',
+  tokenBudget: null,
+})
+const enabledAgents = computed(() => taskAgents.value.filter((agent) => agent.status === 'ENABLED'))
+const taskDocumentOptions = computed(() => buildTaskDocumentOptions(taskDocuments.value))
 const activityLoading = ref(false)
 const activityError = ref('')
 const activityPage = ref<PageResult<DocumentActivity>>({
@@ -777,6 +949,9 @@ let treeController: AbortController | null = null
 let detailController: AbortController | null = null
 let versionDetailController: AbortController | null = null
 let activityController: AbortController | null = null
+let activityPollTimer: ReturnType<typeof setTimeout> | null = null
+let taskAgentsController: AbortController | null = null
+let taskDocumentsController: AbortController | null = null
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let loadedTreeSpaceId: EntityId | null = null
 let pointerMoveListener: ((event: PointerEvent) => void) | null = null
@@ -798,6 +973,35 @@ const isDirectory = computed(() => directoryDetail.value !== null)
 const selectedTitle = computed(
   () => documentDetail.value?.title || directoryDetail.value?.title || '',
 )
+const infoStatus = computed<DocumentStatus>(
+  () => documentDetail.value?.status || directoryDetail.value?.status || 'NORMAL',
+)
+const infoTypeLabel = computed(() =>
+  isDirectory.value
+    ? '目录'
+    : documentDetail.value?.docType === 'FORMAL'
+      ? '正式文档'
+      : '草稿',
+)
+const documentLocation = computed(() => {
+  const directoryId = documentDetail.value?.directoryId ?? directoryDetail.value?.parentId
+  if (!directoryId) return '空间根层'
+  const path = findNodePath(tree.value, directoryId)
+    ?.filter((node) => node.nodeType === 'DIRECTORY')
+    .map((node) => node.title)
+  return path?.length ? path.join(' / ') : '空间根层'
+})
+const infoUpdatedAt = computed(
+  () => documentDetail.value?.updatedAt ?? directoryDetail.value?.updatedAt ?? null,
+)
+const lastUpdatedByName = computed(() => {
+  const current = documentDetail.value
+  if (!current?.updatedBy) return '—'
+  if (String(current.updatedBy) === String(current.createdBy) && current.creatorName) {
+    return current.creatorName
+  }
+  return `用户 ${current.updatedBy}`
+})
 const isHistoricalVersion = computed(
   () =>
     documentDetail.value !== null &&
@@ -1084,9 +1288,9 @@ async function loadTree(): Promise<void> {
 }
 
 async function loadDocument(documentId: EntityId): Promise<void> {
-  clearResolvedImageUrls()
   detailController?.abort()
   versionDetailController?.abort()
+  clearActivityPollTimer()
   const detailRequest = new AbortController()
   detailController = detailRequest
   activityController?.abort()
@@ -1151,6 +1355,7 @@ async function loadDocument(documentId: EntityId): Promise<void> {
       void loadActivities(documentId, activityRequest.signal)
     } else {
       activityPage.value = { records: [], total: 0, pageNum: 1, pageSize: 8 }
+      clearActivityPollTimer()
     }
   } catch (error) {
     if (!detailRequest.signal.aborted) detailError.value = normalizeApiError(error).message
@@ -1232,12 +1437,67 @@ async function rollbackSelectedVersion(): Promise<void> {
 async function loadActivities(documentId: EntityId, signal: AbortSignal): Promise<void> {
   activityLoading.value = true
   try {
-    activityPage.value = await listDocumentActivities(documentId, 8, signal)
+    const page = await listDocumentActivities(documentId, 8, signal)
+    if (!signal.aborted) {
+      activityError.value = ''
+      activityPage.value = page
+      scheduleActivityPolling(documentId, signal)
+    }
   } catch (error) {
-    if (!signal.aborted) activityError.value = normalizeApiError(error).message
+    if (!signal.aborted) {
+      activityError.value = normalizeApiError(error).message
+      scheduleActivityPolling(documentId, signal)
+    }
   } finally {
     if (!signal.aborted) activityLoading.value = false
   }
+}
+
+function clearActivityPollTimer(): void {
+  if (activityPollTimer === null) return
+  clearTimeout(activityPollTimer)
+  activityPollTimer = null
+}
+
+function hasActiveActivities(): boolean {
+  return activityPage.value.records.some(
+    (activity) => activity.type === 'TASK' && ACTIVE_ACTIVITY_STATUSES.has(activity.status || ''),
+  )
+}
+
+function scheduleActivityPolling(documentId: EntityId, signal: AbortSignal): void {
+  clearActivityPollTimer()
+  if (signal.aborted || document.hidden || !hasActiveActivities()) return
+  activityPollTimer = setTimeout(() => {
+    activityPollTimer = null
+    if (
+      signal.aborted ||
+      document.hidden ||
+      String(selectedDocumentId.value) !== String(documentId)
+    ) {
+      return
+    }
+    void loadActivities(documentId, signal)
+  }, ACTIVITY_POLL_INTERVAL_MS)
+}
+
+function refreshVisibleDocumentActivities(): void {
+  if (document.hidden || activityLoading.value || !canReadActivities.value) return
+  const documentId = documentDetail.value?.id
+  if (!documentId) return
+  clearActivityPollTimer()
+  activityController?.abort()
+  const controller = new AbortController()
+  activityController = controller
+  void loadActivities(documentId, controller.signal)
+}
+
+function handleDocumentVisibilityChange(): void {
+  if (document.hidden) {
+    clearActivityPollTimer()
+    return
+  }
+  refreshVisibleDocumentActivities()
 }
 
 async function selectTreeNode(node: DocumentTreeNodeData): Promise<void> {
@@ -1814,8 +2074,8 @@ function insertTextAtCursor(text: string, start?: number, end?: number, cursor?:
 }
 
 function clearResolvedImageUrls(): void {
-  for (const url of resolvedImageUrls.value.values()) URL.revokeObjectURL(url)
-  resolvedImageUrls.value = new Map()
+  for (const url of resolvedImageUrls.values()) URL.revokeObjectURL(url)
+  resolvedImageUrls.clear()
   imageResolutionPromises.clear()
 }
 
@@ -1830,7 +2090,7 @@ function parseDocumentImageUrl(sourceUrl: string): {
 
 async function resolveDocumentImageUrl(sourceUrl: string): Promise<string | null> {
   if (sourceUrl.startsWith('blob:')) return sourceUrl
-  const cachedUrl = resolvedImageUrls.value.get(sourceUrl)
+  const cachedUrl = resolvedImageUrls.get(sourceUrl)
   if (cachedUrl) return cachedUrl
   const pendingRequest = imageResolutionPromises.get(sourceUrl)
   if (pendingRequest) return pendingRequest
@@ -1840,7 +2100,7 @@ async function resolveDocumentImageUrl(sourceUrl: string): Promise<string | null
   const request = readDocumentImage(reference.documentId, reference.assetId)
     .then((blob) => {
       const resolvedUrl = URL.createObjectURL(blob)
-      resolvedImageUrls.value = new Map(resolvedImageUrls.value).set(sourceUrl, resolvedUrl)
+      resolvedImageUrls.set(sourceUrl, resolvedUrl)
       return resolvedUrl
     })
     .catch(() => null)
@@ -1856,18 +2116,113 @@ async function hydrateImages(container: HTMLElement | null): Promise<void> {
     images.map(async (image) => {
       const sourceUrl = image.getAttribute('data-markdown-src') || image.getAttribute('src')
       if (!sourceUrl || sourceUrl.startsWith('blob:')) return
+      const cachedUrl = resolvedImageUrls.get(sourceUrl)
+      if (cachedUrl) {
+        image.src = cachedUrl
+        return
+      }
       const resolvedUrl = await resolveDocumentImageUrl(sourceUrl)
       if (resolvedUrl) image.src = resolvedUrl
     }),
   )
 }
 
-function showTaskPlaceholder(): void {
-  ElMessage.info('Agent 任务创建页待开发，敬请期待')
+async function openTaskDialog(): Promise<void> {
+  const document = documentDetail.value
+  const spaceId = workspaceStore.currentSpaceId
+  if (!document || !spaceId || !canCreateTask.value) return
+
+  taskForm.agentId = null
+  taskForm.documentId = document.id
+  taskForm.name = document.title
+  taskForm.instruction = ''
+  taskForm.tokenBudget = null
+  taskAgentsError.value = ''
+  taskDocumentsError.value = ''
+  taskAgents.value = []
+  taskDocuments.value = []
+  taskDialogVisible.value = true
+
+  taskAgentsController?.abort()
+  taskDocumentsController?.abort()
+  const controller = new AbortController()
+  const documentsController = new AbortController()
+  taskAgentsController = controller
+  taskDocumentsController = documentsController
+  taskAgentsLoading.value = true
+  taskDocumentsLoading.value = true
+  void listDocumentTree(spaceId, { signal: documentsController.signal })
+    .then((documents) => {
+      if (!documentsController.signal.aborted) taskDocuments.value = documents
+    })
+    .catch((error) => {
+      if (!documentsController.signal.aborted) {
+        taskDocumentsError.value = normalizeApiError(error).message
+      }
+    })
+    .finally(() => {
+      if (!documentsController.signal.aborted) taskDocumentsLoading.value = false
+    })
+  try {
+    taskAgents.value = await listAgents(spaceId, controller.signal)
+    if (!controller.signal.aborted && enabledAgents.value.length === 1) {
+      taskForm.agentId = enabledAgents.value[0].id
+    }
+  } catch (error) {
+    if (!controller.signal.aborted) taskAgentsError.value = normalizeApiError(error).message
+  } finally {
+    if (!controller.signal.aborted) taskAgentsLoading.value = false
+  }
+}
+
+async function createDocumentTask(): Promise<void> {
+  const documentId = taskForm.documentId
+  const agentId = taskForm.agentId
+  const name = taskForm.name.trim()
+  const instruction = taskForm.instruction.trim()
+  if (!documentId) {
+    ElMessage.warning('请选择目标文档')
+    return
+  }
+  if (!agentId) {
+    ElMessage.warning('请选择 Agent')
+    return
+  }
+  if (!name) {
+    ElMessage.warning('请输入任务名称')
+    return
+  }
+  if (!instruction) {
+    ElMessage.warning('请输入任务指令')
+    return
+  }
+
+  taskCreating.value = true
+  try {
+    await createTask({
+      agentId,
+      documentId,
+      name,
+      instruction,
+      tokenBudget: taskForm.tokenBudget,
+    })
+    taskDialogVisible.value = false
+    ElMessage.success('Agent 任务已创建')
+    if (canReadActivities.value && String(documentId) === String(documentDetail.value?.id)) {
+      activityController?.abort()
+      const controller = new AbortController()
+      activityController = controller
+      void loadActivities(documentId, controller.signal)
+    }
+  } catch (error) {
+    ElMessage.error(normalizeApiError(error).message)
+  } finally {
+    taskCreating.value = false
+  }
 }
 
 function showDocumentInfo(): void {
-  ElMessage.info('文档详情已展示在右侧信息栏')
+  if (documentDetail.value || directoryDetail.value) documentInfoDialogVisible.value = true
 }
 
 async function reloadSelectedDocument(): Promise<void> {
@@ -1916,6 +2271,10 @@ function countNodesByType(nodes: DocumentTreeNodeData[], type: DocumentNodeType)
   )
 }
 
+function documentStatusLabel(status: DocumentStatus): string {
+  return status === 'ARCHIVED' ? '已归档' : '正常'
+}
+
 function allNodes(nodes: DocumentTreeNodeData[]): DocumentTreeNodeData[] {
   return nodes.flatMap((node) => [node, ...allNodes(node.children)])
 }
@@ -1925,6 +2284,20 @@ function findNode(nodes: DocumentTreeNodeData[], id: EntityId): DocumentTreeNode
     if (String(node.id) === String(id)) return node
     const child = findNode(node.children, id)
     if (child) return child
+  }
+  return null
+}
+
+function findNodePath(
+  nodes: DocumentTreeNodeData[],
+  id: EntityId,
+  ancestors: DocumentTreeNodeData[] = [],
+): DocumentTreeNodeData[] | null {
+  for (const node of nodes) {
+    const path = [...ancestors, node]
+    if (String(node.id) === String(id)) return path
+    const childPath = findNodePath(node.children, id, path)
+    if (childPath) return childPath
   }
   return null
 }
@@ -1963,6 +2336,15 @@ function buildDirectoryOptions(
     }))
 }
 
+function buildTaskDocumentOptions(nodes: DocumentTreeNodeData[]): DirectoryOption[] {
+  return nodes.map((node) => ({
+    value: node.id,
+    label: node.title,
+    children: buildTaskDocumentOptions(node.children),
+    disabled: node.nodeType === 'DIRECTORY',
+  }))
+}
+
 function directoryDepth(nodes: DocumentTreeNodeData[], id: EntityId, depth = 1): number {
   for (const node of nodes) {
     if (String(node.id) === String(id)) return node.nodeType === 'DIRECTORY' ? depth : 0
@@ -1994,7 +2376,8 @@ watch(contentMode, (mode) => {
 watch(draftContent, () => {
   void nextTick(() => {
     attachOutlineScroll()
-    if (contentMode.value !== 'source') void hydrateImages(previewHost.value)
+    const imageHost = contentMode.value === 'edit' ? richEditorHost.value : previewHost.value
+    if (contentMode.value !== 'source') void hydrateImages(imageHost)
   })
 })
 
@@ -2029,6 +2412,10 @@ watch(
   { immediate: true },
 )
 
+onMounted(() => {
+  document.addEventListener('visibilitychange', handleDocumentVisibilityChange)
+})
+
 onBeforeUnmount(() => {
   detachOutlineScroll()
   clearResolvedImageUrls()
@@ -2036,6 +2423,10 @@ onBeforeUnmount(() => {
   treeController?.abort()
   detailController?.abort()
   activityController?.abort()
+  clearActivityPollTimer()
+  document.removeEventListener('visibilitychange', handleDocumentVisibilityChange)
+  taskAgentsController?.abort()
+  taskDocumentsController?.abort()
   removePointerListeners()
   if (searchTimer) clearTimeout(searchTimer)
 })
@@ -2777,6 +3168,85 @@ onBeforeUnmount(() => {
   text-align: right;
 }
 
+.document-detail {
+  display: grid;
+  gap: 20px;
+}
+
+.document-detail__hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d8e3fb;
+  border-radius: var(--adw-radius-md);
+  background: linear-gradient(135deg, #f5f8ff 0%, #fbfcff 100%);
+}
+
+.document-detail__hero-icon {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  color: var(--adw-color-primary);
+  border-radius: 12px;
+  background: var(--adw-color-primary-soft);
+}
+
+.document-detail__hero-content {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+}
+
+.document-detail__title {
+  overflow-wrap: anywhere;
+  color: var(--adw-text-primary);
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.document-detail__type {
+  color: var(--adw-text-secondary);
+  font-size: 12px;
+}
+
+.document-detail__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.document-detail__item {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--adw-border-color-light);
+  border-radius: var(--adw-radius-sm);
+  background: var(--adw-surface-muted);
+}
+
+.document-detail__item--wide {
+  grid-column: 1 / -1;
+}
+
+.document-detail__item dt {
+  color: var(--adw-text-secondary);
+  font-size: 12px;
+}
+
+.document-detail__item dd {
+  margin: 0;
+  color: var(--adw-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .document-info-card__button {
   width: 100%;
   margin-top: 18px;
@@ -2874,6 +3344,12 @@ onBeforeUnmount(() => {
 .dialog-help {
   margin: 0;
   color: var(--adw-text-tertiary);
+  font-size: 12px;
+}
+
+.dialog-error {
+  margin: 6px 0 0;
+  color: var(--adw-color-danger);
   font-size: 12px;
 }
 

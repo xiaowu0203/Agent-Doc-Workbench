@@ -1,14 +1,20 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import DocumentEditorView from './DocumentEditorView.vue'
 
+import * as agentApi from '@/features/agent/api/agent-api'
 import * as documentApi from '@/features/document/api/document-api'
+import * as taskApi from '@/features/task/api/task-api'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useWorkspaceStore } from '@/stores/workspace'
+
+vi.mock('@/features/agent/api/agent-api', () => ({
+  listAgents: vi.fn(),
+}))
 
 vi.mock('@/features/document/api/document-api', () => ({
   archiveDocument: vi.fn(),
@@ -29,6 +35,10 @@ vi.mock('@/features/document/api/document-api', () => ({
   uploadDocumentImage: vi.fn(),
   updateDirectory: vi.fn(),
   updateDocument: vi.fn(),
+}))
+
+vi.mock('@/features/task/api/task-api', () => ({
+  createTask: vi.fn(),
 }))
 
 const detail = {
@@ -153,6 +163,10 @@ beforeEach(() => {
     pageSize: 8,
   })
   vi.mocked(documentApi.updateDocument).mockResolvedValue(detail)
+  vi.mocked(agentApi.listAgents).mockResolvedValue([
+    { id: 301, spaceId: 7, name: '文档审阅 Agent', status: 'ENABLED' },
+  ])
+  vi.mocked(taskApi.createTask).mockResolvedValue({ id: 401 })
 })
 
 describe('DocumentEditorView', () => {
@@ -167,6 +181,63 @@ describe('DocumentEditorView', () => {
     expect(wrapper.text()).toContain('张三')
     expect(wrapper.text()).toContain('文档审计')
     expect(wrapper.text()).toContain('正式文档：Agent 修改将生成变更请求')
+  })
+
+  it('opens document details in an inline dialog', async () => {
+    const wrapper = await mountDocument()
+    const detailButton = wrapper
+      .findAll('.document-info-card__button')
+      .find((button) => button.text() === '查看详情')
+
+    expect(detailButton).toBeDefined()
+    await detailButton!.trigger('click')
+    await nextTick()
+
+    const detailList = document.body.querySelector('.document-detail')
+    expect(detailList?.textContent).toContain('产品上线方案')
+    expect(detailList?.textContent).toContain('最后修改人')
+    expect(detailList?.textContent).toContain('张三')
+    expect(detailList?.textContent).toContain('文档 ID')
+  })
+
+  it('polls active document activities and stops after the task completes', async () => {
+    vi.useFakeTimers()
+    try {
+      let activityCalls = 0
+      vi.mocked(documentApi.listDocumentActivities).mockImplementation(async () => {
+        activityCalls += 1
+        const status = activityCalls === 1 ? '运行中' : '已完成'
+        return {
+          records: [
+            {
+              id: 201,
+              type: 'TASK',
+              title: '文档审计',
+              status,
+              sourceTaskId: 201,
+              operatorName: '李四',
+              activityAt: '2026-09-01T10:10:00Z',
+            },
+          ],
+          total: 1,
+          pageNum: 1,
+          pageSize: 8,
+        }
+      })
+      const wrapper = await mountDocument()
+      await flushPromises()
+
+      expect(activityCalls).toBe(1)
+      await vi.advanceTimersByTimeAsync(5000)
+      await flushPromises()
+      expect(activityCalls).toBe(2)
+
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(activityCalls).toBe(2)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('renames a document after double-clicking its title', async () => {
@@ -350,6 +421,39 @@ describe('DocumentEditorView', () => {
     expect(editor.text()).toContain('正常')
   })
 
+  it('reuses the resolved image when switching between preview and edit modes', async () => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn(() => 'blob:document-image'),
+    })
+    vi.mocked(documentApi.readDocumentImage).mockClear()
+    vi.mocked(documentApi.getDocument).mockResolvedValue({
+      ...detail,
+      content: '![流程图](/api/document/documents/101/assets/301)',
+    })
+    vi.mocked(documentApi.readDocumentImage).mockResolvedValue(new Blob(['image']))
+    const wrapper = await mountDocument()
+    await flushPromises()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[aria-label="Markdown 预览"] img').attributes('src')).toMatch(/^blob:/),
+    )
+    const resolvedUrl = wrapper.get('[aria-label="Markdown 预览"] img').attributes('src')
+    expect(documentApi.readDocumentImage).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('button[aria-label="编辑模式"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[aria-label="Markdown 可视化编辑器"] img').attributes('src')).toBe(
+      resolvedUrl,
+    )
+
+    await wrapper.get('button[aria-label="预览模式"]').trigger('click')
+    await nextTick()
+    expect(wrapper.get('[aria-label="Markdown 预览"] img').attributes('src')).toBe(resolvedUrl)
+    expect(documentApi.readDocumentImage).toHaveBeenCalledTimes(1)
+    Reflect.deleteProperty(URL, 'createObjectURL')
+  })
+
   it('renders Markdown block and inline syntax in the visual editor', async () => {
     vi.mocked(documentApi.getDocument).mockResolvedValue({ ...detail, content: '' })
     const wrapper = await mountDocument()
@@ -486,6 +590,42 @@ describe('DocumentEditorView', () => {
     ).toBe(false)
     expect(wrapper.find('button[aria-label="编辑模式"]').exists()).toBe(false)
     expect(wrapper.findAll('button').some((button) => button.text() === '保存')).toBe(false)
+  })
+
+  it('opens an inline task dialog and creates a task without navigating away', async () => {
+    const wrapper = await mountDocument()
+    const route = wrapper.vm.$router.currentRoute.value.fullPath
+    const taskButton = wrapper
+      .findAll('.document-editor__actions button')
+      .find((button) => button.text() === '发起 Agent 任务')
+
+    expect(taskButton).toBeDefined()
+    await taskButton!.trigger('click')
+    await flushPromises()
+
+    expect(agentApi.listAgents).toHaveBeenCalledWith(7, expect.any(AbortSignal))
+    const taskTextarea = document.body.querySelector(
+      'textarea[placeholder="告诉 Agent 需要如何处理这篇文档"]',
+    )
+    expect(taskTextarea).not.toBeNull()
+    const dialog = new DOMWrapper(taskTextarea!.closest('.el-dialog')!)
+    await dialog
+      .get('textarea[placeholder="告诉 Agent 需要如何处理这篇文档"]')
+      .setValue('请检查文档结构')
+    await dialog
+      .findAll('button')
+      .find((button) => button.text() === '创建任务')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(taskApi.createTask).toHaveBeenCalledWith({
+      agentId: 301,
+      documentId: 101,
+      name: '产品上线方案',
+      instruction: '请检查文档结构',
+      tokenBudget: null,
+    })
+    expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe(route)
   })
 
   it('opens a directory without requesting document detail', async () => {
