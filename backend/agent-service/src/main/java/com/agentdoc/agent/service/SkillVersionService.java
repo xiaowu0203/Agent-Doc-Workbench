@@ -283,6 +283,7 @@ public class SkillVersionService {
         if (updated != 1) {
             throw new BusinessException(ErrorCode.CONFLICT, "Skill 版本状态冲突，仅草稿可发布");
         }
+        skillService.markUpdated(skill);
         // 记录SkillVersion变更日志
         auditLogService.record(skill.getSpaceId(), "SKILL_VERSION_PUBLISHED", "skill_version", entity.getId(),
                 Map.of("versionNo", entity.getVersionNo(), "sha256", entity.getSha256()));

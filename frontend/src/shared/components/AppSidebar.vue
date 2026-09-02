@@ -100,7 +100,7 @@ const menuItems: MenuItem[] = [
     path: null,
   },
   { label: 'Agent', icon: Aim, permission: SPACE_PERMISSIONS.AGENT_READ, path: null },
-  { label: 'Skill', icon: SetUp, permission: SPACE_PERMISSIONS.SKILL_READ, path: null },
+  { label: 'Skill', icon: SetUp, permission: SPACE_PERMISSIONS.SKILL_READ, path: 'skills' },
   { label: 'MCP 服务', icon: Operation, permission: SPACE_PERMISSIONS.MCP_READ, path: null },
   { label: '用量与审计', icon: DataAnalysis, permission: SPACE_PERMISSIONS.USAGE_READ, path: null },
   {

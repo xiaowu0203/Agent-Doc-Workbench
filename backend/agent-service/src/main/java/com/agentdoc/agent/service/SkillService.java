@@ -1,6 +1,7 @@
 package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.SkillConvertor;
+import com.agentdoc.agent.convertor.SkillVersionConvertor;
 import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.mapper.SkillMapper;
 import com.agentdoc.agent.mapper.SkillVersionMapper;
@@ -9,6 +10,8 @@ import com.agentdoc.agent.pojo.dto.SkillUpdateDTO;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.pojo.param.SkillSearchParam;
+import com.agentdoc.agent.pojo.vo.SkillBindingCountVO;
+import com.agentdoc.agent.pojo.vo.SkillLatestVersionVO;
 import com.agentdoc.agent.pojo.vo.SkillVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -21,6 +24,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -111,7 +116,7 @@ public class SkillService {
 
         LambdaQueryWrapper<SkillEntity> wrapper = new LambdaQueryWrapper<SkillEntity>()
                 .eq(SkillEntity::getSpaceId, param.getSpaceId())
-                .orderByDesc(SkillEntity::getCreatedAt);
+                .orderByDesc(SkillEntity::getUpdatedAt);
         if (param.getStatus() != null) {
             wrapper.eq(SkillEntity::getStatus, param.getStatus());
         }
@@ -123,11 +128,14 @@ public class SkillService {
         }
         Page<SkillEntity> page = skillMapper.selectPage(PageUtils.toPage(param), wrapper);
 
-        // 批量统计每个skill的版本数量（Key：SkillId，Value：该Skill有多少个版本）
-        Map<Long, Long> versionCounts = versionCounts(page.getRecords());
+        SkillListSummaries summaries = listSummaries(page.getRecords());
 
         return PageVO.of(page.getRecords().stream()
-                .map(skill -> SkillConvertor.toVO(skill, versionCounts.getOrDefault(skill.getId(), 0L))).toList(),
+                .map(skill -> SkillConvertor.toVO(skill,
+                        summaries.versionCounts().getOrDefault(skill.getId(), 0L),
+                        summaries.boundAgentCounts().getOrDefault(skill.getId(), 0L),
+                        summaries.latestVersions().get(skill.getId())))
+                .toList(),
                 page.getTotal(), param);
     }
 
@@ -223,6 +231,17 @@ public class SkillService {
     }
 
     /**
+     * 刷新 Skill 最近更新时间，用于版本发布后的列表排序。
+     * 调用方必须已经完成该 Skill 的管理权限和归属校验。
+     *
+     * @param entity 待刷新的Skill实体
+     */
+    public void markUpdated(SkillEntity entity) {
+        entity.setUpdatedAt(LocalDateTime.now());
+        skillMapper.updateById(entity);
+    }
+
+    /**
      * 预分配下一个版本号，行锁保证并发安全
      * <p>新建版本前调用；取出nextVersionNo，再+1写回数据库，返回本次使用的versionNo</p>
      *
@@ -254,9 +273,11 @@ public class SkillService {
      * @return SkillVO
      */
     public SkillVO toVO(SkillEntity entity) {
-        long count = skillVersionMapper.selectCount(new LambdaQueryWrapper<SkillVersionEntity>()
-                .eq(SkillVersionEntity::getSkillId, entity.getId()));
-        return SkillConvertor.toVO(entity, count);
+        SkillListSummaries summaries = listSummaries(List.of(entity));
+        return SkillConvertor.toVO(entity,
+                summaries.versionCounts().getOrDefault(entity.getId(), 0L),
+                summaries.boundAgentCounts().getOrDefault(entity.getId(), 0L),
+                summaries.latestVersions().get(entity.getId()));
     }
 
     /**
@@ -265,15 +286,29 @@ public class SkillService {
      * @param skills skill实体列表
      * @return Map&lt;skillId, 版本数&gt;
      */
-    private Map<Long, Long> versionCounts(List<SkillEntity> skills) {
+    private SkillListSummaries listSummaries(List<SkillEntity> skills) {
         if (skills.isEmpty()) {
-            return Map.of();
+            return new SkillListSummaries(Map.of(), Map.of(), Map.of());
         }
         List<Long> skillIds = skills.stream().map(SkillEntity::getId).toList();
-        return skillVersionMapper.selectList(new LambdaQueryWrapper<SkillVersionEntity>()
-                        .select(SkillVersionEntity::getSkillId)
-                        .in(SkillVersionEntity::getSkillId, skillIds))
-                .stream().collect(Collectors.groupingBy(SkillVersionEntity::getSkillId, Collectors.counting()));
+        List<SkillVersionEntity> versions = skillVersionMapper.selectList(
+                new LambdaQueryWrapper<SkillVersionEntity>()
+                        .in(SkillVersionEntity::getSkillId, skillIds));
+        Map<Long, Long> versionCounts = versions.stream()
+                .collect(Collectors.groupingBy(SkillVersionEntity::getSkillId, Collectors.counting()));
+        Map<Long, SkillLatestVersionVO> latestVersions = new HashMap<>();
+        versions.forEach(version -> latestVersions.compute(version.getSkillId(), (skillId, current) ->
+                current == null || version.getVersionNo() > current.versionNo()
+                        ? SkillVersionConvertor.toLatestVersionVO(version) : current));
+        Map<Long, Long> boundAgentCounts = skillMapper.selectEnabledAgentCounts(skillIds).stream()
+                .collect(Collectors.toMap(SkillBindingCountVO::getSkillId, SkillBindingCountVO::getBoundAgentCount));
+        return new SkillListSummaries(versionCounts, boundAgentCounts, latestVersions);
+    }
+
+    private record SkillListSummaries(
+            Map<Long, Long> versionCounts,
+            Map<Long, Long> boundAgentCounts,
+            Map<Long, SkillLatestVersionVO> latestVersions) {
     }
 
     /**

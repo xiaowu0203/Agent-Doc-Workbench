@@ -8,6 +8,7 @@ import LoginView from '@/views/LoginView.vue'
 import SpaceOverviewView from '@/views/SpaceOverviewView.vue'
 import AccessControlView from '@/views/AccessControlView.vue'
 import DocumentEditorView from '@/views/DocumentEditorView.vue'
+import SkillManagementView from '@/views/SkillManagementView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -51,6 +52,15 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.ROLE_READ,
+        },
+      },
+      {
+        path: 'spaces/:spaceId/skills',
+        name: 'space-skills',
+        component: SkillManagementView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.SKILL_READ,
         },
       },
       {

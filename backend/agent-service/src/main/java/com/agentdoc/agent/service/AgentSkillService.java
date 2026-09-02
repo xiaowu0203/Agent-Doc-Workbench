@@ -3,6 +3,7 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.convertor.AgentSkillConvertor;
+import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentSkillMapper;
@@ -15,6 +16,7 @@ import com.agentdoc.agent.pojo.entity.AgentSkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.pojo.vo.AgentSkillBindingVO;
+import com.agentdoc.agent.pojo.vo.SkillAgentBindingVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.utils.AuthUtils;
@@ -32,6 +34,7 @@ import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
 
 /**
  * Agent‑Skill绑定关系服务
@@ -66,6 +69,48 @@ public class AgentSkillService {
         spaceAccessService.requirePermission(agent.getSpaceId(), AGENT_READ);
         // 加载已启用的绑定关系
         return loadBindings(agentId, true);
+    }
+
+    /**
+     * 查询当前 Skill 的启用 Agent 绑定，用于 Skill 详情页反向展示关联关系。
+     *
+     * @param skillId Skill主键ID
+     * @return 当前启用的Agent绑定列表
+     */
+    public List<SkillAgentBindingVO> listBySkill(Long skillId) {
+        SkillEntity skill = skillMapper.selectById(skillId);
+        if (skill == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
+        }
+        spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
+
+        List<AgentSkillEntity> relations = agentSkillMapper.selectList(
+                new LambdaQueryWrapper<AgentSkillEntity>()
+                        .eq(AgentSkillEntity::getSkillId, skillId)
+                        .eq(AgentSkillEntity::getEnabled, true)
+                        .orderByAsc(AgentSkillEntity::getAgentId));
+        if (relations.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, AgentEntity> agents = new HashMap<>();
+        agentMapper.selectBatchIds(relations.stream().map(AgentSkillEntity::getAgentId).collect(Collectors.toSet()))
+                .forEach(agent -> agents.put(agent.getId(), agent));
+        Map<Long, SkillVersionEntity> versions = new HashMap<>();
+        versionMapper.selectBatchIds(relations.stream().map(AgentSkillEntity::getSkillVersionId)
+                        .collect(Collectors.toSet()))
+                .forEach(version -> versions.put(version.getId(), version));
+
+        return relations.stream().map(relation -> {
+            AgentEntity agent = agents.get(relation.getAgentId());
+            SkillVersionEntity version = versions.get(relation.getSkillVersionId());
+            if (agent == null || version == null) {
+                return null;
+            }
+            return new SkillAgentBindingVO(relation.getId(), agent.getId(), agent.getName(),
+                    AgentStatus.fromCode(agent.getStatus()), version.getId(), version.getVersionNo(),
+                    relation.getEnabled());
+        }).filter(java.util.Objects::nonNull).toList();
     }
 
     /**

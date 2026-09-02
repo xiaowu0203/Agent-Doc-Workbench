@@ -1,5 +1,6 @@
 package com.agentdoc.agent.execution;
 
+import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentMapper;
@@ -14,7 +15,6 @@ import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.agent.service.AgentSkillService;
 import com.agentdoc.agent.service.SkillAuditLogService;
-import com.agentdoc.agent.service.SkillService;
 import com.agentdoc.agent.service.SpaceAccessService;
 import org.junit.jupiter.api.Test;
 
@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -35,16 +36,55 @@ import static org.mockito.Mockito.when;
 class AgentSkillServiceTest {
 
     @Test
+    void listsEnabledAgentsBoundToSkill() {
+        AgentService agentService = mock(AgentService.class);
+        SpaceAccessService spaceAccessService = mock(SpaceAccessService.class);
+        AgentMapper agentMapper = mock(AgentMapper.class);
+        AgentSkillMapper agentSkillMapper = mock(AgentSkillMapper.class);
+        SkillMapper skillMapper = mock(SkillMapper.class);
+        SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
+        AgentSkillService service = new AgentSkillService(agentService, spaceAccessService, agentMapper,
+                agentSkillMapper, skillMapper, versionMapper, mock(SkillAuditLogService.class));
+        SkillEntity skill = new SkillEntity();
+        skill.setId(30L);
+        skill.setSpaceId(20L);
+        AgentSkillEntity relation = new AgentSkillEntity();
+        relation.setId(50L);
+        relation.setAgentId(10L);
+        relation.setSkillId(30L);
+        relation.setSkillVersionId(40L);
+        relation.setEnabled(true);
+        AgentEntity agent = new AgentEntity();
+        agent.setId(10L);
+        agent.setName("审查 Agent");
+        agent.setStatus(AgentStatus.ENABLED.getCode());
+        SkillVersionEntity version = new SkillVersionEntity();
+        version.setId(40L);
+        version.setVersionNo(2);
+
+        when(skillMapper.selectById(30L)).thenReturn(skill);
+        when(agentSkillMapper.selectList(any())).thenReturn(List.of(relation));
+        when(agentMapper.selectBatchIds(anyCollection())).thenReturn(List.of(agent));
+        when(versionMapper.selectBatchIds(anyCollection())).thenReturn(List.of(version));
+
+        var bindings = service.listBySkill(30L);
+
+        assertThat(bindings).hasSize(1);
+        assertThat(bindings.getFirst().agentName()).isEqualTo("审查 Agent");
+        assertThat(bindings.getFirst().versionNo()).isEqualTo(2);
+        verify(spaceAccessService).requirePermission(20L, SKILL_READ);
+    }
+
+    @Test
     void unchangedBindingDoesNotIncrementConfigVersion() {
         AgentService agentService = mock(AgentService.class);
-        SkillService skillService = mock(SkillService.class);
         SpaceAccessService spaceAccessService = mock(SpaceAccessService.class);
         AgentMapper agentMapper = mock(AgentMapper.class);
         AgentSkillMapper agentSkillMapper = mock(AgentSkillMapper.class);
         SkillMapper skillMapper = mock(SkillMapper.class);
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         SkillAuditLogService auditLogService = mock(SkillAuditLogService.class);
-        AgentSkillService service = new AgentSkillService(agentService, skillService, spaceAccessService, agentMapper,
+        AgentSkillService service = new AgentSkillService(agentService, spaceAccessService, agentMapper,
                 agentSkillMapper, skillMapper, versionMapper, auditLogService);
 
         AgentEntity agent = new AgentEntity();

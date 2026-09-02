@@ -2,6 +2,7 @@ package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
+import com.agentdoc.agent.pojo.vo.SkillLatestVersionVO;
 import com.agentdoc.agent.pojo.vo.SkillVersionVO;
 import com.agentdoc.agent.skill.archive.SkillPackageEntry;
 import com.agentdoc.common.utils.JsonUtils;
@@ -31,6 +32,18 @@ public final class SkillVersionConvertor {
                 entity.getSha256(), entity.getPackageSize(),
                 readJsonList(entity.getAllowedToolsJson()), readReadablePaths(entity.getManifestJson()),
                 entity.getCreatedBy(), entity.getCreatedAt(), entity.getPublishedAt());
+    }
+
+    /**
+     * Skill版本实体转换为列表卡片使用的稳定摘要。
+     *
+     * @param entity Skill版本数据库实体，非null
+     * @return 最新版本摘要
+     */
+    public static SkillLatestVersionVO toLatestVersionVO(SkillVersionEntity entity) {
+        return new SkillLatestVersionVO(entity.getId(), entity.getVersionNo(),
+                SkillVersionStatus.fromCode(entity.getStatus()), entity.getActivationDescription(),
+                readJsonList(entity.getAllowedToolsJson()).size(), entity.getCreatedAt(), entity.getPublishedAt());
     }
 
     /**
