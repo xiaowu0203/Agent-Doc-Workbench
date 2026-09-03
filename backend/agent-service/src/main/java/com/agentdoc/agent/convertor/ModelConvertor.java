@@ -1,9 +1,9 @@
 package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.ModelProvider;
-import com.agentdoc.agent.enums.ModelAdapterType;
 import com.agentdoc.agent.enums.ModelStatus;
 import com.agentdoc.agent.pojo.dto.ModelCreateDTO;
+import com.agentdoc.agent.pojo.dto.ModelUpdateDTO;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.pojo.vo.ModelVO;
 
@@ -34,7 +34,7 @@ public final class ModelConvertor {
         ModelEntity entity = new ModelEntity();
         ModelProvider provider = ModelProvider.fromCode(dto.provider());
         entity.setProvider(provider.getCode());
-        entity.setAdapterType(ModelAdapterType.fromCodeOrDefault(dto.adapterType(), provider).getCode());
+        entity.setAdapterType(provider.resolveAdapterType(dto.baseUrl()).getCode());
         entity.setModelKey(dto.modelKey());
         entity.setDisplayName(dto.displayName());
         entity.setOfficialUrl(dto.officialUrl());
@@ -61,12 +61,43 @@ public final class ModelConvertor {
      * @return 对外展示VO，状态转换为枚举对象
      */
     public static ModelVO toVO(ModelEntity entity) {
+        return toVO(entity, 0L);
+    }
+
+    /**
+     * 数据库实体转换为带关联 Agent 数量的模型视图。
+     */
+    public static ModelVO toVO(ModelEntity entity, Long agentCount) {
         return new ModelVO(entity.getId(), entity.getProvider(), entity.getAdapterType(), entity.getModelKey(),
                 entity.getDisplayName(), entity.getOfficialUrl(), entity.getBaseUrl(),
                 // true代表已配置密钥，VO不输出密钥密文，避免密钥泄露
                 entity.getEncryptedApiKey() != null, entity.getOptionsJson(),
                 entity.getConfigVersion(),
                 entity.getContextWindow(), entity.getMaxOutputTokens(), entity.getInputPricePerMillion(),
-                entity.getOutputPricePerMillion(), ModelStatus.fromCode(entity.getStatus()), entity.getDescription());
+                entity.getOutputPricePerMillion(), ModelStatus.fromCode(entity.getStatus()), agentCount,
+                entity.getDescription());
+    }
+
+    /**
+     * 将更新参数应用到已有模型；新密钥为空时保留原密钥。
+     */
+    public static void applyUpdate(ModelEntity entity, ModelUpdateDTO dto, String encryptedApiKey) {
+        ModelProvider provider = ModelProvider.fromCode(dto.provider());
+        entity.setProvider(provider.getCode());
+        entity.setAdapterType(provider.resolveAdapterType(dto.baseUrl()).getCode());
+        entity.setModelKey(dto.modelKey());
+        entity.setDisplayName(dto.displayName());
+        entity.setOfficialUrl(dto.officialUrl());
+        entity.setBaseUrl(dto.baseUrl());
+        if (encryptedApiKey != null) {
+            entity.setEncryptedApiKey(encryptedApiKey);
+        }
+        entity.setOptionsJson(dto.optionsJson());
+        entity.setContextWindow(dto.contextWindow());
+        entity.setMaxOutputTokens(dto.maxOutputTokens());
+        entity.setInputPricePerMillion(dto.inputPricePerMillion());
+        entity.setOutputPricePerMillion(dto.outputPricePerMillion());
+        entity.setDescription(dto.description());
+        entity.setConfigVersion(entity.getConfigVersion() == null ? 1L : entity.getConfigVersion() + 1L);
     }
 }

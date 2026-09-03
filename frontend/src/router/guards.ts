@@ -24,6 +24,10 @@ export function installRouterGuards(router: Router): void {
       return { path: '/' }
     }
 
+    if (to.meta.platformRole && !authStore.platformRoles.includes(to.meta.platformRole)) {
+      return { path: '/forbidden' }
+    }
+
     if (!to.meta.requiresSpace) {
       return true
     }

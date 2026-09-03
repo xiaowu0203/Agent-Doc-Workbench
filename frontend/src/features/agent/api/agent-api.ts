@@ -81,7 +81,7 @@ export function deleteAgent(agentId: EntityId): Promise<void> {
 export function listModels(enabledOnly = true): Promise<ModelOption[]> {
   return request<ModelOption[]>({
     method: 'GET',
-    url: '/agent/models',
+    url: '/agent/models/options',
     params: { enabledOnly },
   }).then((models) => models ?? [])
 }

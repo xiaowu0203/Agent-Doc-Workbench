@@ -2,6 +2,7 @@ export interface AuthSessionBridge {
   getAccessToken: () => string | null
   refreshAccessToken?: () => Promise<string | null>
   clearSession: () => void
+  onSessionExpired?: () => void | Promise<void>
 }
 
 const emptyBridge: AuthSessionBridge = {
@@ -11,6 +12,7 @@ const emptyBridge: AuthSessionBridge = {
 
 let sessionBridge = emptyBridge
 let refreshPromise: Promise<string | null> | null = null
+let expirationPromise: Promise<void> | null = null
 
 export function configureAuthSession(bridge: AuthSessionBridge): void {
   sessionBridge = bridge
@@ -22,7 +24,7 @@ export function getAccessToken(): string | null {
 
 export async function recoverAuthSession(): Promise<string | null> {
   if (!sessionBridge.refreshAccessToken) {
-    sessionBridge.clearSession()
+    await expireAuthSession()
     return null
   }
 
@@ -37,12 +39,27 @@ export async function recoverAuthSession(): Promise<string | null> {
 
   const accessToken = await refreshPromise
   if (!accessToken) {
-    sessionBridge.clearSession()
+    await expireAuthSession()
   }
   return accessToken
+}
+
+export function expireAuthSession(): Promise<void> {
+  if (!expirationPromise) {
+    expirationPromise = Promise.resolve()
+      .then(async () => {
+        sessionBridge.clearSession()
+        await sessionBridge.onSessionExpired?.()
+      })
+      .finally(() => {
+        expirationPromise = null
+      })
+  }
+  return expirationPromise
 }
 
 export function resetAuthSessionForTest(): void {
   sessionBridge = emptyBridge
   refreshPromise = null
+  expirationPromise = null
 }

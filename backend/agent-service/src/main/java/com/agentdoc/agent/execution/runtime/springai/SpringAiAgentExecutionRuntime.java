@@ -6,6 +6,7 @@ import com.agentdoc.agent.execution.model.ModelAdapter;
 import com.agentdoc.agent.execution.model.ModelAdapterContext;
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.model.ModelCapabilities;
+import com.agentdoc.agent.execution.model.ModelSamplingOptions;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
@@ -110,6 +111,7 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
         // try‑with‑resources：保证无论正常返回还是异常抛出，工具会话资源一定关闭释放MCP连接
         try (ExecutionToolSession tools = toolSessionFactory.open(context, cancelRequested)) {
             Integer maxOutputTokens = modelMaxOutputTokens(context.model());
+            ModelSamplingOptions samplingOptions = ModelSamplingOptions.from(context.model());
 
             // 构建模型适配器上下文：解密ApiKey、传入全部工具回调集合
             ModelAdapterContext adapterContext = new ModelAdapterContext(
@@ -117,6 +119,8 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
                     context.model(),
                     cryptoService.decrypt(context.model().getEncryptedApiKey()),
                     maxOutputTokens,
+                    samplingOptions.temperature(),
+                    samplingOptions.topP(),
                     tools.callbacks()).withExecutionId(context.executionId());
 
             // Token预算优先级：taskInput任务入参 > Agent配置

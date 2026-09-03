@@ -185,14 +185,14 @@ public class AuthService {
      * @return AuthResponseVO 令牌响应对象
      */
     private AuthResponseVO issueTokens(UserEntity user) {
+        List<String> platformRoles = platformRoleService.listRoleKeys(user.getId());
         // 生成短期访问JWT
-        String accessToken = jwtService.createAccessToken(
-                user, platformRoleService.listRoleKeys(user.getId()));
+        String accessToken = jwtService.createAccessToken(user, platformRoles);
         // 生成refreshToken字符串
         String refreshToken = jwtService.createRefreshToken();
         // 将refreshToken存入服务端存储（Redis）
         refreshTokenService.store(refreshToken, user.getId());
         return AuthResponseVO.of(
-                accessToken, refreshToken, jwtService.props().accessTtl().toSeconds(), user.toVO());
+                accessToken, refreshToken, jwtService.props().accessTtl().toSeconds(), user.toVO(), platformRoles);
     }
 }

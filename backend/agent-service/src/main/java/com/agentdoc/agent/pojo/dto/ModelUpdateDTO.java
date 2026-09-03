@@ -5,8 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 
 import java.math.BigDecimal;
 
-@Schema(description = "模型配置创建参数")
-public record ModelCreateDTO(
+@Schema(description = "模型配置更新参数")
+public record ModelUpdateDTO(
         @NotBlank
         @Schema(description = "模型提供商", requiredMode = Schema.RequiredMode.REQUIRED)
         String provider,
@@ -28,9 +28,7 @@ public record ModelCreateDTO(
         @Schema(description = "模型服务基础地址")
         String baseUrl,
 
-        @NotBlank
-        @Schema(description = "模型 API Key", requiredMode = Schema.RequiredMode.REQUIRED,
-                accessMode = Schema.AccessMode.WRITE_ONLY)
+        @Schema(description = "模型 API Key；为空时保留现有密钥", accessMode = Schema.AccessMode.WRITE_ONLY)
         String apiKey,
 
         @Schema(description = "适配器扩展配置 JSON")

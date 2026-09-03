@@ -20,6 +20,12 @@ configureAuthSession({
     authStore.clearSession()
     workspaceStore.clearWorkspace()
   },
+  onSessionExpired: async () => {
+    const currentRoute = router.currentRoute.value
+    if (currentRoute.name === 'login') return
+    const redirect = currentRoute.fullPath.startsWith('/') ? currentRoute.fullPath : '/'
+    await router.replace({ path: '/login', query: { redirect } })
+  },
 })
 
 async function bootstrap(): Promise<void> {

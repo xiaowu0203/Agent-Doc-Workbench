@@ -121,6 +121,9 @@ public class OpenAiChatModelAdapter extends AbstractSpringAiModelAdapter {
         if (context.temperature() != null) {
             options.temperature(context.temperature());
         }
+        if (context.topP() != null) {
+            options.topP(context.topP());
+        }
         return options.build();
     }
 

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -63,14 +64,15 @@ class AuthServiceTest {
         user.setStatus(UserStatus.ENABLED.getCode());
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
-        when(platformRoleService.listRoleKeys(user.getId())).thenReturn(java.util.List.of());
-        when(jwtService.createAccessToken(user, java.util.List.of())).thenReturn("access-token");
+        when(platformRoleService.listRoleKeys(user.getId())).thenReturn(List.of("PLATFORM_SUPER_ADMIN"));
+        when(jwtService.createAccessToken(user, List.of("PLATFORM_SUPER_ADMIN"))).thenReturn("access-token");
         when(jwtService.createRefreshToken()).thenReturn("refresh-token");
 
         AuthResponseVO response = authService.login("alice", rawPassword);
         assertEquals("access-token", response.accessToken());
         assertEquals("refresh-token", response.refreshToken());
         assertEquals("alice", response.user().username());
+        assertEquals(List.of("PLATFORM_SUPER_ADMIN"), response.platformRoles());
     }
 
     @Test

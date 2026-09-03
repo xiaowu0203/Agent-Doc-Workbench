@@ -45,7 +45,7 @@
       <span class="app-sidebar__avatar">{{ initials }}</span>
       <div v-if="!collapsed">
         <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
-        <span>{{ workspaceStore.currentSpace?.role?.displayName || '空间成员' }}</span>
+        <span>{{ footerRoleLabel }}</span>
       </div>
     </div>
   </aside>
@@ -56,6 +56,7 @@ import {
   Aim,
   Briefcase,
   Checked,
+  Cpu,
   DataAnalysis,
   Document,
   Grid,
@@ -63,11 +64,12 @@ import {
   Operation,
   SetUp,
   Tickets,
+  UserFilled,
 } from '@element-plus/icons-vue'
 import { ElIcon, ElOption, ElSelect } from 'element-plus'
 import type { Component } from 'vue'
-import { computed, ref, watch } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import type { EntityId } from '@/features/workspace/types'
@@ -79,7 +81,8 @@ defineProps<{ collapsed: boolean }>()
 interface MenuItem {
   label: string
   icon: Component
-  permission: (typeof SPACE_PERMISSIONS)[keyof typeof SPACE_PERMISSIONS]
+  scope: 'space' | 'platform'
+  permission?: (typeof SPACE_PERMISSIONS)[keyof typeof SPACE_PERMISSIONS]
   path: string | null
   group?: string
 }
@@ -87,30 +90,70 @@ interface MenuItem {
 const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
 const router = useRouter()
+const route = useRoute()
 const selectedSpaceId = ref<EntityId | null>(workspaceStore.currentSpaceId)
 
 const menuItems: MenuItem[] = [
-  { label: '总览', icon: Grid, permission: SPACE_PERMISSIONS.SPACE_READ, path: 'overview' },
-  { label: '文档', icon: Document, permission: SPACE_PERMISSIONS.DOCUMENT_READ, path: 'documents' },
-  { label: '任务', icon: Tickets, permission: SPACE_PERMISSIONS.TASK_READ, path: null },
+  {
+    label: '总览',
+    icon: Grid,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.SPACE_READ,
+    path: 'overview',
+  },
+  {
+    label: '文档',
+    icon: Document,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.DOCUMENT_READ,
+    path: 'documents',
+  },
+  {
+    label: '任务',
+    icon: Tickets,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.TASK_READ,
+    path: null,
+  },
   {
     label: '变更审批',
     icon: Checked,
+    scope: 'space',
     permission: SPACE_PERMISSIONS.CHANGE_REQUEST_READ,
     path: null,
   },
-  { label: 'Agent', icon: Aim, permission: SPACE_PERMISSIONS.AGENT_READ, path: 'agents' },
-  { label: 'Skill', icon: SetUp, permission: SPACE_PERMISSIONS.SKILL_READ, path: 'skills' },
+  {
+    label: 'Agent',
+    icon: Aim,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.AGENT_READ,
+    path: 'agents',
+  },
+  {
+    label: 'Skill',
+    icon: SetUp,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.SKILL_READ,
+    path: 'skills',
+  },
   {
     label: 'MCP 服务',
     icon: Operation,
+    scope: 'space',
     permission: SPACE_PERMISSIONS.MCP_READ,
     path: 'mcp-servers',
   },
-  { label: '用量与审计', icon: DataAnalysis, permission: SPACE_PERMISSIONS.USAGE_READ, path: null },
+  {
+    label: '用量与审计',
+    icon: DataAnalysis,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.USAGE_READ,
+    path: null,
+  },
   {
     label: '角色与权限',
     icon: Lock,
+    scope: 'space',
     permission: SPACE_PERMISSIONS.ROLE_READ,
     path: 'access/roles',
     group: '组织与权限',
@@ -118,22 +161,49 @@ const menuItems: MenuItem[] = [
   {
     label: '成员管理',
     icon: Briefcase,
+    scope: 'space',
     permission: SPACE_PERMISSIONS.MEMBER_READ,
     path: 'access/members',
     group: '组织与权限',
+  },
+  {
+    label: '模型配置',
+    icon: Cpu,
+    scope: 'platform',
+    path: '/system/models',
+    group: '系统管理',
+  },
+  {
+    label: '平台角色',
+    icon: UserFilled,
+    scope: 'platform',
+    path: null,
+    group: '系统管理',
   },
 ]
 
 const visibleMenuItems = computed(() =>
   menuItems
-    .filter((item) => workspaceStore.hasPermission(item.permission))
+    .filter((item) =>
+      item.scope === 'platform'
+        ? authStore.isPlatformSuperAdmin
+        : Boolean(item.permission && workspaceStore.hasPermission(item.permission)),
+    )
     .map((item) => ({
       ...item,
       path:
-        item.path && workspaceStore.currentSpaceId
-          ? `/spaces/${workspaceStore.currentSpaceId}/${item.path}`
-          : null,
+        item.scope === 'platform'
+          ? item.path
+          : item.path && workspaceStore.currentSpaceId
+            ? `/spaces/${workspaceStore.currentSpaceId}/${item.path}`
+            : null,
     })),
+)
+
+const footerRoleLabel = computed(() =>
+  route.path.startsWith('/system') && authStore.isPlatformSuperAdmin
+    ? '平台超级管理员'
+    : workspaceStore.currentSpace?.role?.displayName || '空间成员',
 )
 
 const initials = computed(() => {
@@ -147,6 +217,30 @@ watch(
     selectedSpaceId.value = spaceId
   },
 )
+
+onMounted(() => {
+  void initializeSpaceNavigation()
+})
+
+async function initializeSpaceNavigation(): Promise<void> {
+  if (!route.path.startsWith('/system')) return
+  try {
+    if (workspaceStore.spaces.length === 0) {
+      await workspaceStore.loadSpaces()
+    }
+    const currentSpaceExists = workspaceStore.spaces.some(
+      (space) => String(space.id) === String(workspaceStore.currentSpaceId),
+    )
+    const spaceId = currentSpaceExists
+      ? workspaceStore.currentSpaceId
+      : (workspaceStore.spaces[0]?.id ?? null)
+    if (spaceId === null) return
+    workspaceStore.setCurrentSpace(spaceId)
+    await workspaceStore.ensurePermissions(spaceId)
+  } catch {
+    // 系统管理页面保持可用；空间接口恢复后可通过返回首页重新加载。
+  }
+}
 
 async function switchSpace(spaceId: EntityId): Promise<void> {
   if (String(spaceId) === String(workspaceStore.currentSpaceId)) return

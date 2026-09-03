@@ -1,6 +1,6 @@
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
 
-import { getAccessToken, recoverAuthSession } from './auth-session'
+import { expireAuthSession, getAccessToken, recoverAuthSession } from './auth-session'
 import { ApiError, normalizeApiError, unwrapApiResult } from './errors'
 import { isAuthErrorCode, type ApiResult } from './result'
 
@@ -58,7 +58,11 @@ async function executeWithAuthRecovery<T>(
     try {
       return await operation()
     } catch (retryError) {
-      throw normalizeApiError(retryError)
+      const retriedApiError = normalizeApiError(retryError)
+      if (isAuthenticationError(retriedApiError)) {
+        await expireAuthSession()
+      }
+      throw retriedApiError
     }
   }
 }

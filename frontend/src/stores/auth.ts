@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 
 import { login as requestLogin, refresh as requestRefresh } from '@/features/auth/api/auth-api'
 import type { AuthSession, LoginRequest, User } from '@/features/auth/types'
+import { PLATFORM_ROLES } from '@/shared/constants/platform-roles'
 
 const LOCAL_SESSION_KEY = 'adw.auth.session'
 const TAB_SESSION_KEY = 'adw.auth.session.tab'
@@ -35,7 +36,7 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isAuthenticated: (state) => Boolean(state.accessToken && state.user),
-    isPlatformSuperAdmin: (state) => state.platformRoles.includes('PLATFORM_SUPER_ADMIN'),
+    isPlatformSuperAdmin: (state) => state.platformRoles.includes(PLATFORM_ROLES.SUPER_ADMIN),
   },
   actions: {
     async login(credentials: LoginRequest) {

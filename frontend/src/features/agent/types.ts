@@ -99,13 +99,8 @@ export interface AgentMcpBindingInput {
 export interface ModelOption {
   id: EntityId
   provider: string
-  adapterType: string
-  modelKey: string
   displayName: string
-  contextWindow: number | null
-  maxOutputTokens: number | null
   status: 'ENABLED' | 'DISABLED'
-  description: string | null
 }
 
 export interface AgentOverviewStats {

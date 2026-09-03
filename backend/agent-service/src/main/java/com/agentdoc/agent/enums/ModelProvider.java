@@ -30,7 +30,7 @@ public enum ModelProvider {
 
     /**
      * 获取该厂商默认的底层技术适配器
-     * <p>当数据库adapter_type字段为null/空时，使用此默认值</p>
+     * <p>返回供应商的默认适配器；存在多协议入口时由 {@link #resolveAdapterType(String)} 进一步判断。</p>
      * @return 默认适配器类型，保证不会返回null
      */
     public ModelAdapterType defaultAdapterType() {
@@ -41,6 +41,24 @@ public enum ModelProvider {
             case DEEPSEEK, ZHIPU_GLM, ALIBABA_QWEN, XIAOMI_MIMO, OPENAI_COMPATIBLE ->
                     ModelAdapterType.OPENAI_COMPATIBLE;
         };
+    }
+
+    /**
+     * 根据供应商和服务地址确定实际调用协议。
+     * <p>DeepSeek 同时提供 OpenAI 与 Anthropic 兼容入口；使用 /anthropic 地址时自动切换为
+     * Anthropic Messages 适配器，其余情况使用供应商默认适配器。</p>
+     *
+     * @param baseUrl 模型服务基础地址
+     * @return 与地址协议匹配的适配器
+     */
+    public ModelAdapterType resolveAdapterType(String baseUrl) {
+        if (this == DEEPSEEK && baseUrl != null) {
+            String normalizedBaseUrl = baseUrl.trim().toLowerCase();
+            if (normalizedBaseUrl.endsWith("/anthropic") || normalizedBaseUrl.contains("/anthropic/")) {
+                return ModelAdapterType.ANTHROPIC_MESSAGES;
+            }
+        }
+        return defaultAdapterType();
     }
 
     /**

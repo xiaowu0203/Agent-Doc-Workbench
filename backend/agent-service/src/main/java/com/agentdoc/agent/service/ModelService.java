@@ -5,17 +5,23 @@ import com.agentdoc.agent.execution.model.ModelAdapterContext;
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.model.ModelChatModelCache;
 import com.agentdoc.agent.execution.model.ModelProviderException;
+import com.agentdoc.agent.execution.model.ModelSamplingOptions;
 import com.agentdoc.agent.enums.ModelStatus;
 import com.agentdoc.agent.mapper.ModelMapper;
 import com.agentdoc.agent.pojo.dto.ModelCreateDTO;
+import com.agentdoc.agent.pojo.dto.ModelUpdateDTO;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.agent.pojo.param.ModelSearchParam;
 import com.agentdoc.agent.pojo.vo.ModelConnectionTestVO;
 import com.agentdoc.agent.pojo.vo.ModelVO;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
+import com.agentdoc.common.utils.PageUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 大模型配置管理服务
@@ -37,6 +44,8 @@ import java.util.List;
 public class ModelService {
 
     private final ModelMapper modelMapper;
+    /** Agent 模型引用统计服务。 */
+    private final AgentModelUsageQueryService agentModelUsageQueryService;
     /** 配置加密服务，用于模型API‑Key加密存储 */
     private final AgentConfigCryptoService cryptoService;
     /** 模型适配器注册表，用于配置保存前的连通性测试 */
@@ -58,6 +67,38 @@ public class ModelService {
             wrapper.eq(ModelEntity::getStatus, ModelStatus.ENABLED.getCode());
         }
         return modelMapper.selectList(wrapper).stream().map(ModelConvertor::toVO).toList();
+    }
+
+    /**
+     * 分页查询平台模型配置。
+     */
+    public PageVO<ModelVO> search(ModelSearchParam param) {
+        AuthUtils.getUserIdOrException();
+        param.validate();
+        LambdaQueryWrapper<ModelEntity> wrapper = new LambdaQueryWrapper<ModelEntity>()
+                .orderByDesc(ModelEntity::getUpdatedAt)
+                .orderByDesc(ModelEntity::getId);
+        if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
+            String keyword = param.getKeyword().trim();
+            wrapper.and(query -> query.like(ModelEntity::getDisplayName, keyword)
+                    .or().like(ModelEntity::getModelKey, keyword));
+        }
+        if (param.getProvider() != null && !param.getProvider().isBlank()) {
+            wrapper.eq(ModelEntity::getProvider, param.getProvider().trim());
+        }
+        if (param.getStatus() != null) {
+            wrapper.eq(ModelEntity::getStatus, param.getStatus());
+        }
+        if (param.getAdapterType() != null && !param.getAdapterType().isBlank()) {
+            wrapper.eq(ModelEntity::getAdapterType, param.getAdapterType().trim());
+        }
+        Page<ModelEntity> page = modelMapper.selectPage(PageUtils.toPage(param), wrapper);
+        Map<Long, Long> agentCounts = agentModelUsageQueryService.countByModelIds(
+                page.getRecords().stream().map(ModelEntity::getId).toList());
+        return PageVO.of(page.getRecords().stream()
+                        .map(model -> ModelConvertor.toVO(model, agentCounts.getOrDefault(model.getId(), 0L)))
+                        .toList(),
+                page.getTotal(), param);
     }
 
     /**
@@ -86,8 +127,22 @@ public class ModelService {
     public ModelConnectionTestVO testConnect(ModelCreateDTO dto) {
         AuthUtils.getUserIdOrException();
         ModelEntity model = ModelConvertor.toEntity(dto, null);
-        ModelAdapterContext context = new ModelAdapterContext(null, model, dto.apiKey(), 1,
-                Collections.emptyList());
+        return testConnect(model, dto.apiKey());
+    }
+
+    /**
+     * 使用已加密保存的密钥测试模型连接。
+     */
+    public ModelConnectionTestVO testConnect(Long id) {
+        AuthUtils.getUserIdOrException();
+        ModelEntity model = require(id);
+        return testConnect(model, cryptoService.decrypt(model.getEncryptedApiKey()));
+    }
+
+    private ModelConnectionTestVO testConnect(ModelEntity model, String apiKey) {
+        ModelSamplingOptions samplingOptions = ModelSamplingOptions.from(model);
+        ModelAdapterContext context = new ModelAdapterContext(null, model, apiKey, 1,
+                samplingOptions.temperature(), samplingOptions.topP(), Collections.emptyList());
         try {
             adapterRegistry.require(model).testConnect(context);
             return new ModelConnectionTestVO(true, model.getProvider(), null, null, false, "模型连接成功");
@@ -95,6 +150,21 @@ public class ModelService {
             return new ModelConnectionTestVO(false, exception.getProvider(), exception.getErrorType(),
                     exception.getStatusCode(), exception.isRetryable(), exception.getMessage());
         }
+    }
+
+    /**
+     * 更新模型调用配置。API Key 留空时保留原密钥，所有配置变更均递增配置版本并清理模型缓存。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ModelVO update(Long id, ModelUpdateDTO dto) {
+        AuthUtils.getUserIdOrException();
+        ModelEntity entity = require(id);
+        String encryptedApiKey = dto.apiKey() == null || dto.apiKey().isBlank()
+                ? null : cryptoService.encrypt(dto.apiKey());
+        ModelConvertor.applyUpdate(entity, dto, encryptedApiKey);
+        modelMapper.updateById(entity);
+        chatModelCache.invalidate(id);
+        return ModelConvertor.toVO(entity);
     }
 
     /**

@@ -2,6 +2,7 @@ import type { RouteRecordRaw } from 'vue-router'
 
 import WorkbenchLayout from '@/layouts/WorkbenchLayout.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
+import { PLATFORM_ROLES } from '@/shared/constants/platform-roles'
 import ForbiddenView from '@/views/ForbiddenView.vue'
 import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
@@ -11,6 +12,7 @@ import DocumentEditorView from '@/views/DocumentEditorView.vue'
 import SkillManagementView from '@/views/SkillManagementView.vue'
 import McpManagementView from '@/views/McpManagementView.vue'
 import AgentManagementView from '@/views/AgentManagementView.vue'
+import ModelManagementView from '@/views/ModelManagementView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -91,6 +93,12 @@ export const routes: RouteRecordRaw[] = [
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.MEMBER_READ,
         },
+      },
+      {
+        path: 'system/models',
+        name: 'system-models',
+        component: ModelManagementView,
+        meta: { platformRole: PLATFORM_ROLES.SUPER_ADMIN },
       },
       {
         path: 'forbidden',
