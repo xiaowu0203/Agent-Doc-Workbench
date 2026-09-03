@@ -99,7 +99,7 @@ const menuItems: MenuItem[] = [
     permission: SPACE_PERMISSIONS.CHANGE_REQUEST_READ,
     path: null,
   },
-  { label: 'Agent', icon: Aim, permission: SPACE_PERMISSIONS.AGENT_READ, path: null },
+  { label: 'Agent', icon: Aim, permission: SPACE_PERMISSIONS.AGENT_READ, path: 'agents' },
   { label: 'Skill', icon: SetUp, permission: SPACE_PERMISSIONS.SKILL_READ, path: 'skills' },
   {
     label: 'MCP 服务',

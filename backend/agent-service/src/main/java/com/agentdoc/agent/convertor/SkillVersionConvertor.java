@@ -30,7 +30,7 @@ public final class SkillVersionConvertor {
         return new SkillVersionVO(entity.getId(), entity.getSkillId(), entity.getVersionNo(),
                 SkillVersionStatus.fromCode(entity.getStatus()), entity.getActivationDescription(),
                 entity.getSha256(), entity.getPackageSize(),
-                readJsonList(entity.getAllowedToolsJson()), readReadablePaths(entity.getManifestJson()),
+                readAllowedTools(entity.getAllowedToolsJson()), readReadablePaths(entity.getManifestJson()),
                 entity.getCreatedBy(), entity.getCreatedAt(), entity.getPublishedAt());
     }
 
@@ -43,7 +43,7 @@ public final class SkillVersionConvertor {
     public static SkillLatestVersionVO toLatestVersionVO(SkillVersionEntity entity) {
         return new SkillLatestVersionVO(entity.getId(), entity.getVersionNo(),
                 SkillVersionStatus.fromCode(entity.getStatus()), entity.getActivationDescription(),
-                readJsonList(entity.getAllowedToolsJson()).size(), entity.getCreatedAt(), entity.getPublishedAt());
+                readAllowedTools(entity.getAllowedToolsJson()).size(), entity.getCreatedAt(), entity.getPublishedAt());
     }
 
     /**
@@ -62,7 +62,7 @@ public final class SkillVersionConvertor {
      * @param json JSON数组字符串（如allowedToolsJson）
      * @return 字符串列表；解析为null返回空集合{@code List.of()}
      */
-    private static List<String> readJsonList(String json) {
+    public static List<String> readAllowedTools(String json) {
         List<String> values = JsonUtils.parse(json, new TypeReference<List<String>>() { });
         return values == null ? List.of() : values;
     }

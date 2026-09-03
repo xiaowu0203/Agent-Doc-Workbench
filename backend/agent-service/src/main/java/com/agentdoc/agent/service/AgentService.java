@@ -8,17 +8,25 @@ import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.agent.pojo.param.AgentSearchParam;
+import com.agentdoc.agent.pojo.vo.AgentCardVO;
 import com.agentdoc.agent.pojo.vo.AgentVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
+import com.agentdoc.common.utils.PageUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
@@ -41,6 +49,8 @@ public class AgentService {
     private final ModelService modelService;
     /** 空间权限校验服务 */
     private final SpaceAccessService spaceAccessService;
+    /** Agent 卡片关联摘要批量查询服务 */
+    private final AgentCardSummaryService cardSummaryService;
 
     /**
      * 创建Agent配置
@@ -75,6 +85,50 @@ public class AgentService {
                         .eq(AgentEntity::getSpaceId, spaceId)
                         .orderByDesc(AgentEntity::getCreatedAt))
                 .stream().map(AgentConvertor::toVO).toList();
+    }
+
+    /**
+     * 分页查询 Agent 卡片，关联摘要只针对当前页批量加载。
+     */
+    public PageVO<AgentCardVO> search(AgentSearchParam param) {
+        param.validate();
+        spaceAccessService.requirePermission(param.getSpaceId(), AGENT_READ);
+
+        LambdaQueryWrapper<AgentEntity> wrapper = new LambdaQueryWrapper<AgentEntity>()
+                .eq(AgentEntity::getSpaceId, param.getSpaceId())
+                .orderByDesc(AgentEntity::getUpdatedAt)
+                .orderByDesc(AgentEntity::getId);
+        if (param.getStatus() != null) {
+            wrapper.eq(AgentEntity::getStatus, param.getStatus());
+        }
+        if (param.getModelId() != null) {
+            wrapper.eq(AgentEntity::getModelId, param.getModelId());
+        }
+        if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
+            String keyword = param.getKeyword().trim();
+            wrapper.and(query -> query.like(AgentEntity::getName, keyword)
+                    .or().like(AgentEntity::getDescription, keyword));
+        }
+
+        Page<AgentEntity> page = agentMapper.selectPage(PageUtils.toPage(param), wrapper);
+        if (page.getRecords().isEmpty()) {
+            return PageVO.of(List.of(), page.getTotal(), param);
+        }
+
+        Map<Long, ModelEntity> models = modelService.findByIds(page.getRecords().stream()
+                        .map(AgentEntity::getModelId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(ModelEntity::getId, Function.identity()));
+        Map<Long, AgentCardSummaryService.CardSummary> summaries = cardSummaryService.summarize(
+                page.getRecords().stream().map(AgentEntity::getId).toList());
+
+        List<AgentCardVO> records = page.getRecords().stream().map(agent -> {
+            ModelEntity model = models.get(agent.getModelId());
+            AgentCardSummaryService.CardSummary summary = summaries.getOrDefault(agent.getId(),
+                    new AgentCardSummaryService.CardSummary(0, 0, 0));
+            return AgentConvertor.toCardVO(agent, model == null ? null : model.getDisplayName(),
+                    summary.skillCount(), summary.mcpCount(), summary.toolCount());
+        }).toList();
+        return PageVO.of(records, page.getTotal(), param);
     }
 
     /**

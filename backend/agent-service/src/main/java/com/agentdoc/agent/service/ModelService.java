@@ -20,8 +20,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 /**
  * 大模型配置管理服务
@@ -148,5 +149,12 @@ public class ModelService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "模型已禁用");
         }
         return entity;
+    }
+
+    /**
+     * 批量查询模型配置，供同模块列表聚合使用。
+     */
+    public List<ModelEntity> findByIds(Collection<Long> ids) {
+        return ids == null || ids.isEmpty() ? List.of() : modelMapper.selectBatchIds(ids);
     }
 }

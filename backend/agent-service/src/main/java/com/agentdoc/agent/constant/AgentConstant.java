@@ -22,6 +22,10 @@ public final class AgentConstant {
      */
     public static final long MIN_TOKEN_BUDGET = 1L;
     /**
+     * Agent 列表搜索关键字最大长度
+     */
+    public static final int MAX_SEARCH_KEYWORD_LENGTH = 100;
+    /**
      * 最大迭代轮次参数校验：最小值
      */
     public static final int MIN_MAX_ITERATIONS = 1;

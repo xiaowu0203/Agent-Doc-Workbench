@@ -10,6 +10,7 @@ import AccessControlView from '@/views/AccessControlView.vue'
 import DocumentEditorView from '@/views/DocumentEditorView.vue'
 import SkillManagementView from '@/views/SkillManagementView.vue'
 import McpManagementView from '@/views/McpManagementView.vue'
+import AgentManagementView from '@/views/AgentManagementView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -53,6 +54,15 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.ROLE_READ,
+        },
+      },
+      {
+        path: 'spaces/:spaceId/agents',
+        name: 'space-agents',
+        component: AgentManagementView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.AGENT_READ,
         },
       },
       {
