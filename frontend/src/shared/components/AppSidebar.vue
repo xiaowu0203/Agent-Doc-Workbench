@@ -113,7 +113,7 @@ const menuItems: MenuItem[] = [
     icon: Tickets,
     scope: 'space',
     permission: SPACE_PERMISSIONS.TASK_READ,
-    path: null,
+    path: 'tasks',
   },
   {
     label: '变更审批',

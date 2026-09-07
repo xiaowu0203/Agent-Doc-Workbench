@@ -13,6 +13,9 @@ import SkillManagementView from '@/views/SkillManagementView.vue'
 import McpManagementView from '@/views/McpManagementView.vue'
 import AgentManagementView from '@/views/AgentManagementView.vue'
 import ModelManagementView from '@/views/ModelManagementView.vue'
+import TaskCreateView from '@/views/TaskCreateView.vue'
+import TaskListView from '@/views/TaskListView.vue'
+import TaskDetailView from '@/views/TaskDetailView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -48,6 +51,24 @@ export const routes: RouteRecordRaw[] = [
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.DOCUMENT_READ,
         },
+      },
+      {
+        path: 'spaces/:spaceId/tasks',
+        name: 'space-tasks',
+        component: TaskListView,
+        meta: { requiresSpace: true, permission: SPACE_PERMISSIONS.TASK_READ },
+      },
+      {
+        path: 'spaces/:spaceId/tasks/new',
+        name: 'space-task-create',
+        component: TaskCreateView,
+        meta: { requiresSpace: true, permission: SPACE_PERMISSIONS.TASK_CREATE },
+      },
+      {
+        path: 'spaces/:spaceId/tasks/:taskId',
+        name: 'space-task-detail',
+        component: TaskDetailView,
+        meta: { requiresSpace: true, permission: SPACE_PERMISSIONS.TASK_READ },
       },
       {
         path: 'spaces/:spaceId/access/roles',

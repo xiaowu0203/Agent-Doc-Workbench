@@ -20,7 +20,7 @@ import java.util.List;
  * @param instruction           用户侧任务指令
  * @param systemPrompt          已组合完成的系统提示词
  * @param skillSnapshot         Skill 执行快照
- * @param allowedMcpTools       本次执行允许调用的模型工具名称
+ * @param allowedMcpTools       本次执行允许调用的模型工具名称；null 表示不额外限制
  * @param externalMcpConnections 本次执行冻结的外部 MCP 连接配置
  */
 public record AgentRuntimeContext(
@@ -37,7 +37,7 @@ public record AgentRuntimeContext(
     public AgentRuntimeContext {
         agent = ExecutionSnapshotCopies.agent(agent);
         model = ExecutionSnapshotCopies.model(model);
-        allowedMcpTools = List.copyOf(allowedMcpTools);
+        allowedMcpTools = allowedMcpTools == null ? null : List.copyOf(allowedMcpTools);
         externalMcpConnections = List.copyOf(externalMcpConnections);
     }
 

@@ -6,7 +6,11 @@ import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
 import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
+import com.agentdoc.task.pojo.param.TaskCreateOptionsParam;
+import com.agentdoc.task.pojo.param.TaskSearchParam;
 import com.agentdoc.task.pojo.vo.TaskActivityVO;
+import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
+import com.agentdoc.task.pojo.vo.TaskListItemVO;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.service.TaskService;
@@ -44,6 +48,18 @@ public class TaskController {
         return Result.ok(taskService.list(spaceId, pageParam));
     }
 
+    @Operation(summary = "分页筛选任务列表")
+    @PostMapping("/search")
+    public Result<PageVO<TaskListItemVO>> search(@Valid @RequestBody TaskSearchParam param) {
+        return Result.ok(taskService.search(param));
+    }
+
+    @Operation(summary = "查询新建任务可用选项")
+    @PostMapping("/create-options")
+    public Result<TaskCreateOptionsVO> createOptions(@Valid @RequestBody TaskCreateOptionsParam param) {
+        return Result.ok(taskService.getCreateOptions(param));
+    }
+
     @Operation(summary = "查询任务执行动态")
     @PostMapping("/activity/query")
     public Result<PageVO<TaskActivityVO>> activity(@Valid @RequestBody TaskActivitySearchParam param) {
@@ -66,5 +82,11 @@ public class TaskController {
     @PutMapping("/{id}/terminate")
     public Result<TaskVO> terminate(@PathVariable Long id) {
         return Result.ok(taskService.terminate(id));
+    }
+
+    @Operation(summary = "重新运行异常任务")
+    @PutMapping("/{id}/rerun")
+    public Result<TaskVO> rerun(@PathVariable Long id) {
+        return Result.ok(taskService.rerun(id));
     }
 }

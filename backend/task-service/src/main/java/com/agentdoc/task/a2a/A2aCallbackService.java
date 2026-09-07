@@ -14,6 +14,8 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 /**
  * A2A Agent‑to‑Agent 回调接收服务
  * <p>
@@ -24,6 +26,10 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class A2aCallbackService {
+
+    /** A2A 1.0 流式事件使用成员名区分事件类型。 */
+    private static final List<String> STREAMING_EVENT_FIELDS = List.of(
+            "task", "message", "statusUpdate", "artifactUpdate");
 
     private final TaskCapabilityVerifier capabilityVerifier;
     private final TaskService taskService;
@@ -66,7 +72,8 @@ public class A2aCallbackService {
 
     /**
      * 从回调事件JsonNode提取远端A2A taskId
-     * <p>兼容两种字段：优先取taskId，取不到则降级取id字段</p>
+     * <p>兼容裸事件与 A2A 1.0 流式包装事件。A2A 1.0 使用 task、message、
+     * statusUpdate、artifactUpdate 成员名区分具体事件类型。</p>
      *
      * @param event A2A回调事件报文节点
      * @return 远端A2A任务ID，非空字符串
@@ -76,16 +83,22 @@ public class A2aCallbackService {
         if (event == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "A2A 回调事件不能为空");
         }
-        // 提取taskId
-        String taskId = event.path("taskId").asText(null);
-        if (taskId == null) {
-            // 提取id
-            taskId = event.path("id").asText(null);
+        String taskId = taskIdFrom(event);
+        for (String field : STREAMING_EVENT_FIELDS) {
+            if (StringUtils.isNotBlank(taskId)) {
+                break;
+            }
+            taskId = taskIdFrom(event.path(field));
         }
         if (StringUtils.isBlank(taskId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "A2A 回调事件缺少 taskId");
         }
         return taskId;
+    }
+
+    private String taskIdFrom(JsonNode event) {
+        String taskId = event.path("taskId").asText(null);
+        return StringUtils.isNotBlank(taskId) ? taskId : event.path("id").asText(null);
     }
 
     /**

@@ -47,6 +47,8 @@ agent-doc:
     runtime:
       type: ${AGENT_RUNTIME_TYPE:custom}
     model:
+      client:
+        read-timeout: ${AGENT_MODEL_READ_TIMEOUT:600s}
       chat-model-cache:
         max-size: ${AGENT_CHAT_MODEL_CACHE_MAX_SIZE:100}
     # Agent服务对外公网可访问地址，用于A2A协议回调、生成Agent‑Card元信息
@@ -122,6 +124,7 @@ logging:
   level:
     root: INFO
     com.agentdoc.agent: DEBUG
+    org.a2aproject.sdk.server.tasks.BasePushNotificationSender: DEBUG
     org.springframework: INFO
     org.springframework.ai: INFO
 # SQL日志打印

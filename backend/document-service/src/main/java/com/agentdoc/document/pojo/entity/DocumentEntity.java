@@ -97,7 +97,8 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
      * 转换为任务执行所需的文档上下文。
      */
     public DocumentExecutionContextVO toExecutionContextVO() {
-        return new DocumentExecutionContextVO(getId(), spaceId, docType, status, version);
+        return new DocumentExecutionContextVO(getId(), spaceId, docType, status, version,
+                content == null ? 0L : (long) content.length());
     }
 
     /**

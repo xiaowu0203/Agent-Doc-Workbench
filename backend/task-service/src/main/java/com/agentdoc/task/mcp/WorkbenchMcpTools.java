@@ -1,8 +1,9 @@
 package com.agentdoc.task.mcp;
 
-import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
+import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.task.constant.TaskConstant;
+import com.agentdoc.task.pojo.vo.TaskDocumentContextVO;
 import lombok.RequiredArgsConstructor;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
@@ -24,7 +25,7 @@ public class WorkbenchMcpTools {
 
     @McpTool(name = "workbench_get_task_context",
             description = "获取当前能力令牌所绑定的任务和文档执行上下文")
-    public DocumentExecutionContextVO getTaskContext() {
+    public TaskDocumentContextVO getTaskContext() {
         return applicationService.getTaskContext();
     }
 
@@ -43,5 +44,13 @@ public class WorkbenchMcpTools {
             @McpToolParam(description = "基线版本和结构化变更项", required = true)
             McpChangeProposal proposal) {
         return applicationService.proposeChanges(proposal);
+    }
+
+    @McpTool(name = "workbench_apply_draft_changes",
+            description = "将结构化变更直接应用到当前任务绑定的草稿文档；正式文档禁止使用")
+    public MergeResultVO applyDraftChanges(
+            @McpToolParam(description = "基线版本和结构化变更项", required = true)
+            McpChangeProposal proposal) {
+        return applicationService.applyDraftChanges(proposal);
     }
 }

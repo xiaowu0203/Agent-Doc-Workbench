@@ -19,7 +19,7 @@
     <el-button
       v-if="workspaceStore.hasPermission(SPACE_PERMISSIONS.TASK_CREATE)"
       type="primary"
-      @click="showComingSoon"
+      @click="openTaskCreate"
     >
       <el-icon><Plus /></el-icon>
       新建任务
@@ -37,8 +37,9 @@
 
 <script setup lang="ts">
 import { ArrowDown, Expand, Fold, Plus, Search } from '@element-plus/icons-vue'
-import { ElButton, ElDivider, ElIcon, ElMessage } from 'element-plus'
+import { ElButton, ElDivider, ElIcon } from 'element-plus'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -49,13 +50,16 @@ defineEmits<{ 'toggle-sidebar': [] }>()
 
 const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
+const router = useRouter()
 const initials = computed(() => {
   const name = authStore.user?.nickname || authStore.user?.username || 'AD'
   return name.slice(0, 2).toUpperCase()
 })
 
-function showComingSoon(): void {
-  ElMessage.info('任务创建页将在后续交付切片开放')
+function openTaskCreate(): void {
+  if (workspaceStore.currentSpaceId !== null) {
+    void router.push(`/spaces/${workspaceStore.currentSpaceId}/tasks/new`)
+  }
 }
 </script>
 

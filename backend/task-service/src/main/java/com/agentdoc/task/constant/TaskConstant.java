@@ -82,6 +82,28 @@ public final class TaskConstant {
      */
     public static final long MIN_TOKEN_BUDGET = 1L;
     /**
+     * 任务名称最大长度，与数据库 task.name 字段保持一致
+     */
+    public static final int MAX_TASK_NAME_LENGTH = 100;
+    /**
+     * 任务指令最大长度，限制表单输入和执行快照体积
+     */
+    public static final int MAX_TASK_INSTRUCTION_LENGTH = 4000;
+    /**
+     * 任务列表搜索关键字最大长度
+     */
+    public static final int MAX_TASK_SEARCH_KEYWORD_LENGTH = 100;
+    /** 单个任务最多选择的关注区域数。 */
+    public static final int MAX_TASK_FOCUS_REGION_COUNT = 20;
+    /** 单个关注区域要求的最大长度。 */
+    public static final int MAX_TASK_FOCUS_INSTRUCTION_LENGTH = 1000;
+    /** 关注区域文本预览的最大长度。 */
+    public static final int MAX_TASK_FOCUS_PREVIEW_LENGTH = 500;
+    /**
+     * 可读任务编号前缀
+     */
+    public static final String TASK_NO_PREFIX = "T-";
+    /**
      * 日期偏移量，用于日期计算偏移修正
      */
     public static final long DAY_OFFSET = 1L;

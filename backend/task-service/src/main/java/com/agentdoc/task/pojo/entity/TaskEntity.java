@@ -17,6 +17,9 @@ import java.time.LocalDateTime;
 @Schema(description = "任务实体")
 public class TaskEntity extends BaseLogicDeleteEntity {
 
+    @Schema(description = "可读任务编号")
+    private String taskNo;
+
     @Schema(description = "所属空间 ID")
     private Long spaceId;
 
@@ -41,6 +44,9 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "目标文档 ID")
     private Long documentId;
 
+    @Schema(description = "创建任务时的文档类型快照")
+    private Integer documentType;
+
     @Schema(description = "任务名称")
     private String name;
 
@@ -52,6 +58,12 @@ public class TaskEntity extends BaseLogicDeleteEntity {
 
     @Schema(description = "Token 预算上限")
     private Long tokenBudget;
+
+    @Schema(description = "文档读取范围：FULL / RANGES")
+    private String readScope;
+
+    @Schema(description = "关注区域 JSON；RANGES 时同时作为读取白名单")
+    private String focusRegionsJson;
 
     @Schema(description = "已消耗 Token 数")
     private Long tokensUsed;

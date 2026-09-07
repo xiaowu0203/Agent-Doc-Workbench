@@ -33,6 +33,44 @@ import static org.mockito.Mockito.when;
 class SkillSnapshotServiceTest {
 
     @Test
+    void keepsUnrestrictedToolsWhenAgentHasNoSelectedSkillsOrWhitelist() {
+        SkillSnapshotService service = new SkillSnapshotService(mock(AgentSkillMapper.class),
+                mock(SkillMapper.class), mock(SkillVersionMapper.class), new SkillPackageProperties());
+        AgentEntity agent = new AgentEntity();
+
+        SkillExecutionSnapshot snapshot = service.snapshot(agent, List.of(),
+                new SkillSelectionResult("ALL_BOUND", List.of(), null));
+
+        assertThat(snapshot.allowedMcpTools()).isNull();
+    }
+
+    @Test
+    void appliesAgentWhitelistDirectlyWhenNoSkillIsSelected() {
+        SkillSnapshotService service = new SkillSnapshotService(mock(AgentSkillMapper.class),
+                mock(SkillMapper.class), mock(SkillVersionMapper.class), new SkillPackageProperties());
+        AgentEntity agent = new AgentEntity();
+        agent.setToolWhitelist(JsonUtils.toJson(List.of("workbench_get_task_context")));
+
+        SkillExecutionSnapshot snapshot = service.snapshot(agent, List.of(),
+                new SkillSelectionResult("ALL_BOUND", List.of(), null));
+
+        assertThat(snapshot.allowedMcpTools()).containsExactly("workbench_get_task_context");
+    }
+
+    @Test
+    void keepsDenyAllToolsWhenAgentHasNoSelectedSkillsAndEmptyWhitelist() {
+        SkillSnapshotService service = new SkillSnapshotService(mock(AgentSkillMapper.class),
+                mock(SkillMapper.class), mock(SkillVersionMapper.class), new SkillPackageProperties());
+        AgentEntity agent = new AgentEntity();
+        agent.setToolWhitelist("[]");
+
+        SkillExecutionSnapshot snapshot = service.snapshot(agent, List.of(),
+                new SkillSelectionResult("ALL_BOUND", List.of(), null));
+
+        assertThat(snapshot.allowedMcpTools()).isEmpty();
+    }
+
+    @Test
     void batchesBindingsAndHashesSkillsBySkillId() throws Exception {
         AgentSkillMapper bindingMapper = mock(AgentSkillMapper.class);
         SkillMapper skillMapper = mock(SkillMapper.class);

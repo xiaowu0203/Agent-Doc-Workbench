@@ -166,7 +166,7 @@ beforeEach(() => {
   vi.mocked(agentApi.listAgents).mockResolvedValue([
     { id: 301, spaceId: 7, name: '文档审阅 Agent', status: 'ENABLED' },
   ])
-  vi.mocked(taskApi.createTask).mockResolvedValue({ id: 401 })
+  vi.mocked(taskApi.createTask).mockResolvedValue({ id: 401, taskNo: 'T-20260907-401' })
 })
 
 describe('DocumentEditorView', () => {
@@ -619,11 +619,14 @@ describe('DocumentEditorView', () => {
     await flushPromises()
 
     expect(taskApi.createTask).toHaveBeenCalledWith({
+      spaceId: 7,
       agentId: 301,
       documentId: 101,
       name: '产品上线方案',
       instruction: '请检查文档结构',
       tokenBudget: null,
+      readScope: 'FULL',
+      focusRegions: [],
     })
     expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe(route)
   })

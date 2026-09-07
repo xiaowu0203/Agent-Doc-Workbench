@@ -977,11 +977,7 @@ const infoStatus = computed<DocumentStatus>(
   () => documentDetail.value?.status || directoryDetail.value?.status || 'NORMAL',
 )
 const infoTypeLabel = computed(() =>
-  isDirectory.value
-    ? '目录'
-    : documentDetail.value?.docType === 'FORMAL'
-      ? '正式文档'
-      : '草稿',
+  isDirectory.value ? '目录' : documentDetail.value?.docType === 'FORMAL' ? '正式文档' : '草稿',
 )
 const documentLocation = computed(() => {
   const directoryId = documentDetail.value?.directoryId ?? directoryDetail.value?.parentId
@@ -2176,10 +2172,15 @@ async function openTaskDialog(): Promise<void> {
 }
 
 async function createDocumentTask(): Promise<void> {
+  const spaceId = workspaceStore.currentSpaceId
   const documentId = taskForm.documentId
   const agentId = taskForm.agentId
   const name = taskForm.name.trim()
   const instruction = taskForm.instruction.trim()
+  if (!spaceId) {
+    ElMessage.warning('请先选择空间')
+    return
+  }
   if (!documentId) {
     ElMessage.warning('请选择目标文档')
     return
@@ -2200,11 +2201,14 @@ async function createDocumentTask(): Promise<void> {
   taskCreating.value = true
   try {
     await createTask({
+      spaceId,
       agentId,
       documentId,
       name,
       instruction,
       tokenBudget: taskForm.tokenBudget,
+      readScope: 'FULL',
+      focusRegions: [],
     })
     taskDialogVisible.value = false
     ElMessage.success('Agent 任务已创建')

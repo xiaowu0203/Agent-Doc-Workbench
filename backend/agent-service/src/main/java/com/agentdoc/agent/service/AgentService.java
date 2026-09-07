@@ -2,6 +2,7 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.AgentConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
+import com.agentdoc.agent.enums.ModelStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.mapper.AgentMapper;
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
@@ -14,15 +15,20 @@ import com.agentdoc.agent.pojo.vo.AgentVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.feign.vo.AgentRefVO;
+import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
+import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.PageUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -240,6 +246,70 @@ public class AgentService {
                 agent.getId(), agent.getSpaceId(), agent.getModelId(), agent.getTokenBudget(), agent.getDocScope(),
                 agent.getConfigVersion(), AgentStatus.ENABLED.matches(agent.getStatus()), model.getInputPricePerMillion(),
                 model.getOutputPricePerMillion());
+    }
+
+    /**
+     * 批量查询任务列表回填所需的 Agent 最小信息。
+     */
+    public List<AgentRefVO> listRefs(Collection<Long> agentIds) {
+        if (agentIds == null || agentIds.isEmpty()) {
+            return List.of();
+        }
+        return agentMapper.selectBatchIds(agentIds).stream()
+                .map(agent -> new AgentRefVO(agent.getId(), agent.getSpaceId(), agent.getName()))
+                .toList();
+    }
+
+    /**
+     * 查询空间内已启用、模型可用且允许访问目标文档的 Agent 选项。
+     * 该方法只供 task-service 在完成用户权限和文档归属校验后调用。
+     */
+    public List<AgentTaskOptionVO> listTaskOptions(Long spaceId, Long documentId) {
+        List<AgentEntity> agents = agentMapper.selectList(new LambdaQueryWrapper<AgentEntity>()
+                        .eq(AgentEntity::getSpaceId, spaceId)
+                        .eq(AgentEntity::getStatus, AgentStatus.ENABLED.getCode())
+                        .orderByDesc(AgentEntity::getUpdatedAt)
+                        .orderByDesc(AgentEntity::getId))
+                .stream()
+                .filter(agent -> allowsDocument(agent.getDocScope(), documentId))
+                .toList();
+        if (agents.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, ModelEntity> models = modelService.findByIds(agents.stream()
+                        .map(AgentEntity::getModelId).collect(Collectors.toSet()))
+                .stream().collect(Collectors.toMap(ModelEntity::getId, Function.identity()));
+        List<AgentEntity> availableAgents = agents.stream()
+                .filter(agent -> {
+                    ModelEntity model = models.get(agent.getModelId());
+                    return model != null && ModelStatus.ENABLED.matches(model.getStatus());
+                })
+                .toList();
+        Map<Long, AgentCardSummaryService.CardSummary> summaries = cardSummaryService.summarize(
+                availableAgents.stream().map(AgentEntity::getId).toList());
+
+        return availableAgents.stream().map(agent -> {
+            ModelEntity model = models.get(agent.getModelId());
+            AgentCardSummaryService.CardSummary summary = summaries.getOrDefault(agent.getId(),
+                    new AgentCardSummaryService.CardSummary(0, 0, 0));
+            return new AgentTaskOptionVO(agent.getId(), agent.getName(), model.getDisplayName(),
+                    agent.getSkillSelectionMode(), agent.getTokenBudget(), agent.getExecutionTimeoutSeconds(),
+                    summary.skillCount(), summary.mcpCount());
+        }).toList();
+    }
+
+    private boolean allowsDocument(String documentScope, Long documentId) {
+        if (documentScope == null || documentScope.isBlank()) {
+            return true;
+        }
+        List<Long> directIds = JsonUtils.parse(documentScope, new TypeReference<List<Long>>() { });
+        if (directIds != null) {
+            return directIds.contains(documentId);
+        }
+        Map<String, List<Long>> scope = JsonUtils.parse(documentScope,
+                new TypeReference<Map<String, List<Long>>>() { });
+        return scope != null && scope.get("documentIds") != null && scope.get("documentIds").contains(documentId);
     }
 
     /**

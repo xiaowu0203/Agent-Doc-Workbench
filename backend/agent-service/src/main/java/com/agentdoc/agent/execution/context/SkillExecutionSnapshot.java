@@ -15,7 +15,7 @@ import java.util.List;
  * @param boundSkills             当前 Agent 绑定生效的 Skill 快照列表
  * @param selectedSkillVersionIds 本次执行实际选择的 Skill 版本 ID
  * @param readableResourcePaths   已选 Skill 的可读资源路径
- * @param allowedMcpTools         Skill 维度过滤后的模型工具名称
+ * @param allowedMcpTools         Skill 维度过滤后的模型工具名称；null 表示不额外限制
  * @param skillSnapshotJson       Skill 完整快照 JSON
  * @param skillInstructionHash    Skill 指令文本哈希
  * @param catalogPromptSection    注入系统提示词的轻量 Skill 目录
@@ -36,6 +36,6 @@ public record SkillExecutionSnapshot(
         boundSkills = List.copyOf(boundSkills);
         selectedSkillVersionIds = List.copyOf(selectedSkillVersionIds);
         readableResourcePaths = List.copyOf(readableResourcePaths);
-        allowedMcpTools = List.copyOf(allowedMcpTools);
+        allowedMcpTools = allowedMcpTools == null ? null : List.copyOf(allowedMcpTools);
     }
 }

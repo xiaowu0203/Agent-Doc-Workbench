@@ -189,11 +189,16 @@ public class SkillSnapshotService {
 
         /**
          * 计算最终生效工具集合：
-         * 如果Agent未配置工具白名单，则直接使用Skill侧工具集合；
-         * 如果Agent配置工具白名单，则取【Skill工具】与【Agent工具白名单】交集，Agent白名单做二次裁剪限制
+         * 未选中 Skill 时，仅由 Agent 白名单决定可见工具，null 保留“不额外限制”语义；
+         * 已选中 Skill 时，如果 Agent 未配置白名单则使用 Skill 工具集合，否则取二者交集。
          */
-        List<String> effectiveTools = agent.getToolWhitelist() == null ? skillTools
-                : skillTools.stream().filter(agentTools::contains).toList();
+        List<String> effectiveTools;
+        if (selectedSkills.isEmpty()) {
+            effectiveTools = agent.getToolWhitelist() == null ? null : agentTools;
+        } else {
+            effectiveTools = agent.getToolWhitelist() == null ? skillTools
+                    : skillTools.stream().filter(agentTools::contains).toList();
+        }
 
         /**
          * 构建注入System Prompt的Skill目录元数据片段
