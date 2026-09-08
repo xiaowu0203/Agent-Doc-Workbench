@@ -4,11 +4,14 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.agentdoc.task.service.TokenUsageService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +34,9 @@ public class A2aTaskSynchronizationService {
 
     private final TaskMapper taskMapper;
     private final AgentFeign agentFeign;
+    private final DocumentFeign documentFeign;
     private final TokenUsageService tokenUsageService;
+    private final TaskCapabilityCryptoService cryptoService;
 
     /**
      * 执行远端任务 → 本地任务实体状态同步并落库
@@ -71,11 +76,51 @@ public class A2aTaskSynchronizationService {
             return false;
         }
         // 任务已完成，记录Token消耗统计，同时做任务Token预算管控
-        if (TaskStatus.COMPLETED.getCodeEquals(task.getStatus())) {
-            tokenUsageService.recordRemote(task, requireProfile(task.getAgentId()),
-                    A2aTaskConvertor.tokenUsage(remoteTask));
+        TaskStatus status = TaskStatus.fromCode(task.getStatus());
+        if (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED || status == TaskStatus.FAILED) {
+            finalizeDraft(task, status);
+        }
+        if (status == TaskStatus.COMPLETED) {
+            tokenUsageService.recordRemote(task, requireProfile(task.getAgentId()), resolveTokenUsage(task, remoteTask));
         }
         return true;
+    }
+
+    private void finalizeDraft(TaskEntity task, TaskStatus status) {
+        if (task.getDocumentId() == null || task.getCapabilityToken() == null) {
+            return;
+        }
+        String capability = cryptoService.decrypt(task.getCapabilityToken());
+        if (status == TaskStatus.COMPLETED) {
+            Result<?> result = documentFeign.finalizeDraftAgentChanges(task.getDocumentId(), capability);
+            requireSuccess(result, "提交草稿暂存失败");
+        } else {
+            Result<?> result = documentFeign.discardDraftAgentChanges(task.getDocumentId(), capability);
+            requireSuccess(result, "丢弃草稿暂存失败");
+        }
+    }
+
+    private com.agentdoc.task.a2a.A2aTokenUsage resolveTokenUsage(TaskEntity task, Task remoteTask) {
+        A2aTokenUsage usage = A2aTaskConvertor.tokenUsage(remoteTask);
+        if (usage.inputTokens() != null && usage.outputTokens() != null) {
+            return usage;
+        }
+        Result<AgentExecutionTokenUsageVO> result = agentFeign.getExecutionTokenUsage(task.getId());
+        if (result != null && result.code() == ErrorCode.SUCCESS.getCode() && result.data() != null) {
+            AgentExecutionTokenUsageVO usageProjection = result.data();
+            return new A2aTokenUsage(usageProjection.inputTokens(), usageProjection.cachedInputTokens(),
+                    usageProjection.outputTokens(), Boolean.TRUE.equals(usageProjection.inputTokensEstimated()),
+                    Boolean.TRUE.equals(usageProjection.cachedInputTokensEstimated()),
+                    Boolean.TRUE.equals(usageProjection.outputTokensEstimated()));
+        }
+        return usage;
+    }
+
+    private void requireSuccess(Result<?> result, String message) {
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null || result.message() == null ? message : result.message());
+        }
     }
 
     /**

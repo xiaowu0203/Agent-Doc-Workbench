@@ -50,6 +50,18 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
     @Schema(description = "最后更新人用户 ID")
     private Long updatedBy;
 
+    @Schema(description = "Agent 暂存所属任务 ID")
+    private Long agentStagedTaskId;
+
+    @Schema(description = "Agent 暂存的基线版本")
+    private Long agentStagedBaseVersion;
+
+    @Schema(description = "Agent 暂存内部修订号")
+    private Long agentStagedRevision;
+
+    @Schema(description = "Agent 暂存正文")
+    private String agentStagedContent;
+
     /**
      * 转换为列表视图对象（不含正文）。
      * @return 文档列表视图

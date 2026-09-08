@@ -20,16 +20,28 @@ public class AgentExecutionEntity extends BaseEntity {
     private String a2aContextId;
     @Schema(description = "工作台任务 ID")
     private Long workbenchTaskId;
+    @Schema(description = "执行所属空间 ID 快照")
+    private Long spaceId;
     @Schema(description = "Agent ID")
     private Long agentId;
+    @Schema(description = "Agent 名称快照")
+    private String agentNameSnapshot;
     @Schema(description = "Agent 配置版本号")
     private Long agentConfigVersion;
+    @Schema(description = "执行时最大模型迭代次数")
+    private Integer maxIterations;
+    @Schema(description = "执行时超时秒数")
+    private Integer executionTimeoutSeconds;
     @Schema(description = "系统提示词快照")
     private String systemPromptSnapshot;
     @Schema(description = "初始用户指令快照")
     private String userInstructionSnapshot;
     @Schema(description = "模型配置快照")
     private String modelSnapshot;
+    @Schema(description = "模型配置版本快照")
+    private Long modelConfigVersion;
+    @Schema(description = "模型展示名称快照")
+    private String modelDisplayNameSnapshot;
     @Schema(description = "Skill 版本快照 JSON")
     private String skillSnapshotJson;
     @Schema(description = "Skill 指令哈希")
@@ -52,6 +64,8 @@ public class AgentExecutionEntity extends BaseEntity {
     private String externalMcpSnapshotJson;
     @Schema(description = "提示词哈希")
     private String promptHash;
+    @Schema(description = "执行上下文快照哈希")
+    private String executionSnapshotHash;
     @Schema(description = "执行状态")
     private String status;
     @Schema(description = "是否请求取消")

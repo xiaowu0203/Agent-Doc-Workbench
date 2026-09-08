@@ -414,10 +414,11 @@ public class TaskService {
     }
 
     /**
-     * 重新运行异常任务，复用原任务编号和输入快照。
+     * 重新运行异常任务，复用原任务输入并创建新的任务记录。
+     * <p>Agent 执行以任务 ID 做幂等键，因此不能重置原任务，否则会回放原失败执行。</p>
      *
-     * @param id 任务 ID
-     * @return 重新进入待运行状态的任务
+     * @param id 原任务 ID
+     * @return 新建的待运行任务
      */
     public TaskVO rerun(Long id) {
         TaskEntity entity = require(id);
@@ -436,42 +437,44 @@ public class TaskService {
         }
         requireDocumentScope(agent, entity.getDocumentId());
 
-        String capabilityToken = issueEncryptedCapability(entity);
-        int updated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
-                .eq(TaskEntity::getId, id)
-                .eq(TaskEntity::getStatus, TaskStatus.FAILED.getCode())
-                .set(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
-                .set(TaskEntity::getCapabilityToken, capabilityToken)
-                .set(TaskEntity::getAgentExecutionId, null)
-                .set(TaskEntity::getA2aTaskId, null)
-                .set(TaskEntity::getA2aContextId, null)
-                .set(TaskEntity::getPromptHash, null)
-                .set(TaskEntity::getTokensUsed, 0L)
-                .set(TaskEntity::getTokensEstimated, false)
-                .set(TaskEntity::getStartTime, null)
-                .set(TaskEntity::getDispatchedAt, null)
-                .set(TaskEntity::getLastHeartbeatAt, null)
-                .set(TaskEntity::getEndTime, null)
-                .set(TaskEntity::getErrorMessage, null)
-                .set(TaskEntity::getResultSummary, null)
-                .set(TaskEntity::getRetryCount, 0));
-        if (updated == 0) {
-            throw new BusinessException(ErrorCode.CONFLICT, "任务状态已发生变化，请刷新后重试");
-        }
+        TaskEntity rerunTask = copyForRerun(entity, agent.configVersion(), AuthUtils.getUserIdOrException());
+        taskMapper.insert(rerunTask);
         try {
-            messagePublisher.publish(id);
+            rerunTask.setCapabilityToken(issueEncryptedCapability(rerunTask));
+            taskMapper.updateById(rerunTask);
+            messagePublisher.publish(rerunTask.getId());
         } catch (RuntimeException exception) {
-            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
-                    .eq(TaskEntity::getId, id)
-                    .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
-                    .set(TaskEntity::getStatus, TaskStatus.FAILED.getCode())
-                    .set(TaskEntity::getErrorMessage, "任务重跑消息发布失败：" + exception.getMessage())
-                    .set(TaskEntity::getEndTime, LocalDateTime.now()));
+            rerunTask.setStatus(TaskStatus.FAILED.getCode());
+            rerunTask.setErrorMessage("任务重跑能力令牌签发或消息发布失败：" + exception.getMessage());
+            rerunTask.setEndTime(LocalDateTime.now());
+            taskMapper.updateById(rerunTask);
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "任务重跑消息发布失败");
         }
         auditLogService.recordHuman(entity.getSpaceId(), AuditAction.TASK_RETRY,
-                AuditTargetType.TASK, entity.getId(), "用户重新运行异常任务");
-        return TaskVO.from(require(id));
+                AuditTargetType.TASK, rerunTask.getId(), "基于任务 " + entity.getTaskNo() + " 重新运行");
+        return TaskVO.from(rerunTask);
+    }
+
+    private TaskEntity copyForRerun(TaskEntity source, Long agentConfigVersion, Long userId) {
+        TaskEntity target = new TaskEntity();
+        target.setId(IdWorker.getId());
+        target.setTaskNo(buildTaskNo(target.getId()));
+        target.setSpaceId(source.getSpaceId());
+        target.setAgentId(source.getAgentId());
+        target.setAgentConfigVersion(agentConfigVersion);
+        target.setDocumentId(source.getDocumentId());
+        target.setDocumentType(source.getDocumentType());
+        target.setName(source.getName());
+        target.setInstruction(source.getInstruction());
+        target.setStatus(TaskStatus.PENDING.getCode());
+        target.setTokenBudget(source.getTokenBudget());
+        target.setReadScope(source.getReadScope());
+        target.setFocusRegionsJson(source.getFocusRegionsJson());
+        target.setTokensEstimated(Boolean.FALSE);
+        target.setParentTaskId(source.getId());
+        target.setRetryCount(0);
+        target.setCreatedBy(userId);
+        return target;
     }
 
     private String issueEncryptedCapability(TaskEntity task) {

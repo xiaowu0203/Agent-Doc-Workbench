@@ -35,13 +35,14 @@ public class AgentExecutionToolAuditService {
      * @param source         工具来源类型（内置工具 / MCP等）
      * @param sourceKey      来源唯一key，例如MCP serverKey
      * @param mcpServerId    MCP服务ID，如果不是MCP工具则为null
+     * @param skillVersionId Skill 读取工具指向的版本 ID，非 Skill 读取工具为 null
      * @param argumentsHash  工具入参参数SHA‑256摘要
      * @param argumentsSize  工具入参参数字节大小
      * @return 已持久化的工具调用审计实体
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AgentExecutionToolCallEntity start(Long executionId, int sequence, String toolName, String source,
-                                              String sourceKey, Long mcpServerId,
+                                              String sourceKey, Long mcpServerId, Long skillVersionId,
                                               String argumentsHash, long argumentsSize) {
         AgentExecutionToolCallEntity entity = new AgentExecutionToolCallEntity();
         entity.setExecutionId(executionId);
@@ -50,6 +51,7 @@ public class AgentExecutionToolAuditService {
         entity.setToolSource(source);
         entity.setToolSourceKey(sourceKey);
         entity.setMcpServerId(mcpServerId);
+        entity.setSkillVersionId(skillVersionId);
         entity.setArgumentsSha256(argumentsHash);
         entity.setArgumentsSize(argumentsSize);
         entity.setStatus(ToolCallAuditStatus.STARTED.name());

@@ -5,6 +5,7 @@ import type {
   CreatedTask,
   TaskCreateOptions,
   TaskDetail,
+  TaskExecutionDetail,
   TaskDraft,
   TaskFocusRegion,
   TaskPage,
@@ -51,6 +52,17 @@ export function getTaskCreateOptions(
 
 export function getTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDetail> {
   return request<TaskDetail>({ method: 'GET', url: `/task/tasks/${taskId}`, signal })
+}
+
+export function getTaskExecutionDetail(
+  taskId: EntityId,
+  signal?: AbortSignal,
+): Promise<TaskExecutionDetail> {
+  return request<TaskExecutionDetail>({
+    method: 'GET',
+    url: `/task/tasks/${taskId}/execution-detail`,
+    signal,
+  })
 }
 
 export function terminateTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDetail> {

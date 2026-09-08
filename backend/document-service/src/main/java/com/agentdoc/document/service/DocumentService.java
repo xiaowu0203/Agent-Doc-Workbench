@@ -587,7 +587,7 @@ public class DocumentService {
             // 若为普通用户发起的请求，则校验用户是否拥有该空间的查看权限
             permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
         }
-        String content = doc.getContent() == null ? "" : doc.getContent();
+        String content = effectiveAgentContent(doc);
         long total = content.length();
 
         // 安全边界修正：起始位置不能小于0，不能超过文档总长度
@@ -612,6 +612,12 @@ public class DocumentService {
             // 校验编辑权限
             permissionService.requirePermission(doc.getSpaceId(), TASK_CREATE);
         }
+        if (AuthUtils.isAgent() && doc.getAgentStagedTaskId() != null
+                && Objects.equals(doc.getAgentStagedTaskId(), AuthUtils.getTaskId())) {
+            return new DocumentExecutionContextVO(doc.getId(), doc.getSpaceId(), doc.getDocType(), doc.getStatus(),
+                    doc.getAgentStagedRevision(), doc.getAgentStagedContent() == null
+                    ? 0L : (long) doc.getAgentStagedContent().length());
+        }
         return doc.toExecutionContextVO();
     }
 
@@ -629,21 +635,118 @@ public class DocumentService {
         if (doc.getDocType() != DocType.DRAFT.getCode()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "正式文档的 Agent 变更必须进入审批队列");
         }
-        // 并发保护：客户端传入的基线版本号必须等于数据库当前版本，否则拒绝合并，防止覆盖别人编辑内容
-        if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
-            throw new BusinessException(ErrorCode.CONFLICT, "文档基线版本不匹配，请重新读取后生成变更");
+        Long taskId = requireAgentTaskId();
+        if (doc.getAgentStagedTaskId() != null && !Objects.equals(doc.getAgentStagedTaskId(), taskId)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档已有其他任务的暂存变更，请等待该任务结束");
         }
-        // 构建新内容（全文替换/追加）
-        String newContent = applyChanges(doc.getContent(), request.changes());
-        // 设置并更新文档
-        doc.setContent(newContent);
-        doc.setUpdatedBy(AuthUtils.getAgentIdOrException());
-        documentMapper.updateById(doc);
-        // 版本号+1，生成新版本快照，记录回滚操作摘要
-        bumpVersion(doc, newContent,
-                request.changeSummary() == null ? "Agent 更新草稿" : request.changeSummary(),
-                doc.getUpdatedBy());
+        long baseVersion;
+        long nextRevision;
+        String currentContent;
+        if (doc.getAgentStagedTaskId() == null) {
+            if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "文档基线版本不匹配，请重新读取后生成变更");
+            }
+            baseVersion = doc.getVersion();
+            nextRevision = baseVersion + DocumentConstant.VERSION_INCREMENT;
+            currentContent = doc.getContent();
+        } else {
+            if (!Objects.equals(request.baseVersion(), doc.getAgentStagedRevision())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "暂存变更版本不匹配，请重新读取后生成变更");
+            }
+            baseVersion = doc.getAgentStagedBaseVersion();
+            nextRevision = doc.getAgentStagedRevision() + DocumentConstant.VERSION_INCREMENT;
+            currentContent = doc.getAgentStagedContent();
+        }
+        String newContent = applyChanges(currentContent, request.changes());
+        LambdaUpdateWrapper<DocumentEntity> stageUpdate = new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, doc.getId())
+                .set(DocumentEntity::getAgentStagedTaskId, taskId)
+                .set(DocumentEntity::getAgentStagedBaseVersion, baseVersion)
+                .set(DocumentEntity::getAgentStagedRevision, nextRevision)
+                .set(DocumentEntity::getAgentStagedContent, newContent);
+        if (doc.getAgentStagedTaskId() == null) {
+            stageUpdate.isNull(DocumentEntity::getAgentStagedTaskId)
+                    .eq(DocumentEntity::getVersion, baseVersion);
+        } else {
+            stageUpdate.eq(DocumentEntity::getAgentStagedTaskId, taskId)
+                    .eq(DocumentEntity::getAgentStagedRevision, request.baseVersion());
+        }
+        if (documentMapper.update(null, stageUpdate) == 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档暂存版本已变化，请重新读取后重试");
+        }
+        return new MergeResultVO(doc.getId(), doc.getTitle(), nextRevision);
+    }
+
+    /** 将当前任务的暂存正文提交为一个可见版本。 */
+    @Transactional(rollbackFor = Exception.class)
+    public MergeResultVO finalizeAgentDraftChanges(Long documentId) {
+        DocumentEntity doc = requireDoc(documentId);
+        permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(), JwtConstant.ACTION_WRITE_DRAFT);
+        requireDraft(doc);
+        Long taskId = requireAgentTaskId();
+        if (doc.getAgentStagedTaskId() == null) {
+            return doc.toMergeResultVO();
+        }
+        if (!Objects.equals(doc.getAgentStagedTaskId(), taskId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权提交其他任务的暂存变更");
+        }
+        if (!Objects.equals(doc.getVersion(), doc.getAgentStagedBaseVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档已被其他修改改变，请重新执行任务");
+        }
+        String content = doc.getAgentStagedContent();
+        Long agentId = AuthUtils.getAgentIdOrException();
+        doc.setContent(content);
+        doc.setUpdatedBy(agentId);
+        bumpVersion(doc, content, "Agent 更新草稿", agentId);
+        clearAgentStaging(doc.getId(), taskId);
         return doc.toMergeResultVO();
+    }
+
+    /** 丢弃当前任务尚未提交的草稿暂存。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void discardAgentDraftChanges(Long documentId) {
+        DocumentEntity doc = requireDoc(documentId);
+        permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(), JwtConstant.ACTION_WRITE_DRAFT);
+        requireDraft(doc);
+        Long taskId = requireAgentTaskId();
+        if (doc.getAgentStagedTaskId() == null) {
+            return;
+        }
+        if (!Objects.equals(doc.getAgentStagedTaskId(), taskId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权丢弃其他任务的暂存变更");
+        }
+        clearAgentStaging(doc.getId(), taskId);
+    }
+
+    private String effectiveAgentContent(DocumentEntity doc) {
+        return AuthUtils.isAgent() && doc.getAgentStagedTaskId() != null
+                && Objects.equals(doc.getAgentStagedTaskId(), AuthUtils.getTaskId())
+                ? (doc.getAgentStagedContent() == null ? "" : doc.getAgentStagedContent())
+                : (doc.getContent() == null ? "" : doc.getContent());
+    }
+
+    private Long requireAgentTaskId() {
+        Long taskId = AuthUtils.getTaskId();
+        if (taskId == null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Agent 任务能力令牌缺少任务标识");
+        }
+        return taskId;
+    }
+
+    private void requireDraft(DocumentEntity doc) {
+        if (doc.getDocType() != DocType.DRAFT.getCode()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "正式文档的 Agent 变更必须进入审批队列");
+        }
+    }
+
+    private void clearAgentStaging(Long documentId, Long taskId) {
+        documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, documentId)
+                .eq(DocumentEntity::getAgentStagedTaskId, taskId)
+                .set(DocumentEntity::getAgentStagedTaskId, null)
+                .set(DocumentEntity::getAgentStagedBaseVersion, null)
+                .set(DocumentEntity::getAgentStagedRevision, null)
+                .set(DocumentEntity::getAgentStagedContent, null));
     }
 
     /**

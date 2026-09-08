@@ -1,6 +1,7 @@
 package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
@@ -89,4 +90,14 @@ public interface DocumentFeign {
      */
     @PostMapping("/api/document/documents/draft-agent-apply")
     Result<MergeResultVO> applyDraftAgentChanges(@RequestBody MergeRequestDTO request);
+
+    /** 提交当前任务的草稿暂存，整个任务只生成一个可见版本。 */
+    @PostMapping("/api/document/documents/draft-agent-finalize")
+    Result<MergeResultVO> finalizeDraftAgentChanges(@RequestParam Long documentId,
+                                                    @RequestHeader(HeaderConstants.X_TASK_CAPABILITY) String capability);
+
+    /** 任务失败或终止时丢弃草稿暂存。 */
+    @PostMapping("/api/document/documents/draft-agent-discard")
+    Result<Void> discardDraftAgentChanges(@RequestParam Long documentId,
+                                          @RequestHeader(HeaderConstants.X_TASK_CAPABILITY) String capability);
 }

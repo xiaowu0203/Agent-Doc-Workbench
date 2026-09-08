@@ -3,11 +3,13 @@ package com.agentdoc.task.a2a;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.A2aMetadataConstant;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.service.TokenUsageService;
+import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -42,9 +44,11 @@ class A2aTaskSynchronizationServiceTest {
     void shouldRecordCompletionOnlyWhenActiveStatusUpdateWins() {
         TaskMapper taskMapper = mock(TaskMapper.class);
         AgentFeign agentFeign = mock(AgentFeign.class);
+        DocumentFeign documentFeign = mock(DocumentFeign.class);
         TokenUsageService tokenUsageService = mock(TokenUsageService.class);
+        TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
         A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
-                taskMapper, agentFeign, tokenUsageService);
+                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService);
         TaskEntity task = activeTask();
         Task remoteTask = completedTask();
 

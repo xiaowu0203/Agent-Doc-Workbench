@@ -94,6 +94,7 @@ export interface TaskDetail {
   readScope: TaskReadScope
   focusRegions: TaskFocusRegion[]
   tokensUsed: number | null
+  tokensEstimated: boolean
   startTime: string | null
   dispatchedAt: string | null
   lastHeartbeatAt: string | null
@@ -103,6 +104,115 @@ export interface TaskDetail {
   resultSummary: string | null
   createdBy: EntityId | null
   createdAt: string
+}
+
+export interface AgentExecutionAudit {
+  id: EntityId
+  workbenchTaskId: EntityId
+  spaceId: EntityId
+  agentId: EntityId
+  agentName: string | null
+  agentConfigVersion: number | null
+  maxIterations: number | null
+  executionTimeoutSeconds: number | null
+  status: string
+  cancelRequested: boolean
+  promptHash: string | null
+  executionSnapshotHash: string | null
+  model: {
+    id: EntityId | null
+    modelKey: string | null
+    displayName: string | null
+    configVersion: number | null
+  }
+  skill: {
+    configuredMode: SkillSelectionMode | null
+    effectiveMode: SkillSelectionMode | null
+    instructionHash: string | null
+    routerModelId: EntityId | null
+    routerDurationMs: number | null
+    routerFallbackReason: string | null
+    routerInputHash: string | null
+    routerResponseHash: string | null
+    boundSkills: Array<{
+      skillId: EntityId
+      skillVersionId: EntityId
+      versionNo: number
+      name: string
+      activationDescription: string | null
+      packageSha256: string | null
+    }>
+    selectedSkillVersionIds: EntityId[]
+  }
+  toolDefinitions: Array<{
+    name: string
+    source: string
+    sourceKey: string | null
+    mcpServerId: EntityId | null
+  }>
+  externalMcps: Array<{
+    serverId: EntityId
+    serverKey: string
+    configVersion: number
+    endpointSha256: string | null
+    authType: string
+    toolWhitelist: string[]
+  }>
+  modelCalls: Array<{
+    sequenceNo: number
+    modelId: EntityId
+    modelConfigVersion: number
+    modelKey: string
+    maxOutputTokens: number | null
+    temperature: number | null
+    streaming: boolean
+    messagesSha256: string | null
+    messagesSize: number | null
+    responseSha256: string | null
+    responseSize: number | null
+    status: string
+    errorType: string | null
+    startedAt: string
+    finishedAt: string | null
+  }>
+  toolCalls: Array<{
+    sequenceNo: number
+    toolName: string
+    toolSource: string
+    toolSourceKey: string | null
+    mcpServerId: EntityId | null
+    skillVersionId: EntityId | null
+    argumentsSha256: string | null
+    argumentsSize: number | null
+    resultSha256: string | null
+    resultSize: number | null
+    status: string
+    errorType: string | null
+    startedAt: string
+    finishedAt: string | null
+  }>
+  inputTokens: number
+  inputTokensEstimated: boolean
+  cachedInputTokens: number | null
+  cachedInputTokensEstimated: boolean
+  outputTokens: number
+  outputTokensEstimated: boolean
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+}
+
+export interface TaskExecutionDetail {
+  task: TaskDetail
+  agentName: string | null
+  tokensEstimated: boolean
+  execution: AgentExecutionAudit | null
+  output: {
+    type: 'CHANGE_REQUEST' | 'DRAFT_DOCUMENT'
+    id: EntityId
+    status: string | null
+    documentId: EntityId
+  } | null
 }
 
 export interface TaskDraft extends Omit<

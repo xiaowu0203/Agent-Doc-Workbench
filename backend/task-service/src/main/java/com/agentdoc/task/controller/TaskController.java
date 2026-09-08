@@ -13,7 +13,9 @@ import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
+import com.agentdoc.task.pojo.vo.TaskExecutionDetailVO;
 import com.agentdoc.task.service.TaskService;
+import com.agentdoc.task.service.TaskExecutionQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
     private final TaskService taskService;
+    private final TaskExecutionQueryService taskExecutionQueryService;
 
     @Operation(summary = "创建 Agent 任务")
     @PostMapping
@@ -76,6 +79,12 @@ public class TaskController {
     @GetMapping("/{id}")
     public Result<TaskVO> detail(@PathVariable Long id) {
         return Result.ok(taskService.detail(id));
+    }
+
+    @Operation(summary = "查询任务执行详情与脱敏调用轨迹")
+    @GetMapping("/{id}/execution-detail")
+    public Result<TaskExecutionDetailVO> executionDetail(@PathVariable Long id) {
+        return Result.ok(taskExecutionQueryService.detail(id));
     }
 
     @Operation(summary = "终止任务")

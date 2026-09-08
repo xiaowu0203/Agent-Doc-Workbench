@@ -119,6 +119,7 @@ public class ExecutionPreparationService {
         execution.setSkillRouterSnapshotJson(snapshot.routerSnapshotJson());
         execution.setToolWhitelistSnapshot(JsonUtils.toJson(snapshot.allowedMcpTools()));
         execution.setExternalMcpSnapshotJson(externalMcpSnapshot(captured.externalMcpConnections()));
+        execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
         // 写入数据库，状态为已提交(submitted)，代表前置准备完成，等待Runtime调度执行
         executionPersistenceService.insertSubmitted(execution);
         return new PreparedExecution(agent, model, snapshot, systemPrompt, execution,

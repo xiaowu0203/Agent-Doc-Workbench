@@ -29,6 +29,7 @@ public record TaskVO(
         @Schema(description = "文档读取范围") TaskReadScope readScope,
         @Schema(description = "关注区域") List<TaskFocusRegionVO> focusRegions,
         @Schema(description = "已消耗 Token 数") Long tokensUsed,
+        @Schema(description = "已消耗 Token 是否包含本地估算值") Boolean tokensEstimated,
         @Schema(description = "开始时间") LocalDateTime startTime,
         @Schema(description = "派发时间") LocalDateTime dispatchedAt,
         @Schema(description = "最近一次心跳时间") LocalDateTime lastHeartbeatAt,
@@ -39,11 +40,17 @@ public record TaskVO(
         @Schema(description = "创建人用户 ID") Long createdBy,
         @Schema(description = "创建时间") LocalDateTime createdAt) {
 
+    public TaskVO withTokenUsage(Long used, Boolean estimated) {
+        return new TaskVO(id, taskNo, spaceId, agentId, documentId, documentType, name, instruction, status,
+                tokenBudget, readScope, focusRegions, used, estimated, startTime, dispatchedAt, lastHeartbeatAt,
+                endTime, retryCount, errorMessage, resultSummary, createdBy, createdAt);
+    }
+
     public static TaskVO from(TaskEntity entity) {
         return new TaskVO(entity.getId(), entity.getTaskNo(), entity.getSpaceId(), entity.getAgentId(),
                 entity.getDocumentId(), DocType.fromCode(entity.getDocumentType()), entity.getName(), entity.getInstruction(),
                 TaskStatus.fromCode(entity.getStatus()), entity.getTokenBudget(), readScope(entity), focusRegions(entity),
-                entity.getTokensUsed(), entity.getStartTime(), entity.getDispatchedAt(), entity.getLastHeartbeatAt(),
+                entity.getTokensUsed(), entity.getTokensEstimated(), entity.getStartTime(), entity.getDispatchedAt(), entity.getLastHeartbeatAt(),
                 entity.getEndTime(), entity.getRetryCount(),
                 entity.getErrorMessage(), entity.getResultSummary(), entity.getCreatedBy(), entity.getCreatedAt());
     }
