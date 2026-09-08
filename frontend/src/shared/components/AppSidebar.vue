@@ -72,6 +72,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import type { EntityId } from '@/features/workspace/types'
+import BrandMark from '@/shared/components/BrandMark.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -154,7 +155,7 @@ const menuItems: MenuItem[] = [
     icon: DataAnalysis,
     scope: 'space',
     permission: SPACE_PERMISSIONS.USAGE_READ,
-    path: null,
+    path: 'usage',
     group: '洞察',
   },
   {
@@ -274,22 +275,21 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
 
 .app-sidebar__brand {
   display: flex;
-  height: var(--adw-topbar-height);
+  min-height: 48px;
   align-items: center;
   gap: var(--adw-space-3);
-  padding: 0 var(--adw-space-5);
-  border-bottom: 1px solid rgb(255 255 255 / 10%);
+  padding: 10px 14px 6px;
 }
 
 .app-sidebar__space {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 2px;
-  margin: var(--adw-space-4) var(--adw-space-3) var(--adw-space-2);
-  padding: var(--adw-space-2) var(--adw-space-3) var(--adw-space-3);
+  gap: 1px;
+  margin: 12px var(--adw-space-3) var(--adw-space-2);
+  padding: 7px var(--adw-space-2) 8px;
   border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: var(--adw-radius-sm);
+  border-radius: var(--adw-radius-md);
   background: rgb(255 255 255 / 6%);
 }
 
@@ -298,15 +298,20 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
   flex: 1;
 }
 
-.app-sidebar__space-select :deep(.el-input__wrapper) {
+.app-sidebar__space-select :deep(.el-input__wrapper),
+.app-sidebar__space-select :deep(.el-select__wrapper) {
+  min-height: 20px;
   padding: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.app-sidebar__space-select :deep(.el-input__inner) {
+.app-sidebar__space-select :deep(.el-input__inner),
+.app-sidebar__space-select :deep(.el-select__selected-item) {
   color: #ffffff;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 20px;
 }
 
 .app-sidebar__space-select :deep(.el-select__caret) {
@@ -314,10 +319,10 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
 }
 
 .app-sidebar__space-role {
-  padding-inline: 1px;
+  padding-inline: 0;
   color: rgb(255 255 255 / 62%);
   font-size: 12px;
-  line-height: 1;
+  line-height: 16px;
 }
 
 .app-sidebar__navigation {

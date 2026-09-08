@@ -4,12 +4,14 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
-import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
+import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
+import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -57,4 +59,8 @@ public interface AgentFeign {
     @PostMapping("/api/agent/internal/executions/by-task/token-usage/query")
     Result<List<AgentExecutionTokenUsageBatchVO>> queryExecutionTokenUsages(
             @RequestBody AgentExecutionTokenUsageBatchQueryDTO request);
+
+    /** 查询空间用量看板的工具调用聚合。 */
+    @PostMapping("/api/agent/executions/tool-usage/stats")
+    Result<AgentToolUsageStatsVO> getToolUsageStats(@RequestBody AgentToolUsageQueryDTO request);
 }

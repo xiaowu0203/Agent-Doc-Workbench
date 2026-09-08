@@ -33,7 +33,7 @@ export interface PendingChangeStats {
 
 export interface MonthlyTokenBudget {
   usedTokens: number
-  tokenBudget: number | null
+  monthlyTokenBudget: number | null
 }
 
 export interface TaskSummary {
@@ -113,17 +113,12 @@ export function listRecentDocuments(
   )
 }
 
-export function getDocumentStats(
-  spaceId: EntityId,
-  signal?: AbortSignal,
-): Promise<DocumentStats> {
+export function getDocumentStats(spaceId: EntityId, signal?: AbortSignal): Promise<DocumentStats> {
   return request<DocumentStats>({
     method: 'GET',
     url: `/document/spaces/${spaceId}/document-stats`,
     signal,
-  }).then(
-    (stats) => stats ?? { totalCount: 0, countAsOfLastMonth: 0 },
-  )
+  }).then((stats) => stats ?? { totalCount: 0, countAsOfLastMonth: 0 })
 }
 
 export function listTaskActivities(
@@ -192,9 +187,7 @@ export function getPendingChangeStats(
     url: '/task/change-requests/stats',
     params: { spaceId },
     signal,
-  }).then(
-    (stats) => stats ?? { pendingCount: 0, pendingCountAsOfYesterday: 0 },
-  )
+  }).then((stats) => stats ?? { pendingCount: 0, pendingCountAsOfYesterday: 0 })
 }
 
 export function getTodayTokenUsage(
@@ -218,7 +211,7 @@ export function getMonthlyTokenBudget(
     url: '/task/token-usage/monthly',
     params: { spaceId },
     signal,
-  }).then((stats) => stats ?? { usedTokens: 0, tokenBudget: null })
+  }).then((stats) => stats ?? { usedTokens: 0, monthlyTokenBudget: null })
 }
 
 export function getAgentOverviewStats(

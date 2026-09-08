@@ -104,7 +104,7 @@ beforeEach(() => {
   })
   vi.mocked(overviewApi.getMonthlyTokenBudget).mockResolvedValue({
     usedTokens: 150,
-    tokenBudget: 1000,
+    monthlyTokenBudget: 1000,
   })
   vi.mocked(overviewApi.getAgentOverviewStats).mockResolvedValue({
     activeAgentCount: 1,

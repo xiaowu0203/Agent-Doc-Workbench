@@ -14,6 +14,7 @@ import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.enums.TaskReadScope;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
+import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
@@ -44,6 +45,7 @@ class TaskServiceRerunTest {
     private static final long USER_ID = 501L;
 
     @Mock private TaskMapper taskMapper;
+    @Mock private TokenUsageDetailMapper tokenUsageDetailMapper;
     @Mock private A2aTaskClient a2aTaskClient;
     @Mock private AgentFeign agentFeign;
     @Mock private DocumentFeign documentFeign;
@@ -57,7 +59,7 @@ class TaskServiceRerunTest {
 
     @BeforeEach
     void setUp() {
-        service = new TaskService(taskMapper, a2aTaskClient, agentFeign, documentFeign,
+        service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService, authFeign, auditLogService,
                 new ObjectMapper(), taskCapabilityVerifier);
         Jwt jwt = Jwt.withTokenValue("token")

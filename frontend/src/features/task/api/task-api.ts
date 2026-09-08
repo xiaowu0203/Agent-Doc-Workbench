@@ -30,7 +30,10 @@ export function searchTasks(
     keyword?: string
     status?: TaskStatus
     agentId?: EntityId
+    modelId?: EntityId
     documentId?: EntityId
+    startedFrom?: string
+    startedTo?: string
   },
   signal?: AbortSignal,
 ): Promise<TaskPage> {

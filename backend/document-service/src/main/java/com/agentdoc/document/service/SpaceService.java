@@ -14,6 +14,7 @@ import com.agentdoc.document.pojo.vo.EffectivePermissionVO;
 import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.agentdoc.document.pojo.vo.SpaceVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -68,9 +69,9 @@ public class SpaceService {
      * @param spaceId 空间 ID
      * @return 空间预算
      */
-    public SpaceBudgetVO getUsageBudget(Long spaceId) {
+    public SpaceUsageBudgetVO getUsageBudget(Long spaceId) {
         permissionService.requirePermission(spaceId, USAGE_READ);
-        return getSpace(spaceId).toBudgetVO();
+        return getSpace(spaceId).toUsageBudgetVO();
     }
 
     /**

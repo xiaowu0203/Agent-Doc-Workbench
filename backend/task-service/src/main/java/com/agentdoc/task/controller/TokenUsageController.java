@@ -3,14 +3,19 @@ package com.agentdoc.task.controller;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.task.constant.TaskConstant;
+import com.agentdoc.task.pojo.param.TokenUsageDashboardParam;
 import com.agentdoc.task.pojo.vo.MonthlyTokenBudgetVO;
+import com.agentdoc.task.pojo.vo.TokenUsageDashboardVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTodayVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTrendVO;
 import com.agentdoc.task.service.TokenUsageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,5 +49,11 @@ public class TokenUsageController {
                                                   @RequestParam(defaultValue = TaskConstant.DEFAULT_TREND_DAYS)
                                                   int days) {
         return Result.ok(tokenUsageService.trend(spaceId, days));
+    }
+
+    @Operation(summary = "查询 Token 用量看板")
+    @PostMapping("/dashboard/query")
+    public Result<TokenUsageDashboardVO> dashboard(@Valid @RequestBody TokenUsageDashboardParam param) {
+        return Result.ok(tokenUsageService.dashboard(param));
     }
 }

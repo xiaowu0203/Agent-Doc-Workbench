@@ -12,6 +12,7 @@ export interface Space {
   description: string | null
   ownerId: EntityId
   tokenBudget: number | null
+  monthlyTokenBudget?: number | null
   status: string
   role: SpaceRoleSummary | null
   platformSuperAdmin: boolean

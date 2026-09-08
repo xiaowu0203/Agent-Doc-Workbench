@@ -32,6 +32,7 @@ import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.enums.TaskReadScope;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
+import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
 import com.agentdoc.task.pojo.dto.TaskFocusRegionDTO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
@@ -81,6 +82,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINAT
 public class TaskService {
 
     private final TaskMapper taskMapper;
+    private final TokenUsageDetailMapper tokenUsageDetailMapper;
     private final A2aTaskClient a2aTaskClient;
     private final AgentFeign agentFeign;
     private final DocumentFeign documentFeign;
@@ -217,6 +219,10 @@ public class TaskService {
     public PageVO<TaskListItemVO> search(TaskSearchParam param) {
         requirePermission(param.getSpaceId(), TASK_READ);
         param.validate();
+        if (param.getStartedFrom() != null && param.getStartedTo() != null
+                && !param.getStartedFrom().isBefore(param.getStartedTo())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "任务执行时间范围不合法");
+        }
         LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
                 .eq(TaskEntity::getSpaceId, param.getSpaceId())
                 .orderByDesc(TaskEntity::getCreatedAt)
@@ -227,8 +233,22 @@ public class TaskService {
         if (param.getAgentId() != null) {
             wrapper.eq(TaskEntity::getAgentId, param.getAgentId());
         }
+        if (param.getModelId() != null) {
+            List<Long> taskIds = tokenUsageDetailMapper.listTaskIdsByModelAndDate(
+                    param.getSpaceId(), param.getModelId(), param.getStartedFrom(), param.getStartedTo());
+            if (taskIds.isEmpty()) {
+                return PageVO.of(List.of(), 0, param);
+            }
+            wrapper.in(TaskEntity::getId, taskIds);
+        }
         if (param.getDocumentId() != null) {
             wrapper.eq(TaskEntity::getDocumentId, param.getDocumentId());
+        }
+        if (param.getStartedFrom() != null) {
+            wrapper.ge(TaskEntity::getStartTime, param.getStartedFrom());
+        }
+        if (param.getStartedTo() != null) {
+            wrapper.lt(TaskEntity::getStartTime, param.getStartedTo());
         }
         if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
             String keyword = param.getKeyword().trim();

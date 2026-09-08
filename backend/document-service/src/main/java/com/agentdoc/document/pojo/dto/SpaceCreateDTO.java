@@ -22,7 +22,10 @@ public record SpaceCreateDTO(
         String description,
 
         @Schema(description = "空间全局 Token 预算")
-        Long tokenBudget
+        Long tokenBudget,
+
+        @Schema(description = "空间月度 Token 预算，仅用于用量提示")
+        Long monthlyTokenBudget
 ) {
 
     /**
@@ -35,6 +38,7 @@ public record SpaceCreateDTO(
         entity.setName(name);
         entity.setDescription(description);
         entity.setTokenBudget(tokenBudget);
+        entity.setMonthlyTokenBudget(monthlyTokenBudget);
         entity.setOwnerId(ownerId);
         entity.setStatus(SpaceStatus.NORMAL.getCode());
         return entity;

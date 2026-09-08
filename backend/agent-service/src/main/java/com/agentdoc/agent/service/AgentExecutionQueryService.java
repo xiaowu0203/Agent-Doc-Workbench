@@ -9,9 +9,12 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
+import com.agentdoc.common.feign.vo.AgentToolSourceCountVO;
+import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
 import com.agentdoc.common.utils.JsonUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -23,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
 
 /**
  * Agent 执行审计只读查询服务，只向工作台返回脱敏后的展示投影。
@@ -101,6 +105,22 @@ public class AgentExecutionQueryService {
                         execution.getCachedInputTokensEstimated(), execution.getOutputTokens(),
                         execution.getOutputTokensEstimated()))
                 .toList();
+    }
+
+    /**
+     * 查询空间在指定时间范围内的工具来源分布。
+     */
+    public AgentToolUsageStatsVO getToolUsageStats(AgentToolUsageQueryDTO query) {
+        if (query == null || query.spaceId() == null || query.startAt() == null || query.endAt() == null
+                || !query.startAt().isBefore(query.endAt())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "工具用量查询条件不合法");
+        }
+        spaceAccessService.requirePermission(query.spaceId(), USAGE_READ);
+        List<AgentToolSourceCountVO> sources = toolCallMapper.aggregateBySource(query).stream()
+                .map(row -> new AgentToolSourceCountVO(row.source(), row.calls() == null ? 0 : row.calls()))
+                .toList();
+        return new AgentToolUsageStatsVO(
+                sources.stream().mapToLong(AgentToolSourceCountVO::calls).sum(), sources);
     }
 
     private AgentExecutionAuditVO toVO(AgentExecutionEntity execution,

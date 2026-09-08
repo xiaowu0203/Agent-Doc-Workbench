@@ -53,8 +53,11 @@
               <span class="stat-card__label">本月 Token</span>
               <div class="stat-card__token-value">
                 <strong>{{ formatTokens(monthlyTokenBudget.usedTokens) }}</strong>
-                <span v-if="monthlyTokenBudget.tokenBudget !== null" class="stat-card__token-budget">
-                  / {{ formatTokens(monthlyTokenBudget.tokenBudget) }}
+                <span
+                  v-if="monthlyTokenBudget.monthlyTokenBudget !== null"
+                  class="stat-card__token-budget"
+                >
+                  / {{ formatTokens(monthlyTokenBudget.monthlyTokenBudget) }}
                 </span>
               </div>
               <div v-if="tokenUsagePercent !== null" class="stat-card__progress" aria-hidden="true">
@@ -66,7 +69,10 @@
         </div>
 
         <div class="overview-grid">
-          <article v-if="canReadDocuments" class="overview-panel overview-panel--documents surface-card">
+          <article
+            v-if="canReadDocuments"
+            class="overview-panel overview-panel--documents surface-card"
+          >
             <header class="overview-panel__header">
               <div>
                 <h2>最近文档</h2>
@@ -193,7 +199,10 @@
             </div>
           </article>
 
-          <article v-if="canReadChanges" class="overview-panel overview-panel--pending surface-card">
+          <article
+            v-if="canReadChanges"
+            class="overview-panel overview-panel--pending surface-card"
+          >
             <header class="overview-panel__header">
               <div>
                 <h2>待处理事项</h2>
@@ -306,7 +315,7 @@ const taskPage = ref<PageResult<TaskActivitySummary>>({
   pageNum: 1,
   pageSize: TASK_ACTIVITY_PAGE_SIZE,
 })
-const monthlyTokenBudget = ref<MonthlyTokenBudget>({ usedTokens: 0, tokenBudget: null })
+const monthlyTokenBudget = ref<MonthlyTokenBudget>({ usedTokens: 0, monthlyTokenBudget: null })
 const agentOverviewStats = ref<AgentOverviewStats>({
   activeAgentCount: null,
   activeSkillCount: null,
@@ -343,15 +352,11 @@ const formatPendingChange = computed(() =>
   ),
 )
 const tokenUsagePercent = computed(() => {
-  const budget = monthlyTokenBudget.value.tokenBudget
-  return budget !== null && budget > 0
-    ? (monthlyTokenBudget.value.usedTokens / budget) * 100
-    : null
+  const budget = monthlyTokenBudget.value.monthlyTokenBudget
+  return budget !== null && budget > 0 ? (monthlyTokenBudget.value.usedTokens / budget) * 100 : null
 })
 const tokenProgressPercent = computed(() =>
-  tokenUsagePercent.value === null
-    ? 0
-    : Math.min(100, Math.max(0, tokenUsagePercent.value)),
+  tokenUsagePercent.value === null ? 0 : Math.min(100, Math.max(0, tokenUsagePercent.value)),
 )
 const formatTokenUsage = computed(() => {
   const value = tokenUsagePercent.value
@@ -416,38 +421,39 @@ async function loadOverview(): Promise<void> {
 
   try {
     const empty = <T,>(): PageResult<T> => ({ records: [], total: 0, pageNum: 1, pageSize: 1 })
-    const [documents, stats, taskSummary, tasks, pendingSummary, tokenBudget, agentStats] = await Promise.all([
-      canReadDocuments.value
-        ? listRecentDocuments(spaceId, signal, RECENT_DOCUMENT_PAGE_SIZE)
-        : Promise.resolve({
-            records: [],
-            total: 0,
-            pageNum: 1,
-            pageSize: RECENT_DOCUMENT_PAGE_SIZE,
-          }),
-      canReadDocuments.value
-        ? getDocumentStats(spaceId, signal)
-        : Promise.resolve({ totalCount: 0, countAsOfLastMonth: 0 }),
-      canReadTasks.value
-        ? getTaskStats(spaceId, signal)
-        : Promise.resolve({ totalCount: 0, countAsOfYesterday: 0 }),
-      canReadTasks.value
-        ? listTaskActivities(spaceId, signal, TASK_ACTIVITY_PAGE_SIZE)
-        : Promise.resolve(empty<TaskActivitySummary>()),
-      canReadChanges.value
-        ? getPendingChangeStats(spaceId, signal)
-        : Promise.resolve({ pendingCount: 0, pendingCountAsOfYesterday: 0 }),
-      canReadUsage.value
-        ? getMonthlyTokenBudget(spaceId, signal)
-        : Promise.resolve({ usedTokens: 0, tokenBudget: null }),
-      canReadAgents.value || canReadSkills.value || canReadMcp.value
-        ? getAgentOverviewStats(spaceId, signal)
-        : Promise.resolve({
-            activeAgentCount: null,
-            activeSkillCount: null,
-            enabledMcpCount: null,
-          }),
-    ])
+    const [documents, stats, taskSummary, tasks, pendingSummary, tokenBudget, agentStats] =
+      await Promise.all([
+        canReadDocuments.value
+          ? listRecentDocuments(spaceId, signal, RECENT_DOCUMENT_PAGE_SIZE)
+          : Promise.resolve({
+              records: [],
+              total: 0,
+              pageNum: 1,
+              pageSize: RECENT_DOCUMENT_PAGE_SIZE,
+            }),
+        canReadDocuments.value
+          ? getDocumentStats(spaceId, signal)
+          : Promise.resolve({ totalCount: 0, countAsOfLastMonth: 0 }),
+        canReadTasks.value
+          ? getTaskStats(spaceId, signal)
+          : Promise.resolve({ totalCount: 0, countAsOfYesterday: 0 }),
+        canReadTasks.value
+          ? listTaskActivities(spaceId, signal, TASK_ACTIVITY_PAGE_SIZE)
+          : Promise.resolve(empty<TaskActivitySummary>()),
+        canReadChanges.value
+          ? getPendingChangeStats(spaceId, signal)
+          : Promise.resolve({ pendingCount: 0, pendingCountAsOfYesterday: 0 }),
+        canReadUsage.value
+          ? getMonthlyTokenBudget(spaceId, signal)
+          : Promise.resolve({ usedTokens: 0, monthlyTokenBudget: null }),
+        canReadAgents.value || canReadSkills.value || canReadMcp.value
+          ? getAgentOverviewStats(spaceId, signal)
+          : Promise.resolve({
+              activeAgentCount: null,
+              activeSkillCount: null,
+              enabledMcpCount: null,
+            }),
+      ])
     if (signal.aborted || currentSequence !== loadSequence) return
     recentDocumentPage.value = documents
     documentStats.value = stats ?? { totalCount: 0, countAsOfLastMonth: 0 }
@@ -457,7 +463,7 @@ async function loadOverview(): Promise<void> {
       pendingCount: 0,
       pendingCountAsOfYesterday: 0,
     }
-    monthlyTokenBudget.value = tokenBudget ?? { usedTokens: 0, tokenBudget: null }
+    monthlyTokenBudget.value = tokenBudget ?? { usedTokens: 0, monthlyTokenBudget: null }
     agentOverviewStats.value = agentStats ?? {
       activeAgentCount: null,
       activeSkillCount: null,

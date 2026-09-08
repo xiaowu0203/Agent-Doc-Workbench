@@ -3,20 +3,29 @@ package com.agentdoc.task.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
 import com.agentdoc.task.a2a.A2aTokenUsage;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.convertor.TokenUsageConvertor;
-import com.agentdoc.task.enums.TokenUsageDimension;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.task.enums.TokenUsageDimension;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.mapper.TokenUsageMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageEntity;
+import com.agentdoc.task.pojo.param.TokenUsageDashboardParam;
 import com.agentdoc.task.pojo.vo.MonthlyTokenBudgetVO;
+import com.agentdoc.task.pojo.vo.TokenUsageDailyRow;
+import com.agentdoc.task.pojo.vo.TokenUsageDailyVO;
+import com.agentdoc.task.pojo.vo.TokenUsageDashboardVO;
+import com.agentdoc.task.pojo.vo.TokenUsageStatisticsRow;
+import com.agentdoc.task.pojo.vo.TokenUsageSummaryVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTodayVO;
 import com.agentdoc.task.pojo.vo.TokenUsageTrendVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -27,11 +36,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
+import static com.agentdoc.task.constant.TaskConstant.TOKEN_USAGE_TIME_ZONE;
 
 /**
  * Token用量统计服务
@@ -45,6 +60,7 @@ public class TokenUsageService {
     private final TaskMapper taskMapper;
     private final TokenUsageMapper usageMapper;
     private final DocumentFeign documentFeign;
+    private final AgentFeign agentFeign;
 
     /**
      * 记录单次Agent执行Token消耗，同时做任务Token预算管控
@@ -134,12 +150,14 @@ public class TokenUsageService {
                 detailMapper.hasNullInputBySpaceAndDate(spaceId, date, end));
         boolean outputUnavailable = Boolean.TRUE.equals(
                 detailMapper.hasNullOutputBySpaceAndDate(spaceId, date, end));
+        boolean costUnavailable = Boolean.TRUE.equals(
+                detailMapper.hasNullCostBySpaceAndDate(spaceId, date, end));
         boolean inputEstimated = !inputUnavailable && Boolean.TRUE.equals(
                 detailMapper.hasEstimatedInputBySpaceAndDate(spaceId, date, end));
         boolean outputEstimated = !outputUnavailable && Boolean.TRUE.equals(
                 detailMapper.hasEstimatedOutputBySpaceAndDate(spaceId, date, end));
         return TokenUsageTodayVO.of(spaceId, input, output,
-                inputUnavailable || outputUnavailable ? null
+                inputUnavailable || outputUnavailable || costUnavailable ? null
                         : detailMapper.sumCostBySpaceAndDate(spaceId, date, end),
                 inputUnavailable ? false : inputEstimated,
                 outputUnavailable ? false : outputEstimated);
@@ -155,7 +173,7 @@ public class TokenUsageService {
         requireMember(spaceId);
         LocalDate start = LocalDate.now().withDayOfMonth(1);
         Long used = detailMapper.sumTokensBySpaceAndDate(spaceId, start, start.plusMonths(1));
-        Long budget = requireData(documentFeign.getSpaceTokenBudget(spaceId)).tokenBudget();
+        Long budget = requireData(documentFeign.getSpaceTokenBudget(spaceId)).monthlyTokenBudget();
         return new MonthlyTokenBudgetVO(used == null ? 0 : used, budget);
     }
 
@@ -179,6 +197,104 @@ public class TokenUsageService {
                         .lt(TokenUsageEntity::getUsageDate, LocalDate.now())
                         .orderByAsc(TokenUsageEntity::getUsageDate))
                 .stream().map(TokenUsageTrendVO::from).toList();
+    }
+
+    /**
+     * 查询用量页所需的周期汇总、上周期对比、连续每日趋势和工具来源分布。
+     */
+    public TokenUsageDashboardVO dashboard(TokenUsageDashboardParam param) {
+        param.validate();
+        requireMember(param.spaceId());
+        ZoneId zoneId = ZoneId.of(TOKEN_USAGE_TIME_ZONE);
+        LocalDateTime start = param.startDate().atStartOfDay();
+        LocalDateTime end = param.endDate().plusDays(TaskConstant.DAY_OFFSET).atStartOfDay();
+        long periodDays = ChronoUnit.DAYS.between(param.startDate(), param.endDate()) + 1;
+        LocalDateTime previousStart = param.startDate().minusDays(periodDays).atStartOfDay();
+        LocalDateTime previousEnd = start;
+        Integer taskStatus = param.status() == null ? null : param.status().getCode();
+
+        TokenUsageStatisticsRow currentRow = detailMapper.summarize(
+                param.spaceId(), start, end, param.agentId(), param.modelId(), taskStatus);
+        TokenUsageStatisticsRow previousRow = detailMapper.summarize(
+                param.spaceId(), previousStart, previousEnd, param.agentId(), param.modelId(), taskStatus);
+        AgentToolUsageStatsVO currentTools = toolUsage(param, start, end);
+        AgentToolUsageStatsVO previousTools = toolUsage(param, previousStart, previousEnd);
+
+        Map<LocalDate, TokenUsageDailyRow> dailyRows = detailMapper.summarizeDaily(
+                        param.spaceId(), start, end, param.agentId(), param.modelId(), taskStatus)
+                .stream().collect(Collectors.toMap(TokenUsageDailyRow::usageDate, Function.identity()));
+        List<TokenUsageDailyVO> trend = param.startDate().datesUntil(
+                        param.endDate().plusDays(TaskConstant.DAY_OFFSET))
+                .map(date -> daily(date, dailyRows.get(date)))
+                .toList();
+        MonthlyTokenBudgetVO monthly = monthly(param.spaceId());
+        return new TokenUsageDashboardVO(param.startDate(), param.endDate(), LocalDateTime.now(zoneId),
+                TOKEN_USAGE_TIME_ZONE, summary(currentRow, currentTools.totalCalls()),
+                summary(previousRow, previousTools.totalCalls()), trend, currentTools.sources(),
+                monthly.usedTokens(), monthly.monthlyTokenBudget());
+    }
+
+    private AgentToolUsageStatsVO toolUsage(TokenUsageDashboardParam param,
+                                             LocalDateTime start, LocalDateTime end) {
+        Result<AgentToolUsageStatsVO> result = agentFeign.getToolUsageStats(new AgentToolUsageQueryDTO(
+                param.spaceId(), start, end, param.agentId(), param.modelId(),
+                executionStatus(param.status())));
+        return requireData(result);
+    }
+
+    private String executionStatus(TaskStatus status) {
+        if (status == null) {
+            return null;
+        }
+        return switch (status) {
+            case PENDING -> "NOT_STARTED";
+            case DISPATCHED -> "SUBMITTED";
+            case RUNNING, CANCELING -> "WORKING";
+            case WAITING_INPUT -> "INPUT_REQUIRED";
+            case WAITING_AUTH -> "AUTH_REQUIRED";
+            case COMPLETED -> "COMPLETED";
+            case FAILED -> "FAILED";
+            case TERMINATED -> "CANCELED";
+        };
+    }
+
+    private TokenUsageSummaryVO summary(TokenUsageStatisticsRow row, long toolCalls) {
+        boolean hasData = row != null && positive(row.recordCount());
+        if (!hasData) {
+            return new TokenUsageSummaryVO(false, null, null, null, null,
+                    0, toolCalls, false, false, false);
+        }
+        Long input = row.inputTokens();
+        Long output = row.outputTokens();
+        Long tokens = input == null || output == null ? null : input + output;
+        BigDecimal cost = row.estimatedCost();
+        return new TokenUsageSummaryVO(true, input, output, tokens, cost,
+                value(row.taskCount()), toolCalls, positive(row.estimatedInputCount()),
+                positive(row.estimatedOutputCount()),
+                positive(row.missingInputCount()) || positive(row.missingOutputCount())
+                        || positive(row.missingCostCount()));
+    }
+
+    private TokenUsageDailyVO daily(LocalDate date, TokenUsageDailyRow row) {
+        if (row == null || !positive(row.recordCount())) {
+            return new TokenUsageDailyVO(date, false, 0L, 0L, 0L,
+                    BigDecimal.ZERO, false, false, false);
+        }
+        Long input = row.inputTokens();
+        Long output = row.outputTokens();
+        return new TokenUsageDailyVO(date, true, input, output,
+                input == null || output == null ? null : input + output,
+                row.estimatedCost(), positive(row.estimatedInputCount()), positive(row.estimatedOutputCount()),
+                positive(row.missingInputCount()) || positive(row.missingOutputCount())
+                        || positive(row.missingCostCount()));
+    }
+
+    private boolean positive(Long value) {
+        return value != null && value > 0;
+    }
+
+    private long value(Long value) {
+        return value == null ? 0 : value;
     }
 
     /**
@@ -216,17 +332,18 @@ public class TokenUsageService {
      * @param configuredOutputPrice 每百万token输出价格
      * @param input 输入token数量
      * @param output 输出token数量
-     * @return 估算费用；model为null返回{@link BigDecimal#ZERO}
+     * @return 估算费用；任一单价未配置时返回 null
      */
     private BigDecimal estimateCost(BigDecimal configuredInputPrice, BigDecimal configuredOutputPrice,
                                     Long input, Long output) {
-        BigDecimal inputPrice = configuredInputPrice == null ? BigDecimal.ZERO : configuredInputPrice;
-        BigDecimal outputPrice = configuredOutputPrice == null ? BigDecimal.ZERO : configuredOutputPrice;
+        if (configuredInputPrice == null || configuredOutputPrice == null) {
+            return null;
+        }
 
         // 1.输入token × 百万输入单价 + 输出token × 百万输出单价
         // 2.除以1000000，换算真实费用；指定保留小数位数+四舍五入，避免除不尽抛出算术异常
-        return inputPrice.multiply(BigDecimal.valueOf(input))
-                .add(outputPrice.multiply(BigDecimal.valueOf(output)))
+        return configuredInputPrice.multiply(BigDecimal.valueOf(input))
+                .add(configuredOutputPrice.multiply(BigDecimal.valueOf(output)))
                 .divide(BigDecimal.valueOf(TaskConstant.TOKEN_PRICE_UNIT),
                         TaskConstant.TOKEN_COST_SCALE, RoundingMode.HALF_UP);
     }

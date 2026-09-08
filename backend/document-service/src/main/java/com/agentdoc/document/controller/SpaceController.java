@@ -3,6 +3,7 @@ package com.agentdoc.document.controller;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import com.agentdoc.document.pojo.dto.SpaceCreateDTO;
 import com.agentdoc.document.pojo.dto.SpaceUpdateDTO;
 import com.agentdoc.document.pojo.vo.SpaceVO;
@@ -96,7 +97,7 @@ public class SpaceController {
     @Operation(summary = "查询空间 Token 预算")
     @GetMapping("/{id}/token-budget")
     @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ + "')")
-    public Result<SpaceBudgetVO> tokenBudget(@PathVariable Long id) {
+    public Result<SpaceUsageBudgetVO> tokenBudget(@PathVariable Long id) {
         return Result.ok(spaceService.getUsageBudget(id));
     }
 

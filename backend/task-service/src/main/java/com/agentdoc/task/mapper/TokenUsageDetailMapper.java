@@ -2,11 +2,14 @@ package com.agentdoc.task.mapper;
 
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
 import com.agentdoc.task.pojo.vo.TokenUsageAggregateRow;
+import com.agentdoc.task.pojo.vo.TokenUsageDailyRow;
+import com.agentdoc.task.pojo.vo.TokenUsageStatisticsRow;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -46,6 +49,10 @@ public interface TokenUsageDetailMapper extends BaseMapper<TokenUsageDetailEntit
                                      @Param("start") LocalDate start,
                                      @Param("end") LocalDate end);
 
+    Boolean hasNullCostBySpaceAndDate(@Param("spaceId") Long spaceId,
+                                      @Param("start") LocalDate start,
+                                      @Param("end") LocalDate end);
+
     List<Long> listSpacesByDate(@Param("start") LocalDate start,
                                 @Param("end") LocalDate end);
 
@@ -60,4 +67,23 @@ public interface TokenUsageDetailMapper extends BaseMapper<TokenUsageDetailEntit
 
     List<TokenUsageAggregateRow> aggregateAgent(@Param("start") LocalDate start,
                                                 @Param("end") LocalDate end);
+
+    TokenUsageStatisticsRow summarize(@Param("spaceId") Long spaceId,
+                                      @Param("start") LocalDateTime start,
+                                      @Param("end") LocalDateTime end,
+                                      @Param("agentId") Long agentId,
+                                      @Param("modelId") Long modelId,
+                                      @Param("taskStatus") Integer taskStatus);
+
+    List<TokenUsageDailyRow> summarizeDaily(@Param("spaceId") Long spaceId,
+                                            @Param("start") LocalDateTime start,
+                                            @Param("end") LocalDateTime end,
+                                            @Param("agentId") Long agentId,
+                                            @Param("modelId") Long modelId,
+                                            @Param("taskStatus") Integer taskStatus);
+
+    List<Long> listTaskIdsByModelAndDate(@Param("spaceId") Long spaceId,
+                                         @Param("modelId") Long modelId,
+                                         @Param("start") LocalDateTime start,
+                                         @Param("end") LocalDateTime end);
 }

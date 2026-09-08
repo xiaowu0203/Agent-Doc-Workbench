@@ -18,6 +18,7 @@ import TaskCreateView from '@/views/TaskCreateView.vue'
 import TaskListView from '@/views/TaskListView.vue'
 import TaskDetailView from '@/views/TaskDetailView.vue'
 import ChangeRequestReviewView from '@/views/ChangeRequestReviewView.vue'
+import UsageAuditView from '@/views/UsageAuditView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -88,6 +89,15 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.CHANGE_REQUEST_READ,
+        },
+      },
+      {
+        path: 'spaces/:spaceId/usage',
+        name: 'space-usage',
+        component: UsageAuditView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.USAGE_READ,
         },
       },
       {

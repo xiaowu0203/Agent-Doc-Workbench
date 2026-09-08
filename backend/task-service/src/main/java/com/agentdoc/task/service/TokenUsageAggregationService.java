@@ -55,10 +55,12 @@ public class TokenUsageAggregationService {
         LocalDate end = date.plusDays(TaskConstant.DAY_OFFSET);
         // 查询今天产生过token消耗的全部spaceId
         for (Long spaceId : detailMapper.listSpacesByDate(date, end)) {
+            boolean costUnavailable = Boolean.TRUE.equals(
+                    detailMapper.hasNullCostBySpaceAndDate(spaceId, date, end));
             snapshot(spaceId, date,
                     detailMapper.sumInputBySpaceAndDate(spaceId, date, end),
                     detailMapper.sumOutputBySpaceAndDate(spaceId, date, end),
-                    detailMapper.sumCostBySpaceAndDate(spaceId, date, end));
+                    costUnavailable ? null : detailMapper.sumCostBySpaceAndDate(spaceId, date, end));
         }
     }
 

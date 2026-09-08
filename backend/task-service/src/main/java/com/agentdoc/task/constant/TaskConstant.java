@@ -45,6 +45,8 @@ public final class TaskConstant {
      * 趋势统计最大天数
      */
     public static final int MAX_TREND_DAYS = 90;
+    /** 用量统计统一使用的业务时区。 */
+    public static final String TOKEN_USAGE_TIME_ZONE = "Asia/Shanghai";
     /**
      * 趋势统计默认查询天数，字符串类型用于配置默认值
      */

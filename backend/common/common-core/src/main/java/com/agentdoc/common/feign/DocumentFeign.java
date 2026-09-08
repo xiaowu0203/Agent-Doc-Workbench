@@ -2,15 +2,16 @@ package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
-import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
-import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
+import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
@@ -92,7 +93,7 @@ public interface DocumentFeign {
      * 查询空间 Token 预算（用量读取权限）。
      */
     @GetMapping("/api/document/spaces/{spaceId}/token-budget")
-    Result<SpaceBudgetVO> getSpaceTokenBudget(@PathVariable Long spaceId);
+    Result<SpaceUsageBudgetVO> getSpaceTokenBudget(@PathVariable Long spaceId);
 
     /**
      * 文档片段读取
