@@ -19,7 +19,10 @@
       </div>
     </header>
 
-    <div class="document-workspace surface-card">
+    <div
+      class="document-workspace surface-card"
+      :style="{ '--document-tree-width': `${treePanelWidth}px` }"
+    >
       <aside class="document-tree-panel">
         <div class="document-tree-panel__header">
           <strong>文档目录</strong>
@@ -103,6 +106,14 @@
           />
         </div>
       </aside>
+
+      <div
+        class="document-workspace__resizer"
+        role="separator"
+        aria-label="调整文档目录宽度"
+        aria-orientation="vertical"
+        @pointerdown="startTreePanelResize"
+      ></div>
 
       <main class="document-editor-panel">
         <div
@@ -194,6 +205,18 @@
                 @click="saveDocument"
               >
                 保存
+              </el-button>
+              <el-button
+                v-if="
+                  canCreate &&
+                  !isDirectory &&
+                  documentDetail?.docType === 'DRAFT' &&
+                  !isHistoricalVersion
+                "
+                :loading="promoting"
+                @click="promoteDraftToFormal"
+              >
+                转为正式
               </el-button>
               <el-button
                 v-if="canEdit && !isHistoricalVersion"
@@ -864,6 +887,8 @@ const pendingPointerDrag = ref<{
   y: number
 } | null>(null)
 const saving = ref(false)
+const promoting = ref(false)
+const treePanelWidth = ref(250)
 const creating = ref(false)
 const createDialogVisible = ref(false)
 const tableDialogVisible = ref(false)
@@ -956,6 +981,11 @@ let searchTimer: ReturnType<typeof setTimeout> | null = null
 let loadedTreeSpaceId: EntityId | null = null
 let pointerMoveListener: ((event: PointerEvent) => void) | null = null
 let pointerUpListener: ((event: PointerEvent) => void) | null = null
+let resizingTreePanel = false
+let resizeStartX = 0
+let resizeStartWidth = 250
+let previousBodyCursor = ''
+let previousBodyUserSelect = ''
 
 const canCreate = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.DOCUMENT_CREATE))
 const canEdit = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.DOCUMENT_EDIT))
@@ -1680,6 +1710,37 @@ function handlePointerUp(event: PointerEvent): void {
   void moveDraggedNode(targetDirectoryId, source)
 }
 
+function startTreePanelResize(event: PointerEvent): void {
+  if (event.button !== 0) return
+  event.preventDefault()
+  resizingTreePanel = true
+  resizeStartX = event.clientX
+  resizeStartWidth = treePanelWidth.value
+  previousBodyCursor = document.body.style.cursor
+  previousBodyUserSelect = document.body.style.userSelect
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('pointermove', handleTreePanelResize)
+  window.addEventListener('pointerup', stopTreePanelResize)
+  window.addEventListener('pointercancel', stopTreePanelResize)
+}
+
+function handleTreePanelResize(event: PointerEvent): void {
+  if (!resizingTreePanel) return
+  const nextWidth = resizeStartWidth + event.clientX - resizeStartX
+  treePanelWidth.value = Math.min(420, Math.max(180, nextWidth))
+}
+
+function stopTreePanelResize(): void {
+  if (!resizingTreePanel) return
+  resizingTreePanel = false
+  window.removeEventListener('pointermove', handleTreePanelResize)
+  window.removeEventListener('pointerup', stopTreePanelResize)
+  window.removeEventListener('pointercancel', stopTreePanelResize)
+  document.body.style.cursor = previousBodyCursor
+  document.body.style.userSelect = previousBodyUserSelect
+}
+
 function isPointInsideRootDropZone(clientX: number, clientY: number): boolean {
   const rootDropZone = document.querySelector<HTMLElement>('[data-document-tree-root-drop-zone]')
   if (!rootDropZone) return false
@@ -1851,6 +1912,52 @@ async function saveDocument(): Promise<void> {
     }
   } finally {
     saving.value = false
+  }
+}
+
+async function promoteDraftToFormal(): Promise<void> {
+  const current = documentDetail.value
+  const spaceId = workspaceStore.currentSpaceId
+  if (
+    !current ||
+    current.docType !== 'DRAFT' ||
+    !spaceId ||
+    !canCreate.value ||
+    isHistoricalVersion.value
+  ) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '将使用当前内容新建一份正式文档，原草稿会保留。确定继续吗？',
+      '转为正式文档',
+      {
+        type: 'warning',
+        confirmButtonText: '创建正式文档',
+        cancelButtonText: '取消',
+      },
+    )
+    promoting.value = true
+    const created = await createDocument({
+      spaceId,
+      directoryId: current.directoryId,
+      title: draftTitle.value.trim() || current.title,
+      docType: 'FORMAL',
+      content: draftContent.value,
+    })
+    ElMessage.success('正式文档已创建')
+    await router.push({
+      name: 'space-documents',
+      params: { spaceId: String(spaceId), documentId: String(created.id) },
+    })
+    await loadTree()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(normalizeApiError(error).message)
+    }
+  } finally {
+    promoting.value = false
   }
 }
 
@@ -2432,6 +2539,7 @@ onBeforeUnmount(() => {
   taskAgentsController?.abort()
   taskDocumentsController?.abort()
   removePointerListeners()
+  stopTreePanelResize()
   if (searchTimer) clearTimeout(searchTimer)
 })
 </script>
@@ -2498,7 +2606,7 @@ onBeforeUnmount(() => {
   display: grid;
   height: 100%;
   min-height: 0;
-  grid-template-columns: 250px minmax(0, 1fr) 278px;
+  grid-template-columns: var(--document-tree-width, 250px) 8px minmax(0, 1fr) 278px;
   overflow: hidden;
 }
 
@@ -2512,8 +2620,32 @@ onBeforeUnmount(() => {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  border-right: 1px solid var(--adw-border-color-light);
   background: #fbfcfe;
+}
+
+.document-workspace__resizer {
+  position: relative;
+  z-index: 1;
+  cursor: col-resize;
+  background: var(--adw-border-color-light);
+}
+
+.document-workspace__resizer::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 38px;
+  border-radius: 999px;
+  background: var(--adw-border-color);
+  content: '';
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.15s ease;
+}
+
+.document-workspace__resizer:hover::after {
+  opacity: 1;
 }
 
 .document-tree-panel__header,
@@ -3378,7 +3510,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1200px) {
   .document-workspace {
-    grid-template-columns: 230px minmax(0, 1fr);
+    grid-template-columns: var(--document-tree-width, 230px) 8px minmax(0, 1fr);
   }
 
   .document-info-panel {
@@ -3412,8 +3544,11 @@ onBeforeUnmount(() => {
     height: auto;
   }
 
+  .document-workspace__resizer {
+    display: none;
+  }
+
   .document-tree-panel {
-    border-right: 0;
     border-bottom: 1px solid var(--adw-border-color-light);
   }
 

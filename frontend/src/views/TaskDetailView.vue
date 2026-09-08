@@ -8,6 +8,9 @@
         <span> / {{ task?.taskNo || '详情' }}</span>
       </template>
       <template #actions>
+        <el-button v-if="canRun" type="primary" :loading="running" @click="triggerRun"
+          >运行任务</el-button
+        >
         <el-button v-if="canRerun" type="primary" :loading="rerunning" @click="rerun"
           >重新运行</el-button
         >
@@ -204,7 +207,15 @@
                   @click="openOutputDocument"
                   >打开草稿文档</el-button
                 >
-                <small v-else>变更请求 #{{ detail.output.id }} · {{ detail.output.status }}</small>
+                <template v-else>
+                  <el-button
+                    v-if="canOpenChangeRequest"
+                    type="primary"
+                    plain
+                    @click="openOutputChangeRequest"
+                    >查看变更审批</el-button
+                  >
+                </template>
               </template>
               <template v-else
                 ><strong>{{ isActive ? '正在等待任务产物' : '未生成业务产物' }}</strong>
@@ -241,7 +252,12 @@ import { ElAlert, ElButton, ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { normalizeApiError } from '@/api/errors'
-import { getTaskExecutionDetail, rerunTask, terminateTask } from '@/features/task/api/task-api'
+import {
+  getTaskExecutionDetail,
+  rerunTask,
+  runTask,
+  terminateTask,
+} from '@/features/task/api/task-api'
 import type { TaskExecutionDetail, TaskStatus } from '@/features/task/types'
 import DataState from '@/shared/components/DataState.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
@@ -273,6 +289,7 @@ const route = useRoute(),
 const detail = ref<TaskExecutionDetail | null>(null),
   loading = ref(false),
   refreshing = ref(false),
+  running = ref(false),
   terminating = ref(false),
   rerunning = ref(false),
   error = ref(''),
@@ -299,6 +316,14 @@ const canTerminate = computed(() =>
     activeStatuses.includes(task.value.status) &&
     workspace.hasPermission(SPACE_PERMISSIONS.TASK_TERMINATE),
   ),
+)
+const canRun = computed(() =>
+  Boolean(
+    task.value?.status === 'PENDING' && workspace.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
+  ),
+)
+const canOpenChangeRequest = computed(() =>
+  workspace.hasPermission(SPACE_PERMISSIONS.CHANGE_REQUEST_READ),
 )
 const canRerun = computed(() =>
   Boolean(
@@ -547,6 +572,18 @@ async function terminate() {
     schedulePoll()
   }
 }
+async function triggerRun() {
+  try {
+    running.value = true
+    await runTask(taskId.value)
+    ElMessage.success('任务已重新提交执行队列')
+    await loadDetail()
+  } catch (e) {
+    ElMessage.error(normalizeApiError(e).message)
+  } finally {
+    running.value = false
+  }
+}
 async function rerun() {
   try {
     await ElMessageBox.confirm('将复用原任务输入并创建一次新的执行，确定继续吗？', '重新运行任务', {
@@ -568,6 +605,15 @@ async function rerun() {
 function openOutputDocument() {
   const output = detail.value?.output
   if (output) router.push(`/spaces/${spaceId.value}/documents/${output.documentId}`)
+}
+function openOutputChangeRequest() {
+  const output = detail.value?.output
+  if (!output || output.type !== 'CHANGE_REQUEST') return
+  router.push({
+    name: 'space-approvals',
+    params: { spaceId: spaceId.value },
+    query: { changeRequestId: String(output.id) },
+  })
 }
 function auditTone(status: string): TrailEvent['tone'] {
   if (status === 'SUCCEEDED') return 'success'

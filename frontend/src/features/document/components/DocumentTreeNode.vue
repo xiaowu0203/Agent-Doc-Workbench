@@ -27,9 +27,21 @@
         <el-icon><component :is="expanded ? ArrowDown : ArrowRight" /></el-icon>
       </span>
       <span v-else class="document-tree-node__toggle document-tree-node__toggle--empty"></span>
-      <el-icon class="document-tree-node__icon">
+      <el-icon
+        class="document-tree-node__icon"
+        :class="{
+          'document-tree-node__icon--formal': node.docType === 'FORMAL',
+          'document-tree-node__icon--draft': node.docType === 'DRAFT',
+        }"
+      >
         <component
-          :is="node.nodeType === 'DIRECTORY' || node.children.length ? Folder : Document"
+          :is="
+            node.nodeType === 'DIRECTORY' || node.children.length
+              ? Folder
+              : node.docType === 'FORMAL'
+                ? DocumentChecked
+                : EditPen
+          "
         />
       </el-icon>
       <input
@@ -48,9 +60,17 @@
       <span v-else class="document-tree-node__title" @dblclick.stop="startRename">
         {{ node.title }}
       </span>
-      <span v-if="node.nodeType !== 'DIRECTORY'" class="document-tree-node__type">{{
-        node.docType === 'FORMAL' ? '正式' : '草稿'
-      }}</span>
+      <span
+        v-if="node.nodeType !== 'DIRECTORY'"
+        class="document-tree-node__type"
+        :class="
+          node.docType === 'FORMAL'
+            ? 'document-tree-node__type--formal'
+            : 'document-tree-node__type--draft'
+        "
+      >
+        {{ node.docType === 'FORMAL' ? '正式' : '草稿' }}
+      </span>
     </div>
     <div v-if="node.children.length && expanded" class="document-tree-node__children">
       <DocumentTreeNode
@@ -74,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowDown, ArrowRight, Document, Folder } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowRight, DocumentChecked, EditPen, Folder } from '@element-plus/icons-vue'
 import { ElIcon } from 'element-plus'
 import { computed, nextTick, ref } from 'vue'
 
@@ -203,6 +223,14 @@ function commitRename(): void {
   color: var(--adw-color-primary);
 }
 
+.document-tree-node__icon--formal {
+  color: var(--adw-color-primary);
+}
+
+.document-tree-node__icon--draft {
+  color: var(--adw-color-warning, #d99000);
+}
+
 .document-tree-node__title {
   min-width: 0;
   overflow: hidden;
@@ -225,8 +253,21 @@ function commitRename(): void {
 
 .document-tree-node__type {
   margin-left: auto;
-  color: var(--adw-text-tertiary);
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
   font-size: 11px;
+  line-height: 16px;
+}
+
+.document-tree-node__type--formal {
+  color: var(--adw-color-primary);
+  background: var(--adw-color-primary-soft);
+}
+
+.document-tree-node__type--draft {
+  color: #9a6700;
+  background: #fff4d6;
 }
 
 .document-tree-node__children {

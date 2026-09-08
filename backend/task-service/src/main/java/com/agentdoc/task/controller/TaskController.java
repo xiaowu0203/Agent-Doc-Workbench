@@ -81,6 +81,12 @@ public class TaskController {
         return Result.ok(taskService.detail(id));
     }
 
+    @Operation(summary = "手动触发待运行任务")
+    @PutMapping("/{id}/run")
+    public Result<TaskVO> run(@PathVariable Long id) {
+        return Result.ok(taskService.run(id));
+    }
+
     @Operation(summary = "查询任务执行详情与脱敏调用轨迹")
     @GetMapping("/{id}/execution-detail")
     public Result<TaskExecutionDetailVO> executionDetail(@PathVariable Long id) {

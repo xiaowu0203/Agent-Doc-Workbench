@@ -16,6 +16,7 @@ import ModelManagementView from '@/views/ModelManagementView.vue'
 import TaskCreateView from '@/views/TaskCreateView.vue'
 import TaskListView from '@/views/TaskListView.vue'
 import TaskDetailView from '@/views/TaskDetailView.vue'
+import ChangeRequestReviewView from '@/views/ChangeRequestReviewView.vue'
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -69,6 +70,15 @@ export const routes: RouteRecordRaw[] = [
         name: 'space-task-detail',
         component: TaskDetailView,
         meta: { requiresSpace: true, permission: SPACE_PERMISSIONS.TASK_READ },
+      },
+      {
+        path: 'spaces/:spaceId/approvals',
+        name: 'space-approvals',
+        component: ChangeRequestReviewView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.CHANGE_REQUEST_READ,
+        },
       },
       {
         path: 'spaces/:spaceId/access/roles',

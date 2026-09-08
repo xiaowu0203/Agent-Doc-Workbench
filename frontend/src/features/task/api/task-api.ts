@@ -54,6 +54,10 @@ export function getTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDet
   return request<TaskDetail>({ method: 'GET', url: `/task/tasks/${taskId}`, signal })
 }
 
+export function runTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDetail> {
+  return request<TaskDetail>({ method: 'PUT', url: `/task/tasks/${taskId}/run`, signal })
+}
+
 export function getTaskExecutionDetail(
   taskId: EntityId,
   signal?: AbortSignal,

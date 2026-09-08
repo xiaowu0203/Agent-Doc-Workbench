@@ -24,7 +24,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ
  * 文档版本服务
  * 能力：版本快照生成、版本分页列表、版本详情、版本对比，为文档回滚提供底层支撑
  * 版本规则：
- * 1. 文档内容变更、审批合并、版本回滚时自动生成新版本；version_no 从1开始持续递增
+ * 1. 创建文档时保存 v0 基线，后续内容变更、审批合并、版本回滚时持续递增
  * 2. 回滚操作会生成全新版本快照，不会修改、删除任何历史版本记录
  * 权限：版本属于文档子资源，读取版本信息需要为所属空间成员
  */
@@ -51,10 +51,30 @@ public class DocumentVersionService {
     public DocumentVersionVO createSnapshot(Long documentId, Long versionNo, String content,
                                             String changeSummary, Long userId) {
         DocumentVersionEntity entity = DocumentVersionEntity.create(
-                documentId, versionNo, content, changeSummary, userId);
+                documentId, versionNo, content, changeSummary, userId, null);
         // 插入版本快照记录
         versionMapper.insert(entity);
         return entity.toVO();
+    }
+
+    /** 创建带审批来源的版本快照。 */
+    @Transactional(rollbackFor = Exception.class)
+    public DocumentVersionVO createApprovalSnapshot(Long documentId, Long versionNo, String content,
+                                                    String changeSummary, Long userId,
+                                                    Long changeRequestId) {
+        DocumentVersionEntity entity = DocumentVersionEntity.create(
+                documentId, versionNo, content, changeSummary, userId, changeRequestId);
+        versionMapper.insert(entity);
+        return entity.toVO();
+    }
+
+    /** 按变更请求幂等键查找已生成版本。 */
+    public DocumentVersionEntity findByChangeRequestId(Long changeRequestId) {
+        if (changeRequestId == null) {
+            return null;
+        }
+        return versionMapper.selectOne(new LambdaQueryWrapper<DocumentVersionEntity>()
+                .eq(DocumentVersionEntity::getSourceChangeRequestId, changeRequestId));
     }
 
     /**

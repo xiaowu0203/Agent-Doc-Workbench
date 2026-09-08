@@ -72,6 +72,18 @@
             ></el-table-column
           >
           <el-table-column label="创建人" prop="creatorName" width="130" />
+          <el-table-column v-if="canCreate" label="操作" width="100" fixed="right"
+            ><template #default="{ row }"
+              ><el-button
+                v-if="row.status === 'PENDING'"
+                link
+                type="primary"
+                :loading="runningId === String(row.id)"
+                @click.stop="triggerRun(row.id)"
+                >运行</el-button
+              ></template
+            ></el-table-column
+          >
           <el-table-column label="创建时间" width="180"
             ><template #default="{ row }">{{
               formatTime(row.createdAt)
@@ -99,6 +111,7 @@ import { Plus } from '@element-plus/icons-vue'
 import {
   ElButton,
   ElInput,
+  ElMessage,
   ElOption,
   ElPagination,
   ElSelect,
@@ -108,7 +121,7 @@ import {
 } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { searchTasks } from '@/features/task/api/task-api'
+import { runTask, searchTasks } from '@/features/task/api/task-api'
 import type { TaskListItem, TaskStatus } from '@/features/task/types'
 import DataState from '@/shared/components/DataState.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
@@ -125,7 +138,8 @@ const keyword = ref(''),
   status = ref<'ALL' | TaskStatus>('ALL'),
   tasks = ref<TaskListItem[]>([]),
   loading = ref(false),
-  error = ref('')
+  error = ref(''),
+  runningId = ref<string | null>(null)
 const page = reactive({ total: 0, pageNum: 1, pageSize: 10 })
 let controller: AbortController | null = null
 const statuses: { value: TaskStatus; label: string }[] = [
@@ -171,6 +185,19 @@ async function loadTasks() {
     if (!controller.signal.aborted) error.value = normalizeApiError(e).message
   } finally {
     if (!controller.signal.aborted) loading.value = false
+  }
+}
+async function triggerRun(id: TaskListItem['id']) {
+  if (runningId.value) return
+  runningId.value = String(id)
+  try {
+    await runTask(id)
+    ElMessage.success('任务已重新提交执行队列')
+    await loadTasks()
+  } catch (e) {
+    ElMessage.error(normalizeApiError(e).message)
+  } finally {
+    runningId.value = null
   }
 }
 function statusLabel(value: TaskStatus) {

@@ -5,12 +5,10 @@
     </div>
 
     <div v-if="!collapsed" class="app-sidebar__space">
-      <el-icon :size="18"><Briefcase /></el-icon>
       <el-select
         v-model="selectedSpaceId"
         aria-label="切换空间"
         class="app-sidebar__space-select"
-        size="large"
         @change="switchSpace"
       >
         <el-option
@@ -20,6 +18,7 @@
           :value="space.id"
         />
       </el-select>
+      <span class="app-sidebar__space-role">{{ spaceRoleLabel }}</span>
     </div>
 
     <nav class="app-sidebar__navigation" aria-label="空间导航">
@@ -100,6 +99,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.SPACE_READ,
     path: 'overview',
+    group: '工作',
   },
   {
     label: '文档',
@@ -107,6 +107,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.DOCUMENT_READ,
     path: 'documents',
+    group: '工作',
   },
   {
     label: '任务',
@@ -114,13 +115,15 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.TASK_READ,
     path: 'tasks',
+    group: '工作',
   },
   {
     label: '变更审批',
     icon: Checked,
     scope: 'space',
     permission: SPACE_PERMISSIONS.CHANGE_REQUEST_READ,
-    path: null,
+    path: 'approvals',
+    group: '工作',
   },
   {
     label: 'Agent',
@@ -128,6 +131,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.AGENT_READ,
     path: 'agents',
+    group: '能力',
   },
   {
     label: 'Skill',
@@ -135,6 +139,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.SKILL_READ,
     path: 'skills',
+    group: '能力',
   },
   {
     label: 'MCP 服务',
@@ -142,6 +147,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.MCP_READ,
     path: 'mcp-servers',
+    group: '能力',
   },
   {
     label: '用量与审计',
@@ -149,6 +155,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.USAGE_READ,
     path: null,
+    group: '洞察',
   },
   {
     label: '角色与权限',
@@ -156,7 +163,7 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.ROLE_READ,
     path: 'access/roles',
-    group: '组织与权限',
+    group: '洞察',
   },
   {
     label: '成员管理',
@@ -164,21 +171,21 @@ const menuItems: MenuItem[] = [
     scope: 'space',
     permission: SPACE_PERMISSIONS.MEMBER_READ,
     path: 'access/members',
-    group: '组织与权限',
+    group: '洞察',
   },
   {
     label: '模型配置',
     icon: Cpu,
     scope: 'platform',
     path: '/system/models',
-    group: '系统管理',
+    group: '系统',
   },
   {
     label: '平台角色',
     icon: UserFilled,
     scope: 'platform',
     path: null,
-    group: '系统管理',
+    group: '系统',
   },
 ]
 
@@ -205,6 +212,8 @@ const footerRoleLabel = computed(() =>
     ? '平台超级管理员'
     : workspaceStore.currentSpace?.role?.displayName || '空间成员',
 )
+
+const spaceRoleLabel = computed(() => workspaceStore.currentSpace?.role?.displayName || '空间成员')
 
 const initials = computed(() => {
   const name = authStore.user?.nickname || authStore.user?.username || 'AD'
@@ -274,12 +283,14 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
 
 .app-sidebar__space {
   display: flex;
-  align-items: center;
-  gap: var(--adw-space-2);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
   margin: var(--adw-space-4) var(--adw-space-3) var(--adw-space-2);
-  padding: var(--adw-space-2) var(--adw-space-3);
-  border: 1px solid rgb(255 255 255 / 18%);
+  padding: var(--adw-space-2) var(--adw-space-3) var(--adw-space-3);
+  border: 1px solid rgb(255 255 255 / 12%);
   border-radius: var(--adw-radius-sm);
+  background: rgb(255 255 255 / 6%);
 }
 
 .app-sidebar__space-select {
@@ -295,30 +306,40 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
 
 .app-sidebar__space-select :deep(.el-input__inner) {
   color: #ffffff;
+  font-weight: 600;
 }
 
 .app-sidebar__space-select :deep(.el-select__caret) {
   color: rgb(255 255 255 / 80%);
 }
 
+.app-sidebar__space-role {
+  padding-inline: 1px;
+  color: rgb(255 255 255 / 62%);
+  font-size: 12px;
+  line-height: 1;
+}
+
 .app-sidebar__navigation {
   display: flex;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: var(--adw-space-2);
-  padding: var(--adw-space-5) var(--adw-space-3);
+  gap: 2px;
+  overflow-y: auto;
+  padding: var(--adw-space-3) var(--adw-space-3) var(--adw-space-4);
 }
 
 .app-sidebar__group-label {
-  margin: var(--adw-space-5) var(--adw-space-4) var(--adw-space-1);
+  margin: var(--adw-space-4) var(--adw-space-3) var(--adw-space-1);
   color: rgb(255 255 255 / 56%);
   font-size: 12px;
-  font-weight: 600;
+  line-height: 20px;
 }
 
 .app-sidebar__link {
   display: flex;
-  min-height: 46px;
+  min-height: 40px;
   align-items: center;
   gap: var(--adw-space-3);
   padding: 0 var(--adw-space-4);

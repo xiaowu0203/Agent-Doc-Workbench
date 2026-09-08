@@ -25,6 +25,9 @@ public record DocumentVersionVO(
         @Schema(description = "触发人用户 ID")
         Long createdBy,
 
+        @Schema(description = "审批合并来源变更请求 ID")
+        Long sourceChangeRequestId,
+
         @Schema(description = "创建时间")
         LocalDateTime createdAt
 ) {

@@ -8,8 +8,11 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
+import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
@@ -25,6 +28,7 @@ import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.entity.DocumentDirectoryEntity;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
+import com.agentdoc.document.pojo.entity.DocumentVersionEntity;
 import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
 import com.agentdoc.document.pojo.param.DocumentTreeSearchParam;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
@@ -51,6 +55,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_MERGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUEST_SUBMIT;
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT;
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
@@ -80,6 +86,7 @@ public class DocumentService {
      * @param dto 创建文档请求DTO
      * @return 文档简单视图VO
      */
+    @Transactional(rollbackFor = Exception.class)
     public DocumentVO create(DocumentCreateDTO dto) {
         // 获取当前登录用户ID，未登录直接抛出异常
         Long userId = permissionService.requireUserId();
@@ -89,6 +96,7 @@ public class DocumentService {
         DocumentEntity doc = dto.toEntity(userId);
         // 入库
         documentMapper.insert(doc);
+        versionService.createSnapshot(doc.getId(), doc.getVersion(), doc.getContent(), "创建文档", userId);
         return doc.toVO();
     }
 
@@ -541,6 +549,81 @@ public class DocumentService {
         return doc.toMergeResultVO();
     }
 
+    /** 生成审批页面使用的基准正文和提案正文，不修改正式文档。 */
+    public DocumentChangePreviewVO previewChanges(DocumentChangePreviewRequestDTO request) {
+        return previewChanges(request, CHANGE_REQUEST_READ);
+    }
+
+    /** 校验人工提交内容；与审批详情预览复用同一基线和变更计算规则。 */
+    public DocumentChangePreviewVO previewSubmittedChanges(DocumentChangePreviewRequestDTO request) {
+        return previewChanges(request, CHANGE_REQUEST_SUBMIT);
+    }
+
+    private DocumentChangePreviewVO previewChanges(DocumentChangePreviewRequestDTO request,
+                                                    String permissionCode) {
+        if (request == null || request.documentId() == null || request.baseVersion() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "变更预览参数不完整");
+        }
+        DocumentEntity doc = requireDoc(request.documentId());
+        permissionService.requirePermission(doc.getSpaceId(), permissionCode);
+        requireFormalDocument(doc);
+        validateChanges(request.changes());
+        BaseSnapshot base = resolveBaseContent(doc, request.baseVersion(), request.changes());
+        String proposedContent = applyChanges(base.content(), request.changes());
+        boolean conflicted = !Objects.equals(request.baseVersion(), doc.getVersion());
+        Long expectedVersion = conflicted ? null : doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+        return new DocumentChangePreviewVO(doc.getId(), doc.getTitle(), request.baseVersion(), doc.getVersion(),
+                expectedVersion, base.content(), base.createdAt(), proposedContent, conflicted);
+    }
+
+    /** 以变更请求 ID 为幂等键合并审批结果。重复请求返回第一次生成的版本。 */
+    @Transactional(rollbackFor = Exception.class)
+    public MergeResultVO mergeApproved(ApprovalMergeRequestDTO request) {
+        if (request == null || request.changeRequestId() == null || request.documentId() == null
+                || request.baseVersion() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "审批合并参数不完整");
+        }
+        DocumentEntity doc = requireDoc(request.documentId());
+        permissionService.requirePermission(doc.getSpaceId(), CHANGE_REQUEST_MERGE);
+        requireFormalDocument(doc);
+
+        DocumentVersionEntity existing = versionService.findByChangeRequestId(request.changeRequestId());
+        if (existing != null) {
+            if (!Objects.equals(existing.getDocumentId(), request.documentId())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "变更请求已用于其他文档版本");
+            }
+            return new MergeResultVO(doc.getId(), doc.getTitle(), existing.getVersionNo());
+        }
+        if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "文档基线版本不匹配：请求基线 v" + request.baseVersion() + "，当前为 v" + doc.getVersion());
+        }
+
+        String newContent;
+        if (request.resolvedContent() != null) {
+            newContent = request.resolvedContent();
+        } else {
+            validateChanges(request.changes());
+            newContent = applyChanges(doc.getContent(), request.changes());
+        }
+        Long operatorId = permissionService.requireUserId();
+        long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+        int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, doc.getId())
+                .eq(DocumentEntity::getVersion, request.baseVersion())
+                .set(DocumentEntity::getContent, newContent)
+                .set(DocumentEntity::getVersion, nextVersion)
+                .set(DocumentEntity::getUpdatedBy, operatorId));
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请刷新审批详情后重试");
+        }
+        String summary = request.changeSummary() == null || request.changeSummary().isBlank()
+                ? "审批合并变更" : request.changeSummary();
+        versionService.createApprovalSnapshot(doc.getId(), nextVersion, newContent, summary,
+                operatorId, request.changeRequestId());
+        return new MergeResultVO(doc.getId(), doc.getTitle(), nextVersion);
+    }
+
     /**
      * 按顺序应用结构化变更项
      * v0.1版本支持两种操作：REPLACE全文替换 / APPEND末尾追加文本
@@ -565,6 +648,50 @@ public class DocumentService {
             }
         }
         return content;
+    }
+
+    private void validateChanges(List<ChangeItemDTO> changes) {
+        if (changes == null || changes.isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项不能为空");
+        }
+        for (ChangeItemDTO item : changes) {
+            if (item == null || item.op() == null || item.newText() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项操作和新内容不能为空");
+            }
+        }
+    }
+
+    private BaseSnapshot resolveBaseContent(DocumentEntity doc, Long baseVersion, List<ChangeItemDTO> changes) {
+        try {
+            DocumentVersionEntity version = versionService.requireVersion(doc.getId(), baseVersion);
+            return new BaseSnapshot(version.getContent() == null ? "" : version.getContent(), version.getCreatedAt());
+        } catch (BusinessException exception) {
+            if (exception.getCode() != ErrorCode.NOT_FOUND.getCode()) {
+                throw exception;
+            }
+            if (Objects.equals(baseVersion, doc.getVersion())) {
+                return new BaseSnapshot(doc.getContent() == null ? "" : doc.getContent(), doc.getUpdatedAt());
+            }
+            String oldText = changes.stream()
+                    .filter(Objects::nonNull)
+                    .filter(item -> item.op() == ChangeOp.REPLACE && item.oldText() != null)
+                    .map(ChangeItemDTO::oldText)
+                    .findFirst()
+                    .orElse(null);
+            if (oldText == null) {
+                throw exception;
+            }
+            return new BaseSnapshot(oldText, null);
+        }
+    }
+
+    private void requireFormalDocument(DocumentEntity doc) {
+        if (DocType.fromCode(doc.getDocType()) != DocType.FORMAL) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有正式文档进入变更审批流程");
+        }
+    }
+
+    private record BaseSnapshot(String content, LocalDateTime createdAt) {
     }
 
     /**

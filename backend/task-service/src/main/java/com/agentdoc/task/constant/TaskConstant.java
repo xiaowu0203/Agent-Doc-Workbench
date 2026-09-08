@@ -99,6 +99,12 @@ public final class TaskConstant {
     public static final int MAX_TASK_FOCUS_INSTRUCTION_LENGTH = 1000;
     /** 关注区域文本预览的最大长度。 */
     public static final int MAX_TASK_FOCUS_PREVIEW_LENGTH = 500;
+    /** 变更摘要、审批意见和单条批注最大长度。 */
+    public static final int MAX_CHANGE_REVIEW_TEXT_LENGTH = 500;
+    /** 单次批量审批最多处理的请求数。 */
+    public static final int MAX_CHANGE_REQUEST_BATCH_SIZE = 100;
+    /** 单次部分接受最多记录的 Diff 块数量。 */
+    public static final int MAX_ACCEPTED_CHANGE_KEY_COUNT = 500;
     /**
      * 可读任务编号前缀
      */

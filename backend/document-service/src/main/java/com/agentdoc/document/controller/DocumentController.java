@@ -4,6 +4,9 @@ import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
+import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.pojo.dto.PageParam;
@@ -66,6 +69,25 @@ public class DocumentController {
     @PostMapping("/merge")
     public Result<MergeResultVO> merge(@RequestBody MergeRequestDTO request) {
         return Result.ok(documentService.mergeForFeign(request));
+    }
+
+    @Operation(summary = "预览待审批变更（服务间调用）")
+    @PostMapping("/change-preview")
+    public Result<DocumentChangePreviewVO> previewChanges(@RequestBody DocumentChangePreviewRequestDTO request) {
+        return Result.ok(documentService.previewChanges(request));
+    }
+
+    @Operation(summary = "校验人工提交的正式文档变更并生成预览")
+    @PostMapping("/change-submission-preview")
+    public Result<DocumentChangePreviewVO> previewSubmittedChanges(
+            @RequestBody DocumentChangePreviewRequestDTO request) {
+        return Result.ok(documentService.previewSubmittedChanges(request));
+    }
+
+    @Operation(summary = "幂等合并已审批变更（服务间调用）")
+    @PostMapping("/approval-merge")
+    public Result<MergeResultVO> mergeApproved(@RequestBody ApprovalMergeRequestDTO request) {
+        return Result.ok(documentService.mergeApproved(request));
     }
 
     @Operation(summary = "Agent 直接更新草稿文档（服务间调用）")

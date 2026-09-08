@@ -20,7 +20,7 @@
 | `platform_role` / `user_platform_role` | 认证 | 平台角色定义及用户平台角色绑定 |
 | `space` / `member` | 空间 | 工作空间；成员与角色（所有者 / 编辑者 / 观察者） |
 | `permission` / `space_role` / `space_role_permission` | 空间权限 | 权限标识符目录、空间角色及角色权限绑定 |
-| `document` / `document_version` / `change_request` | 文档 | 树形文档 + 正式 / 草稿双模式；版本快照；变更审批流 |
+| `document` / `document_version` / `change_request` / `change_request_comment` | 文档 | 树形文档、版本快照，以及可认领、批注、部分接受和追溯的变更审批流 |
 | `model` | 模型 | 模型配置（厂商 / model_key / 预估价格 / 加密 API Key） |
 | `agent` | Agent | Agent 实例；系统提示词、执行限制与 `model_id` 关联模型 |
 | `task` / `task_draft` | 任务 | 任务主表及用户私有的任务表单草稿；任务固化可读编号、文档类型与读取边界 |
@@ -43,7 +43,7 @@
    - 平台角色定义通过 Auth Service 的 `/api/platform/roles` 提供 CRUD，所有接口均要求当前用户具备 `PLATFORM_SUPER_ADMIN` 平台角色。`PLATFORM_SUPER_ADMIN` 为迁移脚本初始化的受保护角色，不允许通过接口修改或删除；用户与平台角色的首次绑定仍由数据库初始化完成。
 3. **space / member / space_role / space_role_permission**：工作空间、成员角色、角色权限绑定；每个 Space 默认创建 OWNER、EDITOR、VIEWER，只有 OWNER 受保护。
 4. **permission**：全局权限标识符目录；权限码由后端协议和迁移脚本固化，空间角色引用已有权限码。
-5. **document / document_version / change_request**：树形文档、正式 / 草稿双模式；文档版本快照；Agent 变更审批流。
+5. **document / document_version / change_request / change_request_comment**：树形文档、正式 / 草稿双模式；文档从 v0 保存完整版本快照；正式文档变更支持认领、整单/部分/编辑后接受、拒绝、退回重改、幂等合并与追加型批注。`document_version.source_change_request_id` 是审批合并幂等键，`change_request` 保存决议正文、审批/合并人和重改链路。
 6. **model**：Agent Service 的模型配置，维护厂商、model_key、展示名、窗口大小、计价单价和加密 API Key（**仅预估，不作为结算依据**）。
 7. **agent**：Agent Service 中的 Agent 实例；保存系统提示词、执行限制和配置版本，`model_id` 关联 model 表（逻辑外键）。
 8. **task / task_draft**：Agent 任务主表及当前用户的表单草稿。正式任务使用唯一 `task_no` 对外展示，创建时固化目标文档类型以及 `FULL / RANGES` 读取模式；多个关注区域以 JSON 保存，包含字符范围、文本预览和独立处理要求，`RANGES` 模式下同时构成读取白名单。草稿允许除空间外的表单字段暂时为空，启动成功后逻辑删除。三层 Token 预算（任务 / Agent / 空间）全部基于**Token 数量**做熔断；**熔断逻辑完全不依赖任何统计报表表**（计数来源见「开放问题」）。
@@ -116,5 +116,6 @@
 | `V1__init.sql` | 合并原 V1—V16 的完整 v0.1 数据库基线，包括用户、空间、文档、任务、Agent、模型、Token 统计、Skill、外部 MCP 与执行审计结构 |
 | `V2__space_rbac.sql` | 新增平台角色、用户平台角色绑定、权限目录、空间角色及角色权限表；为既有空间成员补齐角色绑定并创建默认角色 |
 | `V3__align_space_default_roles.sql` | 对齐默认角色保护策略：仅 `OWNER` 受保护，并移除 `VIEWER` 的成员与角色读取权限 |
+| `V13__change_request_review_workflow.sql` | 扩展变更审批工作流与评论表，补齐历史文档当前版本快照，并为审批合并增加版本幂等键 |
 
 所有环境重建并执行该基线后，`V1__init.sql` 不再修改；V2/V3 已作为 Phase 5 增量迁移执行，后续变更继续新增更高版本迁移。

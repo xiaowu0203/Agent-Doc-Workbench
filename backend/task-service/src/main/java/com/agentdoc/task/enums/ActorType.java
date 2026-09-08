@@ -22,4 +22,16 @@ public enum ActorType {
         this.code = code;
         this.name = name;
     }
+
+    public static ActorType fromCode(Integer code) {
+        if (code == null) {
+            return null;
+        }
+        for (ActorType type : values()) {
+            if (type.code == code) {
+                return type;
+            }
+        }
+        return null;
+    }
 }

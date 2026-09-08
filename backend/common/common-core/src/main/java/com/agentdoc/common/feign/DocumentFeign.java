@@ -3,6 +3,9 @@ package com.agentdoc.common.feign;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
+import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
@@ -33,6 +36,19 @@ public interface DocumentFeign {
      */
     @PostMapping("/api/document/documents/merge")
     Result<MergeResultVO> mergeDocument(@RequestBody MergeRequestDTO request);
+
+    /** 生成审批页所需的基准正文与提案正文，不修改文档。 */
+    @PostMapping("/api/document/documents/change-preview")
+    Result<DocumentChangePreviewVO> previewDocumentChanges(@RequestBody DocumentChangePreviewRequestDTO request);
+
+    /** 校验人工提交并返回预览；权限语义为 change_request:submit。 */
+    @PostMapping("/api/document/documents/change-submission-preview")
+    Result<DocumentChangePreviewVO> previewSubmittedDocumentChanges(
+            @RequestBody DocumentChangePreviewRequestDTO request);
+
+    /** 按变更请求幂等合并审批结果。 */
+    @PostMapping("/api/document/documents/approval-merge")
+    Result<MergeResultVO> mergeApprovedDocument(@RequestBody ApprovalMergeRequestDTO request);
 
     /**
      * 批量查询文档引用投影（id/spaceId/title），用于标题回填等（登录即可，标题非敏感）。

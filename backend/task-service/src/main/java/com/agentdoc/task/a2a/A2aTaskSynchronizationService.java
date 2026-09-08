@@ -1,6 +1,7 @@
 package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
@@ -77,7 +78,9 @@ public class A2aTaskSynchronizationService {
         }
         // 任务已完成，记录Token消耗统计，同时做任务Token预算管控
         TaskStatus status = TaskStatus.fromCode(task.getStatus());
-        if (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED || status == TaskStatus.FAILED) {
+        if (DocType.fromCode(task.getDocumentType()) == DocType.DRAFT
+                && (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED
+                || status == TaskStatus.FAILED)) {
             finalizeDraft(task, status);
         }
         if (status == TaskStatus.COMPLETED) {

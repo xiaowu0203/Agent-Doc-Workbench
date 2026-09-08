@@ -6,12 +6,16 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
+import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
+import com.agentdoc.document.pojo.entity.DocumentVersionEntity;
 import com.agentdoc.document.pojo.vo.DocumentStatsVO;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -156,6 +160,55 @@ class DocumentServiceTest {
 
         verify(versionService).createSnapshot(eq(DOCUMENT_ID), eq(3L), eq("旧内容\n追加段落"),
                 eq("追加"), eq(USER_ID));
+    }
+
+    @Test
+    void shouldPreviewChangeAgainstPersistedBaseVersion() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+        DocumentVersionEntity base = new DocumentVersionEntity();
+        base.setDocumentId(DOCUMENT_ID);
+        base.setVersionNo(1L);
+        base.setContent("旧内容");
+        when(versionService.requireVersion(DOCUMENT_ID, 1L)).thenReturn(base);
+
+        DocumentChangePreviewVO preview = documentService.previewChanges(new DocumentChangePreviewRequestDTO(
+                DOCUMENT_ID, 1L, List.of(new ChangeItemDTO(ChangeOp.REPLACE, "旧内容", "提案内容"))));
+
+        assertEquals("旧内容", preview.baseContent());
+        assertEquals("提案内容", preview.proposedContent());
+        assertEquals(true, preview.conflicted());
+    }
+
+    @Test
+    void shouldMergeApprovedChangeWithRequestIdempotencyKey() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
+        when(permissionService.requireUserId()).thenReturn(USER_ID);
+        when(documentMapper.update(any(), any())).thenReturn(1);
+        ApprovalMergeRequestDTO request = new ApprovalMergeRequestDTO(4001L, DOCUMENT_ID, 2L,
+                List.of(new ChangeItemDTO(ChangeOp.REPLACE, "旧内容", "审批内容")), null, "审批合并");
+
+        MergeResultVO result = documentService.mergeApproved(request);
+
+        assertEquals(3L, result.newVersion());
+        verify(versionService).createApprovalSnapshot(DOCUMENT_ID, 3L, "审批内容",
+                "审批合并", USER_ID, 4001L);
+    }
+
+    @Test
+    void shouldReturnExistingApprovalVersionWhenMergeIsRetried() {
+        DocumentEntity document = doc("已合并内容");
+        document.setVersion(3L);
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(document);
+        DocumentVersionEntity version = new DocumentVersionEntity();
+        version.setDocumentId(DOCUMENT_ID);
+        version.setVersionNo(3L);
+        when(versionService.findByChangeRequestId(4001L)).thenReturn(version);
+
+        MergeResultVO result = documentService.mergeApproved(new ApprovalMergeRequestDTO(
+                4001L, DOCUMENT_ID, 2L, List.of(), null, "审批合并"));
+
+        assertEquals(3L, result.newVersion());
+        verify(documentMapper, never()).update(any(), any());
     }
 
     @Test

@@ -12,10 +12,13 @@ import com.agentdoc.common.feign.vo.DocumentFragmentVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.enums.ChangeRequestStatus;
+import com.agentdoc.task.enums.AuditAction;
+import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.vo.TaskDocumentContextVO;
 import com.agentdoc.task.service.ChangeRequestService;
+import com.agentdoc.task.service.AuditLogService;
 import com.agentdoc.task.service.TaskService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -36,6 +39,7 @@ public class WorkbenchMcpApplicationService {
     private final McpTaskScopeService scopeService;
     private final TaskService taskService;
     private final ChangeRequestService changeRequestService;
+    private final AuditLogService auditLogService;
     private final DocumentFeign documentFeign;
 
     /**
@@ -96,7 +100,10 @@ public class WorkbenchMcpApplicationService {
         }
         // 提交变更提案，生成变更申请单
         ChangeRequestEntity request = changeRequestService.submitFromAgent(
-                task, proposal.changes(), proposal.baseVersion());
+                task, proposal.changes(), proposal.baseVersion(), proposal.summary());
+        auditLogService.recordAgent(task.getSpaceId(), task.getId(), task.getAgentId(),
+                AuditAction.CHANGE_REQUEST_SUBMITTED, AuditTargetType.CHANGE_REQUEST,
+                request.getId(), proposal.summary());
         return new McpChangeProposalResult(
                 request.getId(), ChangeRequestStatus.fromCode(request.getStatus()).name());
     }
@@ -120,6 +127,15 @@ public class WorkbenchMcpApplicationService {
                 || proposal.changes() == null || proposal.changes().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "变更提案不能为空");
         }
+        if (proposal.summary() != null
+                && proposal.summary().length() > TaskConstant.MAX_CHANGE_REVIEW_TEXT_LENGTH) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "变更摘要最长 500 字符");
+        }
+        proposal.changes().forEach(item -> {
+            if (item == null || item.op() == null || item.newText() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项操作和新内容不能为空");
+            }
+        });
     }
 
     /**

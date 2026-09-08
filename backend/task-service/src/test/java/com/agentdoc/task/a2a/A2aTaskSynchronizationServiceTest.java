@@ -2,6 +2,7 @@ package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.A2aMetadataConstant;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
@@ -65,12 +66,15 @@ class A2aTaskSynchronizationServiceTest {
 
         assertThat(service.synchronize(task, remoteTask)).isTrue();
         verify(tokenUsageService).recordRemote(any(), any(), any());
+        verify(documentFeign, never()).finalizeDraftAgentChanges(any(), any());
+        verify(documentFeign, never()).discardDraftAgentChanges(any(), any());
     }
 
     private TaskEntity activeTask() {
         TaskEntity task = new TaskEntity();
         task.setId(10L);
         task.setAgentId(11L);
+        task.setDocumentType(DocType.FORMAL.getCode());
         task.setStatus(TaskStatus.RUNNING.getCode());
         return task;
     }

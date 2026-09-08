@@ -56,6 +56,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -367,6 +369,31 @@ public class TaskService {
     }
 
     /**
+     * 手动触发待运行任务，将任务消息重新投递到执行队列。
+     *
+     * @param id 任务 ID
+     * @return 当前任务信息
+     */
+    public TaskVO run(Long id) {
+        TaskEntity entity = require(id);
+        requirePermission(entity.getSpaceId(), TASK_CREATE);
+        if (TaskStatus.fromCode(entity.getStatus()) != TaskStatus.PENDING) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有待运行的任务可以手动触发");
+        }
+        if (entity.getCapabilityToken() == null || entity.getCapabilityToken().isBlank()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "任务缺少执行能力令牌，请重新创建任务");
+        }
+        try {
+            messagePublisher.publish(entity.getId());
+        } catch (RuntimeException exception) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "任务执行消息发布失败");
+        }
+        auditLogService.recordHuman(entity.getSpaceId(), AuditAction.TASK_RETRY,
+                AuditTargetType.TASK, entity.getId(), "手动重新投递待运行任务");
+        return TaskVO.from(require(id));
+    }
+
+    /**
      * 终止任务
      * <p>所有可取消的非终态均允许终止；远端任务先进入 CANCELING，再调用 A2A Cancel。</p>
      * @param id 任务ID
@@ -453,6 +480,78 @@ public class TaskService {
         auditLogService.recordHuman(entity.getSpaceId(), AuditAction.TASK_RETRY,
                 AuditTargetType.TASK, rerunTask.getId(), "基于任务 " + entity.getTaskNo() + " 重新运行");
         return TaskVO.from(rerunTask);
+    }
+
+    /**
+     * 为被退回的 Agent 变更创建后续任务。调用方负责校验变更审批权限。
+     */
+    public TaskVO createReviewRework(Long sourceTaskId, Long changeRequestId, String reviewComment) {
+        TaskEntity source = require(sourceTaskId);
+        DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(source.getDocumentId()));
+        if (!source.getSpaceId().equals(document.spaceId()) || !document.normal()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "目标文档当前不可用于退回重改");
+        }
+        AgentExecutionProfileVO agent = requireData(agentFeign.getExecutionProfile(source.getAgentId()));
+        if (!agent.enabled() || !source.getSpaceId().equals(agent.spaceId())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "原任务 Agent 当前不可用");
+        }
+        requireDocumentScope(agent, source.getDocumentId());
+
+        Long userId = AuthUtils.getUserIdOrException();
+        TaskEntity rework = copyForRerun(source, agent.configVersion(), userId);
+        String suffix = "（审批重改）";
+        String baseName = source.getName() == null ? "变更重改" : source.getName();
+        rework.setName(baseName.length() + suffix.length() <= TaskConstant.MAX_TASK_NAME_LENGTH
+                ? baseName + suffix
+                : baseName.substring(0, TaskConstant.MAX_TASK_NAME_LENGTH - suffix.length()) + suffix);
+        String instruction = source.getInstruction() + "\n\n审批退回意见：\n" + reviewComment
+                + "\n\n请基于当前正式文档重新处理，并提交新的变更请求。原变更请求 ID：" + changeRequestId;
+        rework.setInstruction(instruction.length() <= TaskConstant.MAX_TASK_INSTRUCTION_LENGTH
+                ? instruction : instruction.substring(0, TaskConstant.MAX_TASK_INSTRUCTION_LENGTH));
+        taskMapper.insert(rework);
+        try {
+            rework.setCapabilityToken(issueEncryptedCapability(rework));
+            taskMapper.updateById(rework);
+            publishTaskMessageAfterCommit(rework);
+        } catch (RuntimeException exception) {
+            rework.setStatus(TaskStatus.FAILED.getCode());
+            rework.setErrorMessage("审批退回重改任务发布失败：" + exception.getMessage());
+            rework.setEndTime(LocalDateTime.now());
+            taskMapper.updateById(rework);
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "审批退回重改任务发布失败");
+        }
+        auditLogService.recordHuman(source.getSpaceId(), AuditAction.TASK_RETRY,
+                AuditTargetType.TASK, rework.getId(), "由变更请求 " + changeRequestId + " 退回重改");
+        return TaskVO.from(rework);
+    }
+
+    /**
+     * 事务提交后投递任务消息，避免消费者在任务记录提交前读取不到新任务。
+     */
+    private void publishTaskMessageAfterCommit(TaskEntity task) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            publishTaskMessage(task);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publishTaskMessage(task);
+            }
+        });
+    }
+
+    private void publishTaskMessage(TaskEntity task) {
+        try {
+            messagePublisher.publish(task.getId());
+        } catch (RuntimeException exception) {
+            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+                    .eq(TaskEntity::getId, task.getId())
+                    .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
+                    .set(TaskEntity::getStatus, TaskStatus.FAILED.getCode())
+                    .set(TaskEntity::getErrorMessage, "审批退回重改任务发布失败：" + exception.getMessage())
+                    .set(TaskEntity::getEndTime, LocalDateTime.now()));
+        }
     }
 
     private TaskEntity copyForRerun(TaskEntity source, Long agentConfigVersion, Long userId) {

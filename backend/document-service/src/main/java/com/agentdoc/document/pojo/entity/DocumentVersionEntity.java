@@ -34,6 +34,9 @@ public class DocumentVersionEntity extends BaseEntity {
     @Schema(description = "创建人用户 ID")
     private Long createdBy;
 
+    @Schema(description = "审批合并来源变更请求 ID")
+    private Long sourceChangeRequestId;
+
     @Schema(description = "逻辑删除标记：0 未删除 / 1 已删除")
     @TableLogic
     private Integer deleted;
@@ -42,13 +45,15 @@ public class DocumentVersionEntity extends BaseEntity {
      * 创建文档版本快照实体。
      */
     public static DocumentVersionEntity create(Long documentId, Long versionNo, String content,
-                                               String changeSummary, Long userId) {
+                                               String changeSummary, Long userId,
+                                               Long sourceChangeRequestId) {
         DocumentVersionEntity entity = new DocumentVersionEntity();
         entity.setDocumentId(documentId);
         entity.setVersionNo(versionNo);
         entity.setContent(content);
         entity.setChangeSummary(changeSummary);
         entity.setCreatedBy(userId);
+        entity.setSourceChangeRequestId(sourceChangeRequestId);
         return entity;
     }
 
@@ -57,7 +62,8 @@ public class DocumentVersionEntity extends BaseEntity {
      * @return 版本列表视图
      */
     public DocumentVersionVO toVO() {
-        return new DocumentVersionVO(getId(), documentId, versionNo, changeSummary, createdBy, getCreatedAt());
+        return new DocumentVersionVO(getId(), documentId, versionNo, changeSummary, createdBy,
+                sourceChangeRequestId, getCreatedAt());
     }
 
     /**
@@ -65,6 +71,7 @@ public class DocumentVersionEntity extends BaseEntity {
      * @return 版本详情视图
      */
     public DocumentVersionDetailVO toDetailVO() {
-        return new DocumentVersionDetailVO(documentId, versionNo, content, changeSummary, createdBy);
+        return new DocumentVersionDetailVO(documentId, versionNo, content, changeSummary, createdBy,
+                sourceChangeRequestId, getCreatedAt());
     }
 }

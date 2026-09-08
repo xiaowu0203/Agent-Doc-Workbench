@@ -2,6 +2,8 @@ package com.agentdoc.document.pojo.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.time.LocalDateTime;
+
 /**
  * 文档版本详情视图对象（含 Markdown 快照，用于查看 / 对比）。
  */
@@ -21,6 +23,12 @@ public record DocumentVersionDetailVO(
         String changeSummary,
 
         @Schema(description = "触发人用户 ID")
-        Long createdBy
+        Long createdBy,
+
+        @Schema(description = "审批合并来源变更请求 ID")
+        Long sourceChangeRequestId,
+
+        @Schema(description = "创建时间")
+        LocalDateTime createdAt
 ) {
 }
