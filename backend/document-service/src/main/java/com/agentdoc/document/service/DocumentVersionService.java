@@ -1,12 +1,22 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.dto.DocumentVersionRollbackAuditDTO;
+import com.agentdoc.common.feign.dto.DocumentVersionSourceQueryDTO;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.vo.DocumentVersionSourceVO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.PageUtils;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.mapper.DocumentVersionMapper;
+import com.agentdoc.document.enums.DocumentVersionActorType;
+import com.agentdoc.document.enums.DocumentVersionSourceType;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
 import com.agentdoc.document.pojo.entity.DocumentVersionEntity;
 import com.agentdoc.document.pojo.vo.DocumentVersionDetailVO;
@@ -17,6 +27,17 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 
@@ -35,37 +56,80 @@ public class DocumentVersionService {
     private final DocumentVersionMapper versionMapper;
     private final DocumentMapper documentMapper;
     private final SpacePermissionService permissionService;
+    private final TaskFeign taskFeign;
+    private final AuthFeign authFeign;
 
-    /**
-     * 创建文档版本快照
-     * 注意：版本号由上层调用方计算并传入，本服务不做版本号自增逻辑
-     *
-     * @param documentId 文档ID
-     * @param versionNo 已经递增完成的新版本号
-     * @param content 当前版本完整Markdown正文快照
-     * @param changeSummary 本次变更描述摘要
-     * @param userId 执行变更的操作人ID
-     * @return 版本简单视图VO
-     */
+    /** 创建文档初始版本。 */
     @Transactional(rollbackFor = Exception.class)
-    public DocumentVersionVO createSnapshot(Long documentId, Long versionNo, String content,
-                                            String changeSummary, Long userId) {
-        DocumentVersionEntity entity = DocumentVersionEntity.create(
-                documentId, versionNo, content, changeSummary, userId, null);
-        // 插入版本快照记录
-        versionMapper.insert(entity);
-        return entity.toVO();
+    public DocumentVersionVO createInitialSnapshot(Long documentId, Long versionNo, String content,
+                                                   String changeSummary, Long userId) {
+        return createSnapshot(documentId, versionNo, content, changeSummary,
+                DocumentVersionSourceType.CREATE, DocumentVersionActorType.HUMAN, userId,
+                null, null, null);
     }
 
-    /** 创建带审批来源的版本快照。 */
+    /** 创建人工编辑版本。 */
+    @Transactional(rollbackFor = Exception.class)
+    public DocumentVersionVO createHumanEditSnapshot(Long documentId, Long versionNo, String content,
+                                                     String changeSummary, Long userId) {
+        return createSnapshot(documentId, versionNo, content, changeSummary,
+                DocumentVersionSourceType.HUMAN_EDIT, DocumentVersionActorType.HUMAN, userId,
+                null, null, null);
+    }
+
+    /** 创建 Agent 草稿提交版本。 */
+    @Transactional(rollbackFor = Exception.class)
+    public DocumentVersionVO createAgentDraftSnapshot(Long documentId, Long versionNo, String content,
+                                                      String changeSummary, Long agentId, Long taskId) {
+        return createSnapshot(documentId, versionNo, content, changeSummary,
+                DocumentVersionSourceType.AGENT_DRAFT, DocumentVersionActorType.AGENT, agentId,
+                null, taskId, null);
+    }
+
+    /** 创建带审批与任务来源的版本。 */
     @Transactional(rollbackFor = Exception.class)
     public DocumentVersionVO createApprovalSnapshot(Long documentId, Long versionNo, String content,
                                                     String changeSummary, Long userId,
-                                                    Long changeRequestId) {
+                                                    Long changeRequestId, Long taskId) {
+        return createSnapshot(documentId, versionNo, content, changeSummary,
+                DocumentVersionSourceType.APPROVAL_MERGE, DocumentVersionActorType.HUMAN, userId,
+                changeRequestId, taskId, null);
+    }
+
+    /** 创建回滚版本，并返回持久化实体供审计关联。 */
+    @Transactional(rollbackFor = Exception.class)
+    public DocumentVersionEntity createRollbackSnapshot(Long documentId, Long versionNo, String content,
+                                                        String changeSummary, Long userId,
+                                                        Long rollbackFromVersion) {
+        return insertSnapshot(documentId, versionNo, content, changeSummary,
+                DocumentVersionSourceType.ROLLBACK, DocumentVersionActorType.HUMAN, userId,
+                null, null, rollbackFromVersion);
+    }
+
+    /** 将已完成的回滚写入统一审计日志。 */
+    public void recordRollbackAudit(Long spaceId, DocumentVersionEntity version) {
+        requireData(taskFeign.recordDocumentVersionRollback(new DocumentVersionRollbackAuditDTO(
+                spaceId, version.getDocumentId(), version.getId(), version.getVersionNo(),
+                version.getRollbackFromVersion())));
+    }
+
+    private DocumentVersionVO createSnapshot(Long documentId, Long versionNo, String content,
+                                             String changeSummary, DocumentVersionSourceType sourceType,
+                                             DocumentVersionActorType actorType, Long actorId,
+                                             Long changeRequestId, Long taskId, Long rollbackFromVersion) {
+        return toVO(insertSnapshot(documentId, versionNo, content, changeSummary, sourceType, actorType,
+                actorId, changeRequestId, taskId, rollbackFromVersion), null, null);
+    }
+
+    private DocumentVersionEntity insertSnapshot(Long documentId, Long versionNo, String content,
+                                                 String changeSummary, DocumentVersionSourceType sourceType,
+                                                 DocumentVersionActorType actorType, Long actorId,
+                                                 Long changeRequestId, Long taskId, Long rollbackFromVersion) {
         DocumentVersionEntity entity = DocumentVersionEntity.create(
-                documentId, versionNo, content, changeSummary, userId, changeRequestId);
+                documentId, versionNo, content, changeSummary, sourceType.name(), actorType.name(), actorId,
+                changeRequestId, taskId, rollbackFromVersion, sha256(content));
         versionMapper.insert(entity);
-        return entity.toVO();
+        return entity;
     }
 
     /** 按变更请求幂等键查找已生成版本。 */
@@ -86,15 +150,17 @@ public class DocumentVersionService {
      * @return 分页对象，版本列表（无正文）
      */
     public PageVO<DocumentVersionVO> listVersions(Long documentId, PageParam pageParam) {
-        // 校验文档存在 + 用户具备空间成员可读权限
-        checkReadable(documentId);
+        DocumentEntity document = checkReadable(documentId);
+        pageParam.validate();
         Page<DocumentVersionEntity> page = versionMapper.selectPage(
                 PageUtils.toPage(pageParam),
                 new LambdaQueryWrapper<DocumentVersionEntity>()
                         .eq(DocumentVersionEntity::getDocumentId, documentId)
                         .orderByDesc(DocumentVersionEntity::getVersionNo));
-        // 转换为VO返回，不携带content大字段
-        return PageVO.of(page.getRecords().stream().map(DocumentVersionEntity::toVO).toList(),
+        VersionContext context = loadContext(document.getSpaceId(), page.getRecords());
+        return PageVO.of(page.getRecords().stream()
+                        .map(version -> toVO(version, context.source(version), context.actorName(version)))
+                        .toList(),
                 page.getTotal(), pageParam);
     }
 
@@ -107,10 +173,10 @@ public class DocumentVersionService {
      * @return 版本详情VO，携带完整Markdown正文快照
      */
     public DocumentVersionDetailVO versionDetail(Long documentId, Long versionNo) {
-        // 校验文档存在 + 用户具备空间成员可读权限
-        checkReadable(documentId);
-        // 获取版本实体并转换为详情VO（包含content）
-        return requireVersion(documentId, versionNo).toDetailVO();
+        DocumentEntity document = checkReadable(documentId);
+        DocumentVersionEntity version = requireVersion(documentId, versionNo);
+        VersionContext context = loadContext(document.getSpaceId(), List.of(version));
+        return toDetailVO(version, context.source(version), context.actorName(version));
     }
 
     /**
@@ -123,13 +189,100 @@ public class DocumentVersionService {
      * @return 版本对比VO，封装源版本与目标版本完整快照数据
      */
     public VersionCompareVO compare(Long documentId, Long fromVersionNo, Long toVersionNo) {
-        // 校验文档存在 + 用户具备空间成员可读权限
-        checkReadable(documentId);
-        // 根据【对比源版本号】查询旧版本信息
-        DocumentVersionDetailVO from = requireVersion(documentId, fromVersionNo).toDetailVO();
-        // 根据【对比目标版本号】查询新版本信息
-        DocumentVersionDetailVO to = requireVersion(documentId, toVersionNo).toDetailVO();
-        return new VersionCompareVO(from, to);
+        DocumentEntity document = checkReadable(documentId);
+        DocumentVersionEntity from = requireVersion(documentId, fromVersionNo);
+        DocumentVersionEntity to = requireVersion(documentId, toVersionNo);
+        VersionContext context = loadContext(document.getSpaceId(), List.of(from, to));
+        return new VersionCompareVO(
+                toDetailVO(from, context.source(from), context.actorName(from)),
+                toDetailVO(to, context.source(to), context.actorName(to)));
+    }
+
+    private VersionContext loadContext(Long spaceId, List<DocumentVersionEntity> versions) {
+        List<Long> changeRequestIds = versions.stream().map(DocumentVersionEntity::getSourceChangeRequestId)
+                .filter(Objects::nonNull).distinct().toList();
+        List<Long> taskIds = versions.stream().map(DocumentVersionEntity::getSourceTaskId)
+                .filter(Objects::nonNull).distinct().toList();
+        List<DocumentVersionSourceVO> sourceRows = changeRequestIds.isEmpty() && taskIds.isEmpty()
+                ? List.of()
+                : requireData(taskFeign.queryDocumentVersionSources(
+                        new DocumentVersionSourceQueryDTO(spaceId, changeRequestIds, taskIds)));
+        Map<Long, DocumentVersionSourceVO> byChangeRequest = new HashMap<>();
+        Map<Long, DocumentVersionSourceVO> byTask = new HashMap<>();
+        if (sourceRows != null) {
+            for (DocumentVersionSourceVO source : sourceRows) {
+                if (source.sourceChangeRequestId() != null) {
+                    byChangeRequest.putIfAbsent(source.sourceChangeRequestId(), source);
+                }
+                if (source.sourceTaskId() != null) {
+                    byTask.putIfAbsent(source.sourceTaskId(), source);
+                }
+            }
+        }
+        List<Long> humanActorIds = versions.stream()
+                .filter(version -> actorType(version) == DocumentVersionActorType.HUMAN)
+                .map(DocumentVersionEntity::getActorId).filter(Objects::nonNull).distinct().toList();
+        Map<Long, UserRefVO> users = humanActorIds.isEmpty() ? Map.of()
+                : toUserMap(requireData(authFeign.queryUsers(new UserBatchQueryDTO(humanActorIds))));
+        return new VersionContext(byChangeRequest, byTask, users);
+    }
+
+    private DocumentVersionVO toVO(DocumentVersionEntity version, DocumentVersionSourceVO source,
+                                   String actorName) {
+        return new DocumentVersionVO(version.getId(), version.getDocumentId(), version.getVersionNo(),
+                version.getChangeSummary(), sourceType(version), actorType(version), version.getActorId(), actorName,
+                version.getCreatedBy(),
+                version.getSourceChangeRequestId(), version.getSourceTaskId(), source == null ? null : source.taskNo(),
+                source == null ? null : source.taskName(), source == null ? null : source.agentId(),
+                source == null ? null : source.agentName(), source == null ? null : source.triggeredBy(),
+                source == null ? null : source.triggeredByName(), source == null ? null : source.tokensUsed(),
+                source == null ? null : source.tokensEstimated(), source == null ? null : source.reviewedBy(),
+                source == null ? null : source.reviewedByName(), source == null ? null : source.reviewedAt(),
+                source == null ? null : source.mergedBy(), source == null ? null : source.mergedByName(),
+                source == null ? null : source.mergedAt(), version.getRollbackFromVersion(),
+                version.getContentSha256(), source != null && Boolean.TRUE.equals(source.executionAvailable()),
+                version.getCreatedAt());
+    }
+
+    private DocumentVersionDetailVO toDetailVO(DocumentVersionEntity version, DocumentVersionSourceVO source,
+                                               String actorName) {
+        return new DocumentVersionDetailVO(version.getDocumentId(), version.getVersionNo(), version.getContent(),
+                version.getChangeSummary(), sourceType(version), actorType(version), version.getActorId(), actorName,
+                version.getCreatedBy(),
+                version.getSourceChangeRequestId(), version.getSourceTaskId(), source == null ? null : source.taskNo(),
+                source == null ? null : source.taskName(), source == null ? null : source.agentId(),
+                source == null ? null : source.agentName(), source == null ? null : source.triggeredBy(),
+                source == null ? null : source.triggeredByName(), source == null ? null : source.tokensUsed(),
+                source == null ? null : source.tokensEstimated(), source == null ? null : source.reviewedBy(),
+                source == null ? null : source.reviewedByName(), source == null ? null : source.reviewedAt(),
+                source == null ? null : source.mergedBy(), source == null ? null : source.mergedByName(),
+                source == null ? null : source.mergedAt(), version.getRollbackFromVersion(),
+                version.getContentSha256(), source != null && Boolean.TRUE.equals(source.executionAvailable()),
+                version.getCreatedAt());
+    }
+
+    private Map<Long, UserRefVO> toUserMap(List<UserRefVO> users) {
+        if (users == null || users.isEmpty()) return Map.of();
+        return users.stream().filter(Objects::nonNull).filter(user -> user.id() != null)
+                .collect(Collectors.toMap(UserRefVO::id, Function.identity(), (left, right) -> left));
+    }
+
+    private DocumentVersionSourceType sourceType(DocumentVersionEntity version) {
+        try {
+            return version.getSourceType() == null ? DocumentVersionSourceType.UNKNOWN
+                    : DocumentVersionSourceType.valueOf(version.getSourceType());
+        } catch (IllegalArgumentException ignored) {
+            return DocumentVersionSourceType.UNKNOWN;
+        }
+    }
+
+    private DocumentVersionActorType actorType(DocumentVersionEntity version) {
+        try {
+            return version.getActorType() == null ? DocumentVersionActorType.UNKNOWN
+                    : DocumentVersionActorType.valueOf(version.getActorType());
+        } catch (IllegalArgumentException ignored) {
+            return DocumentVersionActorType.UNKNOWN;
+        }
     }
 
     /**
@@ -138,12 +291,13 @@ public class DocumentVersionService {
      *
      * @param documentId 文档ID
      */
-    private void checkReadable(Long documentId) {
+    private DocumentEntity checkReadable(Long documentId) {
         DocumentEntity doc = documentMapper.selectById(documentId);
         if (doc == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
         permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
+        return doc;
     }
 
     /**
@@ -161,5 +315,46 @@ public class DocumentVersionService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "版本不存在");
         }
         return version;
+    }
+
+    private String sha256(String content) {
+        try {
+            byte[] bytes = (content == null ? "" : content).getBytes(StandardCharsets.UTF_8);
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前 JDK 不支持 SHA-256", exception);
+        }
+    }
+
+    private <T> T requireData(Result<T> result) {
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null ? "远程服务调用失败" : result.message());
+        }
+        return result.data();
+    }
+
+    private record VersionContext(Map<Long, DocumentVersionSourceVO> byChangeRequest,
+                                  Map<Long, DocumentVersionSourceVO> byTask,
+                                  Map<Long, UserRefVO> users) {
+        private DocumentVersionSourceVO source(DocumentVersionEntity version) {
+            DocumentVersionSourceVO source = version.getSourceChangeRequestId() == null
+                    ? null : byChangeRequest.get(version.getSourceChangeRequestId());
+            return source != null || version.getSourceTaskId() == null
+                    ? source : byTask.get(version.getSourceTaskId());
+        }
+
+        private String actorName(DocumentVersionEntity version) {
+            if (DocumentVersionActorType.HUMAN.name().equals(version.getActorType())) {
+                UserRefVO user = version.getActorId() == null ? null : users.get(version.getActorId());
+                return user == null ? null
+                        : (user.nickname() == null || user.nickname().isBlank() ? user.username() : user.nickname());
+            }
+            if (DocumentVersionActorType.AGENT.name().equals(version.getActorType())) {
+                DocumentVersionSourceVO source = source(version);
+                return source == null ? null : source.agentName();
+            }
+            return null;
+        }
     }
 }

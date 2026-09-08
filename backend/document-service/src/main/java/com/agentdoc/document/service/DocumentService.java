@@ -25,6 +25,7 @@ import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
+import com.agentdoc.document.pojo.dto.DocumentRollbackDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.entity.DocumentDirectoryEntity;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
@@ -96,7 +97,7 @@ public class DocumentService {
         DocumentEntity doc = dto.toEntity(userId);
         // 入库
         documentMapper.insert(doc);
-        versionService.createSnapshot(doc.getId(), doc.getVersion(), doc.getContent(), "创建文档", userId);
+        versionService.createInitialSnapshot(doc.getId(), doc.getVersion(), doc.getContent(), "创建文档", userId);
         return doc.toVO();
     }
 
@@ -373,7 +374,8 @@ public class DocumentService {
         doc.setVersion(nextVersion);
         // 如果传入了content，并且正文发生变化，则生成版本快照
         if (contentChanged) {
-            versionService.createSnapshot(doc.getId(), nextVersion, dto.content(), "编辑更新内容", userId);
+            versionService.createHumanEditSnapshot(doc.getId(), nextVersion, dto.content(),
+                    "编辑更新内容", userId);
         }
         return toDetailVO(doc);
     }
@@ -463,11 +465,11 @@ public class DocumentService {
      * 事务：异常全部回滚
      *
      * @param id 文档ID
-     * @param versionNo 需要回滚到的历史版本号
+     * @param dto 回滚目标版本与当前基线版本
      * @return 回滚之后最新文档详情VO
      */
     @Transactional(rollbackFor = Exception.class)
-    public DocumentDetailVO rollback(Long id, Long versionNo) {
+    public DocumentDetailVO rollback(Long id, DocumentRollbackDTO dto) {
         // 校验文档必须存在，不存在抛404
         DocumentEntity doc = requireDoc(id);
         // 校验编辑权限
@@ -475,13 +477,25 @@ public class DocumentService {
         // 获取当前用户ID
         Long userId = permissionService.requireUserId();
         // 获取目标历史版本快照，不存在抛异常
-        var target = versionService.requireVersion(id, versionNo);
-        // 将历史版本内容覆盖到当前文档
+        checkBaseVersion(doc, dto.baseVersion());
+        DocumentVersionEntity target = versionService.requireVersion(id, dto.targetVersion());
+        long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+        int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, id)
+                .eq(DocumentEntity::getVersion, dto.baseVersion())
+                .set(DocumentEntity::getContent, target.getContent())
+                .set(DocumentEntity::getVersion, nextVersion)
+                .set(DocumentEntity::getUpdatedBy, userId));
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请刷新后重试");
+        }
         doc.setContent(target.getContent());
+        doc.setVersion(nextVersion);
         doc.setUpdatedBy(userId);
-        documentMapper.updateById(doc);
-        // 版本号+1，生成新版本快照，记录回滚操作摘要
-        bumpVersion(doc, target.getContent(), "回滚至版本 " + versionNo, userId);
+        DocumentVersionEntity rollbackVersion = versionService.createRollbackSnapshot(
+                id, nextVersion, target.getContent(), "回滚至版本 " + dto.targetVersion(),
+                userId, dto.targetVersion());
+        versionService.recordRollbackAudit(doc.getSpaceId(), rollbackVersion);
         return toDetailVO(doc);
     }
 
@@ -513,7 +527,7 @@ public class DocumentService {
         doc.setVersion(nextVersion);
         documentMapper.updateById(doc);
         // 调用版本服务插入快照
-        versionService.createSnapshot(doc.getId(), nextVersion, content, summary, userId);
+        versionService.createHumanEditSnapshot(doc.getId(), nextVersion, content, summary, userId);
     }
 
     /**
@@ -620,7 +634,7 @@ public class DocumentService {
         String summary = request.changeSummary() == null || request.changeSummary().isBlank()
                 ? "审批合并变更" : request.changeSummary();
         versionService.createApprovalSnapshot(doc.getId(), nextVersion, newContent, summary,
-                operatorId, request.changeRequestId());
+                operatorId, request.changeRequestId(), request.sourceTaskId());
         return new MergeResultVO(doc.getId(), doc.getTitle(), nextVersion);
     }
 
@@ -822,9 +836,22 @@ public class DocumentService {
         }
         String content = doc.getAgentStagedContent();
         Long agentId = AuthUtils.getAgentIdOrException();
+        long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+        int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, doc.getId())
+                .eq(DocumentEntity::getVersion, doc.getVersion())
+                .eq(DocumentEntity::getAgentStagedTaskId, taskId)
+                .set(DocumentEntity::getContent, content)
+                .set(DocumentEntity::getVersion, nextVersion)
+                .set(DocumentEntity::getUpdatedBy, agentId));
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档已被其他修改改变，请重新执行任务");
+        }
         doc.setContent(content);
+        doc.setVersion(nextVersion);
         doc.setUpdatedBy(agentId);
-        bumpVersion(doc, content, "Agent 更新草稿", agentId);
+        versionService.createAgentDraftSnapshot(doc.getId(), nextVersion, content,
+                "Agent 更新草稿", agentId, taskId);
         clearAgentStaging(doc.getId(), taskId);
         return doc.toMergeResultVO();
     }

@@ -144,15 +144,6 @@
             <span>正在打开</span>
           </div>
           <header class="document-editor__header">
-            <div class="document-editor__breadcrumb">
-              <span>{{ workspaceStore.currentSpace?.name || '空间' }}</span>
-              <el-icon><ArrowRight /></el-icon>
-              <span>{{
-                isDirectory ? '目录' : documentDetail?.docType === 'FORMAL' ? '正式文档' : '草稿'
-              }}</span>
-              <el-icon><ArrowRight /></el-icon>
-              <strong>{{ selectedTitle }}</strong>
-            </div>
             <div class="document-editor__actions">
               <span
                 v-if="!isDirectory"
@@ -226,6 +217,9 @@
                 @click="archiveCurrentDocument"
               >
                 归档
+              </el-button>
+              <el-button v-if="!isDirectory" plain :icon="Clock" @click="openVersionHistory">
+                版本历史
               </el-button>
               <el-button
                 v-if="canCreateTask && !isDirectory"
@@ -766,8 +760,8 @@
 
 <script setup lang="ts">
 import {
-  ArrowRight,
   CircleCheckFilled,
+  Clock,
   Delete,
   Document,
   Folder,
@@ -1053,7 +1047,30 @@ const versionOptions = computed<DocumentVersion[]>(() => {
       documentId: currentVersion.id,
       versionNo: currentVersion.version,
       changeSummary: '当前版本',
+      sourceType: 'UNKNOWN',
+      actorType: 'UNKNOWN',
+      actorId: currentVersion.updatedBy,
+      actorName: null,
       createdBy: currentVersion.updatedBy,
+      sourceChangeRequestId: null,
+      sourceTaskId: null,
+      taskNo: null,
+      taskName: null,
+      agentId: null,
+      agentName: null,
+      triggeredBy: null,
+      triggeredByName: null,
+      tokensUsed: null,
+      tokensEstimated: null,
+      reviewedBy: null,
+      reviewedByName: null,
+      reviewedAt: null,
+      mergedBy: null,
+      mergedByName: null,
+      mergedAt: null,
+      rollbackFromVersion: null,
+      contentSha256: null,
+      executionAvailable: false,
       createdAt: currentVersion.updatedAt,
     })
   }
@@ -1450,7 +1467,7 @@ async function rollbackSelectedVersion(): Promise<void> {
       },
     )
     rollbackLoading.value = true
-    await rollbackDocumentVersion(current.id, versionNo)
+    await rollbackDocumentVersion(current.id, versionNo, current.version)
     await loadDocument(current.id)
     ElMessage.success(`已回滚到 v${versionNo}，并生成新的最新版本`)
   } catch (error) {
@@ -1458,6 +1475,15 @@ async function rollbackSelectedVersion(): Promise<void> {
   } finally {
     rollbackLoading.value = false
   }
+}
+
+function openVersionHistory(): void {
+  const current = documentDetail.value
+  if (!current || workspaceStore.currentSpaceId === null) return
+  void router.push({
+    name: 'document-version-history',
+    params: { spaceId: workspaceStore.currentSpaceId, documentId: current.id },
+  })
 }
 
 async function loadActivities(documentId: EntityId, signal: AbortSignal): Promise<void> {
@@ -2773,23 +2799,6 @@ onBeforeUnmount(() => {
   gap: 16px;
   padding: 0 18px;
   border-bottom: 1px solid var(--adw-border-color-light);
-}
-
-.document-editor__breadcrumb {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  color: var(--adw-text-tertiary);
-  font-size: 13px;
-}
-
-.document-editor__breadcrumb strong {
-  max-width: 300px;
-  overflow: hidden;
-  color: var(--adw-text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .document-editor__actions {

@@ -9,7 +9,8 @@ public enum AuditTargetType {
 
     AGENT("agent"),
     TASK("task"),
-    CHANGE_REQUEST("change_request");
+    CHANGE_REQUEST("change_request"),
+    DOCUMENT_VERSION("document_version");
 
     @Schema(description = "审计目标类型编码")
     private final String code;

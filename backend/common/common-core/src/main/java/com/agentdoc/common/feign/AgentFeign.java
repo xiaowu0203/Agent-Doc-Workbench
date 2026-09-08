@@ -2,10 +2,12 @@ package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
+import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -50,4 +52,9 @@ public interface AgentFeign {
     /** 内部同步用 Token 投影，不要求用户登录且不暴露执行审计明细。 */
     @GetMapping("/api/agent/internal/executions/by-task/{taskId}/token-usage")
     Result<AgentExecutionTokenUsageVO> getExecutionTokenUsage(@PathVariable Long taskId);
+
+    /** 批量查询工作台任务对应的 Agent 执行 Token 用量。 */
+    @PostMapping("/api/agent/internal/executions/by-task/token-usage/query")
+    Result<List<AgentExecutionTokenUsageBatchVO>> queryExecutionTokenUsages(
+            @RequestBody AgentExecutionTokenUsageBatchQueryDTO request);
 }

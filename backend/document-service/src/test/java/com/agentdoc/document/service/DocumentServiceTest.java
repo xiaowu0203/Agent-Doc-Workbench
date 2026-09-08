@@ -14,6 +14,7 @@ import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.mapper.DocumentMapper;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
+import com.agentdoc.document.pojo.dto.DocumentRollbackDTO;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
 import com.agentdoc.document.pojo.entity.DocumentVersionEntity;
 import com.agentdoc.document.pojo.vo.DocumentStatsVO;
@@ -105,7 +106,8 @@ class DocumentServiceTest {
 
         // 携带基线版本的原子更新，版本递增至 3 并生成快照
         verify(documentMapper).update(any(), any());
-        verify(versionService).createSnapshot(eq(DOCUMENT_ID), eq(3L), eq("新内容"), any(String.class), eq(USER_ID));
+        verify(versionService).createHumanEditSnapshot(eq(DOCUMENT_ID), eq(3L), eq("新内容"),
+                any(String.class), eq(USER_ID));
     }
 
     @Test
@@ -116,7 +118,7 @@ class DocumentServiceTest {
         when(documentMapper.update(any(), any())).thenReturn(1);
         documentService.update(DOCUMENT_ID, new DocumentUpdateDTO(2L, "新标题", null));
 
-        verify(versionService, never()).createSnapshot(anyLong(), anyLong(), any(String.class),
+        verify(versionService, never()).createHumanEditSnapshot(anyLong(), anyLong(), any(String.class),
                 any(String.class), anyLong());
     }
 
@@ -145,7 +147,7 @@ class DocumentServiceTest {
 
         assertEquals(DOCUMENT_ID, result.documentId());
         assertEquals(3L, result.newVersion());
-        verify(versionService).createSnapshot(eq(DOCUMENT_ID), eq(3L), eq("合并后的内容"),
+        verify(versionService).createHumanEditSnapshot(eq(DOCUMENT_ID), eq(3L), eq("合并后的内容"),
                 eq("审批合并变更"), eq(USER_ID));
     }
 
@@ -158,7 +160,7 @@ class DocumentServiceTest {
 
         documentService.mergeForFeign(request);
 
-        verify(versionService).createSnapshot(eq(DOCUMENT_ID), eq(3L), eq("旧内容\n追加段落"),
+        verify(versionService).createHumanEditSnapshot(eq(DOCUMENT_ID), eq(3L), eq("旧内容\n追加段落"),
                 eq("追加"), eq(USER_ID));
     }
 
@@ -184,14 +186,14 @@ class DocumentServiceTest {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
         when(permissionService.requireUserId()).thenReturn(USER_ID);
         when(documentMapper.update(any(), any())).thenReturn(1);
-        ApprovalMergeRequestDTO request = new ApprovalMergeRequestDTO(4001L, DOCUMENT_ID, 2L,
+        ApprovalMergeRequestDTO request = new ApprovalMergeRequestDTO(4001L, 5001L, DOCUMENT_ID, 2L,
                 List.of(new ChangeItemDTO(ChangeOp.REPLACE, "旧内容", "审批内容")), null, "审批合并");
 
         MergeResultVO result = documentService.mergeApproved(request);
 
         assertEquals(3L, result.newVersion());
         verify(versionService).createApprovalSnapshot(DOCUMENT_ID, 3L, "审批内容",
-                "审批合并", USER_ID, 4001L);
+                "审批合并", USER_ID, 4001L, 5001L);
     }
 
     @Test
@@ -205,9 +207,46 @@ class DocumentServiceTest {
         when(versionService.findByChangeRequestId(4001L)).thenReturn(version);
 
         MergeResultVO result = documentService.mergeApproved(new ApprovalMergeRequestDTO(
-                4001L, DOCUMENT_ID, 2L, List.of(), null, "审批合并"));
+                4001L, 5001L, DOCUMENT_ID, 2L, List.of(), null, "审批合并"));
 
         assertEquals(3L, result.newVersion());
+        verify(documentMapper, never()).update(any(), any());
+    }
+
+    @Test
+    void shouldRollbackWithOptimisticLockAndCreateAuditedVersion() {
+        DocumentEntity document = doc("当前内容");
+        DocumentVersionEntity target = new DocumentVersionEntity();
+        target.setDocumentId(DOCUMENT_ID);
+        target.setVersionNo(1L);
+        target.setContent("历史内容");
+        DocumentVersionEntity rollbackVersion = new DocumentVersionEntity();
+        rollbackVersion.setId(6001L);
+        rollbackVersion.setDocumentId(DOCUMENT_ID);
+        rollbackVersion.setVersionNo(3L);
+        rollbackVersion.setRollbackFromVersion(1L);
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(document);
+        when(permissionService.requireUserId()).thenReturn(USER_ID);
+        when(documentMapper.update(any(), any())).thenReturn(1);
+        when(versionService.requireVersion(DOCUMENT_ID, 1L)).thenReturn(target);
+        when(versionService.createRollbackSnapshot(DOCUMENT_ID, 3L, "历史内容",
+                "回滚至版本 1", USER_ID, 1L)).thenReturn(rollbackVersion);
+
+        var result = documentService.rollback(DOCUMENT_ID, new DocumentRollbackDTO(1L, 2L));
+
+        assertEquals(3L, result.version());
+        assertEquals("历史内容", result.content());
+        verify(versionService).recordRollbackAudit(document.getSpaceId(), rollbackVersion);
+    }
+
+    @Test
+    void shouldRejectRollbackWhenBaseVersionChanged() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> documentService.rollback(DOCUMENT_ID, new DocumentRollbackDTO(1L, 1L)));
+
+        assertEquals(ErrorCode.CONFLICT.getCode(), exception.getCode());
         verify(documentMapper, never()).update(any(), any());
     }
 

@@ -119,7 +119,7 @@ public class WorkbenchMcpApplicationService {
             throw new BusinessException(ErrorCode.CONFLICT, "正式文档不能由 Agent 直接修改");
         }
         return requireData(documentFeign.applyDraftAgentChanges(new MergeRequestDTO(
-                scope.documentId(), proposal.baseVersion(), proposal.changes(), "Agent 任务直接更新草稿")));
+                scope.documentId(), proposal.baseVersion(), proposal.changes(), "Agent 更新草稿")));
     }
 
     private void validateProposal(McpChangeProposal proposal) {

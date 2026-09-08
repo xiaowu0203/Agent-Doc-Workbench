@@ -6,6 +6,7 @@ import java.util.List;
  * 审批合并请求。
  *
  * @param changeRequestId 变更请求 ID，同时作为文档版本幂等键
+ * @param sourceTaskId 来源任务 ID
  * @param documentId 目标文档 ID
  * @param baseVersion 审批基准版本
  * @param changes 原始结构化变更
@@ -14,6 +15,7 @@ import java.util.List;
  */
 public record ApprovalMergeRequestDTO(
         Long changeRequestId,
+        Long sourceTaskId,
         Long documentId,
         Long baseVersion,
         List<ChangeItemDTO> changes,

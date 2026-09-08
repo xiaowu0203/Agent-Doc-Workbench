@@ -10,6 +10,7 @@ import type {
   DocumentDetail,
   DocumentTreeNode,
   DocumentVersion,
+  DocumentVersionCompare,
   DocumentVersionDetail,
   PageResult,
   SaveDocumentDraftRequest,
@@ -183,18 +184,19 @@ export function listDocumentVersions(
   documentId: EntityId,
   pageSize = 100,
   signal?: AbortSignal,
+  pageNum = 1,
 ): Promise<PageResult<DocumentVersion>> {
   return request<PageResult<DocumentVersion>>({
     method: 'GET',
     url: `/document/documents/${documentId}/versions`,
-    params: { pageNum: 1, pageSize },
+    params: { pageNum, pageSize },
     signal,
   }).then(
     (page) =>
       page ?? {
         records: [],
         total: 0,
-        pageNum: 1,
+        pageNum,
         pageSize,
       },
   )
@@ -212,15 +214,30 @@ export function getDocumentVersion(
   })
 }
 
+export function compareDocumentVersions(
+  documentId: EntityId,
+  from: number,
+  to: number,
+  signal?: AbortSignal,
+): Promise<DocumentVersionCompare> {
+  return request<DocumentVersionCompare>({
+    method: 'GET',
+    url: `/document/documents/${documentId}/versions/compare`,
+    params: { from, to },
+    signal,
+  })
+}
+
 export function rollbackDocumentVersion(
   documentId: EntityId,
-  versionNo: number,
+  targetVersion: number,
+  baseVersion: number,
   signal?: AbortSignal,
 ): Promise<DocumentDetail> {
   return request<DocumentDetail>({
     method: 'PUT',
     url: `/document/documents/${documentId}/rollback`,
-    params: { versionNo },
+    data: { targetVersion, baseVersion },
     signal,
   })
 }

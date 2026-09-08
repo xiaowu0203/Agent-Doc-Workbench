@@ -1,9 +1,16 @@
 package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.feign.dto.DocumentVersionRollbackAuditDTO;
+import com.agentdoc.common.feign.dto.DocumentVersionSourceQueryDTO;
+import com.agentdoc.common.feign.vo.DocumentVersionSourceVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+
+import java.util.List;
 
 /**
  * Task 服务内部能力校验契约。
@@ -16,4 +23,13 @@ public interface TaskFeign {
      */
     @GetMapping("/api/task/internal/tasks/{taskId}/capability")
     Result<Void> checkTaskCapability(@PathVariable Long taskId);
+
+    /** 批量查询文档版本关联的任务与审批展示信息。 */
+    @PostMapping("/api/task/internal/tasks/version-sources/query")
+    Result<List<DocumentVersionSourceVO>> queryDocumentVersionSources(
+            @RequestBody DocumentVersionSourceQueryDTO request);
+
+    /** 记录文档版本回滚审计。 */
+    @PostMapping("/api/task/internal/tasks/document-version-rollback-audit")
+    Result<Void> recordDocumentVersionRollback(@RequestBody DocumentVersionRollbackAuditDTO request);
 }

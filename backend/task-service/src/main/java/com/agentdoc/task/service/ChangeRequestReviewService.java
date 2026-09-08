@@ -177,7 +177,7 @@ public class ChangeRequestReviewService {
         MergeResultVO merged;
         try {
             merged = requireData(documentFeign.mergeApprovedDocument(new ApprovalMergeRequestDTO(
-                    entity.getId(), entity.getDocumentId(), entity.getBaseVersion(),
+                    entity.getId(), entity.getSourceTaskId(), entity.getDocumentId(), entity.getBaseVersion(),
                     ChangeRequestConvertor.parseChanges(entity.getChanges()), entity.getResolvedContent(),
                     entity.getSummary())));
         } catch (FeignException exception) {

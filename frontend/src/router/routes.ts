@@ -9,6 +9,7 @@ import LoginView from '@/views/LoginView.vue'
 import SpaceOverviewView from '@/views/SpaceOverviewView.vue'
 import AccessControlView from '@/views/AccessControlView.vue'
 import DocumentEditorView from '@/views/DocumentEditorView.vue'
+import DocumentVersionHistoryView from '@/views/DocumentVersionHistoryView.vue'
 import SkillManagementView from '@/views/SkillManagementView.vue'
 import McpManagementView from '@/views/McpManagementView.vue'
 import AgentManagementView from '@/views/AgentManagementView.vue'
@@ -42,6 +43,15 @@ export const routes: RouteRecordRaw[] = [
         meta: {
           requiresSpace: true,
           permission: SPACE_PERMISSIONS.SPACE_READ,
+        },
+      },
+      {
+        path: 'spaces/:spaceId/documents/:documentId/versions',
+        name: 'document-version-history',
+        component: DocumentVersionHistoryView,
+        meta: {
+          requiresSpace: true,
+          permission: SPACE_PERMISSIONS.DOCUMENT_READ,
         },
       },
       {

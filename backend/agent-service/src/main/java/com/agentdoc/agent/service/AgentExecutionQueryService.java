@@ -8,7 +8,9 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionModelCallEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
+import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.utils.JsonUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 
@@ -75,6 +78,29 @@ public class AgentExecutionQueryService {
         return new AgentExecutionTokenUsageVO(execution.getInputTokens(), execution.getInputTokensEstimated(),
                 execution.getCachedInputTokens(), execution.getCachedInputTokensEstimated(),
                 execution.getOutputTokens(), execution.getOutputTokensEstimated());
+    }
+
+    /**
+     * 批量提供版本历史所需的最小 Token 投影，避免按版本逐条调用执行服务。
+     */
+    public List<AgentExecutionTokenUsageBatchVO> getTokenUsagesByWorkbenchTasks(
+            AgentExecutionTokenUsageBatchQueryDTO request) {
+        List<Long> taskIds = request == null || request.taskIds() == null ? List.of()
+                : request.taskIds().stream().filter(Objects::nonNull).distinct().toList();
+        if (taskIds.isEmpty()) {
+            return List.of();
+        }
+        if (taskIds.size() > 100) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "单次最多查询 100 个任务的 Token 用量");
+        }
+        return executionMapper.selectList(new LambdaQueryWrapper<AgentExecutionEntity>()
+                        .in(AgentExecutionEntity::getWorkbenchTaskId, taskIds)).stream()
+                .map(execution -> new AgentExecutionTokenUsageBatchVO(
+                        execution.getWorkbenchTaskId(), execution.getInputTokens(),
+                        execution.getInputTokensEstimated(), execution.getCachedInputTokens(),
+                        execution.getCachedInputTokensEstimated(), execution.getOutputTokens(),
+                        execution.getOutputTokensEstimated()))
+                .toList();
     }
 
     private AgentExecutionAuditVO toVO(AgentExecutionEntity execution,

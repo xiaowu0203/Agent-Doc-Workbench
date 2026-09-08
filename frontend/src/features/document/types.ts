@@ -51,21 +51,52 @@ export interface DirectoryDetail {
   updatedAt: string | null
 }
 
-export interface DocumentVersion {
-  id: EntityId
+export type DocumentVersionSourceType =
+  'UNKNOWN' | 'CREATE' | 'HUMAN_EDIT' | 'AGENT_DRAFT' | 'APPROVAL_MERGE' | 'ROLLBACK'
+export type DocumentVersionActorType = 'UNKNOWN' | 'HUMAN' | 'AGENT'
+
+export interface DocumentVersionMetadata {
   documentId: EntityId
   versionNo: number
   changeSummary: string | null
+  sourceType: DocumentVersionSourceType
+  actorType: DocumentVersionActorType
+  actorId: EntityId | null
+  actorName: string | null
   createdBy: EntityId | null
+  sourceChangeRequestId: EntityId | null
+  sourceTaskId: EntityId | null
+  taskNo: string | null
+  taskName: string | null
+  agentId: EntityId | null
+  agentName: string | null
+  triggeredBy: EntityId | null
+  triggeredByName: string | null
+  tokensUsed: number | null
+  tokensEstimated: boolean | null
+  reviewedBy: EntityId | null
+  reviewedByName: string | null
+  reviewedAt: string | null
+  mergedBy: EntityId | null
+  mergedByName: string | null
+  mergedAt: string | null
+  rollbackFromVersion: number | null
+  contentSha256: string | null
+  executionAvailable: boolean
   createdAt: string | null
 }
 
-export interface DocumentVersionDetail {
-  documentId: EntityId
-  versionNo: number
+export interface DocumentVersion extends DocumentVersionMetadata {
+  id: EntityId
+}
+
+export interface DocumentVersionDetail extends DocumentVersionMetadata {
   content: string | null
-  changeSummary: string | null
-  createdBy: EntityId | null
+}
+
+export interface DocumentVersionCompare {
+  from: DocumentVersionDetail
+  to: DocumentVersionDetail
 }
 
 export interface CreateDocumentRequest {

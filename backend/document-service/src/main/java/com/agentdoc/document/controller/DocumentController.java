@@ -15,6 +15,7 @@ import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
 import com.agentdoc.document.pojo.dto.DocumentDraftSaveDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
+import com.agentdoc.document.pojo.dto.DocumentRollbackDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
 import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
 import com.agentdoc.document.pojo.param.DocumentTreeSearchParam;
@@ -213,7 +214,8 @@ public class DocumentController {
 
     @Operation(summary = "回滚文档版本（生成新版本，不删历史快照）")
     @PutMapping("/{id}/rollback")
-    public Result<DocumentDetailVO> rollback(@PathVariable Long id, @RequestParam Long versionNo) {
-        return Result.ok(documentService.rollback(id, versionNo));
+    public Result<DocumentDetailVO> rollback(@PathVariable Long id,
+                                             @Valid @RequestBody DocumentRollbackDTO dto) {
+        return Result.ok(documentService.rollback(id, dto));
     }
 }
