@@ -25,11 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
@@ -72,18 +68,22 @@ public class AgentSkillService {
     }
 
     /**
-     * 查询当前 Skill 的启用 Agent 绑定，用于 Skill 详情页反向展示关联关系。
+     * 根据Skill ID查询绑定该技能的Agent列表（仅查询启用状态的绑定关系）
      *
-     * @param skillId Skill主键ID
-     * @return 当前启用的Agent绑定列表
+     * @param skillId 技能ID
+     * @return 技能‑Agent绑定关系VO列表
      */
     public List<SkillAgentBindingVO> listBySkill(Long skillId) {
+        // 查询技能本体，不存在则抛出异常
         SkillEntity skill = skillMapper.selectById(skillId);
         if (skill == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
         }
+
+        // 校验当前用户拥有该空间Skill读取权限
         spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
 
+        // 查询该技能下，启用状态的Agent‑Skill绑定关系，按agentId升序
         List<AgentSkillEntity> relations = agentSkillMapper.selectList(
                 new LambdaQueryWrapper<AgentSkillEntity>()
                         .eq(AgentSkillEntity::getSkillId, skillId)
@@ -93,14 +93,18 @@ public class AgentSkillService {
             return List.of();
         }
 
+        // 批量查询关联Agent实体，构建id->Agent映射，避免N+1查询
         Map<Long, AgentEntity> agents = new HashMap<>();
         agentMapper.selectBatchIds(relations.stream().map(AgentSkillEntity::getAgentId).collect(Collectors.toSet()))
                 .forEach(agent -> agents.put(agent.getId(), agent));
+
+        // 批量查询绑定对应的Skill版本实体，构建id->版本映射
         Map<Long, SkillVersionEntity> versions = new HashMap<>();
         versionMapper.selectBatchIds(relations.stream().map(AgentSkillEntity::getSkillVersionId)
                         .collect(Collectors.toSet()))
                 .forEach(version -> versions.put(version.getId(), version));
 
+        // 组装VO；Agent或版本缺失则过滤掉该条绑定，防止空指针
         return relations.stream().map(relation -> {
             AgentEntity agent = agents.get(relation.getAgentId());
             SkillVersionEntity version = versions.get(relation.getSkillVersionId());
@@ -110,7 +114,7 @@ public class AgentSkillService {
             return new SkillAgentBindingVO(relation.getId(), agent.getId(), agent.getName(),
                     AgentStatus.fromCode(agent.getStatus()), version.getId(), version.getVersionNo(),
                     relation.getEnabled());
-        }).filter(java.util.Objects::nonNull).toList();
+        }).filter(Objects::nonNull).toList();
     }
 
     /**

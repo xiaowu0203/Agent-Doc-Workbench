@@ -27,7 +27,9 @@ import java.util.stream.Collectors;
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT;
 
 /**
- * 文档目录服务。
+ * 文档目录服务
+ * 提供目录的创建、移动、重命名、归档、恢复；支持树形层级校验，限制最大目录深度；
+ * 目录移动时，目录下文档依靠directory_id关联，跟随目录一起迁移
  */
 @Service
 @RequiredArgsConstructor
@@ -37,12 +39,19 @@ public class DocumentDirectoryService {
     private final SpacePermissionService permissionService;
 
     /**
-     * 创建目录，目录最多支持三层。
+     * 创建文档目录
+     * 校验目录层级不能超过最大限制；创建成功返回目录VO
+     *
+     * @param dto 创建参数：空间ID、父目录ID、目录标题
+     * @return 新建目录VO
      */
     @Transactional(rollbackFor = Exception.class)
     public DocumentDirectoryVO create(DirectoryCreateDTO dto) {
+        // 校验用户拥有空间文档编辑权限
         permissionService.requirePermission(dto.spaceId(), DOCUMENT_EDIT);
         Long userId = permissionService.requireUserId();
+
+        // 计算父目录深度，+1得到当前新建目录层级
         int depth = parentDepth(dto.spaceId(), dto.parentId()) + 1;
         if (depth > DocumentConstant.MAX_DIRECTORY_DEPTH) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
@@ -61,32 +70,50 @@ public class DocumentDirectoryService {
     }
 
     /**
-     * 移动目录；目录下的文档通过 directory_id 自动随目录移动。
+     * 移动目录
+     * 注意：目录下的文档通过directory_id外键，会跟随目录一起移动，无需修改文档数据
+     * 校验规则：
+     * 1. 目录必须为正常状态，归档目录不可移动
+     * 2. 不能将目录移动到自身
+     * 3. 不能移动到自身的子目录下（防止树形循环）
+     * 4. 移动后整个子树不能超出最大目录深度限制
+     *
+     * @param id 待移动目录ID
+     * @param dto 移动参数：新父目录ID
+     * @return 移动后的目录VO
      */
     @Transactional(rollbackFor = Exception.class)
     public DocumentDirectoryVO move(Long id, DirectoryMoveDTO dto) {
         DocumentDirectoryEntity directory = requireDirectory(id);
+        // 归档目录禁止移动
         if (!Objects.equals(directory.getStatus(), DocStatus.NORMAL.getCode())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目录已归档，不能移动");
         }
         permissionService.requirePermission(directory.getSpaceId(), DOCUMENT_EDIT);
         Long newParentId = dto.parentId();
+        // 禁止移动到自己本身
         if (Objects.equals(id, newParentId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "目录不能移动到自身");
         }
 
+        // 查询该空间全部正常目录，构建id->实体map，用于树形计算
         List<DocumentDirectoryEntity> directories = list(directory.getSpaceId(), DocStatus.NORMAL);
         Map<Long, DocumentDirectoryEntity> directoryMap = directories.stream()
                 .collect(Collectors.toMap(DocumentDirectoryEntity::getId, item -> item));
+
+        // 校验目标父目录是否存在
         if (newParentId != null && !directoryMap.containsKey(newParentId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "目标父目录不存在");
         }
+        // 校验：目标父目录不能是当前目录的后代，避免循环树形结构
         if (isDescendant(newParentId, id, directoryMap)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "不能移动到自己的子目录下");
         }
 
+        // 计算移动后的新深度，以及该目录整个子树的高度
         int newDepth = depth(newParentId, directoryMap) + 1;
         int subtreeHeight = subtreeHeight(id, directoryMap);
+        // 校验移动后子树最底层不能超过最大目录深度
         if (newDepth + subtreeHeight - 1 > DocumentConstant.MAX_DIRECTORY_DEPTH) {
             throw new BusinessException(ErrorCode.BAD_REQUEST,
                     "目录最多支持 " + DocumentConstant.MAX_DIRECTORY_DEPTH + " 层");
@@ -106,7 +133,12 @@ public class DocumentDirectoryService {
     }
 
     /**
-     * 更新目录名称。
+     * 更新目录名称
+     * 归档目录禁止修改
+     *
+     * @param id 目录ID
+     * @param dto 更新参数：新标题
+     * @return 更新后目录VO
      */
     @Transactional(rollbackFor = Exception.class)
     public DocumentDirectoryVO update(Long id, DirectoryUpdateDTO dto) {
@@ -130,7 +162,10 @@ public class DocumentDirectoryService {
     }
 
     /**
-     * 查询空间内指定状态的目录。
+     * 查询空间内指定状态的全部目录
+     * @param spaceId 空间ID
+     * @param status 目录状态
+     * @return 目录实体列表
      */
     public List<DocumentDirectoryEntity> list(Long spaceId, DocStatus status) {
         return directoryMapper.selectList(new LambdaQueryWrapper<DocumentDirectoryEntity>()
@@ -141,7 +176,12 @@ public class DocumentDirectoryService {
     }
 
     /**
-     * 校验并获取正常目录；directoryId 为 null 表示空间根层。
+     * 校验获取正常可用目录
+     * directoryId为null代表空间根目录（无父节点），直接返回null
+     *
+     * @param spaceId 空间ID
+     * @param directoryId 目录ID
+     * @return 目录实体；null代表根层
      */
     public DocumentDirectoryEntity requireNormal(Long spaceId, Long directoryId) {
         if (directoryId == null) {
@@ -156,7 +196,9 @@ public class DocumentDirectoryService {
     }
 
     /**
-     * 归档目录。
+     * 归档目录，将状态改为ARCHIVED
+     * 归档后目录不可移动、修改；子目录与文档不受本方法直接影响
+     * @param id 目录ID
      */
     public void archive(Long id) {
         DocumentDirectoryEntity directory = requireDirectory(id);
@@ -167,7 +209,8 @@ public class DocumentDirectoryService {
     }
 
     /**
-     * 恢复目录。
+     * 恢复归档目录，状态切回NORMAL
+     * @param id 目录ID
      */
     public void restore(Long id) {
         DocumentDirectoryEntity directory = requireDirectory(id);
@@ -177,6 +220,11 @@ public class DocumentDirectoryService {
         directoryMapper.updateById(directory);
     }
 
+    /**
+     * 根据id查询目录，不存在抛出异常
+     * @param id 目录ID
+     * @return 目录实体
+     */
     private DocumentDirectoryEntity requireDirectory(Long id) {
         DocumentDirectoryEntity directory = directoryMapper.selectById(id);
         if (directory == null) {
@@ -185,6 +233,12 @@ public class DocumentDirectoryService {
         return directory;
     }
 
+    /**
+     * 递归计算父目录层级深度
+     * @param spaceId 空间ID
+     * @param parentId 父目录ID
+     * @return 父目录的深度数值
+     */
     private int parentDepth(Long spaceId, Long parentId) {
         int depth = 0;
         Set<Long> visited = new HashSet<>();
@@ -197,6 +251,13 @@ public class DocumentDirectoryService {
         return depth;
     }
 
+    /**
+     * 判断 candidateId 是否是 ancestorId 的后代目录（子/孙等）
+     * @param candidateId 待校验目录ID
+     * @param ancestorId 祖先目录ID
+     * @param directoryMap 目录id映射表
+     * @return true：是后代；false：不是
+     */
     private boolean isDescendant(Long candidateId, Long ancestorId,
                                  Map<Long, DocumentDirectoryEntity> directoryMap) {
         Set<Long> visited = new HashSet<>();
@@ -211,6 +272,12 @@ public class DocumentDirectoryService {
         return false;
     }
 
+    /**
+     * 计算指定目录的层级深度
+     * @param directoryId 目录ID
+     * @param directoryMap 目录id映射表
+     * @return 深度数值
+     */
     private int depth(Long directoryId, Map<Long, DocumentDirectoryEntity> directoryMap) {
         int depth = 0;
         Set<Long> visited = new HashSet<>();
@@ -226,6 +293,12 @@ public class DocumentDirectoryService {
         return depth;
     }
 
+    /**
+     * 递归计算该目录下整个子树的最大高度（子树最深层级）
+     * @param directoryId 当前目录ID
+     * @param directoryMap 目录id映射表
+     * @return 子树高度
+     */
     private int subtreeHeight(Long directoryId,
                               Map<Long, DocumentDirectoryEntity> directoryMap) {
         return directoryMap.values().stream()
@@ -235,6 +308,11 @@ public class DocumentDirectoryService {
                 .orElse(1);
     }
 
+    /**
+     * 目录实体转换为VO
+     * @param directory 目录实体
+     * @return 目录VO
+     */
     private DocumentDirectoryVO toVO(DocumentDirectoryEntity directory) {
         return new DocumentDirectoryVO(directory.getId(), directory.getSpaceId(), directory.getParentId(),
                 directory.getTitle(), DocStatus.fromCode(directory.getStatus()), directory.getCreatedAt(),

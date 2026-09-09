@@ -109,28 +109,44 @@ public class WorkbenchMcpApplicationService {
     }
 
     /**
-     * 将结构化变更直接应用到当前任务绑定的草稿文档。
+     * 将MCP结构化变更提案直接应用到任务绑定的草稿文档
+     * Agent通过MCP协议提交变更，对草稿文档执行变更合并
+     * @param proposal MCP变更提案，包含基准版本、变更集合、变更摘要
+     * @return 合并结果VO，包含合并后版本信息
      */
     public MergeResultVO applyDraftChanges(McpChangeProposal proposal) {
+        // 校验变更提案参数合法性
         validateProposal(proposal);
+        // 获取任务作用域，校验拥有草稿写权限
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_WRITE_DRAFT);
+        // 获取当前任务实体，校验任务存在
         TaskEntity task = taskService.require(scope.taskId());
+        // 禁止Agent直接修改正式文档，仅允许操作草稿文档
         if (DocType.fromCode(task.getDocumentType()) != DocType.DRAFT) {
             throw new BusinessException(ErrorCode.CONFLICT, "正式文档不能由 Agent 直接修改");
         }
+        // 调用文档服务执行草稿变更合并
         return requireData(documentFeign.applyDraftAgentChanges(new MergeRequestDTO(
                 scope.documentId(), proposal.baseVersion(), proposal.changes(), "Agent 更新草稿")));
     }
 
+    /**
+     * 校验MCP变更提案参数合法性
+     * 校验提案非空、基准版本、变更集合不为空；校验摘要长度；校验每一条变更项字段完整
+     * @param proposal MCP变更提案对象
+     */
     private void validateProposal(McpChangeProposal proposal) {
+        // 提案、基准版本、变更集合不能为null或空
         if (proposal == null || proposal.baseVersion() == null
                 || proposal.changes() == null || proposal.changes().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "变更提案不能为空");
         }
+        // 变更摘要长度限制，超过最大长度抛出参数异常
         if (proposal.summary() != null
                 && proposal.summary().length() > TaskConstant.MAX_CHANGE_REVIEW_TEXT_LENGTH) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "变更摘要最长 500 字符");
         }
+        // 遍历校验每一条变更项：操作类型、新文本不能为空
         proposal.changes().forEach(item -> {
             if (item == null || item.op() == null || item.newText() == null) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项操作和新内容不能为空");

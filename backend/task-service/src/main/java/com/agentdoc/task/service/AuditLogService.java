@@ -59,7 +59,12 @@ public class AuditLogService {
                 spaceId, taskId, actorType, actorId, action, targetType, targetId, detail));
     }
 
-    /** 按创建时间读取指定变更请求的追加型轨迹。 */
+    /**
+     * 查询指定变更请求的追加式审计轨迹
+     * 根据变更请求ID，按创建时间正序获取该变更请求下全部审计日志
+     * @param changeRequestId 变更请求ID
+     * @return 审计日志实体列表
+     */
     public List<AuditLogEntity> listChangeRequestTrail(Long changeRequestId) {
         return auditLogMapper.selectList(new LambdaQueryWrapper<AuditLogEntity>()
                 .eq(AuditLogEntity::getTargetType, AuditTargetType.CHANGE_REQUEST.getCode())
@@ -68,11 +73,19 @@ public class AuditLogService {
     }
 
     /**
-     * 按空间和时间范围分页读取追加型审计日志。
+     * 按空间、时间范围分页查询追加型审计日志
+     * 支持按操作人类型、操作行为、目标类型、时间区间过滤；
+     * 批量拉取用户/Agent名称做VO组装，返回分页结果
+     * @param param 审计日志搜索入参
+     * @return 分页审计日志VO
      */
     public PageVO<AuditLogVO> search(AuditLogSearchParam param) {
+        // 参数合法性校验
         param.validate();
+        // 校验当前用户拥有该空间审计日志读取权限
         requireAuditRead(param.getSpaceId());
+
+        // 校验时间区间：起始时间不能晚于结束时间
         if (param.getCreatedFrom() != null && param.getCreatedTo() != null
                 && !param.getCreatedFrom().isBefore(param.getCreatedTo())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "审计日志时间范围不合法");
@@ -96,10 +109,16 @@ public class AuditLogService {
         if (param.getCreatedTo() != null) {
             wrapper.lt(AuditLogEntity::getCreatedAt, param.getCreatedTo());
         }
+
+        // 执行分页查询
         Page<AuditLogEntity> page = auditLogMapper.selectPage(
                 new Page<>(param.getPageNum(), param.getPageSize()), wrapper);
+
+        // 批量远程拉取用户、Agent名称，避免循环feign调用
         Map<Long, String> userNames = fetchUserNames(page.getRecords());
         Map<Long, String> agentNames = fetchAgentNames(page.getRecords());
+
+        // 实体转换VO，填充操作人展示名称
         List<AuditLogVO> records = page.getRecords().stream()
                 .map(row -> AuditLogVO.from(row, actorName(row, userNames, agentNames)))
                 .toList();
@@ -107,6 +126,14 @@ public class AuditLogService {
                 page.getTotal(), param);
     }
 
+    /**
+     * 根据审计日志行，获取操作人展示名称
+     * Agent类型返回Agent名称；人工用户返回用户昵称/用户名；无匹配返回默认文本
+     * @param row 审计日志实体
+     * @param userNames 用户ID-名称映射
+     * @param agentNames AgentID-名称映射
+     * @return 展示用操作人名称
+     */
     private String actorName(AuditLogEntity row, Map<Long, String> userNames, Map<Long, String> agentNames) {
         if (ActorType.AGENT.getCode() == row.getActorType()) {
             return agentNames.getOrDefault(row.getActorId(), "Agent");
@@ -114,6 +141,12 @@ public class AuditLogService {
         return userNames.getOrDefault(row.getActorId(), "用户");
     }
 
+    /**
+     * 批量拉取日志记录中涉及的人工用户名称
+     * 过滤出HUMAN类型actorId，调用auth服务批量查询，构建id->名称映射
+     * @param rows 审计日志实体列表
+     * @return 用户ID -> 用户展示名称
+     */
     private Map<Long, String> fetchUserNames(List<AuditLogEntity> rows) {
         List<Long> ids = rows.stream()
                 .filter(row -> ActorType.HUMAN.getCode() == row.getActorType())
@@ -130,6 +163,12 @@ public class AuditLogService {
                 (left, right) -> left));
     }
 
+    /**
+     * 批量拉取日志记录中涉及的Agent名称
+     * 过滤出AGENT类型actorId，调用agent服务批量查询，构建id->名称映射
+     * @param rows 审计日志实体列表
+     * @return AgentID -> Agent名称
+     */
     private Map<Long, String> fetchAgentNames(List<AuditLogEntity> rows) {
         List<Long> ids = rows.stream()
                 .filter(row -> ActorType.AGENT.getCode() == row.getActorType())
@@ -145,6 +184,11 @@ public class AuditLogService {
                 (left, right) -> left));
     }
 
+    /**
+     * 校验空间审计日志读取权限
+     * 调用文档服务校验当前用户是否拥有该空间 AUDIT_READ 权限，无权限抛出业务异常
+     * @param spaceId 空间ID
+     */
     private void requireAuditRead(Long spaceId) {
         Result<Void> result = documentFeign.checkSpacePermission(spaceId, AUDIT_READ);
         if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {

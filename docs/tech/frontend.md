@@ -176,11 +176,11 @@ Diff 审批页采用“队列 / Diff / 审阅信息”三栏布局。队列接�
 Phase 5 的后端已提供平台角色与空间 RBAC，Phase 6 负责把权限能力接入页面和组件：
 
 1. 空间成员与角色页：展示成员角色、角色权限标识符及变更操作；只有拥有 `member:read` / `role:read` 的用户显示对应内容，拥有 `member:manage` / `role:manage` 的用户显示编辑入口。
-2. 平台角色管理页：对应 Auth Service 的 `/api/platform/roles`，仅当用户 JWT 的 `platformRoles` 包含 `PLATFORM_SUPER_ADMIN` 时显示入口和操作按钮。
+2. 平台用户与部门页：对应 Auth Service 的 `/api/platform/users`、`/api/platform/departments`，仅当用户平台角色包含 `PLATFORM_SUPER_ADMIN` 时显示。当前不开放自定义平台角色 CRUD。
 3. 权限目录请求使用 `/api/document/spaces/{spaceId}/permissions`，必须携带当前空间上下文。
 4. `OWNER` 是受保护的默认空间角色；`EDITOR`、`VIEWER` 可由有权限的用户调整，`VIEWER` 默认不显示成员和角色管理内容。
 
-前端权限只负责路由、菜单和按钮显隐；接口请求仍必须携带 Access Token，并由后端 Controller 的 `@PreAuthorize` 和业务授权服务做最终判定。用户平台角色绑定目前通过数据库初始化，尚未提供用户平台角色管理页。部门管理和按部门统计属于后续迭代，不应在 Phase 6 页面中暗示为已实现后端能力。
+前端权限只负责路由、菜单和按钮显隐；接口请求仍必须携带 Access Token，并由后端 Controller 的 `@PreAuthorize` 和业务授权服务做最终判定。用户页可以只读汇总用户参与的 Space，但账号创建和组织归属不得隐式写入 Space 成员关系。部门不授予或继承任何 Space 权限。
 
 ## 前端技术栈汇总
 

@@ -18,6 +18,7 @@
 | --- | --- | --- |
 | `user` / `oauth2_client` | 认证 | 用户账号；OAuth2 客户端凭证（Agent Client‑Credentials 模式） |
 | `platform_role` / `user_platform_role` | 认证 | 平台角色定义及用户平台角色绑定 |
+| `department` | 认证/组织 | 平台组织树、负责人和用户部门归属；不参与 Space 授权 |
 | `space` / `member` | 空间 | 工作空间；成员与角色（所有者 / 编辑者 / 观察者） |
 | `permission` / `space_role` / `space_role_permission` | 空间权限 | 权限标识符目录、空间角色及角色权限绑定 |
 | `document` / `document_version` / `change_request` / `change_request_comment` | 文档 | 树形文档、版本快照，以及可认领、批注、部分接受和追溯的变更审批流 |
@@ -40,7 +41,7 @@
 1. **user / oauth2_client**：用户与 OAuth2 客户端凭证，Agent 使用 Client‑Credentials 模式鉴权。
 2. **platform_role / user_platform_role**：平台级角色及用户绑定；当前用于平台超级管理员，不写入 Space 成员关系。
 
-   - 平台角色定义通过 Auth Service 的 `/api/platform/roles` 提供 CRUD，所有接口均要求当前用户具备 `PLATFORM_SUPER_ADMIN` 平台角色。`PLATFORM_SUPER_ADMIN` 为迁移脚本初始化的受保护角色，不允许通过接口修改或删除；用户与平台角色的首次绑定仍由数据库初始化完成。
+   - 平台角色定义通过 Auth Service 的 `/api/platform/roles` 提供 CRUD，所有接口均要求当前用户具备 `PLATFORM_SUPER_ADMIN` 平台角色。`PLATFORM_SUPER_ADMIN` 为迁移脚本初始化的受保护角色，不允许通过接口修改或删除；平台用户接口支持分配或移除该角色，并保护最后一名启用的超级管理员。当前前端不开放自定义平台角色 CRUD。
 3. **space / member / space_role / space_role_permission**：工作空间、成员角色、角色权限绑定；每个 Space 默认创建 OWNER、EDITOR、VIEWER，只有 OWNER 受保护。
 4. **permission**：全局权限标识符目录；权限码由后端协议和迁移脚本固化，空间角色引用已有权限码。
 5. **document / document_version / change_request / change_request_comment**：树形文档、正式 / 草稿双模式；文档从 v0 保存完整版本快照；正式文档变更支持认领、整单/部分/编辑后接受、拒绝、退回重改、幂等合并与追加型批注。`document_version.source_change_request_id` 是审批合并幂等键，`change_request` 保存决议正文、审批/合并人和重改链路。
@@ -117,5 +118,6 @@
 | `V2__space_rbac.sql` | 新增平台角色、用户平台角色绑定、权限目录、空间角色及角色权限表；为既有空间成员补齐角色绑定并创建默认角色 |
 | `V3__align_space_default_roles.sql` | 对齐默认角色保护策略：仅 `OWNER` 受保护，并移除 `VIEWER` 的成员与角色读取权限 |
 | `V13__change_request_review_workflow.sql` | 扩展变更审批工作流与评论表，补齐历史文档当前版本快照，并为审批合并增加版本幂等键 |
+| `V18__platform_user_department_management.sql` | 新增平台部门表，并为用户补充部门、职位与最后登录时间字段 |
 
 所有环境重建并执行该基线后，`V1__init.sql` 不再修改；V2/V3 已作为 Phase 5 增量迁移执行，后续变更继续新增更高版本迁移。

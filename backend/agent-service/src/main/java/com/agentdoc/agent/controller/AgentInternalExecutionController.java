@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** Agent 执行内部查询接口。 */
 @Tag(name = "Agent 执行内部接口")
 @RestController
 @RequestMapping("/api/agent/internal/executions")

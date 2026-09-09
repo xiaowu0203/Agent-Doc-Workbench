@@ -98,7 +98,7 @@ spring:
             - id: auth-service
               uri: http://localhost:${AUTH_SERVICE_PORT:8081}
               predicates:
-                - Path=/api/auth/**,/oauth2/jwks,/actuator/**
+                - Path=/api/auth/**,/api/platform/**,/oauth2/jwks,/actuator/**
               order: 0
 
             - id: document-service

@@ -63,12 +63,9 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
 
 /**
- * 文档服务
- * 能力：文档CRUD、树形目录构建、草稿/正式双模式、文档移动、归档/恢复、回收站、版本快照、版本回滚
- * 权限约束：
- * 1. 查看（文档树/详情/回收站列表）：空间成员即可访问
- * 2. 创建/编辑/移动/归档/恢复：需要 EDITOR 及以上角色
- * 3. 正式文档禁止Agent直接修改，Agent通道Phase3必须走ChangeRequest审批流程；人工编辑不受该限制
+ * 文档核心服务
+ * 负责文档的创建、查询树结构、更新、移动、归档恢复、版本回滚、审批变更合并、Agent草稿暂存、片段读取、跨服务引用查询
+ * 文档与目录是两张独立表，树结构在内存组装；支持乐观锁版本控制；正式文档变更需要走审批流程
  */
 @Service
 @RequiredArgsConstructor
@@ -82,7 +79,8 @@ public class DocumentService {
 
     /**
      * 创建文档
-     * 权限：EDITOR及以上；目标目录为空时文档创建在空间根层
+     * 权限：需要空间编辑权限；directoryId为空表示创建到空间根层
+     * 创建同时生成初始版本快照
      *
      * @param dto 创建文档请求DTO
      * @return 文档简单视图VO
@@ -103,7 +101,9 @@ public class DocumentService {
 
     /**
      * 查询空间文档树
-     * 权限：空间成员可读；只返回NORMAL正常状态文档，归档文档进入回收站，不在树形结构展示
+     * 权限：空间成员可读；默认只返回NORMAL正常状态文档，归档文档不在树形展示
+     * 说明：文档、目录分两张表，分别查询后在内存组装树形结构
+     * 支持关键词检索，检索时会自动把匹配节点的所有祖先目录一并展示
      *
      * @param param 查询参数（空间、关键词、文档类型和状态）
      * @return 树形节点集合，返回所有一级根节点，节点内部携带children子节点
@@ -117,6 +117,8 @@ public class DocumentService {
                 .orderByAsc(DocumentEntity::getCreatedAt));
         List<DocumentDirectoryEntity> directories = directoryService.list(param.spaceId(), status);
         String keyword = param.keyword() == null ? "" : param.keyword().trim().toLowerCase();
+
+        // 筛选匹配关键词的文档ID集合
         Set<Long> matchedDocumentIds = docs.stream()
                 .filter(doc -> keyword.isEmpty() || (doc.getTitle() != null
                         && doc.getTitle().toLowerCase().contains(keyword)))
@@ -124,6 +126,8 @@ public class DocumentService {
                         || Objects.equals(doc.getDocType(), param.docType().getCode()))
                 .map(DocumentEntity::getId)
                 .collect(Collectors.toSet());
+
+        // 筛选匹配关键词的目录ID集合
         Set<Long> matchedDirectoryIds = directories.stream()
                 .filter(directory -> keyword.isEmpty() || (directory.getTitle() != null
                         && directory.getTitle().toLowerCase().contains(keyword)))
@@ -134,10 +138,14 @@ public class DocumentService {
                 .collect(Collectors.toMap(DocumentDirectoryEntity::getId, directory -> directory));
         Set<Long> includedDirectoryIds = new HashSet<>();
         if (keyword.isEmpty()) {
+            // 无关键词：全部目录都纳入树
             includedDirectoryIds.addAll(directoryMap.keySet());
         } else {
+            // 有关键词：先加入匹配的目录
             includedDirectoryIds.addAll(matchedDirectoryIds);
         }
+
+        // 仅检索目录的场景：匹配目录的所有子目录也要展示
         boolean directoryOnlySearch = !keyword.isEmpty()
                 && !matchedDirectoryIds.isEmpty()
                 && matchedDocumentIds.isEmpty();
@@ -148,6 +156,8 @@ public class DocumentService {
                 }
             }
         }
+
+        // 非仅目录检索：匹配文档的所有祖先目录需要展示；同时把匹配目录的祖先也加入
         if (!directoryOnlySearch && (!keyword.isEmpty() || param.docType() != null)) {
             for (DocumentEntity document : docs) {
                 if (!matchedDocumentIds.contains(document.getId())) {
@@ -161,12 +171,15 @@ public class DocumentService {
             }
         }
 
+        // 构建目录节点map
         Map<Long, DocumentTreeNodeVO> nodeMap = directories.stream()
                 .filter(directory -> includedDirectoryIds.contains(directory.getId()))
                 .collect(Collectors.toMap(DocumentDirectoryEntity::getId,
                         directory -> DocumentTreeNodeVO.ofDirectory(directory.getId(), directory.getParentId(),
                                 directory.getTitle())));
         List<DocumentTreeNodeVO> roots = new ArrayList<>();
+
+        // 组装目录树：把子目录挂载到父节点
         for (DocumentDirectoryEntity directory : directories) {
             DocumentTreeNodeVO node = nodeMap.get(directory.getId());
             if (node == null) {
@@ -179,6 +192,8 @@ public class DocumentService {
                 parent.children().add(node);
             }
         }
+
+        // 把文档挂载到对应目录下；根层文档直接加入roots
         for (DocumentEntity document : docs) {
             boolean matchedDocument = matchedDocumentIds.contains(document.getId());
             boolean belongsToMatchedDirectory = directoryOnlySearch
@@ -200,6 +215,12 @@ public class DocumentService {
         return roots;
     }
 
+    /**
+     * 递归向上把指定目录的所有祖先目录加入集合
+     * @param directoryId 当前目录ID
+     * @param directoryMap 目录id映射
+     * @param includedDirectoryIds 需要展示的目录集合
+     */
     private void includeDirectoryAncestors(Long directoryId,
                                            Map<Long, DocumentDirectoryEntity> directoryMap,
                                            Set<Long> includedDirectoryIds) {
@@ -215,6 +236,13 @@ public class DocumentService {
         }
     }
 
+    /**
+     * 判断当前目录是否属于rootDirectoryIds中任意一个目录的子树
+     * @param directoryId 当前目录ID
+     * @param rootDirectoryIds 根目录集合
+     * @param directoryMap 目录映射
+     * @return true属于子树
+     */
     private boolean isDirectoryInSubtree(Long directoryId,
                                          Set<Long> rootDirectoryIds,
                                          Map<Long, DocumentDirectoryEntity> directoryMap) {
@@ -231,8 +259,8 @@ public class DocumentService {
     }
 
     /**
-     * 查询空间最近更新的文档，分页返回。
-     * 权限：空间成员可读；仅返回正常状态文档。
+     * 查询空间最近更新文档，分页返回
+     * 权限：空间成员可读；只返回正常状态文档；会Feign拉取用户昵称做展示
      *
      * @param param 查询参数（空间和分页）
      * @return 最近文档分页结果
@@ -249,6 +277,8 @@ public class DocumentService {
                         .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode())
                         .orderByDesc(DocumentEntity::getUpdatedAt)
                         .orderByDesc(DocumentEntity::getId));
+
+        // 批量拉取用户信息
         Map<Long, UserRefVO> users = fetchUsers(page.getRecords().stream()
                 .map(DocumentEntity::getUpdatedBy)
                 .filter(Objects::nonNull)
@@ -266,6 +296,11 @@ public class DocumentService {
         return PageVO.of(records, page.getTotal(), pageParam);
     }
 
+    /**
+     * Feign批量查询用户信息
+     * @param userIds 用户id列表
+     * @return id -> UserRefVO映射
+     */
     private Map<Long, UserRefVO> fetchUsers(List<Long> userIds) {
         if (userIds.isEmpty()) {
             return Map.of();
@@ -278,6 +313,11 @@ public class DocumentService {
         return users.stream().collect(Collectors.toMap(UserRefVO::id, user -> user));
     }
 
+    /**
+     * 获取用户展示名称，优先昵称，没有则用户名
+     * @param user 用户引用对象
+     * @return 展示名称
+     */
     private String displayName(UserRefVO user) {
         if (user == null) {
             return null;
@@ -313,8 +353,8 @@ public class DocumentService {
     }
 
     /**
-     * 获取文档详情（包含正文内容）
-     * 权限：空间成员可读
+     * 获取文档详情（包含完整正文）
+     * 权限：空间成员可读；Agent请求校验Agent任务权限；普通用户校验空间读权限
      *
      * @param id 文档主键ID
      * @return 文档详情VO，携带正文
@@ -322,7 +362,7 @@ public class DocumentService {
     public DocumentDetailVO detail(Long id) {
         // 校验文档必须存在，不存在抛404
         DocumentEntity doc = requireDoc(id);
-        // 校验用户属于该空间成员
+        // Agent请求走Agent能力校验；普通用户走空间读权限
         if (AuthUtils.isAgent()) {
             permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
                     JwtConstant.ACTION_READ_FRAGMENT);
@@ -334,7 +374,7 @@ public class DocumentService {
 
     /**
      * 更新文档标题/内容
-     * 权限：EDITOR及以上；正文发生变更自动生成版本快照
+     * 权限：编辑权限；正文变更自动生成版本快照；乐观锁基于baseVersion防止并发覆盖
      * 事务：异常全部回滚
      *
      * @param id 待更新文档ID
@@ -372,7 +412,7 @@ public class DocumentService {
             throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请刷新后重试");
         }
         doc.setVersion(nextVersion);
-        // 如果传入了content，并且正文发生变化，则生成版本快照
+        // 如果正文发生变更，生成人工编辑版本快照
         if (contentChanged) {
             versionService.createHumanEditSnapshot(doc.getId(), nextVersion, dto.content(),
                     "编辑更新内容", userId);
@@ -381,7 +421,10 @@ public class DocumentService {
     }
 
     /**
-     * 移动文档到指定目录；directoryId 为空表示空间根层。
+     * 移动文档到指定目录；directoryId为空表示空间根层
+     * @param id 文档ID
+     * @param dto 移动参数
+     * @return 文档VO
      */
     public DocumentVO move(Long id, DocumentMoveDTO dto) {
         DocumentEntity doc = requireDoc(id);
@@ -402,7 +445,7 @@ public class DocumentService {
 
     /**
      * 归档文档，移入回收站
-     * 权限：EDITOR及以上
+     * 权限：编辑权限；仅修改文档自身状态，不会递归归档子目录/子文档
      *
      * @param id 文档ID
      */
@@ -420,8 +463,8 @@ public class DocumentService {
     }
 
     /**
-     * 回收站恢复文档，从归档变回正常状态
-     * 权限：EDITOR及以上
+     * 回收站恢复文档，状态切回NORMAL正常
+     * 权限：编辑权限
      *
      * @param id 文档ID
      */
@@ -478,8 +521,11 @@ public class DocumentService {
         Long userId = permissionService.requireUserId();
         // 获取目标历史版本快照，不存在抛异常
         checkBaseVersion(doc, dto.baseVersion());
+        // 获取目标历史版本快照
         DocumentVersionEntity target = versionService.requireVersion(id, dto.targetVersion());
         long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+
+        // 乐观锁更新：把目标版本内容写回主文档
         int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getId, id)
                 .eq(DocumentEntity::getVersion, dto.baseVersion())
@@ -492,19 +538,32 @@ public class DocumentService {
         doc.setContent(target.getContent());
         doc.setVersion(nextVersion);
         doc.setUpdatedBy(userId);
+
+        // 创建回滚快照，记录回滚来源版本号
         DocumentVersionEntity rollbackVersion = versionService.createRollbackSnapshot(
                 id, nextVersion, target.getContent(), "回滚至版本 " + dto.targetVersion(),
                 userId, dto.targetVersion());
+        // 记录回滚审计日志
         versionService.recordRollbackAudit(doc.getSpaceId(), rollbackVersion);
         return toDetailVO(doc);
     }
 
+    /**
+     * 校验传入baseVersion是否和数据库文档版本一致，不一致抛出并发冲突异常
+     * @param doc 文档实体
+     * @param baseVersion 客户端传入基线版本
+     */
     private void checkBaseVersion(DocumentEntity doc, Long baseVersion) {
         if (baseVersion != null && !Objects.equals(baseVersion, doc.getVersion())) {
             throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请刷新后重试");
         }
     }
 
+    /**
+     * 文档实体转详情VO，填充创建人展示名称
+     * @param doc 文档实体
+     * @return 详情VO
+     */
     private DocumentDetailVO toDetailVO(DocumentEntity doc) {
         UserRefVO creator = doc.getCreatedBy() == null
                 ? null
@@ -563,16 +622,30 @@ public class DocumentService {
         return doc.toMergeResultVO();
     }
 
-    /** 生成审批页面使用的基准正文和提案正文，不修改正式文档。 */
+    /**
+     * 生成审批页面使用的基准正文和提案正文，不修改正式文档
+     * @param request 预览请求
+     * @return 变更预览VO
+     */
     public DocumentChangePreviewVO previewChanges(DocumentChangePreviewRequestDTO request) {
         return previewChanges(request, CHANGE_REQUEST_READ);
     }
 
-    /** 校验人工提交内容；与审批详情预览复用同一基线和变更计算规则。 */
+    /**
+     * 校验人工提交内容；与审批详情预览复用同一基线和变更计算规则
+     * @param request 预览请求
+     * @return 变更预览VO
+     */
     public DocumentChangePreviewVO previewSubmittedChanges(DocumentChangePreviewRequestDTO request) {
         return previewChanges(request, CHANGE_REQUEST_SUBMIT);
     }
 
+    /**
+     * 变更预览内部实现：计算基准内容、应用变更得到提案内容，检测版本冲突
+     * @param request 请求参数
+     * @param permissionCode 需要校验的权限码
+     * @return 变更预览VO
+     */
     private DocumentChangePreviewVO previewChanges(DocumentChangePreviewRequestDTO request,
                                                     String permissionCode) {
         if (request == null || request.documentId() == null || request.baseVersion() == null) {
@@ -582,15 +655,25 @@ public class DocumentService {
         permissionService.requirePermission(doc.getSpaceId(), permissionCode);
         requireFormalDocument(doc);
         validateChanges(request.changes());
+        // 获取基准快照内容
         BaseSnapshot base = resolveBaseContent(doc, request.baseVersion(), request.changes());
+        // 应用变更得到提案内容
         String proposedContent = applyChanges(base.content(), request.changes());
+        // 判断是否版本冲突：请求基线和当前文档版本不一致
         boolean conflicted = !Objects.equals(request.baseVersion(), doc.getVersion());
         Long expectedVersion = conflicted ? null : doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
         return new DocumentChangePreviewVO(doc.getId(), doc.getTitle(), request.baseVersion(), doc.getVersion(),
                 expectedVersion, base.content(), base.createdAt(), proposedContent, conflicted);
     }
 
-    /** 以变更请求 ID 为幂等键合并审批结果。重复请求返回第一次生成的版本。 */
+    /**
+     * 以变更请求ID为幂等键合并审批结果。重复请求返回第一次生成的版本。
+     * 幂等：同一个changeRequestId只会合并一次；重复调用直接返回已生成版本
+     * 事务：异常全部回滚
+     *
+     * @param request 审批合并请求DTO
+     * @return 合并结果VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public MergeResultVO mergeApproved(ApprovalMergeRequestDTO request) {
         if (request == null || request.changeRequestId() == null || request.documentId() == null
@@ -601,6 +684,7 @@ public class DocumentService {
         permissionService.requirePermission(doc.getSpaceId(), CHANGE_REQUEST_MERGE);
         requireFormalDocument(doc);
 
+        // 幂等校验：该变更请求是否已经合并过
         DocumentVersionEntity existing = versionService.findByChangeRequestId(request.changeRequestId());
         if (existing != null) {
             if (!Objects.equals(existing.getDocumentId(), request.documentId())) {
@@ -608,6 +692,7 @@ public class DocumentService {
             }
             return new MergeResultVO(doc.getId(), doc.getTitle(), existing.getVersionNo());
         }
+        // 基线版本校验
         if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
             throw new BusinessException(ErrorCode.CONFLICT,
                     "文档基线版本不匹配：请求基线 v" + request.baseVersion() + "，当前为 v" + doc.getVersion());
@@ -615,13 +700,17 @@ public class DocumentService {
 
         String newContent;
         if (request.resolvedContent() != null) {
+            // 直接使用已经人工解决冲突后的最终内容
             newContent = request.resolvedContent();
         } else {
+            // 执行结构化变更
             validateChanges(request.changes());
             newContent = applyChanges(doc.getContent(), request.changes());
         }
         Long operatorId = permissionService.requireUserId();
         long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+
+        // 更新文档主表
         int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getId, doc.getId())
                 .eq(DocumentEntity::getVersion, request.baseVersion())
@@ -633,6 +722,8 @@ public class DocumentService {
         }
         String summary = request.changeSummary() == null || request.changeSummary().isBlank()
                 ? "审批合并变更" : request.changeSummary();
+
+        // 创建审批快照，关联changeRequestId、sourceTaskId
         versionService.createApprovalSnapshot(doc.getId(), nextVersion, newContent, summary,
                 operatorId, request.changeRequestId(), request.sourceTaskId());
         return new MergeResultVO(doc.getId(), doc.getTitle(), nextVersion);
@@ -664,6 +755,10 @@ public class DocumentService {
         return content;
     }
 
+    /**
+     * 校验变更项参数合法性
+     * @param changes 变更列表
+     */
     private void validateChanges(List<ChangeItemDTO> changes) {
         if (changes == null || changes.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项不能为空");
@@ -675,6 +770,16 @@ public class DocumentService {
         }
     }
 
+    /**
+     * 解析变更的基准快照
+     * 优先从版本快照获取；找不到快照时，若基线等于当前文档版本，则使用当前文档内容；
+     * 否则尝试从REPLACE变更的oldText作为基准
+     *
+     * @param doc 文档实体
+     * @param baseVersion 基线版本号
+     * @param changes 变更项
+     * @return 基准快照（内容+时间）
+     */
     private BaseSnapshot resolveBaseContent(DocumentEntity doc, Long baseVersion, List<ChangeItemDTO> changes) {
         try {
             DocumentVersionEntity version = versionService.requireVersion(doc.getId(), baseVersion);
@@ -683,9 +788,11 @@ public class DocumentService {
             if (exception.getCode() != ErrorCode.NOT_FOUND.getCode()) {
                 throw exception;
             }
+            // 版本快照找不到；如果基线等于当前文档版本，则直接用文档当前内容
             if (Objects.equals(baseVersion, doc.getVersion())) {
                 return new BaseSnapshot(doc.getContent() == null ? "" : doc.getContent(), doc.getUpdatedAt());
             }
+            // 尝试从REPLACE变更的oldText提取基准内容
             String oldText = changes.stream()
                     .filter(Objects::nonNull)
                     .filter(item -> item.op() == ChangeOp.REPLACE && item.oldText() != null)
@@ -699,12 +806,21 @@ public class DocumentService {
         }
     }
 
+    /**
+     * 校验文档必须是正式文档，只有正式文档才能走变更审批流程
+     * @param doc 文档实体
+     */
     private void requireFormalDocument(DocumentEntity doc) {
         if (DocType.fromCode(doc.getDocType()) != DocType.FORMAL) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有正式文档进入变更审批流程");
         }
     }
 
+    /**
+     * 基准快照记录：内容 + 创建时间
+     * @param content 基准文本
+     * @param createdAt 快照创建时间
+     */
     private record BaseSnapshot(String content, LocalDateTime createdAt) {
     }
 
@@ -740,7 +856,10 @@ public class DocumentService {
     }
 
     /**
-     * 返回任务创建所需的文档上下文，并要求当前用户具备编辑权限。
+     * 返回任务创建所需的文档上下文，并要求当前用户具备编辑权限
+     * Agent会优先读取agent暂存字段；普通用户读取文档主表内容
+     * @param id 文档ID
+     * @return 执行上下文VO
      */
     public DocumentExecutionContextVO getExecutionContext(Long id) {
         // 校验文档必须存在，不存在抛404
@@ -763,7 +882,12 @@ public class DocumentService {
     }
 
     /**
-     * 将 Agent 变更直接应用到草稿文档，正式文档不允许走此入口。
+     * 将 Agent 变更直接应用到草稿文档，正式文档不允许走此入口
+     * Agent暂存变更，不直接写入文档主内容；存到agent_staged_*字段；支持乐观锁
+     * 事务：异常全部回滚
+     *
+     * @param request 变更请求
+     * @return 合并结果VO
      */
     @Transactional(rollbackFor = Exception.class)
     public MergeResultVO applyAgentDraftChanges(MergeRequestDTO request) {
@@ -772,11 +896,13 @@ public class DocumentService {
         // 校验 Agent 任务能力令牌
         permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
                 JwtConstant.ACTION_WRITE_DRAFT);
-        // 若文档状态非【草稿】，抛出异常
+        // 只允许草稿文档使用Agent暂存变更；正式文档必须走审批
         if (doc.getDocType() != DocType.DRAFT.getCode()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "正式文档的 Agent 变更必须进入审批队列");
         }
         Long taskId = requireAgentTaskId();
+
+        // 校验：不能同时存在其他任务的暂存变更
         if (doc.getAgentStagedTaskId() != null && !Objects.equals(doc.getAgentStagedTaskId(), taskId)) {
             throw new BusinessException(ErrorCode.CONFLICT, "文档已有其他任务的暂存变更，请等待该任务结束");
         }
@@ -784,6 +910,7 @@ public class DocumentService {
         long nextRevision;
         String currentContent;
         if (doc.getAgentStagedTaskId() == null) {
+            // 无暂存：基线为文档主版本
             if (!Objects.equals(request.baseVersion(), doc.getVersion())) {
                 throw new BusinessException(ErrorCode.CONFLICT, "文档基线版本不匹配，请重新读取后生成变更");
             }
@@ -791,6 +918,7 @@ public class DocumentService {
             nextRevision = baseVersion + DocumentConstant.VERSION_INCREMENT;
             currentContent = doc.getContent();
         } else {
+            // 已有暂存：基线为暂存revision
             if (!Objects.equals(request.baseVersion(), doc.getAgentStagedRevision())) {
                 throw new BusinessException(ErrorCode.CONFLICT, "暂存变更版本不匹配，请重新读取后生成变更");
             }
@@ -798,6 +926,8 @@ public class DocumentService {
             nextRevision = doc.getAgentStagedRevision() + DocumentConstant.VERSION_INCREMENT;
             currentContent = doc.getAgentStagedContent();
         }
+
+        // 执行变更得到新暂存内容
         String newContent = applyChanges(currentContent, request.changes());
         LambdaUpdateWrapper<DocumentEntity> stageUpdate = new LambdaUpdateWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getId, doc.getId())
@@ -805,20 +935,31 @@ public class DocumentService {
                 .set(DocumentEntity::getAgentStagedBaseVersion, baseVersion)
                 .set(DocumentEntity::getAgentStagedRevision, nextRevision)
                 .set(DocumentEntity::getAgentStagedContent, newContent);
+
         if (doc.getAgentStagedTaskId() == null) {
+            // 首次暂存：条件要求agentStagedTaskId为null，并且文档版本匹配
             stageUpdate.isNull(DocumentEntity::getAgentStagedTaskId)
                     .eq(DocumentEntity::getVersion, baseVersion);
         } else {
+            // 继续更新已有暂存：匹配taskId和暂存revision
             stageUpdate.eq(DocumentEntity::getAgentStagedTaskId, taskId)
                     .eq(DocumentEntity::getAgentStagedRevision, request.baseVersion());
         }
+
         if (documentMapper.update(null, stageUpdate) == 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "文档暂存版本已变化，请重新读取后重试");
         }
         return new MergeResultVO(doc.getId(), doc.getTitle(), nextRevision);
     }
 
-    /** 将当前任务的暂存正文提交为一个可见版本。 */
+    /**
+     * 将当前Agent任务的暂存正文提交为一个可见正式版本
+     * 把agent_staged_content写入文档主content，生成版本快照，清空暂存字段
+     * 事务：异常全部回滚
+     *
+     * @param documentId 文档ID
+     * @return 合并结果VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public MergeResultVO finalizeAgentDraftChanges(Long documentId) {
         DocumentEntity doc = requireDoc(documentId);
@@ -826,17 +967,21 @@ public class DocumentService {
         requireDraft(doc);
         Long taskId = requireAgentTaskId();
         if (doc.getAgentStagedTaskId() == null) {
+            // 没有暂存变更，直接返回当前文档信息
             return doc.toMergeResultVO();
         }
         if (!Objects.equals(doc.getAgentStagedTaskId(), taskId)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权提交其他任务的暂存变更");
         }
+        // 校验文档主版本和暂存的baseVersion一致，防止并发修改
         if (!Objects.equals(doc.getVersion(), doc.getAgentStagedBaseVersion())) {
             throw new BusinessException(ErrorCode.CONFLICT, "文档已被其他修改改变，请重新执行任务");
         }
         String content = doc.getAgentStagedContent();
         Long agentId = AuthUtils.getAgentIdOrException();
         long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+
+        // 把暂存内容写进文档主表
         int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getId, doc.getId())
                 .eq(DocumentEntity::getVersion, doc.getVersion())
@@ -850,13 +995,22 @@ public class DocumentService {
         doc.setContent(content);
         doc.setVersion(nextVersion);
         doc.setUpdatedBy(agentId);
+
+        // 创建Agent草稿快照
         versionService.createAgentDraftSnapshot(doc.getId(), nextVersion, content,
                 "Agent 更新草稿", agentId, taskId);
+        // 清空Agent暂存字段
         clearAgentStaging(doc.getId(), taskId);
         return doc.toMergeResultVO();
     }
 
-    /** 丢弃当前任务尚未提交的草稿暂存。 */
+    /**
+     * 丢弃当前Agent任务尚未提交的草稿暂存
+     * 清空agent_staged_*字段，不改动文档主内容
+     * 事务：异常全部回滚
+     *
+     * @param documentId 文档ID
+     */
     @Transactional(rollbackFor = Exception.class)
     public void discardAgentDraftChanges(Long documentId) {
         DocumentEntity doc = requireDoc(documentId);
@@ -872,6 +1026,11 @@ public class DocumentService {
         clearAgentStaging(doc.getId(), taskId);
     }
 
+    /**
+     * 获取Agent实际读取的内容：Agent且匹配任务ID返回暂存内容，否则返回文档主content
+     * @param doc 文档实体
+     * @return 实际文本内容
+     */
     private String effectiveAgentContent(DocumentEntity doc) {
         return AuthUtils.isAgent() && doc.getAgentStagedTaskId() != null
                 && Objects.equals(doc.getAgentStagedTaskId(), AuthUtils.getTaskId())
@@ -879,6 +1038,10 @@ public class DocumentService {
                 : (doc.getContent() == null ? "" : doc.getContent());
     }
 
+    /**
+     * 校验Agent请求必须携带taskId，没有则抛出异常
+     * @return taskId
+     */
     private Long requireAgentTaskId() {
         Long taskId = AuthUtils.getTaskId();
         if (taskId == null) {
@@ -887,12 +1050,21 @@ public class DocumentService {
         return taskId;
     }
 
+    /**
+     * 校验文档类型必须是草稿
+     * @param doc 文档实体
+     */
     private void requireDraft(DocumentEntity doc) {
         if (doc.getDocType() != DocType.DRAFT.getCode()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "正式文档的 Agent 变更必须进入审批队列");
         }
     }
 
+    /**
+     * 清空Agent暂存字段
+     * @param documentId 文档ID
+     * @param taskId 任务ID
+     */
     private void clearAgentStaging(Long documentId, Long taskId) {
         documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
                 .eq(DocumentEntity::getId, documentId)
@@ -916,6 +1088,7 @@ public class DocumentService {
             return List.of();
         }
         List<DocumentEntity> documents = documentMapper.selectBatchIds(ids);
+        // 对每个空间校验读权限
         documents.stream()
                 .map(DocumentEntity::getSpaceId)
                 .distinct()

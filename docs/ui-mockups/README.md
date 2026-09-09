@@ -16,7 +16,7 @@
 - MCP Server 是空间级共享资源，一个 Agent 可以绑定多个外部 MCP，并为每个绑定设置工具白名单。
 - 任务执行会冻结 Prompt、Agent 配置、Skill、工具和 MCP 快照，并保留脱敏工具调用审计。
 - 正式文档仍禁止 Agent 直接覆盖，执行结果必须形成变更请求并由人工审批。
-- 组织与权限规划保留当前空间角色模型；Phase 6 规划用户、平台角色和空间角色页面，部门页面仍是后续概念稿。
+- 组织与权限保留空间角色模型，并增加平台级用户和部门管理；当前只开放平台超级管理员，不开放自定义平台角色页面。
 
 ## 图集一览
 
@@ -34,8 +34,8 @@
 | 09 | 用量与审计 | Token、成本、Skill/MCP 来源和脱敏审计 | ![09-usage-audit](09-usage-audit.png) |
 | 10 | 版本历史 | 人工/Agent 来源、审批链、版本对比与非破坏性回滚 | ![10-version-history](10-version-history.png) |
 | 11 | 能力卡片探索稿 | Agent、Skill、MCP 三类卡片的信息层级对比 | ![11-capability-card-showcase](11-capability-card-showcase.png) |
-| 12 | 用户管理 | 创建账号、部门归属、空间与角色绑定 | ![12-user-management](12-user-management.png) |
-| 13 | 部门管理 | 组织树、负责人、成员与关联空间 | ![13-department-management](13-department-management.png) |
+| 12 | 用户管理 | 创建账号、部门归属、超级管理员身份与空间参与只读汇总 | ![12-user-management](12-user-management.png) |
+| 13 | 部门管理 | 组织树、负责人、直属成员与关联空间汇总 | ![13-department-management](13-department-management.png) |
 | 14 | 角色与权限 | 空间角色、权限标识符、成员绑定与变更记录 | ![14-role-permission-management](14-role-permission-management.png) |
 | 15 | 模型配置（卡片版） | 平台级供应商连接、模型参数、价格与配置版本 | ![15-model-management-card](15-model-management-card.png) |
 
@@ -58,23 +58,23 @@ MCP 服务
 用量与审计
 ```
 
-管理员额外看到“组织与权限”分组：
+平台超级管理员额外看到平台管理入口：
 
 ```text
 用户管理
 部门管理
-角色与权限
 ```
 
-模型配置、平台角色、系统审计等低频平台能力放入“系统管理”，仅平台超级管理员可见。普通空间成员不显示系统管理入口，避免继续扩张日常工作导航。
+模型配置等低频平台能力放入“系统管理”，仅平台超级管理员可见。空间角色与成员管理继续留在具体 Space 下；普通空间成员不显示平台管理入口。
 
 ```text
 系统管理
-├── 模型配置
-└── 平台角色
+├── 用户管理
+├── 部门管理
+└── 模型配置
 ```
 
-当前后端已落地平台角色 CRUD（`/api/platform/roles`）和空间 RBAC；用户与平台角色的首次绑定通过数据库初始化，部门模型及按部门统计尚未实现。效果图中的用户、部门页面不得视为当前可用接口。
+后端已提供平台用户、部门、超级管理员绑定和空间 RBAC。用户页中的 Space 信息是显式成员关系的只读汇总；创建用户不会自动将其加入任何 Space。
 
 ## 关键交互约束
 

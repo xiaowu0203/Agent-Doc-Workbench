@@ -38,7 +38,7 @@ auth:
     private-key: ${JWT_PRIVATE_KEY:}
     # RSA公钥，环境变量 JWT_PUBLIC_KEY；生产环境填入PEM公钥，用于校验token签名
     public-key: ${JWT_PUBLIC_KEY:}
-    # AccessToken 有效期 30分钟
+    # AccessToken 有效期 7 天
     access-ttl: 7d
     # RefreshToken 有效期 7天，用于刷新access令牌
     refresh-ttl: 7d

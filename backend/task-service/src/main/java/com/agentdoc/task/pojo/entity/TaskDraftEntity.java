@@ -6,9 +6,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-/**
- * 用户尚未启动的任务表单草稿。
- */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("task_draft")

@@ -281,30 +281,49 @@ public class SkillService {
     }
 
     /**
-     * 批量统计一批Skill各自的版本数量，用于列表页展示，减少数据库IO
+     * 批量查询Skill列表的聚合汇总信息
+     * 一次性批量查询：每个技能的版本总数、绑定启用Agent数量、最新版本信息
+     * 避免循环多次查询数据库，用于列表页展示
      *
-     * @param skills skill实体列表
-     * @return Map&lt;skillId, 版本数&gt;
+     * @param skills Skill实体列表
+     * @return 聚合汇总对象，包含三个Map：版本数量、绑定Agent数量、最新版本VO
      */
     private SkillListSummaries listSummaries(List<SkillEntity> skills) {
+        // 入参为空直接返回空汇总对象
         if (skills.isEmpty()) {
             return new SkillListSummaries(Map.of(), Map.of(), Map.of());
         }
+
+        // 提取所有skillId
         List<Long> skillIds = skills.stream().map(SkillEntity::getId).toList();
+
+        // 批量查询这些技能下全部版本记录
         List<SkillVersionEntity> versions = skillVersionMapper.selectList(
                 new LambdaQueryWrapper<SkillVersionEntity>()
                         .in(SkillVersionEntity::getSkillId, skillIds));
+
+        // 统计每个skill对应的版本总数量
         Map<Long, Long> versionCounts = versions.stream()
                 .collect(Collectors.groupingBy(SkillVersionEntity::getSkillId, Collectors.counting()));
+
+        // 遍历版本，找出每个skill的版本号最大的最新版本
         Map<Long, SkillLatestVersionVO> latestVersions = new HashMap<>();
         versions.forEach(version -> latestVersions.compute(version.getSkillId(), (skillId, current) ->
                 current == null || version.getVersionNo() > current.versionNo()
                         ? SkillVersionConvertor.toLatestVersionVO(version) : current));
+
+        // 查询每个技能绑定的启用Agent数量
         Map<Long, Long> boundAgentCounts = skillMapper.selectEnabledAgentCounts(skillIds).stream()
                 .collect(Collectors.toMap(SkillBindingCountVO::getSkillId, SkillBindingCountVO::getBoundAgentCount));
         return new SkillListSummaries(versionCounts, boundAgentCounts, latestVersions);
     }
 
+    /**
+     * Skill列表聚合汇总记录对象
+     * @param versionCounts  key=skillId, value=该技能总版本数
+     * @param boundAgentCounts key=skillId, value=该技能绑定的启用Agent数量
+     * @param latestVersions key=skillId, value=该技能最新版本信息
+     */
     private record SkillListSummaries(
             Map<Long, Long> versionCounts,
             Map<Long, Long> boundAgentCounts,

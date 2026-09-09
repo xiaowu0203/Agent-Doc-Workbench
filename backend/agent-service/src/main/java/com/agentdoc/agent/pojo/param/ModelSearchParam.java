@@ -8,7 +8,6 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-import static com.agentdoc.agent.constant.ModelConstant.DEFAULT_PAGE_SIZE;
 import static com.agentdoc.agent.constant.ModelConstant.MAX_SEARCH_KEYWORD_LENGTH;
 
 /**

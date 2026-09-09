@@ -6,7 +6,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
-/** 变更请求追加型批注。 */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("change_request_comment")

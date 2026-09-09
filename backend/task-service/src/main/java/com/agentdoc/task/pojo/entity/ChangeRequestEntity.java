@@ -8,10 +8,6 @@ import lombok.EqualsAndHashCode;
 
 import java.time.LocalDateTime;
 
-/**
- * 变更请求实体（审批流）。
- * <p>转换逻辑（实体 ↔ 视图 / changes JSON）见 {@code ChangeRequestConvertor}。</p>
- */
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("change_request")

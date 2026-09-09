@@ -7,7 +7,7 @@
 - `auth-service` 已提供 `/api/platform/roles` 平台角色 CRUD；所有接口要求当前用户具备 `PLATFORM_SUPER_ADMIN`，该平台角色由数据库初始化并保持受保护，首次绑定用户暂不提供业务接口。
 - `document-service` 已实现空间级 RBAC：每个空间默认创建 `OWNER`、`EDITOR`、`VIEWER`，仅 `OWNER` 受保护；`EDITOR`、`VIEWER` 可由拥有 `role:manage` 的用户调整或删除，`VIEWER` 默认不能查看空间成员和角色。
 - 用户 JWT 携带平台角色声明；普通业务接口通过 Controller 的 `@PreAuthorize` 进入权限校验，空间资源最终由空间成员关系和权限标识符判定。平台超级管理员只用于平台管理及约定的跨空间读取能力，不自动获得所有空间写权限。
-- 前端权限页面和按钮级权限接入属于 Phase 6；部门模型及按部门统计仍记录在技术迭代台账中，尚未实现。
+- Phase 6 已接入空间权限页面，并补充平台用户、部门及超级管理员绑定；部门只维护组织归属，不参与 Space 授权。
 
 ## 一、项目基础概述
 

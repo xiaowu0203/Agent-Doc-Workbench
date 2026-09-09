@@ -1,12 +1,12 @@
 package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.enums.UserStatus;
+import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.auth.pojo.dto.ChangePasswordRequestDTO;
 import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.pojo.vo.UserVO;
-import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
@@ -19,6 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -93,6 +94,8 @@ public class AuthService {
             throw new BusinessException(ErrorCode.USER_DISABLED);
         }
         // 下发全新一对令牌
+        user.setLastLoginAt(LocalDateTime.now());
+        userMapper.updateById(user);
         log.info("登录成功，userId={}", user.getId());
         return issueTokens(user);
     }
@@ -169,7 +172,8 @@ public class AuthService {
             return List.of();
         }
         return userMapper.selectBatchIds(request.userIds()).stream()
-                .map(user -> new UserRefVO(user.getId(), user.getUsername(), user.getNickname()))
+                .map(user -> new UserRefVO(user.getId(), user.getUsername(), user.getNickname(),
+                        UserStatus.isEnabled(user.getStatus())))
                 .toList();
     }
 

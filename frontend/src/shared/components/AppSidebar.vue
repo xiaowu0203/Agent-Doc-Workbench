@@ -61,6 +61,7 @@ import {
   Grid,
   Lock,
   Operation,
+  OfficeBuilding,
   SetUp,
   Tickets,
   UserFilled,
@@ -175,17 +176,24 @@ const menuItems: MenuItem[] = [
     group: '洞察',
   },
   {
+    label: '用户管理',
+    icon: UserFilled,
+    scope: 'platform',
+    path: '/system/users',
+    group: '系统',
+  },
+  {
+    label: '部门管理',
+    icon: OfficeBuilding,
+    scope: 'platform',
+    path: '/system/departments',
+    group: '系统',
+  },
+  {
     label: '模型配置',
     icon: Cpu,
     scope: 'platform',
     path: '/system/models',
-    group: '系统',
-  },
-  {
-    label: '平台角色',
-    icon: UserFilled,
-    scope: 'platform',
-    path: null,
     group: '系统',
   },
 ]
@@ -332,7 +340,12 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
   flex-direction: column;
   gap: 2px;
   overflow-y: auto;
+  scrollbar-width: none;
   padding: var(--adw-space-3) var(--adw-space-3) var(--adw-space-4);
+}
+
+.app-sidebar__navigation::-webkit-scrollbar {
+  display: none;
 }
 
 .app-sidebar__group-label {

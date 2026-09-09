@@ -48,6 +48,7 @@ agent-doc:
       type: ${AGENT_RUNTIME_TYPE:custom}
     model:
       client:
+        # 模型响应读取超时
         read-timeout: ${AGENT_MODEL_READ_TIMEOUT:600s}
       chat-model-cache:
         max-size: ${AGENT_CHAT_MODEL_CACHE_MAX_SIZE:100}

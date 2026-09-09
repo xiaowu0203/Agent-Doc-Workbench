@@ -13,9 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Agent 能力概览接口。
- */
 @Tag(name = "Agent 能力概览", description = "空间 Agent、Skill、MCP 能力统计")
 @RestController
 @RequestMapping("/api/agent/overview")

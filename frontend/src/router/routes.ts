@@ -14,6 +14,8 @@ import SkillManagementView from '@/views/SkillManagementView.vue'
 import McpManagementView from '@/views/McpManagementView.vue'
 import AgentManagementView from '@/views/AgentManagementView.vue'
 import ModelManagementView from '@/views/ModelManagementView.vue'
+import PlatformDepartmentManagementView from '@/views/PlatformDepartmentManagementView.vue'
+import PlatformUserManagementView from '@/views/PlatformUserManagementView.vue'
 import TaskCreateView from '@/views/TaskCreateView.vue'
 import TaskListView from '@/views/TaskListView.vue'
 import TaskDetailView from '@/views/TaskDetailView.vue'
@@ -149,6 +151,18 @@ export const routes: RouteRecordRaw[] = [
         path: 'system/models',
         name: 'system-models',
         component: ModelManagementView,
+        meta: { platformRole: PLATFORM_ROLES.SUPER_ADMIN },
+      },
+      {
+        path: 'system/users',
+        name: 'system-users',
+        component: PlatformUserManagementView,
+        meta: { platformRole: PLATFORM_ROLES.SUPER_ADMIN },
+      },
+      {
+        path: 'system/departments',
+        name: 'system-departments',
+        component: PlatformDepartmentManagementView,
         meta: { platformRole: PLATFORM_ROLES.SUPER_ADMIN },
       },
       {

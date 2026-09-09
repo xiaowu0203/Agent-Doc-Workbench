@@ -78,6 +78,9 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_EXPORT;
 
 /**
  * 任务业务服务
+ * <p>核心任务业务能力：任务创建、查询、导出、重跑、终止、重试、审批退回重改；
+ * 包含权限校验、Token预算计算、任务能力令牌签发、关注区域校验、任务执行上下文构建、能力令牌校验；
+ * 负责任务状态流转、MQ消息投递、审计日志记录。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -116,9 +119,11 @@ public class TaskService {
         Long userId = AuthUtils.getUserIdOrException();
         // 根据文档Id查询文档相关信息（所属空间Id、文档类型、状态、版本等等）
         DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(dto.documentId()));
+        // 校验任务入参空间与文档所属空间必须一致
         if (!dto.spaceId().equals(document.spaceId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前空间与目标文档不一致");
         }
+        // 归档文档禁止创建任务
         if (!document.normal()) {
             throw new BusinessException(ErrorCode.CONFLICT, "已归档文档不能创建任务");
         }
@@ -130,6 +135,7 @@ public class TaskService {
         if (!agent.enabled()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Agent 已禁用");
         }
+        // Agent与文档必须属于同一个空间
         if (!dto.spaceId().equals(agent.spaceId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Agent 与文档不属于同一空间");
         }
@@ -138,13 +144,15 @@ public class TaskService {
         requireDocumentScope(agent, document.documentId());
         // 查询空间 Agent 执行预算
         SpaceBudgetVO spaceBudget = requireData(documentFeign.getSpaceExecutionBudget(document.spaceId()));
+        // 计算有效token预算：取任务、Agent、空间三者非空预算的最小值
         Long budget = effectiveBudget(dto.tokenBudget(), agent.tokenBudget(), spaceBudget.tokenBudget());
         if (budget != null && budget < TaskConstant.MIN_TOKEN_BUDGET) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "任务 Token 预算必须大于 0");
         }
+        // 解析、校验、规范化关注区域
         FocusRegions focusRegions = resolveFocusRegions(dto.readScope(), dto.focusRegions(), document.contentLength());
 
-        // 任务落库
+        // 任务落库，构建任务实体
         TaskEntity entity = dto.toEntity(document.spaceId(), documentType.getCode(), budget, agent.configVersion(),
                 focusRegions.scope(), focusRegions.json(), userId);
         entity.setId(IdWorker.getId());
@@ -159,6 +167,7 @@ public class TaskService {
             taskMapper.updateById(entity);
             // 投递MQ，触发异步任务消费执行
             messagePublisher.publish(entity.getId());
+            // 记录创建审计日志
             auditLogService.recordHuman(entity.getSpaceId(), AuditAction.TASK_CREATED,
                     AuditTargetType.TASK, entity.getId(), null);
         } catch (RuntimeException e) {
@@ -186,7 +195,9 @@ public class TaskService {
         if (!document.normal()) {
             throw new BusinessException(ErrorCode.CONFLICT, "已归档文档不能创建任务");
         }
+        // 获取空间执行预算
         SpaceBudgetVO spaceBudget = requireData(documentFeign.getSpaceExecutionBudget(param.spaceId()));
+        // 查询当前空间下，可访问该文档的Agent列表
         List<AgentTaskOptionVO> agents = requireData(agentFeign.queryTaskOptions(
                 new AgentTaskOptionQueryDTO(param.spaceId(), param.documentId())));
         return new TaskCreateOptionsVO(param.spaceId(), param.documentId(),
@@ -203,7 +214,7 @@ public class TaskService {
     public PageVO<TaskVO> list(Long spaceId, PageParam pageParam) {
         // Feign校验当前用户在该空间具备【读取】权限
         requirePermission(spaceId, TASK_READ);
-        // 分页校验
+        // 分页参数合法性校验
         pageParam.validate();
         Page<TaskEntity> page = taskMapper.selectPage(new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
                 new LambdaQueryWrapper<TaskEntity>()
@@ -221,6 +232,7 @@ public class TaskService {
     public PageVO<TaskListItemVO> search(TaskSearchParam param) {
         requirePermission(param.getSpaceId(), TASK_READ);
         validateSearchParam(param);
+        // 构建查询条件wrapper
         LambdaQueryWrapper<TaskEntity> wrapper = buildSearchWrapper(param);
 
         Page<TaskEntity> page = taskMapper.selectPage(
@@ -229,6 +241,7 @@ public class TaskService {
         if (tasks.isEmpty()) {
             return PageVO.of(List.of(), page.getTotal(), param);
         }
+        // 批量拉取Agent、文档、用户信息，组装列表VO
         return PageVO.of(toListItems(tasks), page.getTotal(), param);
     }
 
@@ -238,9 +251,12 @@ public class TaskService {
     public byte[] export(TaskSearchParam param) {
         requirePermission(param.getSpaceId(), USAGE_EXPORT);
         validateSearchParam(param);
+        // 根据筛选条件查询全部任务
         List<TaskEntity> tasks = taskMapper.selectList(buildSearchWrapper(param));
         StringBuilder csv = new StringBuilder("\uFEFF");
+        // 写入csv表头
         appendCsvRow(csv, "任务编号", "任务名称", "Agent", "Token", "状态", "开始时间", "结束时间");
+        // 填充每行数据
         for (TaskListItemVO task : toListItems(tasks)) {
             appendCsvRow(csv, task.taskNo(), task.name(),
                     task.agentName() == null ? task.agentId() : task.agentName(), task.tokensUsed(),
@@ -249,14 +265,24 @@ public class TaskService {
         return csv.toString().getBytes(StandardCharsets.UTF_8);
     }
 
+    /**
+     * 校验搜索参数合法性
+     * @param param 任务搜索参数
+     */
     private void validateSearchParam(TaskSearchParam param) {
         param.validate();
+        // 校验时间区间：开始时间必须早于结束时间
         if (param.getStartedFrom() != null && param.getStartedTo() != null
                 && !param.getStartedFrom().isBefore(param.getStartedTo())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "任务执行时间范围不合法");
         }
     }
 
+    /**
+     * 根据搜索参数构建MyBatis‑Plus查询Wrapper
+     * @param param 搜索参数
+     * @return 查询条件包装器
+     */
     private LambdaQueryWrapper<TaskEntity> buildSearchWrapper(TaskSearchParam param) {
         LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
                 .eq(TaskEntity::getSpaceId, param.getSpaceId())
@@ -268,6 +294,7 @@ public class TaskService {
         if (param.getAgentId() != null) {
             wrapper.eq(TaskEntity::getAgentId, param.getAgentId());
         }
+        // 按模型筛选：通过tokenUsageDetailMapper查询关联taskId再in查询
         if (param.getModelId() != null) {
             List<Long> taskIds = tokenUsageDetailMapper.listTaskIdsByModelAndDate(
                     param.getSpaceId(), param.getModelId(), param.getStartedFrom(), param.getStartedTo());
@@ -282,6 +309,7 @@ public class TaskService {
         if (param.getStartedTo() != null) {
             wrapper.lt(TaskEntity::getStartTime, param.getStartedTo());
         }
+        // 关键词模糊搜索：任务名称、指令、任务编号
         if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
             String keyword = param.getKeyword().trim();
             wrapper.and(query -> query.like(TaskEntity::getName, keyword)
@@ -291,30 +319,50 @@ public class TaskService {
         return wrapper;
     }
 
+    /**
+     * 批量查询关联资源，将TaskEntity转为TaskListItemVO
+     * @param tasks 任务实体列表
+     * @return 任务列表VO
+     */
     private List<TaskListItemVO> toListItems(List<TaskEntity> tasks) {
+        // 批量拉取Agent信息
         Map<Long, AgentRefVO> agents = fetchAgents(tasks.stream()
                 .map(TaskEntity::getAgentId).filter(Objects::nonNull).distinct().toList());
+        // 批量拉取文档信息
         Map<Long, DocumentRefVO> documents = fetchDocuments(tasks.stream()
                 .map(TaskEntity::getDocumentId).filter(Objects::nonNull).distinct().toList());
+        // 批量拉取用户信息
         Map<Long, UserRefVO> users = fetchUsers(tasks.stream()
                 .map(TaskEntity::getCreatedBy).filter(Objects::nonNull).distinct().toList());
+        // 组装VO
         return tasks.stream()
                 .map(task -> TaskConvertor.toListItemVO(task, agents.get(task.getAgentId()),
                         documents.get(task.getDocumentId()), users.get(task.getCreatedBy())))
                 .toList();
     }
 
+    /**
+     * 追加CSV一行，处理引号转义
+     * @param csv StringBuilder对象
+     * @param values 单元格数据
+     */
     private void appendCsvRow(StringBuilder csv, Object... values) {
         for (int i = 0; i < values.length; i++) {
             if (i > 0) {
                 csv.append(',');
             }
             String value = values[i] == null ? "" : String.valueOf(values[i]);
+            // 双引号转义：csv内部双引号替换为两个双引号
             csv.append('"').append(value.replace("\"", "\"\"")).append('"');
         }
         csv.append("\r\n");
     }
 
+    /**
+     * 批量查询Agent引用信息
+     * @param agentIds AgentId集合
+     * @return agentId -> AgentRefVO
+     */
     private Map<Long, AgentRefVO> fetchAgents(List<Long> agentIds) {
         if (agentIds.isEmpty()) {
             return Map.of();
@@ -323,6 +371,11 @@ public class TaskService {
                 .collect(Collectors.toMap(AgentRefVO::id, Function.identity()));
     }
 
+    /**
+     * 批量查询文档引用信息
+     * @param documentIds 文档ID集合
+     * @return documentId -> DocumentRefVO
+     */
     private Map<Long, DocumentRefVO> fetchDocuments(List<Long> documentIds) {
         if (documentIds.isEmpty()) {
             return Map.of();
@@ -341,6 +394,7 @@ public class TaskService {
         requirePermission(param.spaceId(), TASK_READ);
         PageParam pageParam = param.pageParam() == null ? new PageParam() : param.pageParam();
         pageParam.validate();
+        // 排序优先级：lastHeartbeatAt > endTime > startTime > createdAt
         Page<TaskEntity> page = taskMapper.selectPage(
                 new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
                 new LambdaQueryWrapper<TaskEntity>()
@@ -349,6 +403,7 @@ public class TaskService {
                         .orderByDesc(TaskEntity::getEndTime)
                         .orderByDesc(TaskEntity::getStartTime)
                         .orderByDesc(TaskEntity::getCreatedAt));
+        // 批量拉取创建人信息
         Map<Long, UserRefVO> users = fetchUsers(page.getRecords().stream()
                 .map(TaskEntity::getCreatedBy)
                 .filter(Objects::nonNull)
@@ -366,6 +421,11 @@ public class TaskService {
         return PageVO.of(records, page.getTotal(), pageParam);
     }
 
+    /**
+     * 批量查询用户引用信息
+     * @param userIds 用户ID集合
+     * @return userId -> UserRefVO
+     */
     private Map<Long, UserRefVO> fetchUsers(List<Long> userIds) {
         if (userIds.isEmpty()) {
             return Map.of();
@@ -377,6 +437,11 @@ public class TaskService {
         return users.stream().collect(Collectors.toMap(UserRefVO::id, user -> user));
     }
 
+    /**
+     * 获取用户展示名称，优先昵称，无昵称使用用户名
+     * @param user 用户对象
+     * @return 展示名称
+     */
     private String displayName(UserRefVO user) {
         if (user == null) {
             return null;
@@ -384,6 +449,11 @@ public class TaskService {
         return user.nickname() == null || user.nickname().isBlank() ? user.username() : user.nickname();
     }
 
+    /**
+     * 获取任务动态展示时间，优先级：心跳时间 > 结束时间 > 开始时间 > 创建时间
+     * @param task 任务实体
+     * @return 展示时间
+     */
     private LocalDateTime activityTime(TaskEntity task) {
         if (task.getLastHeartbeatAt() != null) {
             return task.getLastHeartbeatAt();
@@ -405,6 +475,7 @@ public class TaskService {
      */
     public TaskStatsVO getStats(Long spaceId) {
         requirePermission(spaceId, TASK_READ);
+        // 昨日零点
         LocalDateTime yesterdayStart = LocalDate.now().atStartOfDay();
         long totalCount = taskMapper.selectCount(new LambdaQueryWrapper<TaskEntity>()
                 .eq(TaskEntity::getSpaceId, spaceId));
@@ -436,13 +507,16 @@ public class TaskService {
     public TaskVO run(Long id) {
         TaskEntity entity = require(id);
         requirePermission(entity.getSpaceId(), TASK_CREATE);
+        // 仅PENDING待运行状态允许手动触发
         if (TaskStatus.fromCode(entity.getStatus()) != TaskStatus.PENDING) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有待运行的任务可以手动触发");
         }
+        // 必须存在能力令牌才能执行
         if (entity.getCapabilityToken() == null || entity.getCapabilityToken().isBlank()) {
             throw new BusinessException(ErrorCode.CONFLICT, "任务缺少执行能力令牌，请重新创建任务");
         }
         try {
+            // 重新投递MQ消息
             messagePublisher.publish(entity.getId());
         } catch (RuntimeException exception) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "任务执行消息发布失败");
@@ -509,27 +583,33 @@ public class TaskService {
     public TaskVO rerun(Long id) {
         TaskEntity entity = require(id);
         requirePermission(entity.getSpaceId(), TASK_CREATE);
+        // 只有FAILED失败状态允许重跑
         if (TaskStatus.fromCode(entity.getStatus()) != TaskStatus.FAILED) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有异常失败的任务可以重跑");
         }
 
+        // 校验文档有效性
         DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(entity.getDocumentId()));
         if (!entity.getSpaceId().equals(document.spaceId()) || !document.normal()) {
             throw new BusinessException(ErrorCode.CONFLICT, "目标文档当前不可用于任务重跑");
         }
+        // 校验Agent可用
         AgentExecutionProfileVO agent = requireData(agentFeign.getExecutionProfile(entity.getAgentId()));
         if (!agent.enabled() || !entity.getSpaceId().equals(agent.spaceId())) {
             throw new BusinessException(ErrorCode.CONFLICT, "任务 Agent 当前不可用");
         }
         requireDocumentScope(agent, entity.getDocumentId());
 
+        // 复制生成新任务实体，parentTaskId指向原任务
         TaskEntity rerunTask = copyForRerun(entity, agent.configVersion(), AuthUtils.getUserIdOrException());
         taskMapper.insert(rerunTask);
         try {
+            // 签发加密能力令牌
             rerunTask.setCapabilityToken(issueEncryptedCapability(rerunTask));
             taskMapper.updateById(rerunTask);
             messagePublisher.publish(rerunTask.getId());
         } catch (RuntimeException exception) {
+            // 异常置任务失败
             rerunTask.setStatus(TaskStatus.FAILED.getCode());
             rerunTask.setErrorMessage("任务重跑能力令牌签发或消息发布失败：" + exception.getMessage());
             rerunTask.setEndTime(LocalDateTime.now());
@@ -546,10 +626,12 @@ public class TaskService {
      */
     public TaskVO createReviewRework(Long sourceTaskId, Long changeRequestId, String reviewComment) {
         TaskEntity source = require(sourceTaskId);
+        // 校验文档可用
         DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(source.getDocumentId()));
         if (!source.getSpaceId().equals(document.spaceId()) || !document.normal()) {
             throw new BusinessException(ErrorCode.CONFLICT, "目标文档当前不可用于退回重改");
         }
+        // 校验Agent可用
         AgentExecutionProfileVO agent = requireData(agentFeign.getExecutionProfile(source.getAgentId()));
         if (!agent.enabled() || !source.getSpaceId().equals(agent.spaceId())) {
             throw new BusinessException(ErrorCode.CONFLICT, "原任务 Agent 当前不可用");
@@ -557,12 +639,15 @@ public class TaskService {
         requireDocumentScope(agent, source.getDocumentId());
 
         Long userId = AuthUtils.getUserIdOrException();
+        // 复制任务基础数据
         TaskEntity rework = copyForRerun(source, agent.configVersion(), userId);
+        // 任务名称追加后缀，做长度截断
         String suffix = "（审批重改）";
         String baseName = source.getName() == null ? "变更重改" : source.getName();
         rework.setName(baseName.length() + suffix.length() <= TaskConstant.MAX_TASK_NAME_LENGTH
                 ? baseName + suffix
                 : baseName.substring(0, TaskConstant.MAX_TASK_NAME_LENGTH - suffix.length()) + suffix);
+        // 指令追加审批退回意见，做长度截断
         String instruction = source.getInstruction() + "\n\n审批退回意见：\n" + reviewComment
                 + "\n\n请基于当前正式文档重新处理，并提交新的变更请求。原变更请求 ID：" + changeRequestId;
         rework.setInstruction(instruction.length() <= TaskConstant.MAX_TASK_INSTRUCTION_LENGTH
@@ -571,6 +656,7 @@ public class TaskService {
         try {
             rework.setCapabilityToken(issueEncryptedCapability(rework));
             taskMapper.updateById(rework);
+            // 事务提交完成后再投递消息，防止消费者读到未提交的任务记录
             publishTaskMessageAfterCommit(rework);
         } catch (RuntimeException exception) {
             rework.setStatus(TaskStatus.FAILED.getCode());
@@ -588,10 +674,12 @@ public class TaskService {
      * 事务提交后投递任务消息，避免消费者在任务记录提交前读取不到新任务。
      */
     private void publishTaskMessageAfterCommit(TaskEntity task) {
+        // 如果没有开启事务，直接发布
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             publishTaskMessage(task);
             return;
         }
+        // 注册事务同步，事务提交完成后才执行消息投递
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -600,10 +688,15 @@ public class TaskService {
         });
     }
 
+    /**
+     * 投递任务MQ消息，投递失败则更新任务为失败状态
+     * @param task 任务实体
+     */
     private void publishTaskMessage(TaskEntity task) {
         try {
             messagePublisher.publish(task.getId());
         } catch (RuntimeException exception) {
+            // 消息发送失败，直接把任务置为FAILED
             taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                     .eq(TaskEntity::getId, task.getId())
                     .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
@@ -613,6 +706,13 @@ public class TaskService {
         }
     }
 
+    /**
+     * 根据源任务复制生成重跑任务实体
+     * @param source 源任务
+     * @param agentConfigVersion agent配置版本
+     * @param userId 创建人ID
+     * @return 新任务实体
+     */
     private TaskEntity copyForRerun(TaskEntity source, Long agentConfigVersion, Long userId) {
         TaskEntity target = new TaskEntity();
         target.setId(IdWorker.getId());
@@ -635,8 +735,14 @@ public class TaskService {
         return target;
     }
 
+    /**
+     * 调用auth服务签发任务能力令牌，返回加密后的令牌字符串
+     * @param task 任务实体
+     * @return 加密后的capabilityToken
+     */
     private String issueEncryptedCapability(TaskEntity task) {
         DocType documentType = requireDocumentType(task.getDocumentType());
+        // 根据文档类型区分允许执行的动作
         List<String> actions = documentType == DocType.DRAFT
                 ? List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_WRITE_DRAFT)
                 : List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_CREATE_CHANGE_REQUEST);
@@ -651,6 +757,7 @@ public class TaskService {
      */
     public TaskDocumentContextVO getTaskDocumentContext(Long taskId, DocumentExecutionContextVO document) {
         TaskEntity task = require(taskId);
+        // 校验任务与传入文档上下文匹配
         if (!task.getDocumentId().equals(document.documentId()) || !task.getSpaceId().equals(document.spaceId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "任务文档上下文不匹配");
         }
@@ -662,9 +769,13 @@ public class TaskService {
 
     /**
      * 校验一次文档片段读取没有越过任务创建时固化的读取区间。
+     * @param taskId 任务ID
+     * @param start 片段起始偏移
+     * @param length 片段长度
      */
     public void requireReadableRange(Long taskId, long start, int length) {
         TaskEntity task = require(taskId);
+        // FULL模式不受限制
         if (readScope(task) == TaskReadScope.FULL) {
             return;
         }
@@ -674,6 +785,7 @@ public class TaskService {
         } catch (ArithmeticException exception) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "文档片段范围无效");
         }
+        // 判断读取区间是否落在任意一个授权关注区域内
         boolean allowed = focusRegions(task).stream().anyMatch(region -> {
             long regionEnd = region.start() + region.length();
             return start >= region.start() && end <= regionEnd;
@@ -701,6 +813,7 @@ public class TaskService {
         }
         // 第一步：JWT密码学校验：签名、时间、agent基础业务claim
         var claims = taskCapabilityVerifier.verify(token);
+        // JWT内taskId必须和入参taskId一致
         if (!String.valueOf(taskId).equals(claims.getClaimAsString(JwtConstant.CLAIM_TASK_ID))) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "任务能力范围不匹配");
         }
@@ -733,6 +846,13 @@ public class TaskService {
         return entity;
     }
 
+    /**
+     * 计算有效token预算：取任务、Agent、空间三者非空预算的最小值
+     * @param taskBudget 任务预算
+     * @param agentBudget Agent预算
+     * @param spaceBudget 空间预算
+     * @return 最终生效预算，全部为空返回null
+     */
     private Long effectiveBudget(Long taskBudget, Long agentBudget, Long spaceBudget) {
         List<Long> limits = new ArrayList<>();
         if (taskBudget != null) {
@@ -747,14 +867,23 @@ public class TaskService {
         return limits.stream().min(Long::compareTo).orElse(null);
     }
 
+    /**
+     * 解析、校验、规范化关注区域
+     * @param requestedScope 请求的读取范围
+     * @param requestedRegions 请求关注区域列表
+     * @param documentLength 文档总长度
+     * @return 封装scope与序列化后的json字符串
+     */
     private FocusRegions resolveFocusRegions(TaskReadScope requestedScope, List<TaskFocusRegionDTO> requestedRegions,
                                              Long documentLength) {
         TaskReadScope scope = requestedScope == null ? TaskReadScope.FULL : requestedScope;
         List<TaskFocusRegionDTO> regions = requestedRegions == null ? List.of() : requestedRegions;
+        // RANGES模式必须至少有一个关注区域
         if (scope == TaskReadScope.RANGES && regions.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "多区域读取必须至少选择一个关注区域");
         }
         long total = documentLength == null ? 0L : documentLength;
+        // 校验每个关注区域不能越界，并且按start排序
         List<TaskFocusRegionDTO> normalized = regions.stream().map(region -> {
             long end;
             try {
@@ -771,12 +900,22 @@ public class TaskService {
         return new FocusRegions(scope, normalized.isEmpty() ? null : JsonUtils.toJson(normalized));
     }
 
+    /**
+     * 反序列化任务中存储的关注区域JSON
+     * @param task 任务实体
+     * @return 关注区域列表
+     */
     private List<TaskFocusRegionDTO> focusRegions(TaskEntity task) {
         List<TaskFocusRegionDTO> regions = JsonUtils.parse(task.getFocusRegionsJson(),
                 new TypeReference<List<TaskFocusRegionDTO>>() { });
         return regions == null ? List.of() : regions;
     }
 
+    /**
+     * 字符串trim，空白转为null
+     * @param value 原始字符串
+     * @return 处理后字符串
+     */
     private String trimToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -784,10 +923,20 @@ public class TaskService {
         return value.trim();
     }
 
+    /**
+     * 获取任务读取范围，null默认FULL
+     * @param task 任务实体
+     * @return TaskReadScope
+     */
     private TaskReadScope readScope(TaskEntity task) {
         return task.getReadScope() == null ? TaskReadScope.FULL : TaskReadScope.valueOf(task.getReadScope());
     }
 
+    /**
+     * 校验文档类型合法性，不合法抛异常
+     * @param documentType 文档类型编码
+     * @return DocType枚举
+     */
     private DocType requireDocumentType(Integer documentType) {
         DocType type = DocType.fromCode(documentType);
         if (type == null) {
@@ -796,11 +945,19 @@ public class TaskService {
         return type;
     }
 
+    /**
+     * 构建任务编号：前缀+日期+任务id
+     * @param taskId 任务id
+     * @return taskNo
+     */
     private String buildTaskNo(Long taskId) {
         return TaskConstant.TASK_NO_PREFIX + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
                 + "-" + taskId;
     }
 
+    /**
+     * 内部记录：封装读取范围和序列化后的关注区域json
+     */
     private record FocusRegions(TaskReadScope scope, String json) {
     }
 

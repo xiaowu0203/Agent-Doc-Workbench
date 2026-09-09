@@ -94,10 +94,17 @@ public class AgentService {
     }
 
     /**
-     * 分页查询 Agent 卡片，关联摘要只针对当前页批量加载。
+     * 分页查询Agent卡片列表
+     * 卡片关联的摘要统计只针对当前分页数据批量加载，避免N+1循环查询数据库
+     *
+     * @param param 查询分页参数：空间ID、状态、模型ID、关键词、分页页码页大小
+     * @return Agent卡片分页结果VO
      */
     public PageVO<AgentCardVO> search(AgentSearchParam param) {
+        // 参数合法性校验
         param.validate();
+
+        // 校验当前用户拥有该空间Agent读取权限
         spaceAccessService.requirePermission(param.getSpaceId(), AGENT_READ);
 
         LambdaQueryWrapper<AgentEntity> wrapper = new LambdaQueryWrapper<AgentEntity>()
@@ -110,23 +117,28 @@ public class AgentService {
         if (param.getModelId() != null) {
             wrapper.eq(AgentEntity::getModelId, param.getModelId());
         }
+        // 关键词模糊搜索：匹配名称 OR 描述
         if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
             String keyword = param.getKeyword().trim();
             wrapper.and(query -> query.like(AgentEntity::getName, keyword)
                     .or().like(AgentEntity::getDescription, keyword));
         }
 
+        // 执行分页查询Agent主数据
         Page<AgentEntity> page = agentMapper.selectPage(PageUtils.toPage(param), wrapper);
         if (page.getRecords().isEmpty()) {
             return PageVO.of(List.of(), page.getTotal(), param);
         }
 
+        // 批量查询当前页Agent绑定的模型信息，构建id->模型映射，避免循环查询
         Map<Long, ModelEntity> models = modelService.findByIds(page.getRecords().stream()
                         .map(AgentEntity::getModelId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(ModelEntity::getId, Function.identity()));
+        // 批量统计当前页Agent卡片摘要（Skill、MCP、工具数量）
         Map<Long, AgentCardSummaryService.CardSummary> summaries = cardSummaryService.summarize(
                 page.getRecords().stream().map(AgentEntity::getId).toList());
 
+        // 组装Agent卡片VO，模型为空则展示null，摘要为空使用默认0值
         List<AgentCardVO> records = page.getRecords().stream().map(agent -> {
             ModelEntity model = models.get(agent.getModelId());
             AgentCardSummaryService.CardSummary summary = summaries.getOrDefault(agent.getId(),
@@ -249,46 +261,64 @@ public class AgentService {
     }
 
     /**
-     * 批量查询任务列表回填所需的 Agent 最小信息。
+     * 批量获取Agent引用基础信息，用于任务列表回填展示
+     * 只返回id、spaceId、name极简字段，不返回完整Agent配置
+     *
+     * @param agentIds Agent ID集合
+     * @return Agent引用VO列表
      */
     public List<AgentRefVO> listRefs(Collection<Long> agentIds) {
         if (agentIds == null || agentIds.isEmpty()) {
             return List.of();
         }
+        // 批量查询Agent，映射为轻量引用对象
         return agentMapper.selectBatchIds(agentIds).stream()
                 .map(agent -> new AgentRefVO(agent.getId(), agent.getSpaceId(), agent.getName()))
                 .toList();
     }
 
     /**
-     * 查询空间内已启用、模型可用且允许访问目标文档的 Agent 选项。
-     * 该方法只供 task-service 在完成用户权限和文档归属校验后调用。
+     * 查询空间内可用于创建任务的Agent选项列表
+     * 筛选条件：Agent启用状态、模型可用、Agent文档作用域允许访问目标文档
+     * 注意：本方法**不做权限校验**，仅供task‑service调用，调用方必须先完成用户权限、文档归属校验
+     *
+     * @param spaceId 空间ID
+     * @param documentId 目标文档ID
+     * @return 可选用Agent任务选项VO列表
      */
     public List<AgentTaskOptionVO> listTaskOptions(Long spaceId, Long documentId) {
+        // 查询空间下所有启用状态Agent，按更新时间、ID倒序
         List<AgentEntity> agents = agentMapper.selectList(new LambdaQueryWrapper<AgentEntity>()
                         .eq(AgentEntity::getSpaceId, spaceId)
                         .eq(AgentEntity::getStatus, AgentStatus.ENABLED.getCode())
                         .orderByDesc(AgentEntity::getUpdatedAt)
                         .orderByDesc(AgentEntity::getId))
                 .stream()
+                // 过滤：Agent文档作用域允许访问该文档
                 .filter(agent -> allowsDocument(agent.getDocScope(), documentId))
                 .toList();
         if (agents.isEmpty()) {
             return List.of();
         }
 
+        // 批量查询Agent绑定的模型实体
         Map<Long, ModelEntity> models = modelService.findByIds(agents.stream()
                         .map(AgentEntity::getModelId).collect(Collectors.toSet()))
                 .stream().collect(Collectors.toMap(ModelEntity::getId, Function.identity()));
+
+        // 二次过滤：模型必须为启用状态，排除模型不可用的Agent
         List<AgentEntity> availableAgents = agents.stream()
                 .filter(agent -> {
                     ModelEntity model = models.get(agent.getModelId());
                     return model != null && ModelStatus.ENABLED.matches(model.getStatus());
                 })
                 .toList();
+
+        // 批量统计可用Agent的卡片摘要信息
         Map<Long, AgentCardSummaryService.CardSummary> summaries = cardSummaryService.summarize(
                 availableAgents.stream().map(AgentEntity::getId).toList());
 
+        // 组装任务选项VO
         return availableAgents.stream().map(agent -> {
             ModelEntity model = models.get(agent.getModelId());
             AgentCardSummaryService.CardSummary summary = summaries.getOrDefault(agent.getId(),
@@ -299,14 +329,28 @@ public class AgentService {
         }).toList();
     }
 
+    /**
+     * 判断Agent的文档作用域是否允许访问指定文档
+     * 兼容两种scope格式：
+     * 1. 直接数组格式：[1,2,3]
+     * 2. 对象格式：{"documentIds":[1,2,3]}
+     * 若docScope为空/空白，代表无文档限制，全部允许访问
+     *
+     * @param documentScope Agent的文档作用域JSON字符串
+     * @param documentId 待校验文档ID
+     * @return true允许访问，false不允许
+     */
     private boolean allowsDocument(String documentScope, Long documentId) {
+        // 作用域为空，无文档限制，直接放行
         if (documentScope == null || documentScope.isBlank()) {
             return true;
         }
+        // 尝试解析为直接文档ID数组
         List<Long> directIds = JsonUtils.parse(documentScope, new TypeReference<List<Long>>() { });
         if (directIds != null) {
             return directIds.contains(documentId);
         }
+        // 尝试解析为对象格式，取documentIds字段
         Map<String, List<Long>> scope = JsonUtils.parse(documentScope,
                 new TypeReference<Map<String, List<Long>>>() { });
         return scope != null && scope.get("documentIds") != null && scope.get("documentIds").contains(documentId);
