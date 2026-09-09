@@ -48,7 +48,33 @@ async function mountOverview(permissions = allPermissions) {
   })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/spaces/:spaceId/overview', component: SpaceOverviewView }],
+    routes: [
+      { path: '/spaces/:spaceId/overview', name: 'space-overview', component: SpaceOverviewView },
+      {
+        path: '/spaces/:spaceId/documents/:documentId?',
+        name: 'space-documents',
+        component: SpaceOverviewView,
+      },
+      { path: '/spaces/:spaceId/tasks', name: 'space-tasks', component: SpaceOverviewView },
+      {
+        path: '/spaces/:spaceId/approvals',
+        name: 'space-approvals',
+        component: SpaceOverviewView,
+      },
+      { path: '/spaces/:spaceId/usage', name: 'space-usage', component: SpaceOverviewView },
+      {
+        path: '/spaces/:spaceId/tasks/:taskId',
+        name: 'space-task-detail',
+        component: SpaceOverviewView,
+      },
+      { path: '/spaces/:spaceId/agents', name: 'space-agents', component: SpaceOverviewView },
+      { path: '/spaces/:spaceId/skills', name: 'space-skills', component: SpaceOverviewView },
+      {
+        path: '/spaces/:spaceId/mcp-servers',
+        name: 'space-mcp-servers',
+        component: SpaceOverviewView,
+      },
+    ],
   })
   await router.push('/spaces/7/overview')
   await router.isReady()
@@ -140,5 +166,38 @@ describe('SpaceOverviewView', () => {
     expect(wrapper.text()).toContain('待审批变更')
     expect(wrapper.text()).toContain('执行动态')
     expect(wrapper.text()).toContain('文档审计')
+  })
+
+  it('links summary cards to the corresponding space pages', async () => {
+    const wrapper = await mountOverview()
+    const cards = wrapper.findAll('.stat-card')
+
+    expect(cards).toHaveLength(4)
+    expect(cards.map((card) => card.attributes('href'))).toEqual([
+      '/spaces/7/documents',
+      '/spaces/7/tasks',
+      '/spaces/7/approvals',
+      '/spaces/7/usage',
+    ])
+  })
+
+  it('links overview sections and records to their detail pages', async () => {
+    const wrapper = await mountOverview()
+
+    expect(
+      wrapper.findAll('.overview-panel__view-all').map((link) => link.attributes('href')),
+    ).toEqual(['/spaces/7/documents', '/spaces/7/tasks'])
+    expect(wrapper.find('.document-row:not(.document-row--header)').attributes('href')).toBe(
+      '/spaces/7/documents/1',
+    )
+    expect(wrapper.find('.task-row').attributes('href')).toBe('/spaces/7/tasks/11')
+    expect(wrapper.findAll('.ability-card').map((link) => link.attributes('href'))).toEqual([
+      '/spaces/7/agents',
+      '/spaces/7/skills',
+      '/spaces/7/mcp-servers',
+    ])
+    expect(wrapper.find('.pending-row--action').attributes('href')).toBe('/spaces/7/approvals')
+    expect(wrapper.text()).not.toMatch(/Agent 能力概览[\s\S]*查看全部/)
+    expect(wrapper.text()).not.toMatch(/待处理事项[\s\S]*查看全部/)
   })
 })

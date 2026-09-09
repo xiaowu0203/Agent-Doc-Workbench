@@ -18,6 +18,18 @@ export interface LoginRequest {
   password: string
 }
 
+export interface RegisterRequest {
+  username: string
+  password: string
+  nickname?: string
+  email?: string
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string
+  newPassword: string
+}
+
 export interface LoginResponse extends AuthSession {
   refreshToken: string
   tokenType: string

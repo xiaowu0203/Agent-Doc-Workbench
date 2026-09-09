@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import LoginView from './LoginView.vue'
 
+import * as authApi from '@/features/auth/api/auth-api'
 import { useAuthStore } from '@/stores/auth'
 
 vi.mock('element-plus', async (importOriginal) => {
@@ -13,8 +14,14 @@ vi.mock('element-plus', async (importOriginal) => {
     ...original,
     ElMessage: {
       info: vi.fn(),
+      success: vi.fn(),
     },
   }
+})
+
+vi.mock('@/features/auth/api/auth-api', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/features/auth/api/auth-api')>()
+  return { ...original, register: vi.fn() }
 })
 
 async function mountLoginView() {
@@ -68,5 +75,52 @@ describe('LoginView', () => {
 
     expect(login).toHaveBeenCalledWith({ username: 'alice', password: 'secret' })
     expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('registers an account and returns to login with the username filled', async () => {
+    const { wrapper } = await mountLoginView()
+    vi.mocked(authApi.register).mockResolvedValue({
+      id: 2,
+      username: 'alice',
+      nickname: 'Alice',
+      email: 'alice@example.com',
+      avatarUrl: null,
+    })
+
+    await wrapper.get('.login-register button').trigger('click')
+    await wrapper.get('input[placeholder="3-32 位字母、数字或下划线"]').setValue('alice')
+    await wrapper.get('input[placeholder="请输入昵称"]').setValue('Alice')
+    await wrapper.get('input[placeholder="请输入邮箱"]').setValue('alice@example.com')
+    await wrapper.get('input[placeholder="请输入密码（6-64 位）"]').setValue('secret1')
+    await wrapper.get('input[placeholder="请再次输入密码"]').setValue('secret1')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(authApi.register).toHaveBeenCalledWith({
+      username: 'alice',
+      password: 'secret1',
+      nickname: 'Alice',
+      email: 'alice@example.com',
+    })
+    expect(wrapper.text()).toContain('登录工作台')
+    expect(wrapper.get('input[placeholder="请输入邮箱或用户名"]').element).toHaveProperty(
+      'value',
+      'alice',
+    )
+  })
+
+  it('uses the remember me choice when persisting a login session', async () => {
+    const { pinia, wrapper } = await mountLoginView()
+    const authStore = useAuthStore(pinia)
+    vi.spyOn(authStore, 'login').mockResolvedValue()
+    const persistSession = vi.spyOn(authStore, 'persistSession')
+
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('input[placeholder="请输入邮箱或用户名"]').setValue('alice')
+    await wrapper.get('input[placeholder="请输入密码"]').setValue('secret')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(persistSession).toHaveBeenCalledWith(true)
   })
 })

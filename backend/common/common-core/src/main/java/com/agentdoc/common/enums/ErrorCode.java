@@ -29,6 +29,7 @@ public enum ErrorCode {
     LOGIN_FAILED(41002, "用户名或密码错误", HttpStatus.UNAUTHORIZED),
     USER_DISABLED(41003, "账号已被禁用", HttpStatus.FORBIDDEN),
     REFRESH_TOKEN_INVALID(41004, "刷新令牌无效或已过期", HttpStatus.UNAUTHORIZED),
+    CURRENT_PASSWORD_INVALID(41005, "当前密码错误", HttpStatus.BAD_REQUEST),
 
     // 服务端 500
     INTERNAL_ERROR(50000, "服务器内部错误", HttpStatus.INTERNAL_SERVER_ERROR),

@@ -86,7 +86,7 @@ const tree = [
 
 async function mountDocument(
   permissions = Object.values(SPACE_PERMISSIONS),
-  documentId: number | string = 101,
+  documentId: number | string | null = 101,
 ) {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -115,6 +115,7 @@ async function mountDocument(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/spaces/:spaceId/overview', name: 'space-overview', component: DocumentEditorView },
       {
         path: '/spaces/:spaceId/documents/:documentId?',
         name: 'space-documents',
@@ -122,7 +123,12 @@ async function mountDocument(
       },
     ],
   })
-  await router.push({ name: 'space-documents', params: { spaceId: 7, documentId } })
+  if (documentId === null) {
+    await router.push({ name: 'space-overview', params: { spaceId: 7 } })
+    await router.push({ name: 'space-documents', params: { spaceId: 7 } })
+  } else {
+    await router.push({ name: 'space-documents', params: { spaceId: 7, documentId } })
+  }
   await router.isReady()
   const wrapper = mount(DocumentEditorView, { global: { plugins: [pinia, router] } })
   await flushPromises()
@@ -170,6 +176,30 @@ beforeEach(() => {
 })
 
 describe('DocumentEditorView', () => {
+  it('reveals and selects a nested document opened from another page', async () => {
+    const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), 103)
+
+    expect(wrapper.get('[data-document-tree-node-id="101"]').attributes('aria-expanded')).toBe(
+      'true',
+    )
+    expect(wrapper.get('[data-document-tree-node-id="103"]').classes()).toContain(
+      'document-tree-node__row--selected',
+    )
+  })
+
+  it('replaces the list route when selecting the first document automatically', async () => {
+    const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), null)
+    const router = wrapper.vm.$router
+
+    expect(router.currentRoute.value.fullPath).toBe('/spaces/7/documents/101')
+
+    wrapper.unmount()
+    router.back()
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/spaces/7/overview')
+  })
+
   it('renders the document tree, creator as responsible person, and related activities', async () => {
     const wrapper = await mountDocument()
 

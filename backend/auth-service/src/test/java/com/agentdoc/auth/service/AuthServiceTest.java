@@ -2,6 +2,7 @@ package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.auth.enums.UserStatus;
+import com.agentdoc.auth.pojo.dto.ChangePasswordRequestDTO;
 import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
@@ -9,9 +10,13 @@ import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.time.Duration;
 import java.util.List;
@@ -21,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AuthServiceTest {
@@ -42,6 +48,11 @@ class AuthServiceTest {
                 new JwtProperties("", "", Duration.ofMinutes(30), Duration.ofDays(7), "test"));
         authService = new AuthService(userMapper, new BCryptPasswordEncoder(), jwtService,
                 refreshTokenService, platformRoleService);
+    }
+
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -110,5 +121,50 @@ class AuthServiceTest {
         when(refreshTokenService.validateAndGetUserId("bad")).thenReturn(null);
         BusinessException ex = assertThrows(BusinessException.class, () -> authService.refresh("bad"));
         assertEquals(ErrorCode.REFRESH_TOKEN_INVALID.getCode(), ex.getCode());
+    }
+
+    @Test
+    void changePasswordUpdatesHashAndRevokesRefreshTokens() {
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+        UserEntity user = new UserEntity();
+        user.setId(10L);
+        user.setUsername("alice");
+        user.setPasswordHash(encoder.encode("secret1"));
+        user.setStatus(UserStatus.ENABLED.getCode());
+        when(userMapper.selectById(10L)).thenReturn(user);
+        authenticateHumanUser(10L);
+
+        authService.changePassword(new ChangePasswordRequestDTO("secret1", "secret2"));
+
+        assertTrue(encoder.matches("secret2", user.getPasswordHash()));
+        verify(userMapper).updateById(user);
+        verify(refreshTokenService).revoke(10L);
+    }
+
+    @Test
+    void changePasswordRejectsWrongCurrentPassword() {
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+        UserEntity user = new UserEntity();
+        user.setId(10L);
+        user.setUsername("alice");
+        user.setPasswordHash(encoder.encode("secret1"));
+        user.setStatus(UserStatus.ENABLED.getCode());
+        when(userMapper.selectById(10L)).thenReturn(user);
+        authenticateHumanUser(10L);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> authService.changePassword(new ChangePasswordRequestDTO("wrong1", "secret2")));
+
+        assertEquals(ErrorCode.CURRENT_PASSWORD_INVALID.getCode(), ex.getCode());
+    }
+
+    private void authenticateHumanUser(Long userId) {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .subject(String.valueOf(userId))
+                .claim("scope", "user")
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
     }
 }

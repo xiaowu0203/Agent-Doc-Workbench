@@ -15,7 +15,11 @@
     <DataState :loading="loading" :error="errorMessage" @retry="loadOverview">
       <template v-if="!loading">
         <div class="overview-stats">
-          <article v-if="canReadDocuments" class="stat-card stat-card--blue surface-card">
+          <RouterLink
+            v-if="canReadDocuments"
+            class="stat-card stat-card--blue surface-card"
+            :to="{ name: 'space-documents', params: { spaceId: route.params.spaceId } }"
+          >
             <span class="stat-card__icon stat-card__icon--blue"
               ><el-icon><Document /></el-icon
             ></span>
@@ -24,8 +28,12 @@
               <strong>{{ documentStats.totalCount }}</strong>
               <small>较上月 {{ formatDocumentChange }}</small>
             </div>
-          </article>
-          <article v-if="canReadTasks" class="stat-card stat-card--green surface-card">
+          </RouterLink>
+          <RouterLink
+            v-if="canReadTasks"
+            class="stat-card stat-card--green surface-card"
+            :to="{ name: 'space-tasks', params: { spaceId: route.params.spaceId } }"
+          >
             <span class="stat-card__icon stat-card__icon--green"
               ><el-icon><Tickets /></el-icon
             ></span>
@@ -34,8 +42,12 @@
               <strong>{{ taskStats.totalCount }}</strong>
               <small>较昨日 {{ formatTaskChange }}</small>
             </div>
-          </article>
-          <article v-if="canReadChanges" class="stat-card stat-card--orange surface-card">
+          </RouterLink>
+          <RouterLink
+            v-if="canReadChanges"
+            class="stat-card stat-card--orange surface-card"
+            :to="{ name: 'space-approvals', params: { spaceId: route.params.spaceId } }"
+          >
             <span class="stat-card__icon stat-card__icon--orange"
               ><el-icon><Checked /></el-icon
             ></span>
@@ -44,8 +56,12 @@
               <strong>{{ pendingChangeStats.pendingCount }}</strong>
               <small>较昨日 {{ formatPendingChange }}</small>
             </div>
-          </article>
-          <article v-if="canReadUsage" class="stat-card stat-card--teal surface-card">
+          </RouterLink>
+          <RouterLink
+            v-if="canReadUsage"
+            class="stat-card stat-card--teal surface-card"
+            :to="{ name: 'space-usage', params: { spaceId: route.params.spaceId } }"
+          >
             <span class="stat-card__icon stat-card__icon--teal"
               ><el-icon><Coin /></el-icon
             ></span>
@@ -65,7 +81,7 @@
               </div>
               <small>{{ formatTokenUsage }}</small>
             </div>
-          </article>
+          </RouterLink>
         </div>
 
         <div class="overview-grid">
@@ -77,10 +93,13 @@
               <div>
                 <h2>最近文档</h2>
               </div>
-              <button type="button" class="overview-panel__view-all">
+              <RouterLink
+                class="overview-panel__view-all"
+                :to="{ name: 'space-documents', params: { spaceId: route.params.spaceId } }"
+              >
                 查看全部
                 <el-icon><ArrowRight /></el-icon>
-              </button>
+              </RouterLink>
             </header>
             <div v-if="recentDocumentPage.records.length" class="document-list">
               <div class="document-row document-row--header">
@@ -89,7 +108,15 @@
                 <span>最近更新</span>
                 <span>更新人</span>
               </div>
-              <div v-for="item in recentDocumentPage.records" :key="item.id" class="document-row">
+              <RouterLink
+                v-for="item in recentDocumentPage.records"
+                :key="item.id"
+                class="document-row"
+                :to="{
+                  name: 'space-documents',
+                  params: { spaceId: route.params.spaceId, documentId: item.id },
+                }"
+              >
                 <span class="document-row__name">
                   <el-icon
                     :class="
@@ -114,7 +141,7 @@
                 </el-tag>
                 <span class="document-row__updated">{{ formatTime(item.updatedAt) }}</span>
                 <span class="document-row__operator">{{ item.updatedByName || '—' }}</span>
-              </div>
+              </RouterLink>
             </div>
             <div v-else class="overview-panel__empty">当前空间还没有文档</div>
             <el-config-provider v-if="recentDocumentPage.total > 0" :locale="zhCn">
@@ -136,17 +163,24 @@
               <div>
                 <h2>执行动态</h2>
               </div>
-              <button type="button" class="overview-panel__view-all">
+              <RouterLink
+                class="overview-panel__view-all"
+                :to="{ name: 'space-tasks', params: { spaceId: route.params.spaceId } }"
+              >
                 查看全部
                 <el-icon><ArrowRight /></el-icon>
-              </button>
+              </RouterLink>
             </header>
             <div v-if="taskPage.records.length" class="task-list">
-              <div
+              <RouterLink
                 v-for="(task, index) in taskPage.records"
                 :key="task.id"
                 class="task-row"
                 :class="{ 'task-row--last': index === taskPage.records.length - 1 }"
+                :to="{
+                  name: 'space-task-detail',
+                  params: { spaceId: route.params.spaceId, taskId: task.id },
+                }"
               >
                 <div
                   class="task-row__marker"
@@ -168,7 +202,7 @@
                   </span>
                 </div>
                 <time class="task-row__time">{{ formatActivityTime(task.activityAt) }}</time>
-              </div>
+              </RouterLink>
             </div>
             <div v-else class="overview-panel__empty">当前空间还没有任务</div>
           </article>
@@ -178,13 +212,14 @@
               <div>
                 <h2>Agent 能力概览</h2>
               </div>
-              <button type="button" class="overview-panel__view-all">
-                查看全部
-                <el-icon><ArrowRight /></el-icon>
-              </button>
             </header>
             <div class="ability-grid">
-              <div v-for="card in abilityCards" :key="card.label" class="ability-card">
+              <RouterLink
+                v-for="card in abilityCards"
+                :key="card.label"
+                class="ability-card"
+                :to="{ name: card.routeName, params: { spaceId: route.params.spaceId } }"
+              >
                 <span :class="`ability-card__icon ability-card__icon--${card.tone}`">
                   <el-icon><component :is="card.icon" /></el-icon>
                 </span>
@@ -195,7 +230,7 @@
                   </div>
                   <span class="ability-card__status">{{ card.status }}</span>
                 </div>
-              </div>
+              </RouterLink>
             </div>
           </article>
 
@@ -207,13 +242,12 @@
               <div>
                 <h2>待处理事项</h2>
               </div>
-              <button type="button" class="overview-panel__view-all">
-                查看全部
-                <el-icon><ArrowRight /></el-icon>
-              </button>
             </header>
             <div class="pending-list">
-              <div class="pending-row pending-row--action">
+              <RouterLink
+                class="pending-row pending-row--action"
+                :to="{ name: 'space-approvals', params: { spaceId: route.params.spaceId } }"
+              >
                 <span class="pending-row__icon pending-row__icon--warning">
                   <el-icon><WarningFilled /></el-icon>
                 </span>
@@ -225,7 +259,7 @@
                   {{ pendingChangeStats.pendingCount }} 条
                 </span>
                 <el-icon class="pending-row__arrow"><ArrowRight /></el-icon>
-              </div>
+              </RouterLink>
               <div v-if="canReadUsage" class="pending-row pending-row--action">
                 <span class="pending-row__icon pending-row__icon--danger">
                   <el-icon><WarningFilled /></el-icon>
@@ -377,6 +411,7 @@ const abilityCards = computed(() =>
       ? null
       : {
           label: 'Agent',
+          routeName: 'space-agents',
           unit: '个 Agent',
           status: '运行正常',
           value: agentOverviewStats.value.activeAgentCount,
@@ -387,6 +422,7 @@ const abilityCards = computed(() =>
       ? null
       : {
           label: 'Skill',
+          routeName: 'space-skills',
           unit: '个 Skill',
           status: '已启用',
           value: agentOverviewStats.value.activeSkillCount,
@@ -397,6 +433,7 @@ const abilityCards = computed(() =>
       ? null
       : {
           label: 'MCP',
+          routeName: 'space-mcp-servers',
           unit: '个外部 MCP',
           status: '已连接',
           value: agentOverviewStats.value.enabledMcpCount,
@@ -605,10 +642,27 @@ onBeforeUnmount(() => controller?.abort())
 }
 .stat-card {
   display: flex;
+  width: 100%;
   min-height: 124px;
   align-items: center;
   gap: var(--adw-space-4);
   padding: var(--adw-space-4);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+.stat-card:hover,
+.stat-card:focus-visible {
+  border-color: var(--adw-color-primary);
+  box-shadow:
+    var(--adw-shadow-card),
+    0 0 0 3px var(--adw-color-primary-soft);
+}
+.stat-card:hover {
+  transform: translateY(-1px);
 }
 .stat-card__icon {
   display: inline-flex;
@@ -735,6 +789,7 @@ onBeforeUnmount(() => controller?.abort())
   background: transparent;
   font: inherit;
   cursor: pointer;
+  text-decoration: none;
 }
 .overview-panel__view-all .el-icon {
   font-size: 14px;
@@ -763,7 +818,13 @@ onBeforeUnmount(() => controller?.abort())
   grid-template-columns: minmax(0, 1.8fr) minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 0.7fr);
   gap: 0;
   padding: 0 var(--adw-space-3);
+  color: inherit;
   font-size: var(--adw-font-size-body);
+  text-decoration: none;
+}
+.document-row:not(.document-row--header):hover,
+.document-row:not(.document-row--header):focus-visible {
+  background: var(--adw-color-primary-soft);
 }
 .document-row--header {
   min-height: 42px;
@@ -876,6 +937,12 @@ onBeforeUnmount(() => controller?.abort())
   min-height: 52px;
   align-items: center;
   padding: 8px 0;
+  color: inherit;
+  text-decoration: none;
+}
+.overview-panel--activity .task-row:hover,
+.overview-panel--activity .task-row:focus-visible {
+  background: var(--adw-color-primary-soft);
 }
 .overview-panel--activity .task-row:not(.task-row--last)::before {
   position: absolute;
@@ -941,6 +1008,14 @@ onBeforeUnmount(() => controller?.abort())
   color: var(--adw-color-warning);
   background: #fff4df;
 }
+a.pending-row--action {
+  color: inherit;
+  text-decoration: none;
+}
+a.pending-row--action:hover,
+a.pending-row--action:focus-visible {
+  background: var(--adw-color-warning-soft);
+}
 .overview-panel--pending .pending-list {
   overflow: hidden;
   border: 1px solid var(--adw-border-color-light);
@@ -1004,6 +1079,12 @@ onBeforeUnmount(() => controller?.abort())
   gap: var(--adw-space-3);
   padding: 0 var(--adw-space-4);
   border-right: 1px solid var(--adw-border-color-light);
+  color: inherit;
+  text-decoration: none;
+}
+.ability-card:hover,
+.ability-card:focus-visible {
+  background: var(--adw-color-primary-soft);
 }
 .ability-card:last-child {
   border-right: 0;

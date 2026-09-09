@@ -32,12 +32,14 @@
     <section class="login-panel" aria-label="登录区域">
       <div class="login-card">
         <header class="login-card__header">
-          <span>欢迎回来</span>
-          <h2>登录工作台</h2>
-          <p>使用你的账号继续访问空间</p>
+          <span>{{ isRegisterMode ? '创建账号' : '欢迎回来' }}</span>
+          <h2>{{ isRegisterMode ? '注册工作台' : '登录工作台' }}</h2>
+          <p>
+            {{ isRegisterMode ? '创建账号开始使用文档协作工作台' : '使用你的账号继续访问空间' }}
+          </p>
         </header>
 
-        <div class="login-tabs" role="tablist" aria-label="登录方式">
+        <div v-if="!isRegisterMode" class="login-tabs" role="tablist" aria-label="登录方式">
           <button class="login-tabs__item login-tabs__item--active" role="tab" aria-selected="true">
             账号登录
           </button>
@@ -47,6 +49,7 @@
         </div>
 
         <el-form
+          v-if="!isRegisterMode"
           ref="formRef"
           :model="form"
           :rules="rules"
@@ -94,20 +97,102 @@
           </el-button>
         </el-form>
 
-        <div class="login-divider"><span>或使用以下方式</span></div>
+        <el-form
+          v-else
+          ref="registerFormRef"
+          :model="registerForm"
+          :rules="registerRules"
+          label-position="top"
+          size="large"
+          @submit.prevent="submitRegister"
+        >
+          <el-form-item label="用户名" prop="username">
+            <el-input
+              v-model="registerForm.username"
+              :prefix-icon="Message"
+              autocomplete="username"
+              placeholder="3-32 位字母、数字或下划线"
+              maxlength="32"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="昵称（可选）" prop="nickname">
+            <el-input
+              v-model="registerForm.nickname"
+              autocomplete="nickname"
+              placeholder="请输入昵称"
+              maxlength="50"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="邮箱（可选）" prop="email">
+            <el-input
+              v-model="registerForm.email"
+              :prefix-icon="Message"
+              autocomplete="email"
+              placeholder="请输入邮箱"
+              maxlength="100"
+              clearable
+            />
+          </el-form-item>
+          <el-form-item label="密码" prop="password">
+            <el-input
+              v-model="registerForm.password"
+              :prefix-icon="Lock"
+              autocomplete="new-password"
+              placeholder="请输入密码（6-64 位）"
+              show-password
+              type="password"
+            />
+          </el-form-item>
+          <el-form-item label="确认密码" prop="confirmPassword">
+            <el-input
+              v-model="registerForm.confirmPassword"
+              :prefix-icon="Lock"
+              autocomplete="new-password"
+              placeholder="请再次输入密码"
+              show-password
+              type="password"
+            />
+          </el-form-item>
 
-        <div class="login-providers">
-          <el-button size="large" @click="showComingSoon">
-            <el-icon><Platform /></el-icon>
-            GitHub 登录
-          </el-button>
-          <el-button size="large" @click="showComingSoon">
-            <el-icon><OfficeBuilding /></el-icon>
-            企业 OAuth2
-          </el-button>
-        </div>
+          <el-alert
+            v-if="errorMessage"
+            class="login-error"
+            :closable="false"
+            :title="errorMessage"
+            type="error"
+            show-icon
+          />
 
-        <p class="login-register">还没有账号？<button @click="showComingSoon">创建账号</button></p>
+          <el-button class="login-submit" type="primary" :loading="submitting" native-type="submit">
+            注册
+          </el-button>
+        </el-form>
+
+        <template v-if="!isRegisterMode">
+          <div class="login-divider"><span>或使用以下方式</span></div>
+
+          <div class="login-providers">
+            <el-button size="large" @click="showComingSoon">
+              <el-icon><Platform /></el-icon>
+              GitHub 登录
+            </el-button>
+            <el-button size="large" @click="showComingSoon">
+              <el-icon><OfficeBuilding /></el-icon>
+              企业 OAuth2
+            </el-button>
+          </div>
+        </template>
+
+        <p class="login-register">
+          <template v-if="!isRegisterMode">
+            还没有账号？<button type="button" @click="openRegister">创建账号</button>
+          </template>
+          <template v-else>
+            已有账号？<button type="button" @click="openLogin">返回登录</button>
+          </template>
+        </p>
       </div>
 
       <footer class="login-footer">
@@ -140,12 +225,14 @@ import {
   ElInput,
   ElMessage,
   type FormInstance,
+  type FormItemRule,
   type FormRules,
 } from 'element-plus'
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { normalizeApiError } from '@/api/errors'
+import { register } from '@/features/auth/api/auth-api'
 import BrandMark from '@/shared/components/BrandMark.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -153,9 +240,11 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref<FormInstance>()
+const registerFormRef = ref<FormInstance>()
 const submitting = ref(false)
-const rememberSession = ref(false)
+const rememberSession = ref(authStore.remembered)
 const errorMessage = ref('')
+const isRegisterMode = ref(false)
 const form = reactive({
   username: '',
   password: '',
@@ -164,9 +253,41 @@ const rules: FormRules<typeof form> = {
   username: [{ required: true, message: '请输入邮箱或用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
+const registerForm = reactive({
+  username: '',
+  nickname: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+})
+const validateConfirmPassword: FormItemRule['validator'] = (_rule, value, callback) => {
+  if (!value) callback(new Error('请确认密码'))
+  else if (value !== registerForm.password) callback(new Error('两次输入的密码不一致'))
+  else callback()
+}
+const registerRules: FormRules<typeof registerForm> = {
+  username: [
+    { required: true, min: 3, max: 32, message: '用户名长度为 3-32 位', trigger: 'blur' },
+    { pattern: /^[a-zA-Z0-9_]+$/, message: '用户名仅允许字母、数字、下划线', trigger: 'blur' },
+  ],
+  nickname: [{ max: 50, message: '昵称不能超过 50 个字符', trigger: 'blur' }],
+  email: [{ type: 'email', message: '邮箱格式不正确', trigger: 'blur' }],
+  password: [{ required: true, min: 6, max: 64, message: '密码长度为 6-64 位', trigger: 'blur' }],
+  confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }],
+}
 
 function showComingSoon(): void {
   ElMessage.info('即将支持')
+}
+
+function openRegister(): void {
+  isRegisterMode.value = true
+  errorMessage.value = ''
+}
+
+function openLogin(): void {
+  isRegisterMode.value = false
+  errorMessage.value = ''
 }
 
 async function submitLogin(): Promise<void> {
@@ -182,6 +303,31 @@ async function submitLogin(): Promise<void> {
     authStore.persistSession(rememberSession.value)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.replace(redirect.startsWith('/') ? redirect : '/')
+  } catch (error) {
+    errorMessage.value = normalizeApiError(error).message
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitRegister(): Promise<void> {
+  if (submitting.value || !(await registerFormRef.value?.validate().catch(() => false))) return
+
+  submitting.value = true
+  errorMessage.value = ''
+  try {
+    await register({
+      username: registerForm.username.trim(),
+      password: registerForm.password,
+      nickname: registerForm.nickname.trim() || undefined,
+      email: registerForm.email.trim() || undefined,
+    })
+    form.username = registerForm.username.trim()
+    form.password = ''
+    registerForm.password = ''
+    registerForm.confirmPassword = ''
+    isRegisterMode.value = false
+    ElMessage.success('注册成功，请登录')
   } catch (error) {
     errorMessage.value = normalizeApiError(error).message
   } finally {

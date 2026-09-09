@@ -1,5 +1,6 @@
 package com.agentdoc.auth.controller;
 
+import com.agentdoc.auth.pojo.dto.ChangePasswordRequestDTO;
 import com.agentdoc.auth.pojo.dto.LoginRequestDTO;
 import com.agentdoc.auth.pojo.dto.RefreshRequestDTO;
 import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
@@ -16,6 +17,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -24,9 +26,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 认证接口：注册、登录、刷新、登出、当前用户。
+ * 认证接口：注册、登录、刷新、登出、修改密码、当前用户。
  */
-@Tag(name = "认证", description = "注册、登录、刷新令牌、当前用户")
+@Tag(name = "认证", description = "注册、登录、刷新令牌、登出、修改密码、当前用户")
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -61,6 +63,13 @@ public class AuthController {
     @PostMapping("/logout")
     public Result<Void> logout(@Valid @RequestBody RefreshRequestDTO request) {
         authService.logout(request.refreshToken());
+        return Result.ok();
+    }
+
+    @Operation(summary = "修改密码")
+    @PutMapping("/password")
+    public Result<Void> changePassword(@Valid @RequestBody ChangePasswordRequestDTO request) {
+        authService.changePassword(request);
         return Result.ok();
     }
 

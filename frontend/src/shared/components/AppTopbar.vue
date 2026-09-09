@@ -25,22 +25,103 @@
       新建任务
     </el-button>
     <el-divider direction="vertical" />
-    <div class="app-topbar__user" :title="authStore.user?.username">
-      <span class="app-topbar__avatar">{{ initials }}</span>
-      <span class="app-topbar__username">{{
-        authStore.user?.nickname || authStore.user?.username || '当前用户'
-      }}</span>
-      <el-icon><ArrowDown /></el-icon>
-    </div>
+    <el-dropdown class="app-topbar__user-menu" trigger="click" @command="handleUserCommand">
+      <button
+        type="button"
+        class="app-topbar__user"
+        :title="authStore.user?.username"
+        aria-label="打开用户菜单"
+      >
+        <span class="app-topbar__avatar">{{ initials }}</span>
+        <span class="app-topbar__username">{{
+          authStore.user?.nickname || authStore.user?.username || '当前用户'
+        }}</span>
+        <el-icon><ArrowDown /></el-icon>
+      </button>
+      <template #dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="change-password">修改密码</el-dropdown-item>
+          <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+        </el-dropdown-menu>
+      </template>
+    </el-dropdown>
+
+    <el-dialog
+      v-model="passwordDialogVisible"
+      title="修改密码"
+      width="420px"
+      :close-on-click-modal="false"
+      @closed="resetPasswordForm"
+    >
+      <el-form
+        ref="passwordFormRef"
+        :model="passwordForm"
+        :rules="passwordRules"
+        label-position="top"
+        @submit.prevent="submitPasswordChange"
+      >
+        <el-form-item label="当前密码" prop="currentPassword">
+          <el-input
+            v-model="passwordForm.currentPassword"
+            type="password"
+            show-password
+            autocomplete="current-password"
+            placeholder="请输入当前密码"
+          />
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input
+            v-model="passwordForm.newPassword"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="请输入新密码（6-64 位）"
+          />
+        </el-form-item>
+        <el-form-item label="确认新密码" prop="confirmPassword">
+          <el-input
+            v-model="passwordForm.confirmPassword"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            placeholder="请再次输入新密码"
+          />
+        </el-form-item>
+        <el-alert v-if="passwordError" :title="passwordError" type="error" :closable="false" />
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="passwordSubmitting" @click="submitPasswordChange">
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
   </header>
 </template>
 
 <script setup lang="ts">
 import { ArrowDown, Expand, Fold, Plus, Search } from '@element-plus/icons-vue'
-import { ElButton, ElDivider, ElIcon } from 'element-plus'
-import { computed } from 'vue'
+import {
+  ElAlert,
+  ElButton,
+  ElDialog,
+  ElDivider,
+  ElDropdown,
+  ElDropdownItem,
+  ElDropdownMenu,
+  ElForm,
+  ElFormItem,
+  ElIcon,
+  ElInput,
+  ElMessage,
+  type FormInstance,
+  type FormItemRule,
+  type FormRules,
+} from 'element-plus'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { normalizeApiError } from '@/api/errors'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -51,6 +132,29 @@ defineEmits<{ 'toggle-sidebar': [] }>()
 const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
 const router = useRouter()
+const passwordDialogVisible = ref(false)
+const passwordSubmitting = ref(false)
+const passwordError = ref('')
+const passwordFormRef = ref<FormInstance>()
+const passwordForm = reactive({
+  currentPassword: '',
+  newPassword: '',
+  confirmPassword: '',
+})
+const validateConfirmPassword: FormItemRule['validator'] = (_rule, value, callback) => {
+  if (!value) callback(new Error('请确认新密码'))
+  else if (value !== passwordForm.newPassword) callback(new Error('两次输入的密码不一致'))
+  else callback()
+}
+const passwordRules: FormRules<typeof passwordForm> = {
+  currentPassword: [
+    { required: true, min: 6, max: 64, message: '当前密码长度为 6-64 位', trigger: 'blur' },
+  ],
+  newPassword: [
+    { required: true, min: 6, max: 64, message: '新密码长度为 6-64 位', trigger: 'blur' },
+  ],
+  confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }],
+}
 const initials = computed(() => {
   const name = authStore.user?.nickname || authStore.user?.username || 'AD'
   return name.slice(0, 2).toUpperCase()
@@ -60,6 +164,55 @@ function openTaskCreate(): void {
   if (workspaceStore.currentSpaceId !== null) {
     void router.push(`/spaces/${workspaceStore.currentSpaceId}/tasks/new`)
   }
+}
+
+function handleUserCommand(command: string | number | object): void {
+  if (command === 'change-password') {
+    passwordDialogVisible.value = true
+    passwordError.value = ''
+    return
+  }
+  if (command === 'logout') void logout()
+}
+
+async function logout(): Promise<void> {
+  try {
+    await authStore.logout()
+  } catch {
+    authStore.clearSession()
+  } finally {
+    workspaceStore.clearWorkspace()
+    await router.replace('/login')
+  }
+}
+
+async function submitPasswordChange(): Promise<void> {
+  if (passwordSubmitting.value || !(await passwordFormRef.value?.validate().catch(() => false))) {
+    return
+  }
+
+  passwordSubmitting.value = true
+  passwordError.value = ''
+  try {
+    await authStore.changePassword({
+      currentPassword: passwordForm.currentPassword,
+      newPassword: passwordForm.newPassword,
+    })
+    passwordDialogVisible.value = false
+    workspaceStore.clearWorkspace()
+    authStore.clearSession()
+    ElMessage.success('密码修改成功，请重新登录')
+    await router.replace('/login')
+  } catch (error) {
+    passwordError.value = normalizeApiError(error).message
+  } finally {
+    passwordSubmitting.value = false
+  }
+}
+
+function resetPasswordForm(): void {
+  passwordFormRef.value?.resetFields()
+  passwordError.value = ''
 }
 </script>
 
@@ -113,10 +266,25 @@ function openTaskCreate(): void {
 
 .app-topbar__user {
   display: flex;
+  padding: 0;
+  border: 0;
   align-items: center;
   gap: var(--adw-space-2);
   color: var(--adw-text-primary);
+  background: transparent;
+  cursor: pointer;
   white-space: nowrap;
+}
+
+.app-topbar__user:focus-visible {
+  outline: 2px solid var(--adw-color-primary);
+  outline-offset: 4px;
+  border-radius: var(--adw-radius-sm);
+}
+
+.app-topbar__user-menu {
+  display: flex;
+  align-items: center;
 }
 
 .app-topbar__avatar {

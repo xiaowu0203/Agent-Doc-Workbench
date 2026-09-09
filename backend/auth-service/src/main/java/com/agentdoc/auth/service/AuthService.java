@@ -1,6 +1,7 @@
 package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.enums.UserStatus;
+import com.agentdoc.auth.pojo.dto.ChangePasswordRequestDTO;
 import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
@@ -21,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * 认证服务：注册、登录、刷新、登出。
+ * 认证服务：注册、登录、刷新、登出、修改密码。
  */
 @Slf4j
 @Service
@@ -125,6 +126,26 @@ public class AuthService {
      */
     public void logout(String refreshToken) {
         refreshTokenService.revoke(refreshToken);
+    }
+
+    /**
+     * 修改当前用户密码，并撤销该用户现有刷新令牌，要求重新登录。
+     *
+     * @param request 修改密码请求
+     */
+    @Transactional
+    public void changePassword(ChangePasswordRequestDTO request) {
+        Long userId = AuthUtils.getUserIdOrException();
+        UserEntity user = userMapper.selectById(userId);
+        if (user == null || !UserStatus.isEnabled(user.getStatus())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.CURRENT_PASSWORD_INVALID);
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userMapper.updateById(user);
+        refreshTokenService.revoke(userId);
     }
 
     /**

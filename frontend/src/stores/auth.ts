@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 
-import { login as requestLogin, refresh as requestRefresh } from '@/features/auth/api/auth-api'
-import type { AuthSession, LoginRequest, User } from '@/features/auth/types'
+import {
+  changePassword as requestChangePassword,
+  login as requestLogin,
+  logout as requestLogout,
+  refresh as requestRefresh,
+} from '@/features/auth/api/auth-api'
+import type { AuthSession, ChangePasswordRequest, LoginRequest, User } from '@/features/auth/types'
 import { PLATFORM_ROLES } from '@/shared/constants/platform-roles'
 
 const LOCAL_SESSION_KEY = 'adw.auth.session'
@@ -42,6 +47,17 @@ export const useAuthStore = defineStore('auth', {
     async login(credentials: LoginRequest) {
       const session = await requestLogin(credentials)
       this.setSession(session)
+    },
+    async changePassword(credentials: ChangePasswordRequest) {
+      await requestChangePassword(credentials)
+    },
+    async logout() {
+      const refreshToken = this.refreshToken
+      try {
+        if (refreshToken) await requestLogout(refreshToken)
+      } finally {
+        this.clearSession()
+      }
     },
     setSession(session: AuthSession) {
       this.accessToken = session.accessToken

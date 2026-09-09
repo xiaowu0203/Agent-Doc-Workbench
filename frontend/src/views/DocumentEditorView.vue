@@ -1315,9 +1315,10 @@ async function loadTree(): Promise<void> {
     loadedTreeSpaceId = spaceId
     const currentId = selectedDocumentId.value
     if (currentId && findNode(tree.value, currentId)) {
+      revealNode(currentId)
       await loadDocument(currentId)
     } else if (!currentId && tree.value.length) {
-      await selectTreeNode(firstNode(tree.value)!)
+      await selectTreeNode(firstNode(tree.value)!, true)
     } else if (currentId) {
       documentDetail.value = null
       directoryDetail.value = null
@@ -1552,14 +1553,16 @@ function handleDocumentVisibilityChange(): void {
   refreshVisibleDocumentActivities()
 }
 
-async function selectTreeNode(node: DocumentTreeNodeData): Promise<void> {
+async function selectTreeNode(node: DocumentTreeNodeData, replace = false): Promise<void> {
   const spaceId = workspaceStore.currentSpaceId
   if (!spaceId || String(selectedDocumentId.value) === String(node.id)) return
   if (!(await flushDraftBeforeNavigation())) return
-  await router.push({
+  const location = {
     name: 'space-documents',
     params: { spaceId: String(spaceId), documentId: String(node.id) },
-  })
+  } as const
+  if (replace) await router.replace(location)
+  else await router.push(location)
 }
 
 async function renameTreeNode(payload: {
@@ -1633,6 +1636,18 @@ function expandAll(): void {
 
 function collapseAll(): void {
   expandedIds.value = new Set()
+}
+
+function revealNode(id: EntityId): void {
+  const path = findNodePath(tree.value, id)
+  if (!path) return
+  expandedIds.value = new Set([
+    ...expandedIds.value,
+    ...path
+      .slice(0, -1)
+      .filter((node) => node.children.length)
+      .map((node) => String(node.id)),
+  ])
 }
 
 function toggleAllExpansion(): void {
@@ -2540,11 +2555,13 @@ watch(
       return
     }
     if (!documentId) {
-      if (tree.value.length) void selectTreeNode(firstNode(tree.value)!)
+      if (tree.value.length) void selectTreeNode(firstNode(tree.value)!, true)
       return
     }
-    if (findNode(tree.value, documentId)) void loadDocument(documentId)
-    else void loadTree()
+    if (findNode(tree.value, documentId)) {
+      revealNode(documentId)
+      void loadDocument(documentId)
+    } else void loadTree()
   },
   { immediate: true },
 )
