@@ -11,11 +11,14 @@ import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchItemVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
@@ -50,6 +53,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -61,6 +65,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.CHANGE_REQUES
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT;
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
+import static com.agentdoc.common.enums.WorkbenchSearchType.DOCUMENT;
 
 /**
  * 文档核心服务
@@ -76,6 +81,56 @@ public class DocumentService {
     private final DocumentVersionService versionService;
     private final SpacePermissionService permissionService;
     private final AuthFeign authFeign;
+
+    /**
+     * 查询工作台全局搜索中的文档结果。
+     *
+     * @param request 已规范化的工作台搜索条件
+     * @return 文档搜索分组
+     */
+    public WorkbenchSearchGroupVO searchWorkbench(WorkbenchSearchQueryDTO request) {
+        permissionService.requirePermission(request.spaceId(), DOCUMENT_READ);
+        String keyword = request.keyword().trim();
+        LambdaQueryWrapper<DocumentEntity> wrapper = new LambdaQueryWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getSpaceId, request.spaceId())
+                .eq(DocumentEntity::getStatus, DocStatus.NORMAL.getCode())
+                .and(query -> query.like(DocumentEntity::getTitle, keyword)
+                        .or().like(DocumentEntity::getContent, keyword))
+                .orderByDesc(DocumentEntity::getUpdatedAt)
+                .orderByDesc(DocumentEntity::getId);
+        Page<DocumentEntity> page = documentMapper.selectPage(new Page<>(1, request.limitPerType()), wrapper);
+        Map<Long, String> directoryTitles = directoryService.list(request.spaceId(), DocStatus.NORMAL).stream()
+                .collect(Collectors.toMap(DocumentDirectoryEntity::getId, DocumentDirectoryEntity::getTitle));
+        List<WorkbenchSearchItemVO> records = page.getRecords().stream()
+                .map(document -> {
+                    DocType docType = DocType.fromCode(document.getDocType());
+                    String directoryTitle = directoryTitles.get(document.getDirectoryId());
+                    String subtitle = directoryTitle == null ? "空间根层" : directoryTitle;
+                    String excerpt = matchExcerpt(document.getContent(), keyword);
+                    if (excerpt != null) {
+                        subtitle += " · " + excerpt;
+                    }
+                    return new WorkbenchSearchItemVO(DOCUMENT, document.getId(), document.getTitle(), subtitle,
+                            docType == null ? null : docType.name(), document.getUpdatedAt());
+                })
+                .toList();
+        return new WorkbenchSearchGroupVO(records, page.getTotal());
+    }
+
+    /** 返回关键词附近的短文本，供搜索结果展示正文命中位置。 */
+    private String matchExcerpt(String value, String keyword) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String compact = value.replaceAll("\\s+", " ").trim();
+        int matchIndex = compact.toLowerCase(Locale.ROOT).indexOf(keyword.toLowerCase(Locale.ROOT));
+        if (matchIndex < 0) {
+            return null;
+        }
+        int start = Math.max(0, matchIndex - 24);
+        int end = Math.min(compact.length(), matchIndex + keyword.length() + 48);
+        return (start > 0 ? "…" : "") + compact.substring(start, end) + (end < compact.length() ? "…" : "");
+    }
 
     /**
      * 创建文档

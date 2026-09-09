@@ -523,11 +523,12 @@ const availableMcpServers = computed(() => {
 })
 
 watch(
-  () => props.open,
-  (open) => {
+  [() => props.open, () => props.agentId],
+  ([open]) => {
     if (open) void loadConfiguration()
     else loadSequence++
   },
+  { immediate: true },
 )
 
 async function loadConfiguration(): Promise<void> {

@@ -12,11 +12,15 @@ import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.pojo.param.AgentSearchParam;
 import com.agentdoc.agent.pojo.vo.AgentCardVO;
 import com.agentdoc.agent.pojo.vo.AgentVO;
+import com.agentdoc.common.constant.WorkbenchSearchConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchItemVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
@@ -36,6 +40,7 @@ import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
+import static com.agentdoc.common.enums.WorkbenchSearchType.AGENT;
 
 /**
  * Agent配置管理服务
@@ -147,6 +152,39 @@ public class AgentService {
                     summary.skillCount(), summary.mcpCount(), summary.toolCount());
         }).toList();
         return PageVO.of(records, page.getTotal(), param);
+    }
+
+    /**
+     * 查询工作台全局搜索中的 Agent 结果。
+     *
+     * @param request 已规范化的工作台搜索条件
+     * @return Agent 搜索分组
+     */
+    public WorkbenchSearchGroupVO searchWorkbench(WorkbenchSearchQueryDTO request) {
+        if (request == null || request.spaceId() == null || request.keyword() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "空间和搜索关键词不能为空");
+        }
+        String keyword = request.keyword().trim();
+        if (keyword.length() < WorkbenchSearchConstant.MIN_KEYWORD_LENGTH
+                || keyword.length() > WorkbenchSearchConstant.MAX_KEYWORD_LENGTH) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "搜索关键词长度必须为 2-100 个字符");
+        }
+        spaceAccessService.requirePermission(request.spaceId(), AGENT_READ);
+        int requestedLimit = request.limitPerType() == null
+                ? WorkbenchSearchConstant.DEFAULT_LIMIT_PER_TYPE : request.limitPerType();
+        int limit = Math.max(1, Math.min(requestedLimit, WorkbenchSearchConstant.MAX_LIMIT_PER_TYPE));
+        LambdaQueryWrapper<AgentEntity> wrapper = new LambdaQueryWrapper<AgentEntity>()
+                .eq(AgentEntity::getSpaceId, request.spaceId())
+                .and(query -> query.like(AgentEntity::getName, keyword)
+                        .or().like(AgentEntity::getDescription, keyword))
+                .orderByDesc(AgentEntity::getUpdatedAt)
+                .orderByDesc(AgentEntity::getId);
+        Page<AgentEntity> page = agentMapper.selectPage(new Page<>(1, limit), wrapper);
+        List<WorkbenchSearchItemVO> records = page.getRecords().stream()
+                .map(agent -> new WorkbenchSearchItemVO(AGENT, agent.getId(), agent.getName(),
+                        agent.getDescription(), AgentStatus.fromCode(agent.getStatus()).name(), agent.getUpdatedAt()))
+                .toList();
+        return new WorkbenchSearchGroupVO(records, page.getTotal());
     }
 
     /**

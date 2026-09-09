@@ -9,11 +9,16 @@
       <el-icon :size="22"><Fold v-if="!collapsed" /><Expand v-else /></el-icon>
     </el-button>
 
-    <div class="app-topbar__search" role="search" aria-label="全局搜索（尚未开放）">
+    <button
+      type="button"
+      class="app-topbar__search"
+      aria-label="打开全局搜索"
+      @click="searchVisible = true"
+    >
       <el-icon><Search /></el-icon>
       <span>搜索文档、任务或 Agent</span>
       <kbd>⌘ K</kbd>
-    </div>
+    </button>
 
     <div class="app-topbar__spacer" />
     <el-button type="primary" @click="openSpaceCreate">
@@ -143,6 +148,8 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <GlobalSearchDialog v-model="searchVisible" @create-space="openSpaceCreate" />
   </header>
 </template>
 
@@ -170,6 +177,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { normalizeApiError } from '@/api/errors'
+import GlobalSearchDialog from '@/features/search/components/GlobalSearchDialog.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -181,6 +189,7 @@ const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
 const router = useRouter()
 const passwordDialogVisible = ref(false)
+const searchVisible = ref(false)
 const spaceDialogVisible = ref(false)
 const spaceSubmitting = ref(false)
 const spaceDeleting = ref(false)
@@ -357,6 +366,17 @@ function resetPasswordForm(): void {
   color: var(--adw-text-tertiary);
   background: var(--adw-surface-muted);
   font-size: var(--adw-font-size-body);
+  cursor: pointer;
+  text-align: left;
+}
+
+.app-topbar__search:hover {
+  border-color: var(--adw-color-primary);
+}
+
+.app-topbar__search:focus-visible {
+  outline: 2px solid var(--adw-color-primary);
+  outline-offset: 2px;
 }
 
 .app-topbar__search kbd {

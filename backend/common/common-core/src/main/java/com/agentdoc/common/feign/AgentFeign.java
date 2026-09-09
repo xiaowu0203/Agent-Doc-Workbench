@@ -6,6 +6,7 @@ import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
+import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
@@ -14,6 +15,7 @@ import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
 import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,6 +48,10 @@ public interface AgentFeign {
      */
     @PostMapping("/api/agent/internal/agents/task-options/query")
     Result<List<AgentTaskOptionVO>> queryTaskOptions(@RequestBody AgentTaskOptionQueryDTO request);
+
+    /** 查询工作台 Agent 搜索结果。 */
+    @PostMapping("/api/agent/internal/agents/workbench-search")
+    Result<WorkbenchSearchGroupVO> searchWorkbench(@RequestBody WorkbenchSearchQueryDTO request);
 
     /**
      * 按工作台任务查询脱敏执行审计。

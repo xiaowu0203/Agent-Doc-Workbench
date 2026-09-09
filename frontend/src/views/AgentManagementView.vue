@@ -139,7 +139,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   deleteAgent,
@@ -165,6 +165,7 @@ import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 const route = useRoute()
+const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const keyword = ref('')
 const statusFilter = ref<'ALL' | AgentStatus>('ALL')
@@ -206,6 +207,21 @@ watch(spaceId, () => {
   void loadModels()
   void loadStats()
   void loadAgents()
+})
+watch(
+  () => route.query.agentId,
+  (agentId) => {
+    if (typeof agentId !== 'string' || !agentId) return
+    selectedAgentId.value = agentId
+    drawerOpen.value = true
+  },
+  { immediate: true },
+)
+watch(drawerOpen, (open) => {
+  if (open || !route.query.agentId) return
+  const query = { ...route.query }
+  delete query.agentId
+  void router.replace({ query })
 })
 
 async function loadAgents(): Promise<void> {

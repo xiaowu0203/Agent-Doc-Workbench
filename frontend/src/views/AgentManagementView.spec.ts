@@ -47,7 +47,7 @@ const agent: AgentCard = {
   updatedAt: '2026-09-03T09:00:00Z',
 }
 
-async function mountView(permissions: string[]) {
+async function mountView(permissions: string[], location = '/spaces/7/agents') {
   const pinia = createPinia()
   setActivePinia(pinia)
   const workspaceStore = useWorkspaceStore()
@@ -62,7 +62,7 @@ async function mountView(permissions: string[]) {
     history: createMemoryHistory(),
     routes: [{ path: '/spaces/:spaceId/agents', component: AgentManagementView }],
   })
-  await router.push('/spaces/7/agents')
+  await router.push(location)
   await router.isReady()
   const wrapper = mount(AgentManagementView, { global: { plugins: [pinia, router] } })
   await flushPromises()
@@ -70,6 +70,7 @@ async function mountView(permissions: string[]) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.mocked(agentApi.searchAgents).mockResolvedValue({
     records: [agent],
     total: 6,
@@ -120,5 +121,11 @@ describe('AgentManagementView', () => {
     expect(wrapper.text()).not.toContain('新建 Agent')
     expect(wrapper.find('[aria-label="Agent 操作"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('查看')
+  })
+
+  it('loads the selected Agent when opened from a search result', async () => {
+    await mountView([SPACE_PERMISSIONS.AGENT_READ], '/spaces/7/agents?agentId=41')
+
+    expect(agentApi.getAgent).toHaveBeenCalledWith('41')
   })
 })

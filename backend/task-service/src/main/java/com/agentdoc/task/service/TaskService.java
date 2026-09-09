@@ -2,6 +2,7 @@ package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.constant.WorkbenchSearchConstant;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -12,6 +13,7 @@ import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
@@ -19,6 +21,8 @@ import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchItemVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
@@ -66,6 +70,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
@@ -75,6 +80,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_EXPORT;
+import static com.agentdoc.common.enums.WorkbenchSearchType.TASK;
 
 /**
  * 任务业务服务
@@ -243,6 +249,65 @@ public class TaskService {
         }
         // 批量拉取Agent、文档、用户信息，组装列表VO
         return PageVO.of(toListItems(tasks), page.getTotal(), param);
+    }
+
+    /**
+     * 查询工作台全局搜索中的任务结果，仅回填结果页需要的 Agent 名称。
+     *
+     * @param request 已规范化的工作台搜索条件
+     * @return 任务搜索分组
+     */
+    public WorkbenchSearchGroupVO searchWorkbench(WorkbenchSearchQueryDTO request) {
+        if (request == null || request.spaceId() == null || request.keyword() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "空间和搜索关键词不能为空");
+        }
+        String keyword = request.keyword().trim();
+        if (keyword.length() < WorkbenchSearchConstant.MIN_KEYWORD_LENGTH
+                || keyword.length() > WorkbenchSearchConstant.MAX_KEYWORD_LENGTH) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "搜索关键词长度必须为 2-100 个字符");
+        }
+        requirePermission(request.spaceId(), TASK_READ);
+        TaskSearchParam param = new TaskSearchParam();
+        param.setSpaceId(request.spaceId());
+        param.setKeyword(keyword);
+        param.setPageNum(1);
+        int requestedLimit = request.limitPerType() == null
+                ? WorkbenchSearchConstant.DEFAULT_LIMIT_PER_TYPE : request.limitPerType();
+        param.setPageSize(Math.max(1, Math.min(requestedLimit, WorkbenchSearchConstant.MAX_LIMIT_PER_TYPE)));
+        validateSearchParam(param);
+        Page<TaskEntity> page = taskMapper.selectPage(
+                new Page<>(param.getPageNum(), param.getPageSize()), buildSearchWrapper(param));
+        Map<Long, AgentRefVO> agents = fetchAgents(page.getRecords().stream()
+                .map(TaskEntity::getAgentId).filter(Objects::nonNull).distinct().toList());
+        List<WorkbenchSearchItemVO> records = page.getRecords().stream()
+                .map(task -> {
+                    AgentRefVO agent = agents.get(task.getAgentId());
+                    String subtitle = agent == null ? task.getTaskNo() : task.getTaskNo() + " · " + agent.name();
+                    String excerpt = matchExcerpt(task.getInstruction(), keyword);
+                    if (excerpt != null) {
+                        subtitle += " · " + excerpt;
+                    }
+                    TaskStatus status = TaskStatus.fromCode(task.getStatus());
+                    return new WorkbenchSearchItemVO(TASK, task.getId(), task.getName(), subtitle,
+                            status == null ? null : status.name(), task.getUpdatedAt());
+                })
+                .toList();
+        return new WorkbenchSearchGroupVO(records, page.getTotal());
+    }
+
+    /** 返回关键词附近的短文本，供搜索结果展示任务指令命中位置。 */
+    private String matchExcerpt(String value, String keyword) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String compact = value.replaceAll("\\s+", " ").trim();
+        int matchIndex = compact.toLowerCase(Locale.ROOT).indexOf(keyword.toLowerCase(Locale.ROOT));
+        if (matchIndex < 0) {
+            return null;
+        }
+        int start = Math.max(0, matchIndex - 24);
+        int end = Math.min(compact.length(), matchIndex + keyword.length() + 48);
+        return (start > 0 ? "…" : "") + compact.substring(start, end) + (end < compact.length() ? "…" : "");
     }
 
     /**

@@ -2,11 +2,14 @@ package com.agentdoc.agent.controller;
 
 import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
+import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,5 +48,12 @@ public class InternalAgentController {
     @PostMapping("/task-options/query")
     public Result<List<AgentTaskOptionVO>> queryTaskOptions(@RequestBody AgentTaskOptionQueryDTO request) {
         return Result.ok(agentService.listTaskOptions(request.spaceId(), request.documentId()));
+    }
+
+    @Operation(summary = "查询工作台 Agent 搜索结果")
+    @RequireLogin
+    @PostMapping("/workbench-search")
+    public Result<WorkbenchSearchGroupVO> searchWorkbench(@RequestBody WorkbenchSearchQueryDTO request) {
+        return Result.ok(agentService.searchWorkbench(request));
     }
 }

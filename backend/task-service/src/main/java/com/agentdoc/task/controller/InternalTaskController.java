@@ -6,7 +6,9 @@ import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.DocumentVersionRollbackAuditDTO;
 import com.agentdoc.common.feign.dto.DocumentVersionSourceQueryDTO;
 import com.agentdoc.common.feign.dto.SpaceRoleAuditDTO;
+import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentVersionSourceVO;
+import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
 import com.agentdoc.task.service.DocumentVersionAuditService;
 import com.agentdoc.task.service.DocumentVersionSourceQueryService;
 import com.agentdoc.task.service.AuditLogService;
@@ -74,5 +76,12 @@ public class InternalTaskController {
     public Result<Void> recordSpaceRoleAudit(@RequestBody SpaceRoleAuditDTO request) {
         auditLogService.recordSpaceRoleAudit(request);
         return Result.ok();
+    }
+
+    @Operation(summary = "查询工作台任务搜索结果")
+    @RequireLogin
+    @PostMapping("/workbench-search")
+    public Result<WorkbenchSearchGroupVO> searchWorkbench(@RequestBody WorkbenchSearchQueryDTO request) {
+        return Result.ok(taskService.searchWorkbench(request));
     }
 }
