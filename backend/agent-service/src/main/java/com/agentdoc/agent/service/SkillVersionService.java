@@ -232,6 +232,9 @@ public class SkillVersionService {
      * @return ZIP输入流
      */
     public InputStream download(Long skillId, Long versionId) {
+        SkillEntity skill = skillService.require(skillId);
+        // 下载包含 Skill 完整实现，只允许具备 Skill 管理权限的成员执行。
+        skillService.requireManage(skill.getSpaceId());
         SkillVersionEntity version = detail(skillId, versionId);
         return storage.get(version.getStorageKey());
     }

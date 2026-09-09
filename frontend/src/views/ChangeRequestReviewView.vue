@@ -217,9 +217,10 @@
               </p>
             </section>
 
-            <section class="inspector-section">
+            <section v-if="canReview || detail.reviewComment" class="inspector-section">
               <h3>审批意见</h3>
               <el-input
+                v-if="canReview"
                 v-model="reviewComment"
                 type="textarea"
                 :rows="4"

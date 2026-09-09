@@ -20,6 +20,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -55,6 +58,15 @@ public class TaskController {
     @PostMapping("/search")
     public Result<PageVO<TaskListItemVO>> search(@Valid @RequestBody TaskSearchParam param) {
         return Result.ok(taskService.search(param));
+    }
+
+    @Operation(summary = "导出空间执行记录")
+    @PostMapping(value = "/export", produces = "text/csv")
+    public ResponseEntity<byte[]> export(@Valid @RequestBody TaskSearchParam param) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''usage-executions.csv")
+                .body(taskService.export(param));
     }
 
     @Operation(summary = "查询新建任务可用选项")

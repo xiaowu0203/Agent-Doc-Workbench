@@ -41,6 +41,7 @@ Thumbs.db
 .env.local
 *.pem
 *.key
+/backend/.secrets/
 
 # === Logs ===
 logs/

@@ -117,7 +117,9 @@
                     </el-tag>
                   </div>
                   <div class="skill-version__actions">
-                    <el-button link @click="downloadVersion(version)">下载</el-button>
+                    <el-button v-if="canManage" link @click="downloadVersion(version)"
+                      >下载</el-button
+                    >
                     <el-button
                       v-if="canManage && version.status === 'DRAFT'"
                       type="primary"
@@ -253,7 +255,10 @@ const bindings = ref<SkillAgentBinding[]>([])
 const publishingId = ref<SkillVersion['id'] | null>(null)
 const versionFileInput = ref<HTMLInputElement | null>(null)
 const onlineDialogOpen = ref(false)
-const packageBuilder = ref<{ buildPackage: () => Promise<File>; reset: () => void } | null>(null)
+const packageBuilder = ref<{
+  buildPackage: () => Promise<globalThis.File>
+  reset: () => void
+} | null>(null)
 
 watch(
   () => [props.open, props.skill?.id] as const,

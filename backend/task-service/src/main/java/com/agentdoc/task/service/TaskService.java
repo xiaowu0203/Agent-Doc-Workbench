@@ -60,6 +60,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -73,6 +74,7 @@ import java.util.stream.Collectors;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_EXPORT;
 
 /**
  * 任务业务服务
@@ -218,11 +220,44 @@ public class TaskService {
      */
     public PageVO<TaskListItemVO> search(TaskSearchParam param) {
         requirePermission(param.getSpaceId(), TASK_READ);
+        validateSearchParam(param);
+        LambdaQueryWrapper<TaskEntity> wrapper = buildSearchWrapper(param);
+
+        Page<TaskEntity> page = taskMapper.selectPage(
+                new Page<>(param.getPageNum(), param.getPageSize()), wrapper);
+        List<TaskEntity> tasks = page.getRecords();
+        if (tasks.isEmpty()) {
+            return PageVO.of(List.of(), page.getTotal(), param);
+        }
+        return PageVO.of(toListItems(tasks), page.getTotal(), param);
+    }
+
+    /**
+     * 导出空间执行记录。导出是独立的高权限操作，不能通过任务分页查询绕过权限。
+     */
+    public byte[] export(TaskSearchParam param) {
+        requirePermission(param.getSpaceId(), USAGE_EXPORT);
+        validateSearchParam(param);
+        List<TaskEntity> tasks = taskMapper.selectList(buildSearchWrapper(param));
+        StringBuilder csv = new StringBuilder("\uFEFF");
+        appendCsvRow(csv, "任务编号", "任务名称", "Agent", "Token", "状态", "开始时间", "结束时间");
+        for (TaskListItemVO task : toListItems(tasks)) {
+            appendCsvRow(csv, task.taskNo(), task.name(),
+                    task.agentName() == null ? task.agentId() : task.agentName(), task.tokensUsed(),
+                    task.status() == null ? null : task.status().getName(), task.startTime(), task.endTime());
+        }
+        return csv.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private void validateSearchParam(TaskSearchParam param) {
         param.validate();
         if (param.getStartedFrom() != null && param.getStartedTo() != null
                 && !param.getStartedFrom().isBefore(param.getStartedTo())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "任务执行时间范围不合法");
         }
+    }
+
+    private LambdaQueryWrapper<TaskEntity> buildSearchWrapper(TaskSearchParam param) {
         LambdaQueryWrapper<TaskEntity> wrapper = new LambdaQueryWrapper<TaskEntity>()
                 .eq(TaskEntity::getSpaceId, param.getSpaceId())
                 .orderByDesc(TaskEntity::getCreatedAt)
@@ -236,10 +271,7 @@ public class TaskService {
         if (param.getModelId() != null) {
             List<Long> taskIds = tokenUsageDetailMapper.listTaskIdsByModelAndDate(
                     param.getSpaceId(), param.getModelId(), param.getStartedFrom(), param.getStartedTo());
-            if (taskIds.isEmpty()) {
-                return PageVO.of(List.of(), 0, param);
-            }
-            wrapper.in(TaskEntity::getId, taskIds);
+            wrapper.in(TaskEntity::getId, taskIds.isEmpty() ? List.of(-1L) : taskIds);
         }
         if (param.getDocumentId() != null) {
             wrapper.eq(TaskEntity::getDocumentId, param.getDocumentId());
@@ -256,24 +288,31 @@ public class TaskService {
                     .or().like(TaskEntity::getInstruction, keyword)
                     .or().like(TaskEntity::getTaskNo, keyword));
         }
+        return wrapper;
+    }
 
-        Page<TaskEntity> page = taskMapper.selectPage(
-                new Page<>(param.getPageNum(), param.getPageSize()), wrapper);
-        List<TaskEntity> tasks = page.getRecords();
-        if (tasks.isEmpty()) {
-            return PageVO.of(List.of(), page.getTotal(), param);
-        }
+    private List<TaskListItemVO> toListItems(List<TaskEntity> tasks) {
         Map<Long, AgentRefVO> agents = fetchAgents(tasks.stream()
                 .map(TaskEntity::getAgentId).filter(Objects::nonNull).distinct().toList());
         Map<Long, DocumentRefVO> documents = fetchDocuments(tasks.stream()
                 .map(TaskEntity::getDocumentId).filter(Objects::nonNull).distinct().toList());
         Map<Long, UserRefVO> users = fetchUsers(tasks.stream()
                 .map(TaskEntity::getCreatedBy).filter(Objects::nonNull).distinct().toList());
-        List<TaskListItemVO> records = tasks.stream()
+        return tasks.stream()
                 .map(task -> TaskConvertor.toListItemVO(task, agents.get(task.getAgentId()),
                         documents.get(task.getDocumentId()), users.get(task.getCreatedBy())))
                 .toList();
-        return PageVO.of(records, page.getTotal(), param);
+    }
+
+    private void appendCsvRow(StringBuilder csv, Object... values) {
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) {
+                csv.append(',');
+            }
+            String value = values[i] == null ? "" : String.valueOf(values[i]);
+            csv.append('"').append(value.replace("\"", "\"\"")).append('"');
+        }
+        csv.append("\r\n");
     }
 
     private Map<Long, AgentRefVO> fetchAgents(List<Long> agentIds) {

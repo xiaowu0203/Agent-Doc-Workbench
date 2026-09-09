@@ -9,7 +9,7 @@
           <el-option label="近 7 天" :value="7" />
           <el-option label="近 30 天" :value="30" />
         </el-select>
-        <el-button :loading="exporting" @click="exportRecords">
+        <el-button v-if="canExport" :loading="exporting" @click="exportRecords">
           <el-icon><Download /></el-icon>
           导出执行记录
         </el-button>
@@ -407,7 +407,11 @@ import { listAgents, listModels, type AgentOption } from '@/features/agent/api/a
 import type { ModelOption } from '@/features/agent/types'
 import { getTaskExecutionDetail, searchTasks } from '@/features/task/api/task-api'
 import type { TaskExecutionDetail, TaskListItem, TaskPage, TaskStatus } from '@/features/task/types'
-import { queryAuditLogs, queryUsageDashboard } from '@/features/usage/api/usage-api'
+import {
+  exportUsageRecords,
+  queryAuditLogs,
+  queryUsageDashboard,
+} from '@/features/usage/api/usage-api'
 import type { AuditLogPage, ToolSource, UsageDashboard } from '@/features/usage/types'
 import EChartCanvas from '@/features/usage/components/EChartCanvas.vue'
 import UsageMetricCard, { type MetricChange } from '@/features/usage/components/UsageMetricCard.vue'
@@ -459,6 +463,7 @@ let loadSequence = 0
 let toolCallLoadSequence = 0
 
 const canReadAudit = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.AUDIT_READ))
+const canExport = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.USAGE_EXPORT))
 const hasTrendData = computed(() => dashboard.value?.trend.some((item) => item.hasData) ?? false)
 const statusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: 'COMPLETED', label: '已完成' },
@@ -837,29 +842,18 @@ function goToTaskDetail() {
 
 async function exportRecords() {
   const spaceId = workspaceStore.currentSpaceId
-  if (spaceId === null) return
+  if (spaceId === null || !canExport.value) return
   exporting.value = true
   try {
-    const first = await loadTasks(spaceId, 1, 100)
-    const records = [...first.records]
-    const pageCount = Math.ceil(first.total / 100)
-    for (let page = 2; page <= pageCount; page += 1) {
-      records.push(...(await loadTasks(spaceId, page, 100)).records)
-    }
-    const rows = [
-      ['任务编号', '任务名称', 'Agent', 'Token', '状态', '开始时间', '结束时间'],
-      ...records.map((item) => [
-        item.taskNo,
-        item.name,
-        item.agentName || String(item.agentId),
-        item.tokensUsed ?? '',
-        statusLabel(item.status),
-        item.startTime || '',
-        item.endTime || '',
-      ]),
-    ]
-    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(',')).join('\r\n')}`
-    const url = URL.createObjectURL(new window.Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const csv = await exportUsageRecords({
+      spaceId,
+      agentId: filters.agentId,
+      modelId: filters.modelId,
+      status: filters.status,
+      startedFrom: `${dateRange.value[0]}T00:00:00`,
+      startedTo: `${addDays(dateRange.value[1], 1)}T00:00:00`,
+    })
+    const url = URL.createObjectURL(csv)
     const link = document.createElement('a')
     link.href = url
     link.download = `usage-executions-${dateRange.value[0]}-${dateRange.value[1]}.csv`
@@ -984,10 +978,6 @@ function toolCallStatusLabel(status: string) {
 
 function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 'info' {
   return status === 'SUCCEEDED' ? 'success' : status === 'FAILED' ? 'danger' : 'warning'
-}
-
-function csvCell(value: unknown) {
-  return `"${String(value ?? '').replaceAll('"', '""')}"`
 }
 </script>
 

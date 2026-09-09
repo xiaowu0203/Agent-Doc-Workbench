@@ -25,6 +25,7 @@ export const SPACE_PERMISSIONS = {
   CHANGE_REQUEST_APPROVE: 'change_request:approve',
   CHANGE_REQUEST_MERGE: 'change_request:merge',
   USAGE_READ: 'usage:read',
+  USAGE_EXPORT: 'usage:export',
   AUDIT_READ: 'audit:read',
 } as const
 
