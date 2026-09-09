@@ -2,6 +2,8 @@ package com.agentdoc.document.service;
 
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.pojo.dto.PageParam;
+import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.document.mapper.DocumentDirectoryMapper;
@@ -12,6 +14,7 @@ import com.agentdoc.document.pojo.entity.DocumentDirectoryEntity;
 import com.agentdoc.document.pojo.vo.DocumentDirectoryVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +28,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 
 /**
  * 文档目录服务
@@ -221,6 +225,37 @@ public class DocumentDirectoryService {
     }
 
     /**
+     * 分页查询当前空间已归档目录。
+     *
+     * @param spaceId 空间 ID
+     * @param pageParam 分页参数
+     * @return 归档目录分页结果
+     */
+    public PageVO<DocumentDirectoryVO> trashList(Long spaceId, PageParam pageParam) {
+        permissionService.requirePermission(spaceId, DOCUMENT_READ);
+        Page<DocumentDirectoryEntity> page = directoryMapper.selectPage(
+                new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
+                new LambdaQueryWrapper<DocumentDirectoryEntity>()
+                        .eq(DocumentDirectoryEntity::getSpaceId, spaceId)
+                        .eq(DocumentDirectoryEntity::getStatus, DocStatus.ARCHIVED.getCode())
+                        .orderByDesc(DocumentDirectoryEntity::getUpdatedAt));
+        Set<Long> parentIds = page.getRecords().stream()
+                .map(DocumentDirectoryEntity::getParentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, DocumentDirectoryEntity> parentDirectories = parentIds.isEmpty()
+                ? Map.of()
+                : directoryMapper.selectList(new LambdaQueryWrapper<DocumentDirectoryEntity>()
+                                .eq(DocumentDirectoryEntity::getSpaceId, spaceId)
+                                .in(DocumentDirectoryEntity::getId, parentIds))
+                        .stream()
+                        .collect(Collectors.toMap(DocumentDirectoryEntity::getId, directory -> directory));
+        return PageVO.of(page.getRecords().stream()
+                .map(directory -> toVO(directory, parentDirectories.get(directory.getParentId())))
+                .toList(), page.getTotal(), pageParam);
+    }
+
+    /**
      * 根据id查询目录，不存在抛出异常
      * @param id 目录ID
      * @return 目录实体
@@ -316,6 +351,13 @@ public class DocumentDirectoryService {
     private DocumentDirectoryVO toVO(DocumentDirectoryEntity directory) {
         return new DocumentDirectoryVO(directory.getId(), directory.getSpaceId(), directory.getParentId(),
                 directory.getTitle(), DocStatus.fromCode(directory.getStatus()), directory.getCreatedAt(),
-                directory.getUpdatedAt());
+                directory.getUpdatedAt(), null, null);
+    }
+
+    private DocumentDirectoryVO toVO(DocumentDirectoryEntity directory, DocumentDirectoryEntity parentDirectory) {
+        return new DocumentDirectoryVO(directory.getId(), directory.getSpaceId(), directory.getParentId(),
+                directory.getTitle(), DocStatus.fromCode(directory.getStatus()), directory.getCreatedAt(),
+                directory.getUpdatedAt(), parentDirectory == null ? null : parentDirectory.getTitle(),
+                parentDirectory == null ? null : DocStatus.fromCode(parentDirectory.getStatus()));
     }
 }

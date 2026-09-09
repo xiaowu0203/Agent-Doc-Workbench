@@ -34,10 +34,12 @@ export function queryUsageDashboard(
 export function queryAuditLogs(
   payload: {
     spaceId: EntityId
-    createdFrom: string
-    createdTo: string
+    createdFrom?: string
+    createdTo?: string
     pageNum: number
     pageSize: number
+    targetType?: string
+    targetId?: EntityId
   },
   signal?: AbortSignal,
 ): Promise<AuditLogPage> {

@@ -5,13 +5,16 @@ import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
+import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
+import com.agentdoc.common.pojo.vo.PageVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -50,6 +53,11 @@ public interface AgentFeign {
     @GetMapping("/api/agent/executions/by-task/{taskId}")
     Result<AgentExecutionAuditVO> getExecutionAudit(@PathVariable Long taskId,
                                                     @RequestParam Long spaceId);
+
+    /** 分页查询工作台任务对应的 Agent 工具调用。 */
+    @PostMapping("/api/agent/executions/tool-calls/query")
+    Result<PageVO<AgentToolCallVO>> getToolCalls(
+            @RequestBody AgentToolCallPageQueryDTO request);
 
     /** 内部同步用 Token 投影，不要求用户登录且不暴露执行审计明细。 */
     @GetMapping("/api/agent/internal/executions/by-task/{taskId}/token-usage")

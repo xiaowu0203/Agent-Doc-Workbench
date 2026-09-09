@@ -16,13 +16,18 @@
     </div>
 
     <div class="app-topbar__spacer" />
-    <el-button
-      v-if="workspaceStore.hasPermission(SPACE_PERMISSIONS.TASK_CREATE)"
-      type="primary"
-      @click="openTaskCreate"
-    >
+    <el-button type="primary" @click="openSpaceCreate">
       <el-icon><Plus /></el-icon>
-      新建任务
+      创建空间
+    </el-button>
+    <el-button
+      v-if="canDeleteSpace"
+      type="danger"
+      plain
+      :loading="spaceDeleting"
+      @click="deleteCurrentSpace"
+    >
+      删除空间
     </el-button>
     <el-divider direction="vertical" />
     <el-dropdown class="app-topbar__user-menu" trigger="click" @command="handleUserCommand">
@@ -45,6 +50,48 @@
         </el-dropdown-menu>
       </template>
     </el-dropdown>
+
+    <el-dialog
+      v-model="spaceDialogVisible"
+      title="创建空间"
+      width="460px"
+      :close-on-click-modal="false"
+      @closed="resetSpaceForm"
+    >
+      <el-form
+        ref="spaceFormRef"
+        :model="spaceForm"
+        :rules="spaceRules"
+        label-position="top"
+        @submit.prevent="submitSpaceCreate"
+      >
+        <el-form-item label="空间名称" prop="name">
+          <el-input
+            v-model="spaceForm.name"
+            maxlength="100"
+            show-word-limit
+            placeholder="请输入空间名称"
+          />
+        </el-form-item>
+        <el-form-item label="空间描述" prop="description">
+          <el-input
+            v-model="spaceForm.description"
+            type="textarea"
+            :rows="4"
+            maxlength="500"
+            show-word-limit
+            placeholder="可选"
+          />
+        </el-form-item>
+        <el-alert v-if="spaceError" :title="spaceError" type="error" :closable="false" />
+      </el-form>
+      <template #footer>
+        <el-button @click="spaceDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="spaceSubmitting" @click="submitSpaceCreate">
+          创建并进入
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="passwordDialogVisible"
@@ -114,6 +161,7 @@ import {
   ElIcon,
   ElInput,
   ElMessage,
+  ElMessageBox,
   type FormInstance,
   type FormItemRule,
   type FormRules,
@@ -133,9 +181,15 @@ const authStore = useAuthStore()
 const workspaceStore = useWorkspaceStore()
 const router = useRouter()
 const passwordDialogVisible = ref(false)
+const spaceDialogVisible = ref(false)
+const spaceSubmitting = ref(false)
+const spaceDeleting = ref(false)
+const spaceError = ref('')
 const passwordSubmitting = ref(false)
 const passwordError = ref('')
 const passwordFormRef = ref<FormInstance>()
+const spaceFormRef = ref<FormInstance>()
+const spaceForm = reactive({ name: '', description: '' })
 const passwordForm = reactive({
   currentPassword: '',
   newPassword: '',
@@ -155,14 +209,74 @@ const passwordRules: FormRules<typeof passwordForm> = {
   ],
   confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }],
 }
+const spaceRules: FormRules<typeof spaceForm> = {
+  name: [{ required: true, whitespace: true, message: '请输入空间名称', trigger: 'blur' }],
+}
 const initials = computed(() => {
   const name = authStore.user?.nickname || authStore.user?.username || 'AD'
   return name.slice(0, 2).toUpperCase()
 })
+const canDeleteSpace = computed(
+  () =>
+    workspaceStore.currentSpaceId !== null &&
+    workspaceStore.hasPermission(SPACE_PERMISSIONS.SPACE_DELETE),
+)
 
-function openTaskCreate(): void {
-  if (workspaceStore.currentSpaceId !== null) {
-    void router.push(`/spaces/${workspaceStore.currentSpaceId}/tasks/new`)
+function openSpaceCreate(): void {
+  spaceDialogVisible.value = true
+  spaceError.value = ''
+}
+
+async function submitSpaceCreate(): Promise<void> {
+  if (spaceSubmitting.value || !(await spaceFormRef.value?.validate().catch(() => false))) return
+
+  spaceSubmitting.value = true
+  spaceError.value = ''
+  try {
+    const space = await workspaceStore.createSpace({
+      name: spaceForm.name.trim(),
+      description: spaceForm.description.trim() || undefined,
+    })
+    spaceDialogVisible.value = false
+    ElMessage.success('空间创建成功')
+    await router.push(`/spaces/${space.id}/overview`)
+  } catch (error) {
+    spaceError.value = normalizeApiError(error).message
+  } finally {
+    spaceSubmitting.value = false
+  }
+}
+
+function resetSpaceForm(): void {
+  spaceFormRef.value?.resetFields()
+  spaceForm.name = ''
+  spaceForm.description = ''
+  spaceError.value = ''
+}
+
+async function deleteCurrentSpace(): Promise<void> {
+  const space = workspaceStore.currentSpace
+  if (!space || spaceDeleting.value) return
+  try {
+    await ElMessageBox.confirm(
+      `删除后将移除空间及其成员关系，确定删除“${space.name}”吗？`,
+      '删除空间',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+      },
+    )
+    spaceDeleting.value = true
+    await workspaceStore.deleteSpace(space.id)
+    ElMessage.success('空间已删除')
+    await router.replace('/')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(normalizeApiError(error).message)
+    }
+  } finally {
+    spaceDeleting.value = false
   }
 }
 

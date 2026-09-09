@@ -8,12 +8,14 @@ import com.agentdoc.task.pojo.dto.TaskCreateDTO;
 import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
 import com.agentdoc.task.pojo.param.TaskCreateOptionsParam;
 import com.agentdoc.task.pojo.param.TaskSearchParam;
+import com.agentdoc.task.pojo.param.TaskToolCallBatchQueryParam;
 import com.agentdoc.task.pojo.vo.TaskActivityVO;
 import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.vo.TaskExecutionDetailVO;
+import com.agentdoc.task.pojo.vo.TaskToolCallVO;
 import com.agentdoc.task.service.TaskService;
 import com.agentdoc.task.service.TaskExecutionQueryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +33,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @Tag(name = "Agent 任务", description = "任务创建、查询和终止")
 @RestController
@@ -103,6 +107,13 @@ public class TaskController {
     @GetMapping("/{id}/execution-detail")
     public Result<TaskExecutionDetailVO> executionDetail(@PathVariable Long id) {
         return Result.ok(taskExecutionQueryService.detail(id));
+    }
+
+    @Operation(summary = "批量查询任务工具调用明细")
+    @PostMapping("/tool-calls/query")
+    public Result<PageVO<TaskToolCallVO>> toolCalls(
+            @Valid @RequestBody TaskToolCallBatchQueryParam param) {
+        return Result.ok(taskExecutionQueryService.toolCalls(param));
     }
 
     @Operation(summary = "终止任务")

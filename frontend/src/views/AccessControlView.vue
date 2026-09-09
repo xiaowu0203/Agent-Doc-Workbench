@@ -130,9 +130,10 @@
                 成员绑定
               </button>
               <button
+                v-if="canReadAudit"
                 type="button"
                 :class="{ 'access-tabs__item--active': detailTab === 'changes' }"
-                @click="showChangeLogPlaceholder"
+                @click="showChangeLog"
               >
                 变更记录
               </button>
@@ -252,10 +253,40 @@
               />
             </div>
 
-            <div v-else class="placeholder-panel">
-              <el-icon><InfoFilled /></el-icon>
-              <strong>变更记录待开发，敬请期待</strong>
-              <span>当前版本先提供角色和成员的实时配置能力。</span>
+            <div v-else class="change-log-workspace">
+              <DataState
+                :loading="changeLogLoading"
+                :error="changeLogError"
+                :empty="!changeLogLoading && !changeLogPage.records.length"
+                empty-text="当前角色暂无变更记录"
+                @retry="loadChangeLog"
+              >
+                <el-table :data="changeLogPage.records" stripe>
+                  <el-table-column prop="actionName" label="变更内容" min-width="180" />
+                  <el-table-column prop="actorName" label="操作者" width="130" />
+                  <el-table-column label="详情" min-width="280">
+                    <template #default="{ row }">
+                      <span class="change-log-detail">{{ formatChangeDetail(row.detail) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="traceId" label="Trace ID" min-width="180">
+                    <template #default="{ row }">{{ row.traceId || '—' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="createdAt" label="时间" width="170">
+                    <template #default="{ row }">{{ formatChangeDate(row.createdAt) }}</template>
+                  </el-table-column>
+                </el-table>
+                <el-pagination
+                  v-if="changeLogPage.total"
+                  class="records-pagination"
+                  background
+                  layout="total, prev, pager, next"
+                  :total="changeLogPage.total"
+                  :page-size="changeLogPage.pageSize"
+                  :current-page="changeLogPage.pageNum"
+                  @current-change="changeLogPageNumber"
+                />
+              </DataState>
             </div>
           </template>
 
@@ -385,7 +416,6 @@ import {
   CircleCheck,
   Delete,
   EditPen,
-  InfoFilled,
   Lock,
   Plus,
   User,
@@ -404,7 +434,10 @@ import {
   ElMessage,
   ElMessageBox,
   ElOption,
+  ElPagination,
   ElSelect,
+  ElTable,
+  ElTableColumn,
   ElTag,
 } from 'element-plus'
 import { computed, defineComponent, h, reactive, ref, watch } from 'vue'
@@ -428,6 +461,8 @@ import {
   type PermissionItem,
   type SpaceRole,
 } from '@/features/access-control/api/access-control-api'
+import { queryAuditLogs } from '@/features/usage/api/usage-api'
+import type { AuditLogPage } from '@/features/usage/types'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import DataState from '@/shared/components/DataState.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
@@ -442,12 +477,15 @@ const errorMessage = ref('')
 const savingPermissions = ref(false)
 const savingRole = ref(false)
 const savingMember = ref(false)
+const changeLogLoading = ref(false)
+const changeLogError = ref('')
 const roles = ref<SpaceRole[]>([])
 const permissions = ref<PermissionItem[]>([])
 const members = ref<Member[]>([])
 const memberUsersById = ref<Record<string, MemberUser>>({})
 const selectedRoleId = ref<EntityId | null>(null)
 const selectedPermissionCodes = ref<string[]>([])
+const changeLogPage = ref<AuditLogPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
 const collapsedPermissionGroups = ref<Record<string, boolean>>({})
 const selectedCreatePermissionCategory = ref<string | null>(null)
 const detailTab = ref<'permissions' | 'members' | 'changes'>('permissions')
@@ -460,10 +498,12 @@ const memberForm = reactive<{ userId: string; roleId: EntityId | null }>({
   userId: '',
   roleId: null,
 })
+let changeLogLoadSequence = 0
 
 const activePage = computed(() => (route.name === 'space-access-members' ? 'members' : 'roles'))
 const canReadRoles = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.ROLE_READ))
 const canManageRoles = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.ROLE_MANAGE))
+const canReadAudit = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.AUDIT_READ))
 const canReadMembers = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.MEMBER_READ))
 const canManageMembers = computed(() =>
   workspaceStore.hasPermission(SPACE_PERMISSIONS.MEMBER_MANAGE),
@@ -574,6 +614,66 @@ async function loadData(): Promise<void> {
 function selectRole(role: SpaceRole): void {
   selectedRoleId.value = role.id
   selectedPermissionCodes.value = [...role.permissionCodes]
+  if (detailTab.value === 'changes' && canReadAudit.value) {
+    changeLogPage.value.pageNum = 1
+    void loadChangeLog()
+  }
+}
+
+async function loadChangeLog(): Promise<void> {
+  const spaceId = workspaceStore.currentSpaceId
+  const role = selectedRole.value
+  if (!spaceId || !role || !canReadAudit.value) return
+  const sequence = ++changeLogLoadSequence
+  changeLogLoading.value = true
+  changeLogError.value = ''
+  try {
+    const page = await queryAuditLogs({
+      spaceId,
+      pageNum: changeLogPage.value.pageNum,
+      pageSize: changeLogPage.value.pageSize,
+      targetType: 'space_role',
+      targetId: role.id,
+    })
+    if (sequence === changeLogLoadSequence) changeLogPage.value = page
+  } catch (error) {
+    if (sequence === changeLogLoadSequence) {
+      changeLogError.value = normalizeApiError(error).message
+    }
+  } finally {
+    if (sequence === changeLogLoadSequence) changeLogLoading.value = false
+  }
+}
+
+function showChangeLog(): void {
+  detailTab.value = 'changes'
+  changeLogPage.value.pageNum = 1
+  void loadChangeLog()
+}
+
+function changeLogPageNumber(pageNum: number): void {
+  changeLogPage.value.pageNum = pageNum
+  void loadChangeLog()
+}
+
+function formatChangeDetail(detail: string | null): string {
+  if (!detail) return '—'
+  try {
+    const value = JSON.parse(detail) as Record<string, unknown>
+    return Object.entries(value)
+      .map(([key, item]) => {
+        const displayValue = Array.isArray(item) ? item.join(', ') : String(item ?? '—')
+        return `${key}: ${displayValue}`
+      })
+      .join('；')
+  } catch {
+    return detail
+  }
+}
+
+function formatChangeDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value.replace('T', ' ') : date.toLocaleString('zh-CN')
 }
 
 function togglePermissionGroup(items: PermissionItem[], checked: boolean): void {
@@ -768,11 +868,6 @@ async function removeMemberByUserId(userId: EntityId): Promise<void> {
   }
 }
 
-function showChangeLogPlaceholder(): void {
-  detailTab.value = 'changes'
-  ElMessage.info('变更记录待开发，敬请期待')
-}
-
 watch(
   () => [route.name, workspaceStore.currentSpaceId] as const,
   ([routeName], previous) => {
@@ -825,7 +920,7 @@ const MemberTable = defineComponent({
                         class: 'member-table__select',
                         value: String(member.role.roleId),
                         onChange: (event: Event) =>
-                          emit('change-role', member, (event.target as HTMLSelectElement).value),
+                          emit('change-role', member, (event.target as { value: string }).value),
                       },
                       props.roles.map((role) =>
                         h('option', { value: String(role.id) }, role.displayName),
@@ -1233,22 +1328,19 @@ const MemberTable = defineComponent({
   font-size: 13px;
 }
 
-.placeholder-panel {
-  display: grid;
-  min-height: 430px;
-  place-content: center;
-  justify-items: center;
-  gap: 12px;
-  color: var(--adw-text-secondary);
+.change-log-workspace {
+  min-width: 0;
 }
 
-.placeholder-panel .el-icon {
-  color: var(--adw-color-primary);
-  font-size: 38px;
+.change-log-detail {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.placeholder-panel strong {
-  color: var(--adw-text-primary);
+.change-log-workspace :deep(.records-pagination) {
+  margin-top: var(--adw-space-4);
 }
 
 :deep(.member-table) {

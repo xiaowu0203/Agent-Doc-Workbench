@@ -58,6 +58,10 @@ public record AuditLogVO(
                 case CHANGE_REQUEST_MERGED -> "合并变更请求";
                 case CHANGE_REQUEST_COMMENTED -> "评论变更请求";
                 case DOCUMENT_VERSION_ROLLED_BACK -> "回滚文档版本";
+                case SPACE_ROLE_CREATED -> "创建空间角色";
+                case SPACE_ROLE_UPDATED -> "修改空间角色";
+                case SPACE_ROLE_PERMISSIONS_REPLACED -> "调整角色权限";
+                case SPACE_ROLE_DELETED -> "删除空间角色";
             };
         } catch (RuntimeException exception) {
             return code;
@@ -70,6 +74,7 @@ public record AuditLogVO(
             case "task" -> "任务";
             case "change_request" -> "变更请求";
             case "document_version" -> "文档版本";
+            case "space_role" -> "空间角色";
             default -> code;
         };
     }

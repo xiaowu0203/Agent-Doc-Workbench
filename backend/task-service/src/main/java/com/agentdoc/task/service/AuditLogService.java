@@ -1,12 +1,14 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
+import com.agentdoc.common.feign.dto.SpaceRoleAuditDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
@@ -26,9 +28,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AUDIT_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.ROLE_MANAGE;
 
 /**
  * 追加型审计日志服务。业务代码只允许通过 insert 写入，不提供修改和删除能力。
@@ -53,10 +58,46 @@ public class AuditLogService {
         record(spaceId, taskId, ActorType.AGENT, agentId, action, targetType, targetId, detail);
     }
 
+    /**
+     * 记录文档服务发起的空间角色与权限变更审计。
+     *
+     * @param request 角色审计写入请求
+     */
+    public void recordSpaceRoleAudit(SpaceRoleAuditDTO request) {
+        if (request == null || request.spaceId() == null || request.roleId() == null
+                || request.action() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "空间角色审计参数不完整");
+        }
+        requireSpacePermission(request.spaceId(), ROLE_MANAGE);
+        Set<AuditAction> allowedActions = Set.of(
+                AuditAction.SPACE_ROLE_CREATED,
+                AuditAction.SPACE_ROLE_UPDATED,
+                AuditAction.SPACE_ROLE_PERMISSIONS_REPLACED,
+                AuditAction.SPACE_ROLE_DELETED);
+        AuditAction action = AuditAction.valueOf(request.action().name());
+        if (!allowedActions.contains(action)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "空间角色审计动作不合法");
+        }
+        recordHuman(request.spaceId(), action, AuditTargetType.SPACE_ROLE,
+                request.roleId(), request.detail());
+    }
+
+    private void requireSpacePermission(Long spaceId, String permissionCode) {
+        Result<Void> result = documentFeign.checkSpacePermission(spaceId, permissionCode);
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null ? "空间权限校验失败" : result.message());
+        }
+    }
+
     private void record(Long spaceId, Long taskId, ActorType actorType, Long actorId, AuditAction action,
                         AuditTargetType targetType, Long targetId, String detail) {
-        auditLogMapper.insert(AuditLogEntity.create(
-                spaceId, taskId, actorType, actorId, action, targetType, targetId, detail));
+        AuditLogEntity entity = AuditLogEntity.create(
+                spaceId, taskId, actorType, actorId, action, targetType, targetId, detail);
+        String traceId = TraceContext.get();
+        entity.setTraceId(traceId == null || traceId.isBlank()
+                ? UUID.randomUUID().toString().replace("-", "") : traceId);
+        auditLogMapper.insert(entity);
     }
 
     /**
@@ -102,6 +143,9 @@ public class AuditLogService {
         }
         if (param.getTargetType() != null && !param.getTargetType().isBlank()) {
             wrapper.eq(AuditLogEntity::getTargetType, param.getTargetType().trim());
+        }
+        if (param.getTargetId() != null) {
+            wrapper.eq(AuditLogEntity::getTargetId, param.getTargetId());
         }
         if (param.getCreatedFrom() != null) {
             wrapper.ge(AuditLogEntity::getCreatedAt, param.getCreatedFrom());

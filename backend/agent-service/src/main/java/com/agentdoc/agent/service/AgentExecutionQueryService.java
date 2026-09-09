@@ -9,14 +9,19 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
+import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.feign.vo.AgentToolSourceCountVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
+import com.agentdoc.common.pojo.dto.PageParam;
+import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.JsonUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,6 +29,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
@@ -81,6 +87,51 @@ public class AgentExecutionQueryService {
                         .orderByAsc(AgentExecutionToolCallEntity::getSequenceNo));
         // 组装完整审计VO返回
         return toVO(execution, modelCalls, toolCalls);
+    }
+
+    /**
+     * 分页查询工作台任务对应的工具调用，避免将全部调用明细一次性加载到内存和网络响应中。
+     *
+     * @param request 空间、任务和分页参数
+     * @return 工具调用分页结果
+     */
+    public PageVO<AgentToolCallVO> getToolCalls(AgentToolCallPageQueryDTO request) {
+        if (request == null || request.spaceId() == null || request.taskIds() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "工具调用分页查询参数不完整");
+        }
+        List<Long> taskIds = request.taskIds().stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (taskIds.isEmpty() || taskIds.size() > 100) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "任务 ID 集合必须包含 1~100 个任务");
+        }
+        PageParam pageParam = new PageParam();
+        pageParam.setPageNum(request.pageNum());
+        pageParam.setPageSize(request.pageSize());
+        pageParam.validate();
+        spaceAccessService.requirePermission(request.spaceId(), TASK_READ);
+
+        List<AgentExecutionEntity> executions = executionMapper.selectList(
+                new LambdaQueryWrapper<AgentExecutionEntity>()
+                        .eq(AgentExecutionEntity::getSpaceId, request.spaceId())
+                        .in(AgentExecutionEntity::getWorkbenchTaskId, taskIds));
+        if (executions.isEmpty()) {
+            return PageVO.of(List.<AgentToolCallVO>of(), 0, pageParam);
+        }
+        Map<Long, Long> taskIdsByExecutionId = executions.stream()
+                .collect(Collectors.toMap(AgentExecutionEntity::getId,
+                        AgentExecutionEntity::getWorkbenchTaskId));
+        Page<AgentExecutionToolCallEntity> page = toolCallMapper.selectPage(
+                new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
+                new LambdaQueryWrapper<AgentExecutionToolCallEntity>()
+                        .in(AgentExecutionToolCallEntity::getExecutionId, taskIdsByExecutionId.keySet())
+                        .orderByDesc(AgentExecutionToolCallEntity::getStartedAt)
+                        .orderByDesc(AgentExecutionToolCallEntity::getId));
+        List<AgentToolCallVO> records = page.getRecords().stream()
+                .map(call -> new AgentToolCallVO(taskIdsByExecutionId.get(call.getExecutionId()), toolCall(call)))
+                .toList();
+        return PageVO.of(records, page.getTotal(), pageParam);
     }
 
     /**

@@ -3,9 +3,12 @@ package com.agentdoc.agent.controller;
 import com.agentdoc.agent.service.AgentExecutionQueryService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
+import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
+import com.agentdoc.common.pojo.vo.PageVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +33,12 @@ public class AgentExecutionController {
     @GetMapping("/by-task/{taskId}")
     public Result<AgentExecutionAuditVO> byTask(@PathVariable Long taskId, @RequestParam Long spaceId) {
         return Result.ok(queryService.getByWorkbenchTask(taskId, spaceId));
+    }
+
+    @Operation(summary = "分页查询工作台任务的工具调用明细")
+    @PostMapping("/tool-calls/query")
+    public Result<PageVO<AgentToolCallVO>> toolCalls(@RequestBody AgentToolCallPageQueryDTO request) {
+        return Result.ok(queryService.getToolCalls(request));
     }
 
     @Operation(summary = "查询空间工具调用用量聚合")

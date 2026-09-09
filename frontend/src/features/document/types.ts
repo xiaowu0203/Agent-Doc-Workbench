@@ -28,6 +28,18 @@ export interface DocumentDetail {
   creatorName: string | null
 }
 
+export interface ArchivedDocument {
+  id: EntityId
+  spaceId: EntityId
+  directoryId: EntityId | null
+  title: string
+  docType: DocumentType
+  version: number
+  status: DocumentStatus
+  updatedAt: string | null
+  updatedBy: EntityId | null
+}
+
 export interface DocumentDraft {
   documentId: EntityId
   baseVersion: number
@@ -49,6 +61,8 @@ export interface DirectoryDetail {
   status: DocumentStatus
   createdAt: string | null
   updatedAt: string | null
+  parentTitle: string | null
+  parentStatus: DocumentStatus | null
 }
 
 export type DocumentVersionSourceType =

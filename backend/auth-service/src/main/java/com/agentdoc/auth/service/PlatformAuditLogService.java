@@ -2,12 +2,14 @@ package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.mapper.PlatformAuditLogMapper;
 import com.agentdoc.auth.pojo.entity.PlatformAuditLogEntity;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static com.agentdoc.auth.constant.PlatformManagementConstant.HUMAN_ACTOR_TYPE;
 
@@ -31,6 +33,9 @@ public class PlatformAuditLogService {
         entity.setTargetType(targetType);
         entity.setTargetId(targetId);
         entity.setDetail(detail == null || detail.isEmpty() ? null : JsonUtils.toJson(detail));
+        String traceId = TraceContext.get();
+        entity.setTraceId(traceId == null || traceId.isBlank()
+                ? UUID.randomUUID().toString().replace("-", "") : traceId);
         auditLogMapper.insert(entity);
     }
 }

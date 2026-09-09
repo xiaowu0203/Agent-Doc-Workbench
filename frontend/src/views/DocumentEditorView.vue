@@ -12,6 +12,9 @@
         <p>管理空间文档与 Agent 协作内容</p>
       </div>
       <div class="document-page__header-actions">
+        <el-button @click="toggleTrash">
+          {{ showTrash ? '返回文档' : '回收站' }}
+        </el-button>
         <el-button :icon="Refresh" :loading="treeLoading" @click="loadTree">刷新</el-button>
         <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDocumentDialog">
           新增文档/目录
@@ -19,7 +22,9 @@
       </div>
     </header>
 
+    <DocumentTrashView v-if="showTrash" />
     <div
+      v-else
       class="document-workspace surface-card"
       :style="{ '--document-tree-width': `${treePanelWidth}px` }"
     >
@@ -762,7 +767,6 @@
 import {
   CircleCheckFilled,
   Clock,
-  Delete,
   Document,
   Folder,
   InfoFilled,
@@ -820,6 +824,7 @@ import {
   updateDocument,
 } from '@/features/document/api/document-api'
 import DocumentTreeNode from '@/features/document/components/DocumentTreeNode.vue'
+import DocumentTrashView from '@/views/DocumentTrashView.vue'
 import type {
   DocumentActivity,
   DocumentDetail,
@@ -855,6 +860,7 @@ const expandedIds = ref(new Set<string>())
 let expandedIdsBeforeSearch: Set<string> | null = null
 const treeLoading = ref(false)
 const treeError = ref('')
+const showTrash = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
 const documentDetail = ref<DocumentDetail | null>(null)
@@ -1329,6 +1335,12 @@ async function loadTree(): Promise<void> {
   } finally {
     if (!controller.signal.aborted) treeLoading.value = false
   }
+}
+
+function toggleTrash(): void {
+  const leavingTrash = showTrash.value
+  showTrash.value = !showTrash.value
+  if (leavingTrash) void loadTree()
 }
 
 async function loadDocument(documentId: EntityId): Promise<void> {

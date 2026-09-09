@@ -30,6 +30,12 @@ public record DocumentDirectoryVO(
         LocalDateTime createdAt,
 
         @Schema(description = "最后更新时间")
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+
+        @Schema(description = "父目录名称，根目录为空")
+        String parentTitle,
+
+        @Schema(description = "父目录状态，根目录为空")
+        DocStatus parentStatus
 ) {
 }

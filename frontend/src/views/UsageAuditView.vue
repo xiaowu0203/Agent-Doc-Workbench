@@ -241,7 +241,7 @@
                   empty-text="当前执行记录页没有工具调用明细"
                   @retry="loadToolCalls"
                 >
-                  <el-table :data="toolCallRows" stripe>
+                  <el-table :data="pagedToolCallRows" stripe>
                     <el-table-column prop="taskName" label="任务" min-width="190">
                       <template #default="{ row }">
                         <div class="task-cell">
@@ -276,6 +276,18 @@
                     </el-table-column>
                   </el-table>
                 </DataState>
+                <el-pagination
+                  v-if="toolPage.total"
+                  class="records-pagination"
+                  background
+                  layout="total, sizes, prev, pager, next"
+                  :total="toolPage.total"
+                  :page-size="toolPage.pageSize"
+                  :current-page="toolPage.pageNum"
+                  :page-sizes="[10, 20, 50]"
+                  @current-change="changeToolPage"
+                  @size-change="changeToolPageSize"
+                />
               </div>
               <div v-else class="panel-empty">当前筛选范围没有工具调用</div>
             </el-tab-pane>
@@ -405,7 +417,7 @@ import { useRouter } from 'vue-router'
 import { normalizeApiError } from '@/api/errors'
 import { listAgents, listModels, type AgentOption } from '@/features/agent/api/agent-api'
 import type { ModelOption } from '@/features/agent/types'
-import { getTaskExecutionDetail, searchTasks } from '@/features/task/api/task-api'
+import { getTaskExecutionDetail, getTaskToolCalls, searchTasks } from '@/features/task/api/task-api'
 import type { TaskExecutionDetail, TaskListItem, TaskPage, TaskStatus } from '@/features/task/types'
 import {
   exportUsageRecords,
@@ -448,6 +460,7 @@ const filters = reactive<{
 }>({})
 const taskPage = ref<TaskPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
 const auditPage = ref<AuditLogPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
+const toolPage = reactive({ total: 0, pageNum: 1, pageSize: 10 })
 const activeTab = ref('executions')
 const drawerVisible = ref(false)
 const detailLoading = ref(false)
@@ -464,6 +477,9 @@ let toolCallLoadSequence = 0
 
 const canReadAudit = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.AUDIT_READ))
 const canExport = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.USAGE_EXPORT))
+const pagedToolCallRows = computed(() => {
+  return toolCallRows.value
+})
 const hasTrendData = computed(() => dashboard.value?.trend.some((item) => item.hasData) ?? false)
 const statusOptions: Array<{ value: TaskStatus; label: string }> = [
   { value: 'COMPLETED', label: '已完成' },
@@ -707,6 +723,7 @@ async function loadUsage() {
     if (sequence !== loadSequence) return
     dashboard.value = usage
     taskPage.value = tasks
+    toolPage.pageNum = 1
     auditPage.value = audits
     if (activeTab.value === 'tools') void loadToolCalls()
   } catch (error) {
@@ -763,43 +780,114 @@ function resetFilters() {
 
 function changeTaskPage(page: number) {
   taskPage.value.pageNum = page
-  void loadUsage()
+  void loadTaskPage()
 }
 
 function changeTaskPageSize(size: number) {
   taskPage.value.pageNum = 1
   taskPage.value.pageSize = size
-  void loadUsage()
+  void loadTaskPage()
 }
 
 function changeAuditPage(page: number) {
   auditPage.value.pageNum = page
-  void loadUsage()
+  void loadAuditPage()
+}
+
+async function loadTaskPage() {
+  const spaceId = workspaceStore.currentSpaceId
+  if (spaceId === null) return
+  requestController?.abort()
+  const controller = new AbortController()
+  requestController = controller
+  const sequence = ++loadSequence
+  loading.value = true
+  try {
+    const tasks = await loadTasks(
+      spaceId,
+      taskPage.value.pageNum,
+      taskPage.value.pageSize,
+      controller.signal,
+    )
+    if (sequence !== loadSequence) return
+    taskPage.value = tasks
+    toolPage.pageNum = 1
+    if (activeTab.value === 'tools') void loadToolCalls()
+  } catch (error) {
+    if (!controller.signal.aborted) errorMessage.value = normalizeApiError(error).message
+  } finally {
+    if (sequence === loadSequence) loading.value = false
+  }
+}
+
+async function loadAuditPage() {
+  const spaceId = workspaceStore.currentSpaceId
+  if (spaceId === null || !canReadAudit.value) return
+  requestController?.abort()
+  const controller = new AbortController()
+  requestController = controller
+  const sequence = ++loadSequence
+  loading.value = true
+  const [startDate, endDate] = dateRange.value
+  try {
+    const audits = await queryAuditLogs(
+      {
+        spaceId,
+        createdFrom: `${startDate}T00:00:00`,
+        createdTo: `${addDays(endDate, 1)}T00:00:00`,
+        pageNum: auditPage.value.pageNum,
+        pageSize: auditPage.value.pageSize,
+      },
+      controller.signal,
+    )
+    if (sequence !== loadSequence) return
+    auditPage.value = audits
+  } catch (error) {
+    if (!controller.signal.aborted) errorMessage.value = normalizeApiError(error).message
+  } finally {
+    if (sequence === loadSequence) loading.value = false
+  }
+}
+
+function changeToolPage(page: number) {
+  toolPage.pageNum = page
+  void loadToolCalls()
+}
+
+function changeToolPageSize(size: number) {
+  toolPage.pageSize = size
+  toolPage.pageNum = 1
+  void loadToolCalls()
 }
 
 async function loadToolCalls() {
+  const spaceId = workspaceStore.currentSpaceId
   const records = taskPage.value.records
-  const recordsKey = records.map((task) => String(task.id)).join(',')
+  const recordsKey = `${spaceId ?? 'none'}:${records.map((task) => String(task.id)).join(',')}:${toolPage.pageNum}:${toolPage.pageSize}`
   if (recordsKey === toolCallsLoadedKey.value && !toolCallsError.value) return
   const sequence = ++toolCallLoadSequence
   toolCallsLoading.value = true
   toolCallsError.value = ''
   toolCallRows.value = []
-  if (!records.length) {
+  toolPage.total = 0
+  if (spaceId === null || !records.length) {
     toolCallsLoading.value = false
     return
   }
-  const results = await Promise.allSettled(records.map((task) => getTaskExecutionDetail(task.id)))
-  if (sequence !== toolCallLoadSequence) return
-  const rows: UsageToolCallRow[] = []
-  let failed = false
-  results.forEach((result, index) => {
-    if (result.status === 'rejected') {
-      failed = true
-      return
-    }
-    const task = records[index]
-    result.value.execution?.toolCalls.forEach((call) => {
+  try {
+    const result = await getTaskToolCalls(
+      spaceId,
+      records.map((task) => task.id),
+      toolPage.pageNum,
+      toolPage.pageSize,
+    )
+    if (sequence !== toolCallLoadSequence) return
+    const taskById = new Map(records.map((task) => [String(task.id), task]))
+    const rows: UsageToolCallRow[] = []
+    result.records.forEach((item) => {
+      const task = taskById.get(String(item.taskId))
+      if (!task) return
+      const call = item.toolCall
       rows.push({
         ...call,
         task,
@@ -809,14 +897,16 @@ async function loadToolCalls() {
         sourceLabel: toolSourceLabel(call.toolSourceKey, call.toolSource),
       })
     })
-  })
-  toolCallRows.value = rows
-  if (failed && !rows.length) {
-    toolCallsError.value = '工具调用明细加载失败，可点击重试'
-  } else {
+    toolCallRows.value = rows
+    toolPage.total = result.total
     toolCallsLoadedKey.value = recordsKey
+  } catch (error) {
+    if (sequence === toolCallLoadSequence) {
+      toolCallsError.value = normalizeApiError(error).message
+    }
+  } finally {
+    if (sequence === toolCallLoadSequence) toolCallsLoading.value = false
   }
-  toolCallsLoading.value = false
 }
 
 async function openExecution(row: unknown) {

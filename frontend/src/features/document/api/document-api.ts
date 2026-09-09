@@ -5,6 +5,7 @@ import type {
   CreateDirectoryRequest,
   DocumentActivity,
   DocumentAsset,
+  ArchivedDocument,
   DocumentDraft,
   DirectoryDetail,
   DocumentDetail,
@@ -176,6 +177,42 @@ export function restoreDocument(documentId: EntityId, signal?: AbortSignal): Pro
   return request<void>({
     method: 'PUT',
     url: `/document/documents/${documentId}/restore`,
+    signal,
+  })
+}
+
+export function listArchivedDocuments(
+  spaceId: EntityId,
+  pageNum = 1,
+  pageSize = 10,
+  signal?: AbortSignal,
+): Promise<PageResult<ArchivedDocument>> {
+  return request<PageResult<ArchivedDocument>>({
+    method: 'GET',
+    url: '/document/documents/trash',
+    params: { spaceId, pageNum, pageSize },
+    signal,
+  })
+}
+
+export function listArchivedDirectories(
+  spaceId: EntityId,
+  pageNum = 1,
+  pageSize = 10,
+  signal?: AbortSignal,
+): Promise<PageResult<DirectoryDetail>> {
+  return request<PageResult<DirectoryDetail>>({
+    method: 'GET',
+    url: '/document/directories/trash',
+    params: { spaceId, pageNum, pageSize },
+    signal,
+  })
+}
+
+export function restoreDirectory(directoryId: EntityId, signal?: AbortSignal): Promise<void> {
+  return request<void>({
+    method: 'PUT',
+    url: `/document/directories/${directoryId}/restore`,
     signal,
   })
 }

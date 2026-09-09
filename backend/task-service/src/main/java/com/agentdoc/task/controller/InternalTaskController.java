@@ -5,9 +5,11 @@ import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.DocumentVersionRollbackAuditDTO;
 import com.agentdoc.common.feign.dto.DocumentVersionSourceQueryDTO;
+import com.agentdoc.common.feign.dto.SpaceRoleAuditDTO;
 import com.agentdoc.common.feign.vo.DocumentVersionSourceVO;
 import com.agentdoc.task.service.DocumentVersionAuditService;
 import com.agentdoc.task.service.DocumentVersionSourceQueryService;
+import com.agentdoc.task.service.AuditLogService;
 import com.agentdoc.task.service.TaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,13 +31,16 @@ public class InternalTaskController {
     private final TaskService taskService;
     private final DocumentVersionSourceQueryService versionSourceQueryService;
     private final DocumentVersionAuditService versionAuditService;
+    private final AuditLogService auditLogService;
 
     public InternalTaskController(TaskService taskService,
                                   DocumentVersionSourceQueryService versionSourceQueryService,
-                                  DocumentVersionAuditService versionAuditService) {
+                                  DocumentVersionAuditService versionAuditService,
+                                  AuditLogService auditLogService) {
         this.taskService = taskService;
         this.versionSourceQueryService = versionSourceQueryService;
         this.versionAuditService = versionAuditService;
+        this.auditLogService = auditLogService;
     }
 
     @Operation(summary = "校验X‑TASK‑CAPABILITY任务能力令牌是否对指定taskId业务有效")
@@ -60,6 +65,14 @@ public class InternalTaskController {
     @PostMapping("/document-version-rollback-audit")
     public Result<Void> recordVersionRollback(@RequestBody DocumentVersionRollbackAuditDTO request) {
         versionAuditService.recordRollback(request);
+        return Result.ok();
+    }
+
+    @Operation(summary = "记录空间角色与权限变更审计")
+    @RequireLogin
+    @PostMapping("/space-role-audit")
+    public Result<Void> recordSpaceRoleAudit(@RequestBody SpaceRoleAuditDTO request) {
+        auditLogService.recordSpaceRoleAudit(request);
         return Result.ok();
     }
 }

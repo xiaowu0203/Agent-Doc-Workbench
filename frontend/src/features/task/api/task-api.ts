@@ -1,4 +1,5 @@
 import { request } from '@/api/client'
+import type { PageResult } from '@/features/document/types'
 import type { EntityId } from '@/features/workspace/types'
 import type {
   CreateTaskRequest,
@@ -6,6 +7,7 @@ import type {
   TaskCreateOptions,
   TaskDetail,
   TaskExecutionDetail,
+  TaskToolCallPageItem,
   TaskDraft,
   TaskFocusRegion,
   TaskPage,
@@ -72,6 +74,21 @@ export function getTaskExecutionDetail(
   })
 }
 
+export function getTaskToolCalls(
+  spaceId: EntityId,
+  taskIds: EntityId[],
+  pageNum: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<PageResult<TaskToolCallPageItem>> {
+  return request<PageResult<TaskToolCallPageItem>>({
+    method: 'POST',
+    url: '/task/tasks/tool-calls/query',
+    data: { spaceId, taskIds, pageNum, pageSize },
+    signal,
+  })
+}
+
 export function terminateTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDetail> {
   return request<TaskDetail>({ method: 'PUT', url: `/task/tasks/${taskId}/terminate`, signal })
 }
@@ -105,6 +122,37 @@ export function updateTaskDraft(
     method: 'PUT',
     url: `/task/task-drafts/${draftId}`,
     data: payload,
+    signal,
+  })
+}
+
+export function getTaskDraft(draftId: EntityId, signal?: AbortSignal): Promise<TaskDraft> {
+  return request<TaskDraft>({ method: 'GET', url: `/task/task-drafts/${draftId}`, signal })
+}
+
+export function searchTaskDrafts(
+  spaceId: EntityId,
+  pageNum = 1,
+  pageSize = 10,
+  keyword?: string,
+  signal?: AbortSignal,
+): Promise<PageResult<TaskDraft>> {
+  return request<PageResult<TaskDraft>>({
+    method: 'POST',
+    url: '/task/task-drafts/search',
+    data: { spaceId, pageNum, pageSize, keyword: keyword || undefined },
+    signal,
+  })
+}
+
+export function deleteTaskDraft(draftId: EntityId, signal?: AbortSignal): Promise<void> {
+  return request<void>({ method: 'DELETE', url: `/task/task-drafts/${draftId}`, signal })
+}
+
+export function launchTaskDraft(draftId: EntityId, signal?: AbortSignal): Promise<CreatedTask> {
+  return request<CreatedTask>({
+    method: 'POST',
+    url: `/task/task-drafts/${draftId}/launch`,
     signal,
   })
 }

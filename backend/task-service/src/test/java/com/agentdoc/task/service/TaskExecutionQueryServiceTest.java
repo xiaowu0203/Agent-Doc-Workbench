@@ -3,6 +3,7 @@ package com.agentdoc.task.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.task.enums.ChangeRequestStatus;
@@ -27,9 +28,10 @@ class TaskExecutionQueryServiceTest {
 
     private final TaskService taskService = mock(TaskService.class);
     private final AgentFeign agentFeign = mock(AgentFeign.class);
+    private final DocumentFeign documentFeign = mock(DocumentFeign.class);
     private final ChangeRequestMapper changeRequestMapper = mock(ChangeRequestMapper.class);
     private final TaskExecutionQueryService service = new TaskExecutionQueryService(
-            taskService, agentFeign, changeRequestMapper);
+            taskService, agentFeign, documentFeign, changeRequestMapper);
 
     @Test
     void usesCurrentAgentNameWhileExecutionIsStillPending() {

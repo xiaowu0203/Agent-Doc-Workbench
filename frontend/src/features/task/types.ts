@@ -215,6 +215,11 @@ export interface TaskExecutionDetail {
   } | null
 }
 
+export interface TaskToolCallPageItem {
+  taskId: EntityId
+  toolCall: AgentExecutionAudit['toolCalls'][number]
+}
+
 export interface TaskDraft extends Omit<
   CreateTaskRequest,
   'agentId' | 'documentId' | 'name' | 'instruction'

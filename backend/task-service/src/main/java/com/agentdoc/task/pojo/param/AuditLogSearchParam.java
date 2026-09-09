@@ -32,6 +32,9 @@ public class AuditLogSearchParam extends PageParam {
     @Schema(description = "目标类型")
     private String targetType;
 
+    @Schema(description = "目标 ID")
+    private Long targetId;
+
     @Schema(description = "创建时间下限（含）")
     private LocalDateTime createdFrom;
 

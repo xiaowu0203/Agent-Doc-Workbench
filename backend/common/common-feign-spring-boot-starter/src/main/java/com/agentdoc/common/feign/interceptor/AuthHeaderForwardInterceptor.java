@@ -1,6 +1,7 @@
 package com.agentdoc.common.feign.interceptor;
 
 import com.agentdoc.common.constant.HeaderConstants;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.feign.context.AuthorizationContext;
 import feign.RequestInterceptor;
@@ -63,6 +64,12 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
             if (authorization != null && !authorization.isBlank()) {
                 template.header(HttpHeaders.AUTHORIZATION, authorization);
             }
+        }
+
+        // 透传当前请求链路 ID，保证跨服务写入的审计记录仍属于同一条链路。
+        String traceId = TraceContext.get();
+        if (traceId != null && !traceId.isBlank()) {
+            template.header(HeaderConstants.X_TRACE_ID, traceId);
         }
 
         // 3. 追加任务短时能力令牌头 X‑Task‑Capability

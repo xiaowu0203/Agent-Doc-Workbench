@@ -1,7 +1,17 @@
 import { defineStore } from 'pinia'
 
-import { getEffectivePermissions, listMySpaces } from '@/features/workspace/api/workspace-api'
-import type { EffectivePermission, EntityId, Space } from '@/features/workspace/types'
+import {
+  createSpace as createSpaceRequest,
+  deleteSpace as deleteSpaceRequest,
+  getEffectivePermissions,
+  listMySpaces,
+} from '@/features/workspace/api/workspace-api'
+import type {
+  CreateSpaceRequest,
+  EffectivePermission,
+  EntityId,
+  Space,
+} from '@/features/workspace/types'
 import type { SpacePermissionCode } from '@/shared/constants/permissions'
 
 interface WorkspaceState {
@@ -40,6 +50,20 @@ export const useWorkspaceStore = defineStore('workspace', {
     async loadSpaces() {
       this.spaces = await listMySpaces()
       return this.spaces
+    },
+    async createSpace(payload: CreateSpaceRequest) {
+      const created = await createSpaceRequest(payload)
+      await this.loadSpaces()
+      const space = this.spaces.find((item) => String(item.id) === String(created.id)) ?? created
+      this.setCurrentSpace(space.id)
+      await this.ensurePermissions(space.id, true)
+      return space
+    },
+    async deleteSpace(spaceId: EntityId) {
+      await deleteSpaceRequest(spaceId)
+      delete this.permissionsBySpace[String(spaceId)]
+      if (String(this.currentSpaceId) === String(spaceId)) this.setCurrentSpace(null)
+      await this.loadSpaces()
     },
     async ensurePermissions(spaceId: EntityId, force = false) {
       const key = String(spaceId)

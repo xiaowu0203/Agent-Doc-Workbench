@@ -275,10 +275,16 @@ import type { DocumentTreeNode } from '@/features/document/types'
 import {
   createTask,
   getTaskCreateOptions,
+  getTaskDraft,
   saveTaskDraft,
   updateTaskDraft,
 } from '@/features/task/api/task-api'
-import type { TaskCreateOptions, TaskFocusRegion, TaskReadScope } from '@/features/task/types'
+import type {
+  TaskCreateOptions,
+  TaskDraft,
+  TaskFocusRegion,
+  TaskReadScope,
+} from '@/features/task/types'
 import type { EntityId } from '@/features/workspace/types'
 import DataState from '@/shared/components/DataState.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
@@ -348,10 +354,29 @@ onMounted(async () => {
     documents.value = flatten(
       await listDocumentTree(spaceId.value, { status: 'NORMAL', signal: controller.signal }),
     ).filter((x) => x.nodeType === 'DOCUMENT')
-    const requested = route.query.documentId
-    if (requested) form.documentId = requested as string
-    else if (documents.value[0]) form.documentId = documents.value[0].id
-    if (form.documentId) await loadOptions()
+    const requestedDraftId = route.query.draftId
+    let savedDraft: TaskDraft | null = null
+    if (requestedDraftId) {
+      savedDraft = await getTaskDraft(requestedDraftId as EntityId, controller.signal)
+      form.documentId = savedDraft.documentId
+      form.agentId = savedDraft.agentId
+    } else {
+      const requested = route.query.documentId
+      if (requested) form.documentId = requested as string
+      else if (documents.value[0]) form.documentId = documents.value[0].id
+    }
+    if (form.documentId) {
+      await loadOptions()
+    }
+    if (savedDraft) {
+      draftId.value = savedDraft.id
+      form.name = savedDraft.name || ''
+      form.instruction = savedDraft.instruction || ''
+      form.tokenBudget = savedDraft.tokenBudget
+      form.readScope = savedDraft.readScope
+      form.focusRegions = savedDraft.focusRegions.map((region) => ({ ...region }))
+      form.agentId = savedDraft.agentId
+    }
   } catch (e) {
     if (!controller.signal.aborted) optionsError.value = normalizeApiError(e).message
   }

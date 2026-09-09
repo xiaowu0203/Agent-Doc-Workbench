@@ -19,6 +19,11 @@ export interface Space {
   createdAt: string
 }
 
+export interface CreateSpaceRequest {
+  name: string
+  description?: string
+}
+
 export interface EffectivePermission {
   spaceId: EntityId
   platformSuperAdmin: boolean

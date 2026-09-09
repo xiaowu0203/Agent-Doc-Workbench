@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AccessControlView from './AccessControlView.vue'
 
 import * as accessApi from '@/features/access-control/api/access-control-api'
+import * as usageApi from '@/features/usage/api/usage-api'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -21,6 +22,10 @@ vi.mock('@/features/access-control/api/access-control-api', () => ({
   removeMember: vi.fn(),
   replaceRolePermissions: vi.fn(),
   updateRole: vi.fn(),
+}))
+
+vi.mock('@/features/usage/api/usage-api', () => ({
+  queryAuditLogs: vi.fn(),
 }))
 
 const role = {
@@ -143,6 +148,12 @@ beforeEach(() => {
     { userId: 1, username: 'admin', nickname: '管理员' },
   ])
   vi.mocked(accessApi.replaceRolePermissions).mockResolvedValue(role)
+  vi.mocked(usageApi.queryAuditLogs).mockResolvedValue({
+    records: [],
+    total: 0,
+    pageNum: 1,
+    pageSize: 10,
+  })
 })
 
 describe('AccessControlView', () => {
@@ -167,13 +178,21 @@ describe('AccessControlView', () => {
     expect(group.get('.permission-group__items').isVisible()).toBe(false)
   })
 
-  it('keeps the change log tab as a development placeholder', async () => {
+  it('loads the selected role change log', async () => {
     const wrapper = await mountAccess('space-access-roles')
 
     const changeTab = wrapper.findAll('nav button').find((button) => button.text() === '变更记录')
     expect(changeTab).toBeDefined()
     await changeTab!.trigger('click')
-    expect(wrapper.text()).toContain('变更记录待开发，敬请期待')
+    await flushPromises()
+    expect(usageApi.queryAuditLogs).toHaveBeenCalledWith({
+      spaceId: 7,
+      pageNum: 1,
+      pageSize: 10,
+      targetType: 'space_role',
+      targetId: role.id,
+    })
+    expect(wrapper.text()).toContain('当前角色暂无变更记录')
   })
 
   it('renders member names from the space-scoped user summary endpoint', async () => {

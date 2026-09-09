@@ -25,4 +25,7 @@ public class SkillAuditLogEntity extends BaseEntity {
     private Long targetId;
     @Schema(description = "审计详情 JSON")
     private String detail;
+
+    @Schema(description = "链路追踪 ID")
+    private String traceId;
 }
