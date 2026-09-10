@@ -22,6 +22,7 @@ import java.util.List;
  * @param apiKey         模型服务商密钥，敏感信息，toString会脱敏不输出明文
  * @param maxOutputTokens 单轮模型最大输出token
  * @param temperature    温度参数，控制模型随机性，可为null，使用模型默认值
+ * @param topP           Top-P采样率，可为null，使用模型默认值
  * @param toolCallbacks  工具回调定义列表，构造后转为不可变集合
  * @param executionId    Agent执行任务ID，归属哪一次执行实例，可为null
  */
@@ -31,6 +32,7 @@ public record ModelAdapterContext(
         String apiKey,
         Integer maxOutputTokens,
         Double temperature,
+        Double topP,
         List<ToolCallback> toolCallbacks,
         Long executionId) {
 
@@ -63,12 +65,18 @@ public record ModelAdapterContext(
 
     public ModelAdapterContext(AgentEntity agent, ModelEntity model, String apiKey,
                                Integer maxOutputTokens, List<ToolCallback> toolCallbacks) {
-        this(agent, model, apiKey, maxOutputTokens, null, toolCallbacks, null);
+        this(agent, model, apiKey, maxOutputTokens, null, null, toolCallbacks, null);
     }
 
     public ModelAdapterContext(AgentEntity agent, ModelEntity model, String apiKey,
                                Integer maxOutputTokens, Double temperature, List<ToolCallback> toolCallbacks) {
-        this(agent, model, apiKey, maxOutputTokens, temperature, toolCallbacks, null);
+        this(agent, model, apiKey, maxOutputTokens, temperature, null, toolCallbacks, null);
+    }
+
+    public ModelAdapterContext(AgentEntity agent, ModelEntity model, String apiKey,
+                               Integer maxOutputTokens, Double temperature, Double topP,
+                               List<ToolCallback> toolCallbacks) {
+        this(agent, model, apiKey, maxOutputTokens, temperature, topP, toolCallbacks, null);
     }
 
     /**
@@ -77,7 +85,7 @@ public record ModelAdapterContext(
      * @return 新的ModelAdapterContext实例，其余字段复用原对象
      */
     public ModelAdapterContext withMaxOutputTokens(Integer value) {
-        return new ModelAdapterContext(agent, model, apiKey, value, temperature, toolCallbacks, executionId);
+        return new ModelAdapterContext(agent, model, apiKey, value, temperature, topP, toolCallbacks, executionId);
     }
 
     /**
@@ -86,7 +94,7 @@ public record ModelAdapterContext(
      * @return 新的ModelAdapterContext实例，其余字段复用原对象
      */
     public ModelAdapterContext withToolCallbacks(List<ToolCallback> value) {
-        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, temperature, value, executionId);
+        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, temperature, topP, value, executionId);
     }
 
     /**
@@ -95,7 +103,15 @@ public record ModelAdapterContext(
      * @return 新的ModelAdapterContext实例，其余字段复用原对象
      */
     public ModelAdapterContext withTemperature(Double value) {
-        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, value, toolCallbacks, executionId);
+        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, value, topP, toolCallbacks, executionId);
+    }
+
+    /**
+     * 复制当前上下文，替换Top-P采样率。
+     */
+    public ModelAdapterContext withTopP(Double value) {
+        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, temperature, value,
+                toolCallbacks, executionId);
     }
 
     /**
@@ -104,7 +120,8 @@ public record ModelAdapterContext(
      * @return 新的ModelAdapterContext实例，其余字段复用原对象
      */
     public ModelAdapterContext withExecutionId(Long value) {
-        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, temperature, toolCallbacks, value);
+        return new ModelAdapterContext(agent, model, apiKey, maxOutputTokens, temperature, topP,
+                toolCallbacks, value);
     }
 
     /**
@@ -114,7 +131,8 @@ public record ModelAdapterContext(
      * @return 连通性测试专用上下文副本
      */
     public ModelAdapterContext forConnectivityTest() {
-        return new ModelAdapterContext(agent, model, apiKey, 1, temperature, Collections.emptyList(), null);
+        return new ModelAdapterContext(agent, model, apiKey, 1, temperature, topP,
+                Collections.emptyList(), null);
     }
 
     /**
@@ -129,6 +147,7 @@ public record ModelAdapterContext(
                 ", apiKey=" + (apiKey == null ? "null" : "<redacted>") +
                 ", maxOutputTokens=" + maxOutputTokens +
                 ", temperature=" + temperature +
+                ", topP=" + topP +
                 ", executionId=" + executionId +
                 ", toolCallbackCount=" + (toolCallbacks == null ? 0 : toolCallbacks.size()) + "]";
     }

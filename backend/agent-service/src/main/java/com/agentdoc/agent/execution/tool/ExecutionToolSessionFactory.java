@@ -114,6 +114,10 @@ public class ExecutionToolSessionFactory {
                     context.allowedMcpTools()
             );
             sessions.add(workbench);
+            if (workbench.callbacks().isEmpty()) {
+                throw new IllegalStateException(
+                        "当前 Agent 未获得 Workbench 文档工具权限，请检查 Agent 工具白名单和 Skill allowed-tools 配置");
+            }
             List<SourcedTool> tools = new ArrayList<>();
             workbench.callbacks().forEach(callback ->
                     tools.add(new SourcedTool(callback, ToolSource.MCP_REMOTE.name(),
@@ -123,7 +127,7 @@ public class ExecutionToolSessionFactory {
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 for (ExternalMcpConnection connection : context.externalMcpConnections()) {
                     List<String> allowed = allowedExternalTools(connection, context.allowedMcpTools());
-                    if (allowed.isEmpty()) continue;
+                    if (allowed != null && allowed.isEmpty()) continue;
                     endpointValidator.validateExternal(connection.endpointUrl());
                     futures.add(CompletableFuture.supplyAsync(() -> openExternal(
                             connection, allowed, timeoutSeconds(context), cancelRequested), executor));
@@ -207,14 +211,19 @@ public class ExecutionToolSessionFactory {
 
     private OpenedExternal openExternal(ExternalMcpConnection connection, List<String> allowedTools,
                                         int timeoutSeconds, BooleanSupplier cancelRequested) {
-        String token = McpAuthType.BEARER.name().equals(connection.authType())
-                ? cryptoService.decrypt(connection.encryptedAuthToken()) : null;
-        return new OpenedExternal(connection, TaskScopedMcpTools.openExternal(connection.endpointUrl(), token,
-                connection.serverKey(), timeoutSeconds, cancelRequested, allowedTools,
+        String credential = McpAuthType.NONE.name().equals(connection.authType())
+                ? null : cryptoService.decrypt(connection.encryptedAuthToken());
+        String bearerToken = McpAuthType.BEARER.name().equals(connection.authType()) ? credential : null;
+        String queryParamValue = McpAuthType.QUERY_PARAM.name().equals(connection.authType())
+                ? credential : null;
+        return new OpenedExternal(connection, TaskScopedMcpTools.openExternal(connection.endpointUrl(), bearerToken,
+                connection.authParamName(), queryParamValue, connection.serverKey(),
+                timeoutSeconds, cancelRequested, allowedTools,
                 endpointValidator::validateResolved));
     }
 
     private List<String> allowedExternalTools(ExternalMcpConnection connection, List<String> allowedTools) {
+        if (allowedTools == null) return connection.bindingToolWhitelist();
         String prefix = connection.serverKey() + "__";
         List<String> remoteNames = allowedTools.stream().filter(value -> value.startsWith(prefix))
                 .map(value -> value.substring(prefix.length())).distinct().sorted().toList();

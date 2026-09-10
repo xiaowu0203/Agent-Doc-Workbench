@@ -1,5 +1,6 @@
 package com.agentdoc.agent.execution.model;
 
+import com.agentdoc.agent.config.ModelClientProperties;
 import com.agentdoc.agent.enums.ModelAdapterType;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.common.pojo.TokenValue;
@@ -9,7 +10,12 @@ import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
 import java.util.Set;
 
@@ -35,12 +41,15 @@ import java.util.Set;
 @Component
 public class OpenAiChatModelAdapter extends AbstractSpringAiModelAdapter {
 
+    private final ModelClientProperties clientProperties;
+
     /**
      * 构造器注入ChatModel缓存管理器，交给父类维护实例缓存
      * @param chatModelCache ChatModel实例缓存，以modelId+configVersion作为缓存key
      */
-    public OpenAiChatModelAdapter(ModelChatModelCache chatModelCache) {
+    public OpenAiChatModelAdapter(ModelChatModelCache chatModelCache, ModelClientProperties clientProperties) {
         super(chatModelCache);
+        this.clientProperties = clientProperties;
     }
 
     /**
@@ -76,12 +85,26 @@ public class OpenAiChatModelAdapter extends AbstractSpringAiModelAdapter {
     protected ChatModel chatModel(ModelAdapterContext context) {
         // 获取模型信息
         ModelEntity model = context.model();
+        // 创建JDK原生HttpClient实例，用于RestClient底层HTTP通信
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(
+                java.net.http.HttpClient.newBuilder().build());
+        // 设置RestClient读取超时时间（读取响应数据超时）
+        requestFactory.setReadTimeout(clientProperties.getReadTimeout());
+        // 构建RestClient构建器，指定使用上面的JDK HTTP请求工厂
+        RestClient.Builder restClient = RestClient.builder().requestFactory(requestFactory);
+        // 构建WebClient构建器，使用Reactor的HttpClient，配置响应超时
+        WebClient.Builder webClient = WebClient.builder().clientConnector(new ReactorClientHttpConnector(
+                HttpClient.create().responseTimeout(clientProperties.getReadTimeout())));
         // 构建OpenAI底层API客户端，baseUrl支持兼容模式自定义endpoint
         OpenAiApi api = OpenAiApi.builder()
                 // 解析并设置请求Url
                 .baseUrl(ModelEndpoint.resolve(model))
                 // ApiKey
                 .apiKey(context.apiKey())
+                // 传入RestClient构建器，配置JDK HTTP客户端、超时等参数（处理普通非流式请求）
+                .restClientBuilder(restClient)
+                // 传入WebClient构建器，用于流式SSE响应调用（处理SSE 流式响应）
+                .webClientBuilder(webClient)
                 .build();
         // 缓存实例的defaultOptions：仅设置模型名称、关闭Spring‑AI内部自动工具执行；不含任务级动态参数
         OpenAiChatOptions options = OpenAiChatOptions.builder()
@@ -120,6 +143,9 @@ public class OpenAiChatModelAdapter extends AbstractSpringAiModelAdapter {
         // 温度设置
         if (context.temperature() != null) {
             options.temperature(context.temperature());
+        }
+        if (context.topP() != null) {
+            options.topP(context.topP());
         }
         return options.build();
     }

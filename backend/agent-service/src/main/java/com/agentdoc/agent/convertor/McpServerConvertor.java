@@ -2,6 +2,7 @@ package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.constant.McpConstant;
 import com.agentdoc.agent.enums.McpAuthType;
+import com.agentdoc.agent.enums.McpConnectionStatus;
 import com.agentdoc.agent.enums.McpServerStatus;
 import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
 import com.agentdoc.agent.pojo.dto.McpServerUpdateDTO;
@@ -35,11 +36,14 @@ public final class McpServerConvertor {
         entity.setDisplayName(dto.displayName());
         entity.setEndpointUrl(dto.endpointUrl());
         entity.setAuthType(dto.authType().name());
+        entity.setAuthParamName(dto.authType() == McpAuthType.QUERY_PARAM ? dto.authParamName() : null);
         entity.setEncryptedAuthToken(encryptedAuthToken);
         // 默认版本号：1
         entity.setConfigVersion(McpConstant.INITIAL_CONFIG_VERSION);
         // 默认开启
         entity.setStatus(McpServerStatus.ENABLED.getCode());
+        entity.setConnectionStatus(McpConnectionStatus.UNTESTED.name());
+        entity.setDiscoveredToolCount(0);
         return entity;
     }
 
@@ -57,6 +61,7 @@ public final class McpServerConvertor {
         entity.setDisplayName(dto.displayName());
         entity.setEndpointUrl(dto.endpointUrl());
         entity.setAuthType(dto.authType().name());
+        entity.setAuthParamName(dto.authType() == McpAuthType.QUERY_PARAM ? dto.authParamName() : null);
         entity.setEncryptedAuthToken(encryptedAuthToken);
         entity.setStatus(dto.status());
         entity.setConfigVersion(entity.getConfigVersion() + McpConstant.CONFIG_VERSION_INCREMENT);
@@ -78,8 +83,15 @@ public final class McpServerConvertor {
                 entity.getDisplayName(),
                 entity.getEndpointUrl(),
                 McpAuthType.valueOf(entity.getAuthType()),
+                entity.getAuthParamName(),
                 entity.getEncryptedAuthToken() != null,
                 entity.getConfigVersion(),
-                entity.getStatus());
+                entity.getStatus(),
+                McpConnectionStatus.valueOf(entity.getConnectionStatus()),
+                entity.getLastTestedAt(),
+                entity.getLastTestDurationMs(),
+                entity.getLastTestError(),
+                entity.getDiscoveredToolCount(),
+                entity.getToolsDiscoveredAt());
     }
 }

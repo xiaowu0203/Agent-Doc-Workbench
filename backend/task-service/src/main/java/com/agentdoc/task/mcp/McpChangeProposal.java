@@ -6,5 +6,6 @@ import java.util.List;
 
 public record McpChangeProposal(
         Long baseVersion,
-        List<ChangeItemDTO> changes) {
+        List<ChangeItemDTO> changes,
+        String summary) {
 }

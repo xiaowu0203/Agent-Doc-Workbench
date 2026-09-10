@@ -8,5 +8,7 @@ import java.util.List;
 
 @Schema(description = "Agent Skill 绑定替换参数")
 public record AgentSkillReplaceDTO(
-        @NotNull @Size(max = 20) @Schema(description = "Skill 版本 ID 列表") List<Long> skillVersionIds) {
+        @NotNull
+        @Size(max = 20)
+        @Schema(description = "Skill 版本 ID 列表") List<Long> skillVersionIds) {
 }

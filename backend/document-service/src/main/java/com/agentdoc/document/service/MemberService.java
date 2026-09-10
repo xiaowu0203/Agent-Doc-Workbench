@@ -1,22 +1,31 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.mapper.MemberMapper;
+import com.agentdoc.document.mapper.SpaceMapper;
 import com.agentdoc.document.mapper.SpaceRoleMapper;
 import com.agentdoc.document.pojo.dto.MemberAddDTO;
 import com.agentdoc.document.pojo.dto.MemberRoleUpdateDTO;
+import com.agentdoc.document.pojo.dto.MemberUserQueryDTO;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import com.agentdoc.document.pojo.entity.SpaceRoleEntity;
-import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.agentdoc.document.pojo.vo.MemberVO;
+import com.agentdoc.document.pojo.vo.MemberUserVO;
+import com.agentdoc.document.pojo.vo.PlatformUserMembershipVO;
+import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -33,9 +42,11 @@ import static com.agentdoc.document.constant.DefaultSpaceRoleConstant.OWNER;
 public class MemberService {
 
     private final MemberMapper memberMapper;
+    private final SpaceMapper spaceMapper;
     private final SpaceRoleMapper spaceRoleMapper;
     private final SpacePermissionService permissionService;
     private final SpaceRoleService spaceRoleService;
+    private final AuthFeign authFeign;
 
     /**
      * 添加空间成员
@@ -46,6 +57,13 @@ public class MemberService {
      * @return 新增完成的成员VO视图
      */
     public MemberVO add(Long spaceId, MemberAddDTO dto) {
+        Result<List<UserRefVO>> userResult = authFeign.queryUsers(
+                new UserBatchQueryDTO(List.of(dto.userId())));
+        List<UserRefVO> users = userResult == null ? null : userResult.data();
+        if (users == null || users.stream().noneMatch(user -> dto.userId().equals(user.id())
+                && Boolean.TRUE.equals(user.enabled()))) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "用户不存在或已禁用");
+        }
         // 查询该用户是否已经是本空间成员
         MemberEntity exist = findMember(spaceId, dto.userId());
         if (exist != null) {
@@ -80,6 +98,63 @@ public class MemberService {
         return members.stream()
                 .map(member -> member.toVO(SpaceRoleSummaryVO.from(
                         roleMap.get(member.getRoleId()))))
+                .toList();
+    }
+
+    /**
+     * 批量查询空间成员的用户摘要。
+     * <p>仅返回当前空间已有成员，避免借此接口查询空间外用户。</p>
+     *
+     * @param spaceId 空间 ID
+     * @param dto 用户 ID 查询请求
+     * @return 用户摘要列表
+     */
+    public List<MemberUserVO> queryUsers(Long spaceId, MemberUserQueryDTO dto) {
+        Set<Long> memberUserIds = memberMapper.selectList(new LambdaQueryWrapper<MemberEntity>()
+                        .select(MemberEntity::getUserId)
+                        .eq(MemberEntity::getSpaceId, spaceId)
+                        .in(MemberEntity::getUserId, dto.userIds()))
+                .stream()
+                .map(MemberEntity::getUserId)
+                .collect(Collectors.toSet());
+        if (memberUserIds.isEmpty()) {
+            return List.of();
+        }
+        List<UserRefVO> users = authFeign.queryUsers(new UserBatchQueryDTO(memberUserIds.stream().toList())).data();
+        if (users == null) {
+            return List.of();
+        }
+        return users.stream()
+                .map(user -> new MemberUserVO(user.id(), user.username(), user.nickname()))
+                .toList();
+    }
+
+    /**
+     * 批量查询用户在全部空间的显式成员关系，仅供平台超级管理员只读页面使用。
+     */
+    public List<PlatformUserMembershipVO> queryPlatformMemberships(List<Long> userIds) {
+        // 查询空间成员列表
+        List<MemberEntity> members = memberMapper.selectList(new LambdaQueryWrapper<MemberEntity>()
+                .in(MemberEntity::getUserId, userIds)
+                .orderByDesc(MemberEntity::getCreatedAt));
+        if (members.isEmpty()) {
+            return List.of();
+        }
+        // 空间角色ID-空间角色Map映射
+        Map<Long, SpaceRoleEntity> roles = spaceRoleMapper.selectBatchIds(
+                        members.stream().map(MemberEntity::getRoleId).distinct().toList()).stream()
+                .collect(Collectors.toMap(SpaceRoleEntity::getId, Function.identity()));
+        // 空间ID-空间名称Map映射
+        Map<Long, String> spaceNames = spaceMapper.selectBatchIds(
+                        members.stream().map(MemberEntity::getSpaceId).distinct().toList()).stream()
+                .collect(Collectors.toMap(space -> space.getId(), space -> space.getName()));
+        // 过滤掉无效成员
+        return members.stream()
+                .filter(member -> roles.containsKey(member.getRoleId())
+                        && spaceNames.containsKey(member.getSpaceId()))
+                .map(member -> new PlatformUserMembershipVO(member.getUserId(), member.getSpaceId(),
+                        spaceNames.get(member.getSpaceId()),
+                        SpaceRoleSummaryVO.from(roles.get(member.getRoleId()))))
                 .toList();
     }
 

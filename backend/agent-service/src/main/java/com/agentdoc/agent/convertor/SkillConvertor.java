@@ -2,6 +2,7 @@ package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
+import com.agentdoc.agent.pojo.vo.SkillLatestVersionVO;
 import com.agentdoc.agent.pojo.vo.SkillVO;
 
 /**
@@ -18,11 +19,15 @@ public final class SkillConvertor {
      *
      * @param entity      Skill主表数据库实体，非null
      * @param versionCount 该Skill下拥有的版本总数量（统计值，来自查询count）
+     * @param boundAgentCount 当前启用绑定的Agent数量
+     * @param latestVersion 最新版本摘要
      * @return 组装完成的 {@link SkillVO}
      */
-    public static SkillVO toVO(SkillEntity entity, long versionCount) {
+    public static SkillVO toVO(SkillEntity entity, long versionCount, long boundAgentCount,
+                               SkillLatestVersionVO latestVersion) {
         return new SkillVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDisplayName(),
                 entity.getDescription(),
-                SkillStatus.fromCode(entity.getStatus()), versionCount, entity.getCreatedBy(), entity.getCreatedAt());
+                SkillStatus.fromCode(entity.getStatus()), versionCount, boundAgentCount, latestVersion,
+                entity.getCreatedBy(), entity.getCreatedAt(), entity.getUpdatedAt());
     }
 }

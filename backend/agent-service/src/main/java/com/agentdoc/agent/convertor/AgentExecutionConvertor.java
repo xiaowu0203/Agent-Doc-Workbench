@@ -10,7 +10,13 @@ import com.agentdoc.common.enums.TokenValueSource;
 import com.agentdoc.common.pojo.TokenValue;
 import com.agentdoc.common.utils.JsonUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Agent执行记录转换器
@@ -48,12 +54,18 @@ public final class AgentExecutionConvertor {
         entity.setA2aTaskId(a2aTaskId);
         entity.setA2aContextId(a2aContextId);
         entity.setWorkbenchTaskId(input.workbenchTaskId());
+        entity.setSpaceId(input.spaceId());
         entity.setAgentId(agent.getId());
+        entity.setAgentNameSnapshot(agent.getName());
         // 记录Agent配置版本，后续配置修改不影响历史执行记录
         entity.setAgentConfigVersion(agent.getConfigVersion());
+        entity.setMaxIterations(agent.getMaxIterations());
+        entity.setExecutionTimeoutSeconds(agent.getExecutionTimeoutSeconds());
         entity.setSystemPromptSnapshot(systemPromptSnapshot);
         // 将模型关键配置序列化为JSON快照保存
         entity.setModelSnapshot(toModelSnapshot(model));
+        entity.setModelConfigVersion(model.getConfigVersion());
+        entity.setModelDisplayNameSnapshot(model.getDisplayName());
         entity.setPromptHash(promptHash);
         // 初始状态：已提交，还未开始执行
         entity.setStatus(AgentExecutionStatus.SUBMITTED.name());
@@ -66,6 +78,46 @@ public final class AgentExecutionConvertor {
         entity.setOutputTokens(null);
         entity.setOutputTokensEstimated(Boolean.FALSE);
         return entity;
+    }
+
+    /**
+     * 计算执行准备阶段已冻结配置的稳定哈希。哈希输入包含原始提示词，但查询接口只返回摘要。
+     *
+     * @param execution 已完成准备阶段字段填充的执行记录
+     * @return 小写 SHA-256
+     */
+    public static String snapshotHash(AgentExecutionEntity execution) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("workbenchTaskId", execution.getWorkbenchTaskId());
+        snapshot.put("spaceId", execution.getSpaceId());
+        snapshot.put("agentId", execution.getAgentId());
+        snapshot.put("agentName", execution.getAgentNameSnapshot());
+        snapshot.put("agentConfigVersion", execution.getAgentConfigVersion());
+        snapshot.put("maxIterations", execution.getMaxIterations());
+        snapshot.put("executionTimeoutSeconds", execution.getExecutionTimeoutSeconds());
+        snapshot.put("systemPrompt", execution.getSystemPromptSnapshot());
+        snapshot.put("userInstruction", execution.getUserInstructionSnapshot());
+        snapshot.put("model", execution.getModelSnapshot());
+        snapshot.put("modelConfigVersion", execution.getModelConfigVersion());
+        snapshot.put("skillSnapshot", execution.getSkillSnapshotJson());
+        snapshot.put("skillInstructionHash", execution.getSkillInstructionHash());
+        snapshot.put("skillSelectionMode", execution.getSkillSelectionMode());
+        snapshot.put("skillSelectionEffectiveMode", execution.getSkillSelectionEffectiveMode());
+        snapshot.put("skillRouterModelId", execution.getSkillRouterModelId());
+        snapshot.put("selectedSkillVersionIds", execution.getSelectedSkillVersionIdsJson());
+        snapshot.put("skillRouterSnapshot", execution.getSkillRouterSnapshotJson());
+        snapshot.put("toolWhitelist", execution.getToolWhitelistSnapshot());
+        snapshot.put("externalMcpSnapshot", execution.getExternalMcpSnapshotJson());
+        return sha256(JsonUtils.toJson(snapshot));
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前 JDK 不支持 SHA-256", exception);
+        }
     }
 
     /**

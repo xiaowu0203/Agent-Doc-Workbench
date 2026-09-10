@@ -2,16 +2,23 @@ package com.agentdoc.task.mcp;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
+import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.enums.ChangeRequestStatus;
+import com.agentdoc.task.enums.AuditAction;
+import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
 import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.task.pojo.vo.TaskDocumentContextVO;
 import com.agentdoc.task.service.ChangeRequestService;
+import com.agentdoc.task.service.AuditLogService;
 import com.agentdoc.task.service.TaskService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,7 +29,7 @@ import org.springframework.stereotype.Service;
  * 面向Agent的MCP工具入口服务，所有MCP工具调用统一在此层接收。
  * 每一个工具方法首先通过{@link McpTaskScopeService}校验任务能力令牌与对应Action权限，
  * 拿到MCP安全作用域后，再调用文档Feign接口、变更申请服务完成业务逻辑。
- * 负责读取文档片段、获取任务执行上下文、Agent提交文档变更提案三类能力。
+ * 负责读取文档片段、获取任务执行上下文、提交正式文档变更提案和直接更新草稿文档。
  * </p>
  */
 @Service
@@ -32,6 +39,7 @@ public class WorkbenchMcpApplicationService {
     private final McpTaskScopeService scopeService;
     private final TaskService taskService;
     private final ChangeRequestService changeRequestService;
+    private final AuditLogService auditLogService;
     private final DocumentFeign documentFeign;
 
     /**
@@ -42,11 +50,12 @@ public class WorkbenchMcpApplicationService {
      * @return 文档执行上下文对象
      * @throws BusinessException 令牌校验失败、权限不足、文档服务调用异常时抛出
      */
-    public DocumentExecutionContextVO getTaskContext() {
+    public TaskDocumentContextVO getTaskContext() {
         //  获取当前任务的范围，需要验证ACTION_READ_FRAGMENT权限
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_READ_FRAGMENT);
         // 远程调用查询【Agent任务执行上下文】，并包装返回结果
-        return requireData(documentFeign.getExecutionContext(scope.documentId()));
+        DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(scope.documentId()));
+        return taskService.getTaskDocumentContext(scope.taskId(), document);
     }
 
     /**
@@ -66,6 +75,7 @@ public class WorkbenchMcpApplicationService {
         }
         //  获取当前任务的范围，需要验证ACTION_READ_FRAGMENT权限
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_READ_FRAGMENT);
+        taskService.requireReadableRange(scope.taskId(), start, length);
         // 远程调用获取【文档片段】并封装结果
         return requireData(documentFeign.readFragment(scope.documentId(), start, length));
     }
@@ -80,19 +90,68 @@ public class WorkbenchMcpApplicationService {
      * @throws BusinessException 参数非法、令牌校验失败、权限不足、任务不存在时抛出
      */
     public McpChangeProposalResult proposeChanges(McpChangeProposal proposal) {
-        if (proposal == null || proposal.baseVersion() == null
-                || proposal.changes() == null || proposal.changes().isEmpty()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "变更提案不能为空");
-        }
+        validateProposal(proposal);
         //  获取当前任务的范围，需要验证ACTION_CREATE_CHANGE_REQUEST权限
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_CREATE_CHANGE_REQUEST);
         // 获取任务信息
         TaskEntity task = taskService.require(scope.taskId());
+        if (DocType.fromCode(task.getDocumentType()) != DocType.FORMAL) {
+            throw new BusinessException(ErrorCode.CONFLICT, "草稿文档不应提交正式变更请求");
+        }
         // 提交变更提案，生成变更申请单
         ChangeRequestEntity request = changeRequestService.submitFromAgent(
-                task, proposal.changes(), proposal.baseVersion());
+                task, proposal.changes(), proposal.baseVersion(), proposal.summary());
+        auditLogService.recordAgent(task.getSpaceId(), task.getId(), task.getAgentId(),
+                AuditAction.CHANGE_REQUEST_SUBMITTED, AuditTargetType.CHANGE_REQUEST,
+                request.getId(), proposal.summary());
         return new McpChangeProposalResult(
                 request.getId(), ChangeRequestStatus.fromCode(request.getStatus()).name());
+    }
+
+    /**
+     * 将MCP结构化变更提案直接应用到任务绑定的草稿文档
+     * Agent通过MCP协议提交变更，对草稿文档执行变更合并
+     * @param proposal MCP变更提案，包含基准版本、变更集合、变更摘要
+     * @return 合并结果VO，包含合并后版本信息
+     */
+    public MergeResultVO applyDraftChanges(McpChangeProposal proposal) {
+        // 校验变更提案参数合法性
+        validateProposal(proposal);
+        // 获取任务作用域，校验拥有草稿写权限
+        McpTaskScope scope = scopeService.require(JwtConstant.ACTION_WRITE_DRAFT);
+        // 获取当前任务实体，校验任务存在
+        TaskEntity task = taskService.require(scope.taskId());
+        // 禁止Agent直接修改正式文档，仅允许操作草稿文档
+        if (DocType.fromCode(task.getDocumentType()) != DocType.DRAFT) {
+            throw new BusinessException(ErrorCode.CONFLICT, "正式文档不能由 Agent 直接修改");
+        }
+        // 调用文档服务执行草稿变更合并
+        return requireData(documentFeign.applyDraftAgentChanges(new MergeRequestDTO(
+                scope.documentId(), proposal.baseVersion(), proposal.changes(), "Agent 更新草稿")));
+    }
+
+    /**
+     * 校验MCP变更提案参数合法性
+     * 校验提案非空、基准版本、变更集合不为空；校验摘要长度；校验每一条变更项字段完整
+     * @param proposal MCP变更提案对象
+     */
+    private void validateProposal(McpChangeProposal proposal) {
+        // 提案、基准版本、变更集合不能为null或空
+        if (proposal == null || proposal.baseVersion() == null
+                || proposal.changes() == null || proposal.changes().isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "变更提案不能为空");
+        }
+        // 变更摘要长度限制，超过最大长度抛出参数异常
+        if (proposal.summary() != null
+                && proposal.summary().length() > TaskConstant.MAX_CHANGE_REVIEW_TEXT_LENGTH) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "变更摘要最长 500 字符");
+        }
+        // 遍历校验每一条变更项：操作类型、新文本不能为空
+        proposal.changes().forEach(item -> {
+            if (item == null || item.op() == null || item.newText() == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项操作和新内容不能为空");
+            }
+        });
     }
 
     /**

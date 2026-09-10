@@ -2,6 +2,7 @@ package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
+import com.agentdoc.agent.pojo.vo.SkillLatestVersionVO;
 import com.agentdoc.agent.pojo.vo.SkillVersionVO;
 import com.agentdoc.agent.skill.archive.SkillPackageEntry;
 import com.agentdoc.common.utils.JsonUtils;
@@ -29,8 +30,20 @@ public final class SkillVersionConvertor {
         return new SkillVersionVO(entity.getId(), entity.getSkillId(), entity.getVersionNo(),
                 SkillVersionStatus.fromCode(entity.getStatus()), entity.getActivationDescription(),
                 entity.getSha256(), entity.getPackageSize(),
-                readJsonList(entity.getAllowedToolsJson()), readReadablePaths(entity.getManifestJson()),
+                readAllowedTools(entity.getAllowedToolsJson()), readReadablePaths(entity.getManifestJson()),
                 entity.getCreatedBy(), entity.getCreatedAt(), entity.getPublishedAt());
+    }
+
+    /**
+     * Skill版本实体转换为列表卡片使用的稳定摘要。
+     *
+     * @param entity Skill版本数据库实体，非null
+     * @return 最新版本摘要
+     */
+    public static SkillLatestVersionVO toLatestVersionVO(SkillVersionEntity entity) {
+        return new SkillLatestVersionVO(entity.getId(), entity.getVersionNo(),
+                SkillVersionStatus.fromCode(entity.getStatus()), entity.getActivationDescription(),
+                readAllowedTools(entity.getAllowedToolsJson()).size(), entity.getCreatedAt(), entity.getPublishedAt());
     }
 
     /**
@@ -49,7 +62,7 @@ public final class SkillVersionConvertor {
      * @param json JSON数组字符串（如allowedToolsJson）
      * @return 字符串列表；解析为null返回空集合{@code List.of()}
      */
-    private static List<String> readJsonList(String json) {
+    public static List<String> readAllowedTools(String json) {
         List<String> values = JsonUtils.parse(json, new TypeReference<List<String>>() { });
         return values == null ? List.of() : values;
     }

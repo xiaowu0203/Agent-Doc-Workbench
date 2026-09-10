@@ -22,5 +22,6 @@ public record ModelVO(
         @Schema(description = "输入价格（每百万 Token）") BigDecimal inputPricePerMillion,
         @Schema(description = "输出价格（每百万 Token）") BigDecimal outputPricePerMillion,
         @Schema(description = "状态") ModelStatus status,
+        @Schema(description = "关联 Agent 数量") Long agentCount,
         @Schema(description = "模型描述") String description) {
 }

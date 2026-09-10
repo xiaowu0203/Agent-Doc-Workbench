@@ -6,6 +6,7 @@ import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
+import com.agentdoc.agent.pojo.vo.AgentCardVO;
 import com.agentdoc.agent.pojo.vo.AgentVO;
 import com.agentdoc.common.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -102,7 +103,20 @@ public final class AgentConvertor {
                 parseToolWhitelist(entity.getToolWhitelist()),
                 entity.getMaxIterations(),
                 entity.getExecutionTimeoutSeconds(), entity.getConfigVersion(),
-                AgentStatus.fromCode(entity.getStatus()), entity.getCreatedBy(), entity.getCreatedAt());
+                AgentStatus.fromCode(entity.getStatus()), entity.getCreatedBy(), entity.getCreatedAt(),
+                entity.getUpdatedAt());
+    }
+
+    /**
+     * 将 Agent 实体和批量查询得到的关联摘要转换为列表卡片。
+     */
+    public static AgentCardVO toCardVO(AgentEntity entity, String modelDisplayName,
+                                       long skillCount, long mcpCount, long toolCount) {
+        return new AgentCardVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDescription(),
+                entity.getModelId(), modelDisplayName, SkillSelectionMode.valueOf(entity.getSkillSelectionMode()),
+                entity.getExternalMcpEnabled(), entity.getTokenBudget(), entity.getMaxIterations(),
+                entity.getExecutionTimeoutSeconds(), entity.getConfigVersion(), AgentStatus.fromCode(entity.getStatus()),
+                skillCount, mcpCount, toolCount, entity.getCreatedAt(), entity.getUpdatedAt());
     }
 
     /**

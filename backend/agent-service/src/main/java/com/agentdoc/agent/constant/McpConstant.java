@@ -29,10 +29,16 @@ public final class McpConstant {
     public static final int MAX_TOOL_RESULT_BYTES = 1024 * 1024;
     /** MCP 认证令牌最大字符数。 */
     public static final int MAX_AUTH_TOKEN_LENGTH = 4_096;
+    /** Query API Key 参数名最大字符数。 */
+    public static final int MAX_AUTH_PARAM_NAME_LENGTH = 64;
     /** TCP 端口最大值。 */
     public static final int MAX_TCP_PORT = 65_535;
     /** 外部 MCP DNS 解析超时秒数。 */
     public static final int DNS_RESOLUTION_TIMEOUT_SECONDS = 3;
+    /** MCP 管理页连接测试超时秒数。 */
+    public static final int CONNECTION_TEST_TIMEOUT_SECONDS = 15;
+    /** MCP 连接测试错误摘要最大字符数。 */
+    public static final int MAX_CONNECTION_TEST_ERROR_LENGTH = 1_000;
     /** MCP Server 初始配置版本。 */
     public static final long INITIAL_CONFIG_VERSION = 1L;
     /** MCP Server 配置版本递增步长。 */

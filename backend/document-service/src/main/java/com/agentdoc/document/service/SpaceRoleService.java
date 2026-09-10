@@ -1,8 +1,13 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.SpaceRoleAuditAction;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.dto.SpaceRoleAuditDTO;
 import com.agentdoc.common.utils.AuthUtils;
+import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.document.constant.DefaultSpaceRoleConstant;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.mapper.PermissionMapper;
@@ -23,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,6 +61,7 @@ public class SpaceRoleService {
     private final SpaceRoleMapper spaceRoleMapper;
     private final SpaceRolePermissionMapper rolePermissionMapper;
     private final MemberMapper memberMapper;
+    private final TaskFeign taskFeign;
 
     /**
      * 获取系统全部可用权限列表
@@ -84,8 +91,10 @@ public class SpaceRoleService {
         // 批量查询所有角色对应的权限
         Map<Long, List<String>> permissionMap = listPermissionMap(
                 roles.stream().map(SpaceRoleEntity::getId).toList());
+        Map<Long, Long> memberCountMap = listMemberCountMap(spaceId);
         return roles.stream()
                 .map(role -> SpaceRoleVO.from(role,
+                        memberCountMap.getOrDefault(role.getId(), 0L),
                         permissionMap.getOrDefault(role.getId(), List.of())))
                 .toList();
     }
@@ -100,7 +109,10 @@ public class SpaceRoleService {
      */
     public SpaceRoleVO detail(Long spaceId, Long roleId) {
         SpaceRoleEntity role = requireRole(spaceId, roleId);
-        return SpaceRoleVO.from(role, listPermissionCodes(roleId));
+        long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<MemberEntity>()
+                .eq(MemberEntity::getSpaceId, spaceId)
+                .eq(MemberEntity::getRoleId, roleId));
+        return SpaceRoleVO.from(role, memberCount, listPermissionCodes(roleId));
     }
 
     /**
@@ -132,7 +144,10 @@ public class SpaceRoleService {
         spaceRoleMapper.insert(role);
         // 批量插入角色权限关联
         insertPermissions(role.getId(), permissions);
-        return SpaceRoleVO.from(role, permissions);
+        recordRoleAudit(spaceId, role.getId(), SpaceRoleAuditAction.SPACE_ROLE_CREATED,
+                Map.of("roleKey", role.getRoleKey(), "displayName", role.getDisplayName(),
+                        "permissionCodes", permissions));
+        return SpaceRoleVO.from(role, 0L, permissions);
     }
 
     /**
@@ -144,12 +159,25 @@ public class SpaceRoleService {
      * @return 更新后角色VO
      * @throws BusinessException 角色不存在；角色为受保护 OWNER 时不可修改
      */
+    @Transactional(rollbackFor = Exception.class)
     public SpaceRoleVO update(Long spaceId, Long roleId, SpaceRoleUpdateDTO dto) {
         SpaceRoleEntity role = requireMutableRole(spaceId, roleId);
+        String previousDisplayName = role.getDisplayName();
+        String previousDescription = role.getDescription();
         role.setDisplayName(dto.displayName());
         role.setDescription(dto.description());
         spaceRoleMapper.updateById(role);
-        return SpaceRoleVO.from(role, listPermissionCodes(roleId));
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("roleKey", role.getRoleKey());
+        detail.put("previousDisplayName", previousDisplayName);
+        detail.put("displayName", role.getDisplayName());
+        detail.put("previousDescription", previousDescription);
+        detail.put("description", role.getDescription());
+        recordRoleAudit(spaceId, roleId, SpaceRoleAuditAction.SPACE_ROLE_UPDATED, detail);
+        long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<MemberEntity>()
+                .eq(MemberEntity::getSpaceId, spaceId)
+                .eq(MemberEntity::getRoleId, roleId));
+        return SpaceRoleVO.from(role, memberCount, listPermissionCodes(roleId));
     }
 
     /**
@@ -164,13 +192,20 @@ public class SpaceRoleService {
     @Transactional(rollbackFor = Exception.class)
     public SpaceRoleVO replacePermissions(Long spaceId, Long roleId, RolePermissionReplaceDTO dto) {
         SpaceRoleEntity role = requireMutableRole(spaceId, roleId);
+        List<String> previousPermissions = listPermissionCodes(roleId);
         List<String> permissions = validatePermissionCodes(dto.permissionCodes());
         // 删除该角色全部旧权限关联
         rolePermissionMapper.delete(new LambdaQueryWrapper<SpaceRolePermissionEntity>()
                 .eq(SpaceRolePermissionEntity::getRoleId, roleId));
         // 写入全新权限集合
         insertPermissions(roleId, permissions);
-        return SpaceRoleVO.from(role, permissions);
+        recordRoleAudit(spaceId, roleId, SpaceRoleAuditAction.SPACE_ROLE_PERMISSIONS_REPLACED,
+                Map.of("roleKey", role.getRoleKey(), "previousPermissionCodes", previousPermissions,
+                        "permissionCodes", permissions));
+        long memberCount = memberMapper.selectCount(new LambdaQueryWrapper<MemberEntity>()
+                .eq(MemberEntity::getSpaceId, spaceId)
+                .eq(MemberEntity::getRoleId, roleId));
+        return SpaceRoleVO.from(role, memberCount, permissions);
     }
 
     /**
@@ -195,6 +230,8 @@ public class SpaceRoleService {
                 .eq(SpaceRolePermissionEntity::getRoleId, roleId));
         // 删除角色本体
         spaceRoleMapper.deleteById(role);
+        recordRoleAudit(spaceId, roleId, SpaceRoleAuditAction.SPACE_ROLE_DELETED,
+                Map.of("roleKey", role.getRoleKey(), "displayName", role.getDisplayName()));
     }
 
     /**
@@ -340,6 +377,19 @@ public class SpaceRoleService {
     }
 
     /**
+     * 通过任务服务统一写入空间角色审计，避免跨服务直接访问审计表。
+     */
+    private void recordRoleAudit(Long spaceId, Long roleId, SpaceRoleAuditAction action,
+                                 Map<String, ?> detail) {
+        Result<Void> result = taskFeign.recordSpaceRoleAudit(new SpaceRoleAuditDTO(
+                spaceId, roleId, action, JsonUtils.toJson(detail)));
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null ? "角色变更审计写入失败" : result.message());
+        }
+    }
+
+    /**
      * 查询单个角色绑定的全部权限编码
      *
      * @param roleId 角色ID
@@ -371,5 +421,19 @@ public class SpaceRoleService {
                 .collect(Collectors.groupingBy(SpaceRolePermissionEntity::getRoleId,
                         Collectors.mapping(SpaceRolePermissionEntity::getPermissionCode,
                                 Collectors.toList())));
+    }
+
+    /**
+     * 一次查询空间成员并按角色汇总成员数量，避免角色列表逐角色查询成员。
+     *
+     * @param spaceId 空间 ID
+     * @return 角色 ID → 成员数量
+     */
+    private Map<Long, Long> listMemberCountMap(Long spaceId) {
+        return memberMapper.selectList(new LambdaQueryWrapper<MemberEntity>()
+                        .select(MemberEntity::getRoleId)
+                        .eq(MemberEntity::getSpaceId, spaceId))
+                .stream()
+                .collect(Collectors.groupingBy(MemberEntity::getRoleId, Collectors.counting()));
     }
 }

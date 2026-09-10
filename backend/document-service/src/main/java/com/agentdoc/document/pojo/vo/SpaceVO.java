@@ -26,6 +26,9 @@ public record SpaceVO(
         @Schema(description = "空间全局 Token 预算")
         Long tokenBudget,
 
+        @Schema(description = "空间月度 Token 预算，未配置时为 null")
+        Long monthlyTokenBudget,
+
         @Schema(description = "空间状态")
         SpaceStatus status,
 

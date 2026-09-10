@@ -11,6 +11,7 @@ import com.agentdoc.agent.execution.model.ModelAdapter;
 import com.agentdoc.agent.execution.model.ModelAdapterContext;
 import com.agentdoc.agent.execution.model.ModelCapabilities;
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
+import com.agentdoc.agent.execution.model.ModelSamplingOptions;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionLimitExceededException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
@@ -170,12 +171,14 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             throw new IllegalStateException("Skill 工具会话工厂未配置");
         }
         try (ExecutionToolSession tools = toolSessionFactory.open(context, executionCanceled)) {
+            ModelSamplingOptions samplingOptions = ModelSamplingOptions.from(context.model());
 
             // 组装模型适配器上下文：解密api‑key、最大输出token、MCP工具回调列表
             ModelAdapterContext adapterContext = new ModelAdapterContext(
                     context.agent(), context.model(),
                     cryptoService.decrypt(context.model().getEncryptedApiKey()),
-                    modelMaxOutputTokens(context.model()), tools.callbacks())
+                    modelMaxOutputTokens(context.model()), samplingOptions.temperature(),
+                    samplingOptions.topP(), tools.callbacks())
                     .withExecutionId(context.executionId());
 
             // 获取缓存好的ChatModel实例（由ModelAdapter做封装）

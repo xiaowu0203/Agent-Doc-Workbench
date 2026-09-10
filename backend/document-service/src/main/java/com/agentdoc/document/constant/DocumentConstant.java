@@ -25,4 +25,7 @@ public final class DocumentConstant {
 
     /** 文档片段接口默认读取长度 */
     public static final String DEFAULT_FRAGMENT_LENGTH = "500";
+
+    /** 目录最大嵌套层级，根目录为第 1 层。 */
+    public static final int MAX_DIRECTORY_DEPTH = 3;
 }

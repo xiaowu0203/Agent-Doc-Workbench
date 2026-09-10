@@ -22,6 +22,9 @@ public record SpaceUpdateDTO(
         @Schema(description = "空间全局 Token 预算（Phase 3 熔断用）")
         Long tokenBudget,
 
+        @Schema(description = "空间月度 Token 预算，仅用于用量提示")
+        Long monthlyTokenBudget,
+
         @Schema(description = "空间状态：NORMAL 正常 / DISABLED 禁用")
         SpaceStatus status
 ) {
@@ -39,6 +42,9 @@ public record SpaceUpdateDTO(
         }
         if (tokenBudget != null) {
             entity.setTokenBudget(tokenBudget);
+        }
+        if (monthlyTokenBudget != null) {
+            entity.setMonthlyTokenBudget(monthlyTokenBudget);
         }
         if (status != null) {
             entity.setStatus(status.getCode());

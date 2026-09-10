@@ -4,7 +4,11 @@ import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.pojo.dto.SkillCreateDTO;
 import com.agentdoc.agent.pojo.dto.SkillUpdateDTO;
 import com.agentdoc.agent.pojo.param.SkillSearchParam;
+import com.agentdoc.agent.pojo.vo.SkillAgentBindingVO;
+import com.agentdoc.agent.pojo.vo.SkillImportVO;
 import com.agentdoc.agent.pojo.vo.SkillVO;
+import com.agentdoc.agent.service.AgentSkillService;
+import com.agentdoc.agent.service.SkillImportService;
 import com.agentdoc.agent.service.SkillService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
@@ -13,6 +17,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,7 +25,11 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 @Tag(name = "Skill 管理", description = "Skill 元数据管理")
 @RestController
@@ -30,12 +39,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class SkillController {
 
     private final SkillService skillService;
+    private final AgentSkillService agentSkillService;
+    private final SkillImportService skillImportService;
 
     @Operation(summary = "创建 Skill")
     @PostMapping
     @PreAuthorize("@SpaceAccess.hasPermission(#dto.spaceId(), '" + com.agentdoc.common.constant.SpacePermissionConstant.SKILL_MANAGE + "')")
     public Result<SkillVO> create(@Valid @RequestBody SkillCreateDTO dto) {
         return Result.ok(skillService.toVO(skillService.create(dto)));
+    }
+
+    @Operation(summary = "上传 ZIP 并自动创建 Skill 与首个草稿版本")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public Result<SkillImportVO> importPackage(@RequestParam Long spaceId,
+                                               @RequestParam(required = false) String displayName,
+                                               @RequestParam(required = false) String description,
+                                               @RequestParam("file") MultipartFile file) {
+        return Result.ok(skillImportService.importPackage(spaceId, displayName, description, file));
     }
 
     @Operation(summary = "查询 Skill 列表")
@@ -48,6 +68,12 @@ public class SkillController {
     @GetMapping("/{skillId}")
     public Result<SkillVO> detail(@PathVariable Long skillId) {
         return Result.ok(skillService.toVO(skillService.detail(skillId)));
+    }
+
+    @Operation(summary = "查询 Skill 关联的 Agent")
+    @GetMapping("/{skillId}/agents")
+    public Result<List<SkillAgentBindingVO>> agents(@PathVariable Long skillId) {
+        return Result.ok(agentSkillService.listBySkill(skillId));
     }
 
     @Operation(summary = "更新 Skill")

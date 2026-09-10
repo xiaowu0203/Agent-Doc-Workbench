@@ -1,14 +1,18 @@
 package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.agentdoc.task.service.TokenUsageService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +35,9 @@ public class A2aTaskSynchronizationService {
 
     private final TaskMapper taskMapper;
     private final AgentFeign agentFeign;
+    private final DocumentFeign documentFeign;
     private final TokenUsageService tokenUsageService;
+    private final TaskCapabilityCryptoService cryptoService;
 
     /**
      * 执行远端任务 → 本地任务实体状态同步并落库
@@ -71,11 +77,81 @@ public class A2aTaskSynchronizationService {
             return false;
         }
         // 任务已完成，记录Token消耗统计，同时做任务Token预算管控
-        if (TaskStatus.COMPLETED.getCodeEquals(task.getStatus())) {
-            tokenUsageService.recordRemote(task, requireProfile(task.getAgentId()),
-                    A2aTaskConvertor.tokenUsage(remoteTask));
+        TaskStatus status = TaskStatus.fromCode(task.getStatus());
+        if (DocType.fromCode(task.getDocumentType()) == DocType.DRAFT
+                && (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED
+                || status == TaskStatus.FAILED)) {
+            finalizeDraft(task, status);
+        }
+        if (status == TaskStatus.COMPLETED) {
+            tokenUsageService.recordRemote(task, requireProfile(task.getAgentId()), resolveTokenUsage(task, remoteTask));
         }
         return true;
+    }
+
+    /**
+     * 完成Agent草稿处理
+     * 根据任务最终状态，执行【提交草稿】或【丢弃草稿】操作
+     * 仅当存在文档ID与能力令牌时才执行，否则直接返回
+     * @param task 当前任务实体
+     * @param status 任务最终状态：COMPLETED提交草稿，其他状态丢弃草稿
+     */
+    private void finalizeDraft(TaskEntity task, TaskStatus status) {
+        // 缺少文档ID或能力令牌，不执行草稿处理
+        if (task.getDocumentId() == null || task.getCapabilityToken() == null) {
+            return;
+        }
+        // 解密获取访问文档的能力令牌
+        String capability = cryptoService.decrypt(task.getCapabilityToken());
+        if (status == TaskStatus.COMPLETED) {
+            // 任务完成：提交Agent生成的草稿变更到文档
+            Result<?> result = documentFeign.finalizeDraftAgentChanges(task.getDocumentId(), capability);
+            requireSuccess(result, "提交草稿暂存失败");
+        } else {
+            // 任务异常/取消：丢弃Agent草稿变更
+            Result<?> result = documentFeign.discardDraftAgentChanges(task.getDocumentId(), capability);
+            requireSuccess(result, "丢弃草稿暂存失败");
+        }
+    }
+
+    /**
+     * 解析任务Token用量信息
+     * 优先使用远程A2A任务返回的token用量；如果缺失输入/输出token，则调用Agent服务接口查询执行用量
+     * @param task 本地任务实体
+     * @param remoteTask 远端A2A任务对象
+     * @return A2A标准Token用量对象
+     */
+    private A2aTokenUsage resolveTokenUsage(TaskEntity task, Task remoteTask) {
+        // 从远程任务转换得到token用量
+        A2aTokenUsage usage = A2aTaskConvertor.tokenUsage(remoteTask);
+        // 若远程返回的输入、输出token不为空，直接返回
+        if (usage.inputTokens() != null && usage.outputTokens() != null) {
+            return usage;
+        }
+        // 远程数据缺失，调用Agent服务查询本次执行真实token消耗
+        Result<AgentExecutionTokenUsageVO> result = agentFeign.getExecutionTokenUsage(task.getId());
+        if (result != null && result.code() == ErrorCode.SUCCESS.getCode() && result.data() != null) {
+            AgentExecutionTokenUsageVO usageProjection = result.data();
+            return new A2aTokenUsage(usageProjection.inputTokens(), usageProjection.cachedInputTokens(),
+                    usageProjection.outputTokens(), Boolean.TRUE.equals(usageProjection.inputTokensEstimated()),
+                    Boolean.TRUE.equals(usageProjection.cachedInputTokensEstimated()),
+                    Boolean.TRUE.equals(usageProjection.outputTokensEstimated()));
+        }
+        // 查询失败，返回原始转换得到的用量对象
+        return usage;
+    }
+
+    /**
+     * Feign调用结果校验工具方法
+     * 判断远程调用Result是否成功，失败则抛出业务异常
+     * @param result feign返回结果对象
+     * @param message 自定义错误提示信息（当result返回null时使用）
+     */
+    private void requireSuccess(Result<?> result, String message) {
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
+                    result == null || result.message() == null ? message : result.message());
+        }
     }
 
     /**

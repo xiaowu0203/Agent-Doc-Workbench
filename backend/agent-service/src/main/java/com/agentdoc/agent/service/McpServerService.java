@@ -2,20 +2,25 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.McpServerConvertor;
 import com.agentdoc.agent.enums.McpAuthType;
+import com.agentdoc.agent.enums.McpConnectionStatus;
 import com.agentdoc.agent.mapper.McpServerMapper;
 import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
 import com.agentdoc.agent.pojo.dto.McpServerUpdateDTO;
 import com.agentdoc.agent.pojo.entity.McpServerEntity;
 import com.agentdoc.agent.pojo.param.McpServerSearchParam;
 import com.agentdoc.agent.pojo.vo.McpServerVO;
+import com.agentdoc.agent.pojo.vo.McpConnectionTestVO;
+import com.agentdoc.agent.pojo.vo.McpToolVO;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.agent.security.McpEndpointSecurityValidator;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.PageUtils;
+import com.agentdoc.common.utils.JsonUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.dao.DuplicateKeyException;
@@ -24,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.MCP_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.MCP_READ;
@@ -44,6 +50,7 @@ public class McpServerService {
     private final SpaceAccessService spaceAccessService;
     private final AgentConfigCryptoService cryptoService;
     private final McpEndpointSecurityValidator endpointValidator;
+    private final McpConnectionTester connectionTester;
     private final TransactionTemplate transactionTemplate;
 
     /**
@@ -59,6 +66,7 @@ public class McpServerService {
         // 事务外执行权限和网络校验，避免长期占用数据库连接。
         // 校验空间所有者权限
         spaceAccessService.requirePermission(dto.spaceId(), MCP_MANAGE);
+        validateAuthConfig(dto.authType(), dto.authParamName());
         // 校验外部端点URL安全
         endpointValidator.validateExternal(dto.endpointUrl());
         return transactionTemplate.execute(status -> createLocked(dto));
@@ -107,7 +115,7 @@ public class McpServerService {
         // 构建查询
         LambdaQueryWrapper<McpServerEntity> query = new LambdaQueryWrapper<McpServerEntity>()
                 .eq(McpServerEntity::getSpaceId, param.getSpaceId())
-                .orderByAsc(McpServerEntity::getServerKey);
+                .orderByDesc(McpServerEntity::getCreatedAt);
         if (param.getStatus() != null) {
             query.eq(McpServerEntity::getStatus, param.getStatus());
         }
@@ -118,6 +126,9 @@ public class McpServerService {
                     .or()
                     .like(McpServerEntity::getDisplayName, keyword)
             );
+        }
+        if (param.getAuthType() != null) {
+            query.eq(McpServerEntity::getAuthType, param.getAuthType().name());
         }
 
         // 进行分页查询
@@ -142,6 +153,79 @@ public class McpServerService {
     }
 
     /**
+     * 执行MCP服务实时连接测试。
+     * 校验资源存在性与空间管理权限，执行真实MCP握手与工具发现；
+     * 使用传入时的配置版本号做乐观锁校验，防止配置并发变更导致旧测试结果覆盖新配置；
+     * 在短事务内持久化测试结果，返回测试VO。
+     * @param id MCP服务主键ID
+     * @return 连接测试结果VO，包含连通状态、耗时、错误信息、发现工具列表
+     */
+    public McpConnectionTestVO testConnection(Long id) {
+        // 校验MCP服务记录是否存在，不存在抛出业务异常
+        McpServerEntity current = require(id);
+        // 校验当前用户拥有该空间下MCP管理权限
+        spaceAccessService.requirePermission(current.getSpaceId(), MCP_MANAGE);
+        // 获取本次测试对应的配置版本号，用于后续乐观冲突校验
+        Long testedConfigVersion = current.getConfigVersion();
+        // 发起真实外部MCP连接测试，执行握手与工具发现
+        McpConnectionTester.TestOutcome outcome = connectionTester.test(current);
+        // 在独立短事务中执行测试结果落库，事务执行完成直接返回组装后的VO
+        return transactionTemplate.execute(status -> persistTestResult(id, testedConfigVersion, outcome));
+    }
+
+    /**
+     * 查询最近一次成功发现的工具快照，不触发外部网络调用。
+     * 读取数据库中缓存的工具JSON快照，仅做内存解析；无缓存返回空不可变集合。
+     * @param id MCP Server ID
+     * @return 工具定义列表，返回不可变集合
+     */
+    public List<McpToolVO> tools(Long id) {
+        McpServerEntity entity = require(id);
+        spaceAccessService.requirePermission(entity.getSpaceId(), MCP_READ);
+        List<McpToolVO> tools = JsonUtils.parse(entity.getDiscoveredToolsJson(),
+                new TypeReference<List<McpToolVO>>() { });
+        return tools == null ? List.of() : List.copyOf(tools);
+    }
+
+    /**
+     * 持久化MCP连接测试结果，带配置版本乐观锁校验。
+     * <p>
+     * 行锁读取记录，对比测试前拿到的配置版本号，若版本已变化抛出冲突异常，拒绝写入旧测试结果；
+     * 更新连接状态、最后测试时间、耗时、错误信息；连接成功时更新工具快照相关字段；
+     * 最后组装返回对外VO。
+     *
+     * @param id                  MCP服务ID
+     * @param testedConfigVersion 测试开始时刻的配置版本号，乐观校验依据
+     * @param outcome             MCP连接测试原始输出结果
+     * @return 组装完成的对外测试结果VO
+     * @throws BusinessException 当MCP配置在测试期间发生变更，抛出CONFLICT冲突异常
+     */
+    private McpConnectionTestVO persistTestResult(Long id, Long testedConfigVersion,
+                                                   McpConnectionTester.TestOutcome outcome) {
+        // 加行锁查询MCP记录，用于事务内更新
+        McpServerEntity entity = requireForUpdate(id);
+        // 乐观版本校验：如果数据库当前版本和测试时版本不一致，说明配置已被修改，禁止保存过期测试结果
+        if (!Objects.equals(testedConfigVersion, entity.getConfigVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "MCP 配置已变更，请重新测试连接");
+        }
+        // 更新通用测试状态字段（无论成功失败都更新）
+        entity.setConnectionStatus(outcome.status().name());
+        entity.setLastTestedAt(outcome.testedAt());
+        entity.setLastTestDurationMs(outcome.durationMs());
+        entity.setLastTestError(outcome.errorMessage());
+        // 连接握手成功：更新工具快照、工具数量、工具发现时间；失败则保留原有工具快照不覆盖
+        if (outcome.connected()) {
+            entity.setDiscoveredToolCount(outcome.tools().size());
+            entity.setDiscoveredToolsJson(JsonUtils.toJson(outcome.tools()));
+            entity.setToolsDiscoveredAt(outcome.testedAt());
+        }
+        mapper.updateById(entity);
+        // 组装对外返回VO对象
+        return new McpConnectionTestVO(entity.getId(), outcome.connected(), outcome.status(),
+                outcome.testedAt(), outcome.durationMs(), outcome.errorMessage(), outcome.tools());
+    }
+
+    /**
      * 更新MCP Server
      * <p>
      * 前置校验：空间所有者权限、外部端点URL安全校验；
@@ -155,6 +239,7 @@ public class McpServerService {
         McpServerEntity current = require(id);
         // 校验用户是空间所有者
         spaceAccessService.requirePermission(current.getSpaceId(), MCP_MANAGE);
+        validateAuthConfig(dto.authType(), dto.authParamName());
         // 校验更新后的外部端点URL安全性
         endpointValidator.validateExternal(dto.endpointUrl());
         // 事务内执行更新
@@ -174,9 +259,19 @@ public class McpServerService {
     private McpServerVO updateLocked(Long id, McpServerUpdateDTO dto) {
         // for update行锁查询，校验记录存在
         McpServerEntity entity = requireForUpdate(id);
+        boolean connectionConfigChanged = connectionConfigChanged(entity, dto);
+        boolean authTypeChanged = !Objects.equals(entity.getAuthType(), dto.authType().name());
+        if (authTypeChanged && dto.authType() != McpAuthType.NONE
+                && StringUtils.isBlank(dto.authToken())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "切换认证方式时必须提供新凭证");
+        }
         // DTO字段应用到实体，处理令牌加密逻辑（encryptedToken：令牌加密）
         McpServerConvertor.apply(entity, dto, encryptedToken(dto.authType(), dto.authToken(),
                 entity.getEncryptedAuthToken()));
+        if (connectionConfigChanged) {
+            invalidateTestResult(entity);
+        }
         mapper.updateById(entity);
         return McpServerConvertor.toVO(entity);
     }
@@ -288,9 +383,53 @@ public class McpServerService {
             // 更新场景：前端不传新令牌，则沿用库中旧密文
             if (StringUtils.isNotBlank(existing))
                 return existing;
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "BEARER 认证必须提供令牌");
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED, "所选认证方式必须提供凭证");
         }
         return cryptoService.encrypt(value);
+    }
+
+    /**
+     * 判断MCP连接相关核心配置是否发生变更。
+     * <p>
+     * 触发条件：端点地址变更、认证类型变更、前端传入了新的认证令牌。
+     * 只要任意一项变化，则认为连接配置已改动，需要清空旧的连接测试结果与工具快照。
+     * 注意：仅判断入参dto是否携带新token，不做token密文比对。
+     *
+     * @param entity 数据库中持久化的原有MCP服务实体
+     * @param dto    用户提交的更新入参DTO
+     * @return true‑连接配置发生变更；false‑连接配置未改动
+     */
+    private boolean connectionConfigChanged(McpServerEntity entity, McpServerUpdateDTO dto) {
+        return !Objects.equals(entity.getEndpointUrl(), dto.endpointUrl())
+                || !Objects.equals(entity.getAuthType(), dto.authType().name())
+                || !Objects.equals(entity.getAuthParamName(), dto.authParamName())
+                || StringUtils.isNotBlank(dto.authToken());
+    }
+
+    private void validateAuthConfig(McpAuthType type, String authParamName) {
+        if (type == McpAuthType.QUERY_PARAM && StringUtils.isBlank(authParamName)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                    "QUERY_PARAM 认证必须提供 query 参数名");
+        }
+    }
+
+    /**
+     * 失效/清空MCP旧的连接测试结果与工具发现快照。
+     * <p>
+     * 当连接配置变更后调用：重置连接状态为未测试，清空上次测试时间、耗时、错误信息；
+     * 同时清空已发现工具数量、工具JSON快照、工具发现时间。
+     * 仅修改内存实体字段，不执行数据库更新，需要外部调用mapper完成落库。
+     *
+     * @param entity MCP服务实体对象（内存对象）
+     */
+    private void invalidateTestResult(McpServerEntity entity) {
+        entity.setConnectionStatus(McpConnectionStatus.UNTESTED.name());
+        entity.setLastTestedAt(null);
+        entity.setLastTestDurationMs(null);
+        entity.setLastTestError(null);
+        entity.setDiscoveredToolCount(0);
+        entity.setDiscoveredToolsJson(null);
+        entity.setToolsDiscoveredAt(null);
     }
 
 }

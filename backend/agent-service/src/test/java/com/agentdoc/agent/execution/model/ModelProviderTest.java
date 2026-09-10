@@ -20,14 +20,15 @@ class ModelProviderTest {
     }
 
     @Test
-    void modelCreationInfersAdapterWhenItIsNotProvided() {
-        ModelCreateDTO dto = new ModelCreateDTO("deepseek", null, "deepseek-chat", "DeepSeek",
-                null, null, "secret", null, null, null, null, null, null);
+    void modelCreationUsesProviderAdapterEvenWhenAnotherAdapterIsSubmitted() {
+        ModelCreateDTO dto = new ModelCreateDTO("deepseek", "openai-compatible", "deepseek-v4-flash", "DeepSeek",
+                null, "https://api.deepseek.com/anthropic", "secret", null,
+                null, null, null, null, null);
 
         ModelEntity entity = ModelConvertor.toEntity(dto, "encrypted");
 
         assertEquals("deepseek", entity.getProvider());
-        assertEquals(ModelAdapterType.OPENAI_COMPATIBLE.getCode(), entity.getAdapterType());
+        assertEquals(ModelAdapterType.ANTHROPIC_MESSAGES.getCode(), entity.getAdapterType());
         assertEquals("encrypted", entity.getEncryptedApiKey());
     }
 }

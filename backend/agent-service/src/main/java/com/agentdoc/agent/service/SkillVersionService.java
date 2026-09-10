@@ -232,6 +232,9 @@ public class SkillVersionService {
      * @return ZIP输入流
      */
     public InputStream download(Long skillId, Long versionId) {
+        SkillEntity skill = skillService.require(skillId);
+        // 下载包含 Skill 完整实现，只允许具备 Skill 管理权限的成员执行。
+        skillService.requireManage(skill.getSpaceId());
         SkillVersionEntity version = detail(skillId, versionId);
         return storage.get(version.getStorageKey());
     }
@@ -283,6 +286,7 @@ public class SkillVersionService {
         if (updated != 1) {
             throw new BusinessException(ErrorCode.CONFLICT, "Skill 版本状态冲突，仅草稿可发布");
         }
+        skillService.markUpdated(skill);
         // 记录SkillVersion变更日志
         auditLogService.record(skill.getSpaceId(), "SKILL_VERSION_PUBLISHED", "skill_version", entity.getId(),
                 Map.of("versionNo", entity.getVersionNo(), "sha256", entity.getSha256()));

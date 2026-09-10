@@ -72,6 +72,15 @@
           AND call_time &lt; #{end}
     </select>
 
+    <select id="hasNullCostBySpaceAndDate" resultType="java.lang.Boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM token_usage_detail
+        WHERE space_id = #{spaceId}
+          AND call_time &gt;= #{start}
+          AND call_time &lt; #{end}
+          AND estimated_cost IS NULL
+    </select>
+
     <select id="listSpacesByDate" resultType="java.lang.Long">
         SELECT DISTINCT space_id
         FROM token_usage_detail
@@ -122,6 +131,68 @@
         WHERE call_time &gt;= #{start}
           AND call_time &lt; #{end}
         GROUP BY space_id, agent_id
+    </select>
+
+    <sql id="dashboardFilters">
+        d.space_id = #{spaceId}
+        AND d.call_time &gt;= #{start}
+        AND d.call_time &lt; #{end}
+        <if test="agentId != null">
+            AND d.agent_id = #{agentId}
+        </if>
+        <if test="modelId != null">
+            AND d.model_id = #{modelId}
+        </if>
+        <if test="taskStatus != null">
+            AND t.status = #{taskStatus}
+        </if>
+    </sql>
+
+    <select id="summarize" resultType="com.agentdoc.task.pojo.vo.TokenUsageStatisticsRow">
+        SELECT COUNT(*) AS recordCount,
+               SUM(d.input_tokens) AS inputTokens,
+               SUM(d.output_tokens) AS outputTokens,
+               SUM(d.estimated_cost) AS estimatedCost,
+               COUNT(DISTINCT d.task_id) AS taskCount,
+               COALESCE(SUM(CASE WHEN d.input_tokens IS NULL THEN 1 ELSE 0 END), 0) AS missingInputCount,
+               COALESCE(SUM(CASE WHEN d.output_tokens IS NULL THEN 1 ELSE 0 END), 0) AS missingOutputCount,
+               COALESCE(SUM(CASE WHEN d.estimated_cost IS NULL THEN 1 ELSE 0 END), 0) AS missingCostCount,
+               COALESCE(SUM(CASE WHEN d.input_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedInputCount,
+               COALESCE(SUM(CASE WHEN d.output_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedOutputCount
+        FROM token_usage_detail d
+        JOIN task t ON t.id = d.task_id
+        WHERE <include refid="dashboardFilters" />
+    </select>
+
+    <select id="summarizeDaily" resultType="com.agentdoc.task.pojo.vo.TokenUsageDailyRow">
+        SELECT DATE(d.call_time) AS usageDate,
+               COUNT(*) AS recordCount,
+               SUM(d.input_tokens) AS inputTokens,
+               SUM(d.output_tokens) AS outputTokens,
+               SUM(d.estimated_cost) AS estimatedCost,
+               COALESCE(SUM(CASE WHEN d.input_tokens IS NULL THEN 1 ELSE 0 END), 0) AS missingInputCount,
+               COALESCE(SUM(CASE WHEN d.output_tokens IS NULL THEN 1 ELSE 0 END), 0) AS missingOutputCount,
+               COALESCE(SUM(CASE WHEN d.estimated_cost IS NULL THEN 1 ELSE 0 END), 0) AS missingCostCount,
+               COALESCE(SUM(CASE WHEN d.input_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedInputCount,
+               COALESCE(SUM(CASE WHEN d.output_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedOutputCount
+        FROM token_usage_detail d
+        JOIN task t ON t.id = d.task_id
+        WHERE <include refid="dashboardFilters" />
+        GROUP BY DATE(d.call_time)
+        ORDER BY DATE(d.call_time)
+    </select>
+
+    <select id="listTaskIdsByModelAndDate" resultType="java.lang.Long">
+        SELECT DISTINCT task_id
+        FROM token_usage_detail
+        WHERE space_id = #{spaceId}
+          AND model_id = #{modelId}
+        <if test="start != null">
+          AND call_time &gt;= #{start}
+        </if>
+        <if test="end != null">
+          AND call_time &lt; #{end}
+        </if>
     </select>
 
 </mapper>
