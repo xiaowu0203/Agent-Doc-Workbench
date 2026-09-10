@@ -12,6 +12,8 @@ import lombok.EqualsAndHashCode;
 @Schema(description = "Skill 元数据")
 public class SkillEntity extends BaseLogicDeleteEntity {
 
+    @Schema(description = "作用域：SYSTEM / SPACE")
+    private String scopeType;
     @Schema(description = "空间 ID")
     private Long spaceId;
     @Schema(description = "Skill 名称")

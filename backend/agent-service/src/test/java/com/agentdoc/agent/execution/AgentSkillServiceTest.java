@@ -2,6 +2,7 @@ package com.agentdoc.agent.execution;
 
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentMapper;
 import com.agentdoc.agent.mapper.AgentSkillMapper;
@@ -15,6 +16,7 @@ import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.agent.service.AgentSkillService;
 import com.agentdoc.agent.service.SkillAuditLogService;
+import com.agentdoc.agent.service.SpaceSkillInstallationService;
 import com.agentdoc.agent.service.SpaceAccessService;
 import org.junit.jupiter.api.Test;
 
@@ -44,7 +46,8 @@ class AgentSkillServiceTest {
         SkillMapper skillMapper = mock(SkillMapper.class);
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         AgentSkillService service = new AgentSkillService(agentService, spaceAccessService, agentMapper,
-                agentSkillMapper, skillMapper, versionMapper, mock(SkillAuditLogService.class));
+                agentSkillMapper, skillMapper, versionMapper, mock(SpaceSkillInstallationService.class),
+                mock(SkillAuditLogService.class));
         SkillEntity skill = new SkillEntity();
         skill.setId(30L);
         skill.setSpaceId(20L);
@@ -85,7 +88,8 @@ class AgentSkillServiceTest {
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         SkillAuditLogService auditLogService = mock(SkillAuditLogService.class);
         AgentSkillService service = new AgentSkillService(agentService, spaceAccessService, agentMapper,
-                agentSkillMapper, skillMapper, versionMapper, auditLogService);
+                agentSkillMapper, skillMapper, versionMapper, mock(SpaceSkillInstallationService.class),
+                auditLogService);
 
         AgentEntity agent = new AgentEntity();
         agent.setId(10L);
@@ -119,5 +123,42 @@ class AgentSkillServiceTest {
         assertThat(agent.getConfigVersion()).isEqualTo(4L);
         verify(agentMapper, times(1)).updateById(agent);
         verify(auditLogService, times(1)).record(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void allowsInstalledSystemSkillAtItsFixedVersion() {
+        AgentMapper agentMapper = mock(AgentMapper.class);
+        AgentSkillMapper agentSkillMapper = mock(AgentSkillMapper.class);
+        SkillMapper skillMapper = mock(SkillMapper.class);
+        SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
+        SpaceSkillInstallationService installationService = mock(SpaceSkillInstallationService.class);
+        AgentSkillService service = new AgentSkillService(mock(AgentService.class), mock(SpaceAccessService.class),
+                agentMapper, agentSkillMapper, skillMapper, versionMapper, installationService,
+                mock(SkillAuditLogService.class));
+        AgentEntity agent = new AgentEntity();
+        agent.setId(10L);
+        agent.setSpaceId(20L);
+        agent.setConfigVersion(1L);
+        SkillEntity skill = new SkillEntity();
+        skill.setId(30L);
+        skill.setScopeType(SkillScopeType.SYSTEM.name());
+        skill.setStatus(SkillStatus.ACTIVE.getCode());
+        SkillVersionEntity version = new SkillVersionEntity();
+        version.setId(40L);
+        version.setSkillId(30L);
+        version.setStatus(SkillVersionStatus.PUBLISHED.getCode());
+        List<AgentSkillEntity> bindings = new ArrayList<>();
+        when(agentMapper.selectOne(any())).thenReturn(agent);
+        when(versionMapper.selectBatchIds(anyCollection())).thenReturn(List.of(version));
+        when(skillMapper.selectBatchIds(anyCollection())).thenReturn(List.of(skill));
+        when(agentSkillMapper.selectList(any())).thenAnswer(invocation -> bindings);
+        doAnswer(invocation -> {
+            bindings.add(invocation.getArgument(0));
+            return 1;
+        }).when(agentSkillMapper).insert(any(AgentSkillEntity.class));
+
+        service.replace(10L, new AgentSkillReplaceDTO(List.of(40L)));
+
+        verify(installationService).requireEnabledInstallation(20L, 30L, 40L);
     }
 }

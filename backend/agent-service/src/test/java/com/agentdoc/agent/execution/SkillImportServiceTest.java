@@ -1,6 +1,7 @@
 package com.agentdoc.agent.execution;
 
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.pojo.dto.SkillCreateDTO;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
@@ -44,7 +45,8 @@ class SkillImportServiceTest {
         entity.setDisplayName(parsed.name());
         entity.setDescription(parsed.description());
         entity.setStatus(SkillStatus.ACTIVE.getCode());
-        SkillVO skillVO = new SkillVO(10L, 7L, parsed.name(), parsed.name(), parsed.description(),
+        SkillVO skillVO = new SkillVO(10L, SkillScopeType.SPACE, 7L,
+                parsed.name(), parsed.name(), parsed.description(),
                 SkillStatus.ACTIVE, 1, 0, null, 1L, null, null);
         SkillVersionVO versionVO = new SkillVersionVO(20L, 10L, 1, SkillVersionStatus.DRAFT,
                 parsed.description(), "sha256", 3L, List.of(), List.of(), 1L, null, null);

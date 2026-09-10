@@ -5,6 +5,7 @@ import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.convertor.AgentSkillConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentSkillMapper;
 import com.agentdoc.agent.mapper.AgentMapper;
@@ -50,6 +51,7 @@ public class AgentSkillService {
     private final AgentSkillMapper agentSkillMapper;
     private final SkillMapper skillMapper;
     private final SkillVersionMapper versionMapper;
+    private final SpaceSkillInstallationService installationService;
     private final SkillAuditLogService auditLogService;
 
     /**
@@ -78,6 +80,10 @@ public class AgentSkillService {
         SkillEntity skill = skillMapper.selectById(skillId);
         if (skill == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
+        }
+        if (SkillScopeType.fromValue(skill.getScopeType()) != SkillScopeType.SPACE
+                || skill.getSpaceId() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "空间 Skill 不存在");
         }
 
         // 校验当前用户拥有该空间Skill读取权限
@@ -187,15 +193,25 @@ public class AgentSkillService {
                 throw new BusinessException(ErrorCode.CONFLICT, "只能绑定已发布 Skill 版本");
             }
 
-            // 校验Skill存在，且Skill属于Agent所在空间，跨空间不允许绑定
+            // 空间 Skill 必须与 Agent 同空间；系统 Skill 必须在该空间安装、启用且固定为当前版本。
             SkillEntity skill = skills.get(version.getSkillId());
-            if (skill == null || !agent.getSpaceId().equals(skill.getSpaceId())) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "Skill 不属于 Agent 所在空间");
+            if (skill == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
             }
-
-            // 校验Skill主状态为启用，不能绑定已停用Skill
-            if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
-                throw new BusinessException(ErrorCode.CONFLICT, "不能绑定已停用 Skill");
+            SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+            if (scopeType == SkillScopeType.SPACE) {
+                if (!agent.getSpaceId().equals(skill.getSpaceId())) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "Skill 不属于 Agent 所在空间");
+                }
+                if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "不能绑定已停用 Skill");
+                }
+            } else {
+                if (skill.getSpaceId() != null) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
+                }
+                installationService.requireEnabledInstallation(
+                        agent.getSpaceId(), skill.getId(), version.getId());
             }
 
             // 校验同一个Skill不能绑定多个不同版本

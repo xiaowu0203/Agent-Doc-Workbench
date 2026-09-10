@@ -35,6 +35,11 @@ public class SkillPackageStorage {
         return SkillConstant.STORAGE_PREFIX + spaceId + "/" + skillId + "/" + versionNo + "/" + sha256 + ".zip";
     }
 
+    /** 生成系统 Skill 包对象 Key，避免使用空 spaceId。 */
+    public String systemKey(Long skillId, int versionNo, String sha256) {
+        return SkillConstant.STORAGE_PREFIX + "system/" + skillId + "/" + versionNo + "/" + sha256 + ".zip";
+    }
+
     /**
      * 上传本地zip文件到对象存储
      *

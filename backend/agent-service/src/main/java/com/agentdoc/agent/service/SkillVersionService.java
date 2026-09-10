@@ -64,9 +64,20 @@ public class SkillVersionService {
      * @return 草稿版本VO
      */
     public SkillVersionVO upload(Long skillId, MultipartFile multipartFile) {
-        SkillEntity skill = skillService.require(skillId);
-        // 校验空间所有者权限
+        SkillEntity skill = skillService.requireSpace(skillId);
         skillService.requireManage(skill.getSpaceId());
+        return upload(skill, multipartFile);
+    }
+
+    /** 平台超级管理员为系统 Skill 上传草稿版本。 */
+    public SkillVersionVO uploadSystem(Long skillId, MultipartFile multipartFile) {
+        SkillEntity skill = skillService.requireSystem(skillId);
+        skillService.requireSystemManage();
+        return upload(skill, multipartFile);
+    }
+
+    private SkillVersionVO upload(SkillEntity skill, MultipartFile multipartFile) {
+        Long skillId = skill.getId();
 
         // Skill必须处于启用状态才能上传新版本
         if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
@@ -96,7 +107,9 @@ public class SkillVersionService {
             reservedVersionNo = versionNo;
 
             // 生成对象存储key并上传zip包
-            storageKey = storage.key(skill.getSpaceId(), skillId, versionNo, parsed.sha256());
+            storageKey = skill.getSpaceId() == null
+                    ? storage.systemKey(skillId, versionNo, parsed.sha256())
+                    : storage.key(skill.getSpaceId(), skillId, versionNo, parsed.sha256());
             storage.put(storageKey, zip);
 
             // 组装版本实体，状态为草稿DRAFT
@@ -186,9 +199,27 @@ public class SkillVersionService {
      * @return 版本VO列表
      */
     public List<SkillVersionVO> list(Long skillId) {
-        SkillEntity skill = skillService.require(skillId);
+        SkillEntity skill = skillService.requireSpace(skillId);
         // 校验空间查看权限
         skillService.requireRead(skill.getSpaceId());
+        return listVersions(skillId);
+    }
+
+    /** 查询系统 Skill 的版本列表。 */
+    public List<SkillVersionVO> listSystem(Long skillId) {
+        SkillEntity skill = skillService.requireSystem(skillId);
+        skillService.requireSystemRead(skill);
+        if (skillService.isSystemManager()) {
+            return listVersions(skillId);
+        }
+        return versionMapper.selectList(new LambdaQueryWrapper<SkillVersionEntity>()
+                        .eq(SkillVersionEntity::getSkillId, skillId)
+                        .eq(SkillVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode())
+                        .orderByDesc(SkillVersionEntity::getVersionNo))
+                .stream().map(this::toVO).toList();
+    }
+
+    private List<SkillVersionVO> listVersions(Long skillId) {
         return versionMapper.selectList(new LambdaQueryWrapper<SkillVersionEntity>()
                         .eq(SkillVersionEntity::getSkillId, skillId)
                         .orderByDesc(SkillVersionEntity::getVersionNo))
@@ -203,9 +234,25 @@ public class SkillVersionService {
      * @return SkillVersionEntity
      */
     public SkillVersionEntity detail(Long skillId, Long versionId) {
-        SkillEntity skill = skillService.require(skillId);
+        SkillEntity skill = skillService.requireSpace(skillId);
         // 校验空间查看权限
         skillService.requireRead(skill.getSpaceId());
+        return requireVersion(skillId, versionId);
+    }
+
+    /** 查询系统 Skill 版本详情。 */
+    public SkillVersionEntity detailSystem(Long skillId, Long versionId) {
+        SkillEntity skill = skillService.requireSystem(skillId);
+        skillService.requireSystemRead(skill);
+        SkillVersionEntity version = requireVersion(skillId, versionId);
+        if (!SkillVersionStatus.PUBLISHED.matches(version.getStatus())
+                && !skillService.isSystemManager()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 版本不存在");
+        }
+        return version;
+    }
+
+    private SkillVersionEntity requireVersion(Long skillId, Long versionId) {
         SkillVersionEntity entity = versionMapper.selectById(versionId);
         if (entity == null || !skillId.equals(entity.getSkillId())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 版本不存在");
@@ -224,6 +271,11 @@ public class SkillVersionService {
         return toVO(detail(skillId, versionId));
     }
 
+    /** 系统 Skill 版本详情 VO。 */
+    public SkillVersionVO toSystemVOForController(Long skillId, Long versionId) {
+        return toVO(detailSystem(skillId, versionId));
+    }
+
     /**
      * 下载Skill版本ZIP包，返回对象存储输入流
      *
@@ -232,10 +284,18 @@ public class SkillVersionService {
      * @return ZIP输入流
      */
     public InputStream download(Long skillId, Long versionId) {
-        SkillEntity skill = skillService.require(skillId);
+        SkillEntity skill = skillService.requireSpace(skillId);
         // 下载包含 Skill 完整实现，只允许具备 Skill 管理权限的成员执行。
         skillService.requireManage(skill.getSpaceId());
-        SkillVersionEntity version = detail(skillId, versionId);
+        SkillVersionEntity version = requireVersion(skillId, versionId);
+        return storage.get(version.getStorageKey());
+    }
+
+    /** 下载系统 Skill 版本包；仅平台超级管理员可读取完整实现。 */
+    public InputStream downloadSystem(Long skillId, Long versionId) {
+        skillService.requireSystem(skillId);
+        skillService.requireSystemManage();
+        SkillVersionEntity version = requireVersion(skillId, versionId);
         return storage.get(version.getStorageKey());
     }
 
@@ -250,9 +310,26 @@ public class SkillVersionService {
     @Transactional(rollbackFor = Exception.class)
     public SkillVersionVO publish(Long skillId, Long versionId) {
         // 查询并校验Skill存在
-        SkillEntity skill = skillService.require(skillId);
+        SkillEntity skill = skillService.requireSpace(skillId);
         // 校验空间所有者权限
         skillService.requireManage(skill.getSpaceId());
+        return publish(skill, versionId);
+    }
+
+    /** 发布系统 Skill 版本。 */
+    @Transactional(rollbackFor = Exception.class)
+    public SkillVersionVO publishSystem(Long versionId) {
+        SkillVersionEntity version = versionMapper.selectById(versionId);
+        if (version == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 版本不存在");
+        }
+        SkillEntity skill = skillService.requireSystem(version.getSkillId());
+        skillService.requireSystemManage();
+        return publish(skill, versionId);
+    }
+
+    private SkillVersionVO publish(SkillEntity skill, Long versionId) {
+        Long skillId = skill.getId();
 
         // 校验Skill信息
         if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {

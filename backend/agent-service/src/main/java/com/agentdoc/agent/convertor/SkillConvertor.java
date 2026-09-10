@@ -1,6 +1,7 @@
 package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.vo.SkillLatestVersionVO;
 import com.agentdoc.agent.pojo.vo.SkillVO;
@@ -25,7 +26,8 @@ public final class SkillConvertor {
      */
     public static SkillVO toVO(SkillEntity entity, long versionCount, long boundAgentCount,
                                SkillLatestVersionVO latestVersion) {
-        return new SkillVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDisplayName(),
+        return new SkillVO(entity.getId(), SkillScopeType.fromValue(entity.getScopeType()), entity.getSpaceId(),
+                entity.getName(), entity.getDisplayName(),
                 entity.getDescription(),
                 SkillStatus.fromCode(entity.getStatus()), versionCount, boundAgentCount, latestVersion,
                 entity.getCreatedBy(), entity.getCreatedAt(), entity.getUpdatedAt());

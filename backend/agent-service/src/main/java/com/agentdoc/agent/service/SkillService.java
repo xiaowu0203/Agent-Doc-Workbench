@@ -3,13 +3,17 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.convertor.SkillConvertor;
 import com.agentdoc.agent.convertor.SkillVersionConvertor;
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
+import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.SkillMapper;
 import com.agentdoc.agent.mapper.SkillVersionMapper;
 import com.agentdoc.agent.pojo.dto.SkillCreateDTO;
 import com.agentdoc.agent.pojo.dto.SkillUpdateDTO;
+import com.agentdoc.agent.pojo.dto.SystemSkillCreateDTO;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.pojo.param.SkillSearchParam;
+import com.agentdoc.agent.pojo.param.SystemSkillSearchParam;
 import com.agentdoc.agent.pojo.vo.SkillBindingCountVO;
 import com.agentdoc.agent.pojo.vo.SkillLatestVersionVO;
 import com.agentdoc.agent.pojo.vo.SkillVO;
@@ -33,6 +37,7 @@ import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
+import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
 
 /**
  * Skill元数据服务
@@ -60,6 +65,7 @@ public class SkillService {
     private final SkillMapper skillMapper;
     private final SkillVersionMapper skillVersionMapper;
     private final SpaceAccessService spaceAccessService;
+    private final PlatformAccessService platformAccessService;
     private final SkillAuditLogService auditLogService;
 
     /**
@@ -83,6 +89,7 @@ public class SkillService {
 
         // 新增
         SkillEntity entity = new SkillEntity();
+        entity.setScopeType(SkillScopeType.SPACE.name());
         entity.setSpaceId(dto.spaceId());
         entity.setName(dto.name());
         entity.setDisplayName(dto.displayName());
@@ -115,6 +122,7 @@ public class SkillService {
         requireRead(param.getSpaceId());
 
         LambdaQueryWrapper<SkillEntity> wrapper = new LambdaQueryWrapper<SkillEntity>()
+                .eq(SkillEntity::getScopeType, SkillScopeType.SPACE.name())
                 .eq(SkillEntity::getSpaceId, param.getSpaceId())
                 .orderByDesc(SkillEntity::getUpdatedAt);
         if (param.getStatus() != null) {
@@ -139,6 +147,113 @@ public class SkillService {
                 page.getTotal(), param);
     }
 
+    /** 创建平台维护的系统 Skill。 */
+    @Transactional(rollbackFor = Exception.class)
+    public SkillEntity createSystem(SystemSkillCreateDTO dto) {
+        requireSystemManage();
+        validateName(dto.name());
+        Long count = skillMapper.selectCount(new LambdaQueryWrapper<SkillEntity>()
+                .eq(SkillEntity::getScopeType, SkillScopeType.SYSTEM.name())
+                .eq(SkillEntity::getName, dto.name()));
+        if (count != null && count > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 名称已存在");
+        }
+
+        SkillEntity entity = new SkillEntity();
+        entity.setScopeType(SkillScopeType.SYSTEM.name());
+        entity.setSpaceId(null);
+        entity.setName(dto.name());
+        entity.setDisplayName(dto.displayName());
+        entity.setDescription(dto.description());
+        entity.setStatus(SkillStatus.ACTIVE.getCode());
+        entity.setNextVersionNo(1);
+        entity.setCreatedBy(AuthUtils.getUserIdOrException());
+        skillMapper.insert(entity);
+        auditLogService.record(null, "SYSTEM_SKILL_CREATED", "skill", entity.getId(),
+                Map.of("name", entity.getName()));
+        return entity;
+    }
+
+    /** 查询系统 Skill 目录；普通登录用户只能看到启用项。 */
+    public PageVO<SkillVO> listSystem(SystemSkillSearchParam param) {
+        param.validate();
+        boolean superAdmin = platformAccessService.hasRole(SUPER_ADMIN);
+        LambdaQueryWrapper<SkillEntity> wrapper = new LambdaQueryWrapper<SkillEntity>()
+                .eq(SkillEntity::getScopeType, SkillScopeType.SYSTEM.name())
+                .isNull(SkillEntity::getSpaceId)
+                .orderByDesc(SkillEntity::getUpdatedAt);
+        if (superAdmin && param.getStatus() != null) {
+            wrapper.eq(SkillEntity::getStatus, param.getStatus());
+        } else if (!superAdmin) {
+            wrapper.eq(SkillEntity::getStatus, SkillStatus.ACTIVE.getCode());
+        }
+        if (param.getKeyword() != null && !param.getKeyword().isBlank()) {
+            String keyword = param.getKeyword().trim();
+            wrapper.and(query -> query.like(SkillEntity::getName, keyword)
+                    .or().like(SkillEntity::getDisplayName, keyword)
+                    .or().like(SkillEntity::getDescription, keyword));
+        }
+        Page<SkillEntity> page = skillMapper.selectPage(PageUtils.toPage(param), wrapper);
+        SkillListSummaries summaries = listSummaries(page.getRecords(), !superAdmin);
+        return PageVO.of(page.getRecords().stream()
+                        .map(skill -> SkillConvertor.toVO(skill,
+                                summaries.versionCounts().getOrDefault(skill.getId(), 0L),
+                                summaries.boundAgentCounts().getOrDefault(skill.getId(), 0L),
+                                summaries.latestVersions().get(skill.getId())))
+                        .toList(),
+                page.getTotal(), param);
+    }
+
+    /** 查询系统 Skill 详情。 */
+    public SkillEntity detailSystem(Long id) {
+        SkillEntity entity = requireSystem(id);
+        requireSystemRead(entity);
+        return entity;
+    }
+
+    /** 更新系统 Skill 元数据。 */
+    @Transactional(rollbackFor = Exception.class)
+    public SkillEntity updateSystem(Long id, SkillUpdateDTO dto) {
+        requireSystemManage();
+        SkillEntity entity = requireSystem(id);
+        if (!entity.getName().equals(dto.name())) {
+            long versions = skillVersionMapper.selectCount(new LambdaQueryWrapper<SkillVersionEntity>()
+                    .eq(SkillVersionEntity::getSkillId, id));
+            if (versions > 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "已有版本的系统 Skill 不允许修改名称");
+            }
+            validateName(dto.name());
+            Long duplicates = skillMapper.selectCount(new LambdaQueryWrapper<SkillEntity>()
+                    .eq(SkillEntity::getScopeType, SkillScopeType.SYSTEM.name())
+                    .eq(SkillEntity::getName, dto.name())
+                    .ne(SkillEntity::getId, id));
+            if (duplicates != null && duplicates > 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 名称已存在");
+            }
+        }
+        entity.setName(dto.name());
+        entity.setDisplayName(dto.displayName());
+        entity.setDescription(dto.description());
+        skillMapper.updateById(entity);
+        auditLogService.record(null, "SYSTEM_SKILL_UPDATED", "skill", entity.getId(), null);
+        return entity;
+    }
+
+    /** 启用或停用系统 Skill；停用不影响已经安装的空间。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void setSystemStatus(Long id, SkillStatus status) {
+        requireSystemManage();
+        SkillEntity entity = requireSystem(id);
+        if (entity.getStatus().equals(status.getCode())) {
+            return;
+        }
+        entity.setStatus(status.getCode());
+        skillMapper.updateById(entity);
+        auditLogService.record(null,
+                status == SkillStatus.ACTIVE ? "SYSTEM_SKILL_ENABLED" : "SYSTEM_SKILL_DISABLED",
+                "skill", entity.getId(), null);
+    }
+
     /**
      * 查询Skill详情（元数据）
      *
@@ -146,7 +261,7 @@ public class SkillService {
      * @return Skill实体
      */
     public SkillEntity detail(Long id) {
-        SkillEntity entity = require(id);
+        SkillEntity entity = requireSpace(id);
         requireRead(entity.getSpaceId());
         return entity;
     }
@@ -160,7 +275,7 @@ public class SkillService {
      */
     @Transactional(rollbackFor = Exception.class)
     public SkillEntity update(Long id, SkillUpdateDTO dto) {
-        SkillEntity entity = require(id);
+        SkillEntity entity = requireSpace(id);
         requireManage(entity.getSpaceId());
 
         // 如果要修改名称，校验：只要存在任意版本，不允许改名
@@ -190,7 +305,7 @@ public class SkillService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void setStatus(Long id, SkillStatus status) {
-        SkillEntity entity = require(id);
+        SkillEntity entity = requireSpace(id);
         requireManage(entity.getSpaceId());
         // 状态无变化直接返回，避免产生不必要审计日志
         if (entity.getStatus().equals(status.getCode())) {
@@ -214,6 +329,44 @@ public class SkillService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
         }
         return entity;
+    }
+
+    /** 查询并确认是空间自定义 Skill。 */
+    public SkillEntity requireSpace(Long id) {
+        SkillEntity entity = require(id);
+        if (SkillScopeType.fromValue(entity.getScopeType()) != SkillScopeType.SPACE
+                || entity.getSpaceId() == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "空间 Skill 不存在");
+        }
+        return entity;
+    }
+
+    /** 查询并确认是系统 Skill。 */
+    public SkillEntity requireSystem(Long id) {
+        SkillEntity entity = require(id);
+        if (SkillScopeType.fromValue(entity.getScopeType()) != SkillScopeType.SYSTEM
+                || entity.getSpaceId() != null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 不存在");
+        }
+        return entity;
+    }
+
+    /** 要求平台超级管理员权限。 */
+    public void requireSystemManage() {
+        platformAccessService.requireRole(SUPER_ADMIN);
+    }
+
+    /** 当前用户是否可管理系统能力。 */
+    public boolean isSystemManager() {
+        return platformAccessService.hasRole(SUPER_ADMIN);
+    }
+
+    /** 系统目录读取：停用项仅平台超级管理员可见。 */
+    public void requireSystemRead(SkillEntity skill) {
+        if (!SkillStatus.ACTIVE.matches(skill.getStatus())
+                && !platformAccessService.hasRole(SUPER_ADMIN)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 不存在");
+        }
     }
 
     /**
@@ -289,6 +442,10 @@ public class SkillService {
      * @return 聚合汇总对象，包含三个Map：版本数量、绑定Agent数量、最新版本VO
      */
     private SkillListSummaries listSummaries(List<SkillEntity> skills) {
+        return listSummaries(skills, false);
+    }
+
+    private SkillListSummaries listSummaries(List<SkillEntity> skills, boolean publishedOnly) {
         // 入参为空直接返回空汇总对象
         if (skills.isEmpty()) {
             return new SkillListSummaries(Map.of(), Map.of(), Map.of());
@@ -298,9 +455,12 @@ public class SkillService {
         List<Long> skillIds = skills.stream().map(SkillEntity::getId).toList();
 
         // 批量查询这些技能下全部版本记录
-        List<SkillVersionEntity> versions = skillVersionMapper.selectList(
-                new LambdaQueryWrapper<SkillVersionEntity>()
-                        .in(SkillVersionEntity::getSkillId, skillIds));
+        LambdaQueryWrapper<SkillVersionEntity> versionQuery = new LambdaQueryWrapper<SkillVersionEntity>()
+                .in(SkillVersionEntity::getSkillId, skillIds);
+        if (publishedOnly) {
+            versionQuery.eq(SkillVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode());
+        }
+        List<SkillVersionEntity> versions = skillVersionMapper.selectList(versionQuery);
 
         // 统计每个skill对应的版本总数量
         Map<Long, Long> versionCounts = versions.stream()

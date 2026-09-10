@@ -10,4 +10,6 @@ import java.util.List;
 
 public interface AgentMapper extends BaseMapper<AgentEntity> {
     List<ModelAgentCountVO> selectModelAgentCounts(@Param("modelIds") Collection<Long> modelIds);
+
+    int incrementConfigVersions(@Param("agentIds") Collection<Long> agentIds);
 }
