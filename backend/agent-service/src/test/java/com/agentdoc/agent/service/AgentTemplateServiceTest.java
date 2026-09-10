@@ -5,15 +5,21 @@ import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentTemplateMapper;
+import com.agentdoc.agent.mapper.AgentTemplateMcpMapper;
 import com.agentdoc.agent.mapper.AgentTemplateSkillMapper;
 import com.agentdoc.agent.mapper.AgentTemplateVersionMapper;
-import com.agentdoc.agent.pojo.dto.AgentTemplateUpgradeDTO;
+import com.agentdoc.agent.pojo.dto.AgentMcpBindingReplaceDTO;
 import com.agentdoc.agent.pojo.dto.AgentTemplateInstallDTO;
+import com.agentdoc.agent.pojo.dto.AgentTemplateUpgradeDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateEntity;
+import com.agentdoc.agent.pojo.entity.AgentTemplateMcpEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateVersionEntity;
+import com.agentdoc.agent.pojo.entity.McpServerEntity;
+import com.agentdoc.agent.pojo.entity.McpTemplateEntity;
 import com.agentdoc.agent.pojo.vo.AgentTemplateUpgradeVO;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
@@ -31,11 +37,14 @@ class AgentTemplateServiceTest {
         AgentTemplateMapper templateMapper = mock(AgentTemplateMapper.class);
         AgentTemplateVersionMapper versionMapper = mock(AgentTemplateVersionMapper.class);
         AgentTemplateSkillMapper skillReferenceMapper = mock(AgentTemplateSkillMapper.class);
+        AgentTemplateMcpMapper mcpReferenceMapper = mock(AgentTemplateMcpMapper.class);
         AgentService agentService = mock(AgentService.class);
         AgentSkillService agentSkillService = mock(AgentSkillService.class);
+        AgentMcpBindingService agentMcpBindingService = mock(AgentMcpBindingService.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
-                skillReferenceMapper, mock(SpaceSkillInstallationService.class),
+                skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
                 mock(PlatformAccessService.class), mock(ModelService.class), agentService, agentSkillService,
+                agentMcpBindingService, mock(McpServerService.class), mock(McpTemplateService.class),
                 mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
 
         AgentEntity agent = agent("space-custom-prompt");
@@ -49,10 +58,12 @@ class AgentTemplateServiceTest {
         when(versionMapper.selectById(100L)).thenReturn(current);
         when(versionMapper.selectById(200L)).thenReturn(target);
         when(skillReferenceMapper.selectList(any())).thenReturn(List.of());
+        when(mcpReferenceMapper.selectList(any())).thenReturn(List.of());
         when(agentSkillService.listEnabledVersionIds(1L)).thenReturn(List.of());
+        when(agentMcpBindingService.listEnabledItems(1L)).thenReturn(List.of());
 
         AgentTemplateUpgradeVO preview = service.upgrade(1L,
-                new AgentTemplateUpgradeDTO(200L, true, null, null));
+                new AgentTemplateUpgradeDTO(200L, true, null, null, null));
 
         assertThat(preview.applied()).isFalse();
         assertThat(preview.conflictingFields()).containsExactly("systemPrompt");
@@ -66,11 +77,14 @@ class AgentTemplateServiceTest {
         AgentTemplateMapper templateMapper = mock(AgentTemplateMapper.class);
         AgentTemplateVersionMapper versionMapper = mock(AgentTemplateVersionMapper.class);
         AgentTemplateSkillMapper skillReferenceMapper = mock(AgentTemplateSkillMapper.class);
+        AgentTemplateMcpMapper mcpReferenceMapper = mock(AgentTemplateMcpMapper.class);
         AgentService agentService = mock(AgentService.class);
         AgentSkillService agentSkillService = mock(AgentSkillService.class);
+        AgentMcpBindingService agentMcpBindingService = mock(AgentMcpBindingService.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
-                skillReferenceMapper, mock(SpaceSkillInstallationService.class),
+                skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
                 mock(PlatformAccessService.class), mock(ModelService.class), agentService, agentSkillService,
+                agentMcpBindingService, mock(McpServerService.class), mock(McpTemplateService.class),
                 mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
         AgentTemplateEntity template = new AgentTemplateEntity();
         template.setId(10L);
@@ -82,6 +96,7 @@ class AgentTemplateServiceTest {
         when(versionMapper.selectById(200L)).thenReturn(published);
         when(templateMapper.selectById(10L)).thenReturn(template);
         when(skillReferenceMapper.selectList(any())).thenReturn(List.of());
+        when(mcpReferenceMapper.selectList(any())).thenReturn(List.of());
         when(agentService.create(any())).thenReturn(AgentConvertor.toVO(created));
         when(agentService.requireForUpdate(1L)).thenReturn(created);
         when(agentService.detail(1L)).thenAnswer(ignored -> AgentConvertor.toVO(created));
@@ -92,6 +107,60 @@ class AgentTemplateServiceTest {
         assertThat(created.getTemplateVersionId()).isEqualTo(200L);
         verify(agentService).updateConfiguration(created);
         verify(agentSkillService, never()).replace(any(), any());
+        verify(agentMcpBindingService, never()).replace(any(), any());
+    }
+
+    @Test
+    void installsTemplateMcpReferenceAsSpaceServerBinding() {
+        AgentTemplateMapper templateMapper = mock(AgentTemplateMapper.class);
+        AgentTemplateVersionMapper versionMapper = mock(AgentTemplateVersionMapper.class);
+        AgentTemplateSkillMapper skillReferenceMapper = mock(AgentTemplateSkillMapper.class);
+        AgentTemplateMcpMapper mcpReferenceMapper = mock(AgentTemplateMcpMapper.class);
+        AgentService agentService = mock(AgentService.class);
+        AgentMcpBindingService bindingService = mock(AgentMcpBindingService.class);
+        McpServerService mcpServerService = mock(McpServerService.class);
+        McpTemplateService mcpTemplateService = mock(McpTemplateService.class);
+        AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
+                skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
+                mock(PlatformAccessService.class), mock(ModelService.class), agentService,
+                mock(AgentSkillService.class), bindingService, mcpServerService, mcpTemplateService,
+                mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
+        AgentTemplateEntity template = new AgentTemplateEntity();
+        template.setId(10L);
+        template.setStatus(AgentStatus.ENABLED.getCode());
+        AgentTemplateVersionEntity published = version(200L, 2, "published-prompt");
+        published.setExternalMcpEnabled(true);
+        AgentEntity created = agent("published-prompt");
+        AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
+        reference.setTemplateVersionId(200L);
+        reference.setMcpTemplateId(11L);
+        reference.setMcpTemplateVersion(3L);
+        reference.setToolWhitelistJson("[\"search\"]");
+        McpServerEntity server = new McpServerEntity();
+        server.setId(21L);
+        server.setSpaceId(9L);
+        server.setTemplateId(11L);
+        server.setTemplateVersion(3L);
+        server.setStatus(1);
+        when(versionMapper.selectById(200L)).thenReturn(published);
+        when(templateMapper.selectById(10L)).thenReturn(template);
+        when(skillReferenceMapper.selectList(any())).thenReturn(List.of());
+        when(mcpReferenceMapper.selectList(any())).thenReturn(List.of(reference));
+        when(mcpTemplateService.requireVersions(java.util.Map.of(11L, 3L), false))
+                .thenReturn(java.util.Map.of(11L, new McpTemplateEntity()));
+        when(agentService.create(any())).thenReturn(AgentConvertor.toVO(created));
+        when(agentService.requireForUpdate(1L)).thenReturn(created);
+        when(agentService.detail(1L)).thenAnswer(ignored -> AgentConvertor.toVO(created));
+        when(mcpServerService.findTemplateInstallations(9L, List.of(11L))).thenReturn(List.of(server));
+
+        service.install(9L, new AgentTemplateInstallDTO(200L, "Space Agent", "[7]"));
+
+        ArgumentCaptor<AgentMcpBindingReplaceDTO> captor =
+                ArgumentCaptor.forClass(AgentMcpBindingReplaceDTO.class);
+        verify(bindingService).replace(org.mockito.ArgumentMatchers.eq(1L), captor.capture());
+        assertThat(captor.getValue().bindings()).hasSize(1);
+        assertThat(captor.getValue().bindings().getFirst().mcpServerId()).isEqualTo(21L);
+        assertThat(captor.getValue().bindings().getFirst().toolWhitelist()).containsExactly("search");
     }
 
     private AgentEntity agent(String prompt) {

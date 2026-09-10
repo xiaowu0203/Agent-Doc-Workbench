@@ -37,4 +37,6 @@ public record AgentTemplateVersionCreateDTO(
         @Min(MIN_EXECUTION_TIMEOUT_SECONDS) @Max(MAX_EXECUTION_TIMEOUT_SECONDS)
         @Schema(description = "默认执行超时秒数") Integer executionTimeoutSeconds,
         @Valid @Size(max = 20) @Schema(description = "固定的系统 Skill 版本引用")
-        List<@NotNull @Valid AgentTemplateSkillDTO> skills) { }
+        List<@NotNull @Valid AgentTemplateSkillDTO> skills,
+        @Valid @Size(max = 10) @Schema(description = "固定的系统 MCP 模板引用")
+        List<@NotNull @Valid AgentTemplateMcpDTO> mcps) { }

@@ -69,7 +69,15 @@ public class McpServerService {
         validateAuthConfig(dto.authType(), dto.authParamName());
         // 校验外部端点URL安全
         endpointValidator.validateExternal(dto.endpointUrl());
-        return transactionTemplate.execute(status -> createLocked(dto));
+        return transactionTemplate.execute(status -> createLocked(dto, null, null));
+    }
+
+    /** 从系统模板创建携带来源信息的空间 MCP 连接。 */
+    public McpServerVO createFromTemplate(McpServerCreateDTO dto, Long templateId, Long templateVersion) {
+        spaceAccessService.requirePermission(dto.spaceId(), MCP_MANAGE);
+        validateAuthConfig(dto.authType(), dto.authParamName());
+        endpointValidator.validateExternal(dto.endpointUrl());
+        return transactionTemplate.execute(status -> createLocked(dto, templateId, templateVersion));
     }
 
     /**
@@ -80,7 +88,12 @@ public class McpServerService {
      * @param dto 创建请求DTO
      * @return MCP Server视图对象
      */
-    private McpServerVO createLocked(McpServerCreateDTO dto) {
+    private McpServerVO createLocked(McpServerCreateDTO dto, Long templateId, Long templateVersion) {
+        if (templateId != null && mapper.selectCount(new LambdaQueryWrapper<McpServerEntity>()
+                .eq(McpServerEntity::getSpaceId, dto.spaceId())
+                .eq(McpServerEntity::getTemplateId, templateId)) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前空间已安装该 MCP 模板");
+        }
         // 校验MCP是否重复（SpaceId+ServerKey）
         if (mapper.selectCount(new LambdaQueryWrapper<McpServerEntity>()
                 .eq(McpServerEntity::getSpaceId, dto.spaceId())
@@ -91,6 +104,8 @@ public class McpServerService {
         // 类型转换(encryptedToken：令牌加密)
         McpServerEntity entity = McpServerConvertor.toEntity(dto,
                 encryptedToken(dto.authType(), dto.authToken(), null));
+        entity.setTemplateId(templateId);
+        entity.setTemplateVersion(templateVersion);
         try {
             mapper.insert(entity);
         } catch (DuplicateKeyException exception) {
@@ -149,6 +164,13 @@ public class McpServerService {
         McpServerEntity entity = require(id);
         // 校验空间查看权限
         spaceAccessService.requirePermission(entity.getSpaceId(), MCP_READ);
+        return McpServerConvertor.toVO(entity);
+    }
+
+    /** 返回管理操作后的最新视图，不额外要求只读权限。 */
+    public McpServerVO managementDetail(Long id) {
+        McpServerEntity entity = require(id);
+        spaceAccessService.requirePermission(entity.getSpaceId(), MCP_MANAGE);
         return McpServerConvertor.toVO(entity);
     }
 
@@ -329,6 +351,16 @@ public class McpServerService {
      */
     public List<McpServerEntity> findByIds(Collection<Long> ids) {
         return ids.isEmpty() ? List.of() : mapper.selectBatchIds(ids);
+    }
+
+    /** 查询空间中来源于指定系统模板的 MCP 连接。 */
+    public List<McpServerEntity> findTemplateInstallations(Long spaceId, Collection<Long> templateIds) {
+        if (templateIds.isEmpty()) {
+            return List.of();
+        }
+        return mapper.selectList(new LambdaQueryWrapper<McpServerEntity>()
+                .eq(McpServerEntity::getSpaceId, spaceId)
+                .in(McpServerEntity::getTemplateId, templateIds));
     }
 
     /**

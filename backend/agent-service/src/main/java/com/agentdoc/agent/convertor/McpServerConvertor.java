@@ -78,6 +78,8 @@ public final class McpServerConvertor {
     public static McpServerVO toVO(McpServerEntity entity) {
         return new McpServerVO(
                 entity.getId(),
+                entity.getTemplateId(),
+                entity.getTemplateVersion(),
                 entity.getSpaceId(),
                 entity.getServerKey(),
                 entity.getDisplayName(),

@@ -58,6 +58,16 @@ public class AgentMcpBindingService {
         return bindingViews(agentId);
     }
 
+    /** 返回当前启用绑定的可复用 DTO，供已完成权限校验的模板升级流程比较。 */
+    public List<AgentMcpBindingItemDTO> listEnabledItems(Long agentId) {
+        return bindingMapper.selectList(new LambdaQueryWrapper<AgentMcpBindingEntity>()
+                        .eq(AgentMcpBindingEntity::getAgentId, agentId)
+                        .eq(AgentMcpBindingEntity::getEnabled, true))
+                .stream().map(value -> new AgentMcpBindingItemDTO(value.getMcpServerId(),
+                        AgentMcpBindingConvertor.parseWhitelist(value.getToolWhitelistJson())))
+                .sorted(Comparator.comparing(AgentMcpBindingItemDTO::mcpServerId)).toList();
+    }
+
     /**
      * 全量替换Agent的MCP Server绑定关系
      * <p>

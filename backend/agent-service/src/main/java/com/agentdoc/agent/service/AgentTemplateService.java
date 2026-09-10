@@ -5,12 +5,16 @@ import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentTemplateMapper;
+import com.agentdoc.agent.mapper.AgentTemplateMcpMapper;
 import com.agentdoc.agent.mapper.AgentTemplateSkillMapper;
 import com.agentdoc.agent.mapper.AgentTemplateVersionMapper;
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
+import com.agentdoc.agent.pojo.dto.AgentMcpBindingItemDTO;
+import com.agentdoc.agent.pojo.dto.AgentMcpBindingReplaceDTO;
 import com.agentdoc.agent.pojo.dto.AgentSkillReplaceDTO;
 import com.agentdoc.agent.pojo.dto.AgentTemplateCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentTemplateInstallDTO;
+import com.agentdoc.agent.pojo.dto.AgentTemplateMcpDTO;
 import com.agentdoc.agent.pojo.dto.AgentTemplateSkillDTO;
 import com.agentdoc.agent.pojo.dto.AgentTemplateUpdateDTO;
 import com.agentdoc.agent.pojo.dto.AgentTemplateUpgradeDTO;
@@ -18,8 +22,10 @@ import com.agentdoc.agent.pojo.dto.AgentTemplateVersionCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateEntity;
+import com.agentdoc.agent.pojo.entity.AgentTemplateMcpEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateSkillEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateVersionEntity;
+import com.agentdoc.agent.pojo.entity.McpServerEntity;
 import com.agentdoc.agent.pojo.param.AgentTemplateSearchParam;
 import com.agentdoc.agent.pojo.vo.AgentTemplateVO;
 import com.agentdoc.agent.pojo.vo.AgentTemplateVersionVO;
@@ -59,11 +65,15 @@ public class AgentTemplateService {
     private final AgentTemplateMapper templateMapper;
     private final AgentTemplateVersionMapper versionMapper;
     private final AgentTemplateSkillMapper templateSkillMapper;
+    private final AgentTemplateMcpMapper templateMcpMapper;
     private final SpaceSkillInstallationService skillInstallationService;
     private final PlatformAccessService platformAccessService;
     private final ModelService modelService;
     private final AgentService agentService;
     private final AgentSkillService agentSkillService;
+    private final AgentMcpBindingService agentMcpBindingService;
+    private final McpServerService mcpServerService;
+    private final McpTemplateService mcpTemplateService;
     private final SpaceAccessService spaceAccessService;
     private final SkillAuditLogService auditLogService;
 
@@ -143,6 +153,7 @@ public class AgentTemplateService {
         }
         validateModel(dto.modelId(), dto.skillRouterModelId(), dto.skillSelectionMode().name());
         validateSkillReferences(dto.skills(), false);
+        validateMcpReferences(dto.mcps(), false);
         AgentTemplateVersionEntity version = new AgentTemplateVersionEntity();
         version.setTemplateId(templateId);
         version.setVersionNo(template.getNextVersionNo());
@@ -170,6 +181,15 @@ public class AgentTemplateService {
             reference.setSkillVersionId(skill.skillVersionId());
             templateSkillMapper.insert(reference);
         }
+        for (AgentTemplateMcpDTO mcp : safeMcps(dto.mcps())) {
+            AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
+            reference.setTemplateVersionId(version.getId());
+            reference.setMcpTemplateId(mcp.mcpTemplateId());
+            reference.setMcpTemplateVersion(mcp.mcpTemplateVersion());
+            reference.setToolWhitelistJson(mcp.toolWhitelist() == null ? null
+                    : JsonUtils.toJson(mcp.toolWhitelist().stream().distinct().sorted().toList()));
+            templateMcpMapper.insert(reference);
+        }
         template.setNextVersionNo(template.getNextVersionNo() + 1);
         templateMapper.updateById(template);
         auditLogService.record(null, "AGENT_TEMPLATE_VERSION_CREATED", "agent_template_version", version.getId(),
@@ -186,6 +206,7 @@ public class AgentTemplateService {
         }
         validateModel(version.getModelId(), version.getSkillRouterModelId(), version.getSkillSelectionMode());
         validateStoredSkillReferences(versionId, true);
+        validateStoredMcpReferences(versionId, true);
         version.setStatus(SkillVersionStatus.PUBLISHED.getCode());
         version.setPublishedBy(AuthUtils.getUserIdOrException());
         version.setPublishedAt(LocalDateTime.now());
@@ -216,8 +237,14 @@ public class AgentTemplateService {
                                 .in(AgentTemplateSkillEntity::getTemplateVersionId,
                                         versions.stream().map(AgentTemplateVersionEntity::getId).toList()))
                 .stream().collect(Collectors.groupingBy(AgentTemplateSkillEntity::getTemplateVersionId));
+        Map<Long, List<AgentTemplateMcpEntity>> mcpsByVersion = templateMcpMapper.selectList(
+                        new LambdaQueryWrapper<AgentTemplateMcpEntity>()
+                                .in(AgentTemplateMcpEntity::getTemplateVersionId,
+                                        versions.stream().map(AgentTemplateVersionEntity::getId).toList()))
+                .stream().collect(Collectors.groupingBy(AgentTemplateMcpEntity::getTemplateVersionId));
         return versions.stream().map(version -> toVersionVO(version,
-                skillsByVersion.getOrDefault(version.getId(), List.of()))).toList();
+                skillsByVersion.getOrDefault(version.getId(), List.of()),
+                mcpsByVersion.getOrDefault(version.getId(), List.of()))).toList();
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -229,6 +256,7 @@ public class AgentTemplateService {
             throw new BusinessException(ErrorCode.CONFLICT, "只能安装已启用模板的已发布版本");
         }
         validateStoredSkillReferences(version.getId(), false);
+        validateStoredMcpReferences(version.getId(), false);
         AgentCreateDTO create = new AgentCreateDTO(spaceId,
                 dto.name() == null || dto.name().isBlank() ? version.getDisplayName() : dto.name().trim(),
                 version.getDescription(), version.getSystemPrompt(), version.getModelId(),
@@ -245,6 +273,10 @@ public class AgentTemplateService {
                 .map(AgentTemplateSkillEntity::getSkillVersionId).toList();
         if (!skillVersionIds.isEmpty()) {
             agentSkillService.replace(agent.getId(), new AgentSkillReplaceDTO(skillVersionIds));
+        }
+        List<AgentMcpBindingItemDTO> mcpBindings = resolveMcpBindings(spaceId, version.getId());
+        if (!mcpBindings.isEmpty()) {
+            agentMcpBindingService.replace(agent.getId(), new AgentMcpBindingReplaceDTO(mcpBindings));
         }
         auditLogService.record(spaceId, "AGENT_TEMPLATE_INSTALLED", "agent", agent.getId(),
                 Map.of("templateId", template.getId(), "templateVersionId", version.getId()));
@@ -268,6 +300,7 @@ public class AgentTemplateService {
             throw new BusinessException(ErrorCode.CONFLICT, "目标版本不是当前模板的可用新版本");
         }
         validateStoredSkillReferences(targetVersion.getId(), false);
+        validateStoredMcpReferences(targetVersion.getId(), false);
 
         List<String> conflicts = new ArrayList<>();
         AgentUpdateDTO current = fromAgent(agent);
@@ -278,13 +311,18 @@ public class AgentTemplateService {
         List<Long> currentSkills = agentSkillService.listEnabledVersionIds(agentId);
         List<Long> newSkills = skillVersionIds(targetVersion.getId());
         List<Long> proposedSkills = mergeValue(oldSkills, currentSkills, newSkills, "skills", conflicts);
+        List<AgentMcpBindingItemDTO> oldMcps = resolveMcpBindings(agent.getSpaceId(), currentVersion.getId());
+        List<AgentMcpBindingItemDTO> currentMcps = agentMcpBindingService.listEnabledItems(agentId);
+        List<AgentMcpBindingItemDTO> newMcps = resolveMcpBindings(agent.getSpaceId(), targetVersion.getId());
+        List<AgentMcpBindingItemDTO> proposedMcps = mergeValue(oldMcps, currentMcps, newMcps, "mcps", conflicts);
 
         if (dto.previewOnly()) {
             return new AgentTemplateUpgradeVO(agentId, currentVersion.getId(), targetVersion.getId(),
-                    List.copyOf(conflicts), proposed, proposedSkills, false);
+                    List.copyOf(conflicts), proposed, proposedSkills, proposedMcps, false);
         }
         AgentUpdateDTO finalConfig = proposed;
         List<Long> finalSkills = proposedSkills;
+        List<AgentMcpBindingItemDTO> finalMcps = proposedMcps;
         boolean configConflict = conflicts.stream().anyMatch(field -> !"skills".equals(field));
         if (configConflict) {
             if (dto.resolvedConfig() == null) {
@@ -298,8 +336,15 @@ public class AgentTemplateService {
             }
             finalSkills = dto.resolvedSkillVersionIds().stream().distinct().sorted().toList();
         }
+        if (conflicts.contains("mcps")) {
+            if (dto.resolvedMcpBindings() == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "模板升级存在 MCP 冲突，请确认最终绑定");
+            }
+            finalMcps = normalizeMcpBindings(dto.resolvedMcpBindings());
+        }
         agentService.update(agentId, finalConfig);
         agentSkillService.replace(agentId, new AgentSkillReplaceDTO(finalSkills));
+        agentMcpBindingService.replace(agentId, new AgentMcpBindingReplaceDTO(finalMcps));
         AgentEntity updated = agentService.requireForUpdate(agentId);
         updated.setTemplateVersionId(targetVersion.getId());
         agentService.updateConfiguration(updated);
@@ -307,7 +352,7 @@ public class AgentTemplateService {
                 Map.of("fromVersionId", currentVersion.getId(), "toVersionId", targetVersion.getId(),
                         "resolvedConflicts", conflicts));
         return new AgentTemplateUpgradeVO(agentId, currentVersion.getId(), targetVersion.getId(),
-                List.copyOf(conflicts), finalConfig, finalSkills, true);
+                List.copyOf(conflicts), finalConfig, finalSkills, finalMcps, true);
     }
 
     private AgentUpdateDTO mergeConfig(AgentUpdateDTO oldValue, AgentUpdateDTO current,
@@ -383,6 +428,53 @@ public class AgentTemplateService {
                 requireActive);
     }
 
+    private void validateStoredMcpReferences(Long templateVersionId, boolean requireActive) {
+        validateMcpReferences(listMcpReferences(templateVersionId).stream()
+                .map(value -> new AgentTemplateMcpDTO(value.getMcpTemplateId(), value.getMcpTemplateVersion(),
+                        parseTools(value.getToolWhitelistJson()))).toList(), requireActive);
+    }
+
+    private void validateMcpReferences(List<AgentTemplateMcpDTO> references, boolean requireActive) {
+        Set<Long> templateIds = new HashSet<>();
+        for (AgentTemplateMcpDTO reference : safeMcps(references)) {
+            if (!templateIds.add(reference.mcpTemplateId())) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED,
+                        "模板不能重复引用同一系统 MCP 模板");
+            }
+        }
+        mcpTemplateService.requireVersions(safeMcps(references).stream().collect(Collectors.toMap(
+                AgentTemplateMcpDTO::mcpTemplateId, AgentTemplateMcpDTO::mcpTemplateVersion)), requireActive);
+    }
+
+    private List<AgentMcpBindingItemDTO> resolveMcpBindings(Long spaceId, Long templateVersionId) {
+        List<AgentTemplateMcpEntity> references = listMcpReferences(templateVersionId);
+        if (references.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, McpServerEntity> installedByTemplate = mcpServerService.findTemplateInstallations(spaceId,
+                        references.stream().map(AgentTemplateMcpEntity::getMcpTemplateId).toList())
+                .stream().collect(Collectors.toMap(McpServerEntity::getTemplateId, Function.identity(),
+                        (left, right) -> left));
+        List<AgentMcpBindingItemDTO> bindings = new ArrayList<>();
+        for (AgentTemplateMcpEntity reference : references) {
+            McpServerEntity server = installedByTemplate.get(reference.getMcpTemplateId());
+            if (server == null || !reference.getMcpTemplateVersion().equals(server.getTemplateVersion())) {
+                throw new BusinessException(ErrorCode.CONFLICT,
+                        "请先在当前空间安装 Agent 模板要求的 MCP 模板版本");
+            }
+            bindings.add(new AgentMcpBindingItemDTO(server.getId(),
+                    parseTools(reference.getToolWhitelistJson())));
+        }
+        return normalizeMcpBindings(bindings);
+    }
+
+    private List<AgentMcpBindingItemDTO> normalizeMcpBindings(List<AgentMcpBindingItemDTO> bindings) {
+        return bindings.stream().map(value -> new AgentMcpBindingItemDTO(value.mcpServerId(),
+                        value.toolWhitelist() == null ? null
+                                : value.toolWhitelist().stream().distinct().sorted().toList()))
+                .sorted(java.util.Comparator.comparing(AgentMcpBindingItemDTO::mcpServerId)).toList();
+    }
+
     private void validateSkillReferences(List<AgentTemplateSkillDTO> references, boolean requireActive) {
         List<AgentTemplateSkillDTO> values = safeSkills(references);
         if (values.isEmpty()) {
@@ -419,6 +511,11 @@ public class AgentTemplateService {
                 .eq(AgentTemplateSkillEntity::getTemplateVersionId, versionId));
     }
 
+    private List<AgentTemplateMcpEntity> listMcpReferences(Long versionId) {
+        return templateMcpMapper.selectList(new LambdaQueryWrapper<AgentTemplateMcpEntity>()
+                .eq(AgentTemplateMcpEntity::getTemplateVersionId, versionId));
+    }
+
     private AgentTemplateVO toVO(AgentTemplateEntity entity) {
         AgentTemplateVersionEntity latest = versionMapper.selectOne(
                 new LambdaQueryWrapper<AgentTemplateVersionEntity>()
@@ -435,20 +532,24 @@ public class AgentTemplateService {
     }
 
     private AgentTemplateVersionVO toVersionVO(AgentTemplateVersionEntity version) {
-        return toVersionVO(version, listSkillReferences(version.getId()));
+        return toVersionVO(version, listSkillReferences(version.getId()), listMcpReferences(version.getId()));
     }
 
     private AgentTemplateVersionVO toVersionVO(AgentTemplateVersionEntity version,
-                                                List<AgentTemplateSkillEntity> references) {
-        List<AgentTemplateVersionVO.SkillReferenceVO> skills = references.stream()
+                                                List<AgentTemplateSkillEntity> skillReferences,
+                                                List<AgentTemplateMcpEntity> mcpReferences) {
+        List<AgentTemplateVersionVO.SkillReferenceVO> skills = skillReferences.stream()
                 .map(value -> new AgentTemplateVersionVO.SkillReferenceVO(
                         value.getSkillId(), value.getSkillVersionId())).toList();
+        List<AgentTemplateVersionVO.McpReferenceVO> mcps = mcpReferences.stream()
+                .map(value -> new AgentTemplateVersionVO.McpReferenceVO(value.getMcpTemplateId(),
+                        value.getMcpTemplateVersion(), parseTools(value.getToolWhitelistJson()))).toList();
         return new AgentTemplateVersionVO(version.getId(), version.getTemplateId(), version.getVersionNo(),
                 version.getStatus(), version.getDisplayName(), version.getDescription(), version.getSystemPrompt(),
                 version.getModelId(), SkillSelectionMode.valueOf(version.getSkillSelectionMode()),
                 version.getSkillRouterModelId(), version.getExternalMcpEnabled(), version.getTokenBudget(),
                 parseTools(version.getToolWhitelist()), version.getMaxIterations(), version.getExecutionTimeoutSeconds(),
-                skills, version.getCreatedBy(), version.getPublishedBy(), version.getPublishedAt(),
+                skills, mcps, version.getCreatedBy(), version.getPublishedBy(), version.getPublishedAt(),
                 version.getCreatedAt());
     }
 
@@ -458,6 +559,10 @@ public class AgentTemplateService {
 
     private List<AgentTemplateSkillDTO> safeSkills(List<AgentTemplateSkillDTO> skills) {
         return skills == null ? List.of() : skills;
+    }
+
+    private List<AgentTemplateMcpDTO> safeMcps(List<AgentTemplateMcpDTO> mcps) {
+        return mcps == null ? List.of() : mcps;
     }
 
     private void requireManage() {

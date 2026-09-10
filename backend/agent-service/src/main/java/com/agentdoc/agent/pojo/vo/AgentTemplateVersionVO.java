@@ -24,6 +24,7 @@ public record AgentTemplateVersionVO(
         @Schema(description = "默认最大迭代次数") Integer maxIterations,
         @Schema(description = "默认执行超时秒数") Integer executionTimeoutSeconds,
         @Schema(description = "固定的系统 Skill 版本引用") List<SkillReferenceVO> skills,
+        @Schema(description = "固定的系统 MCP 模板引用") List<McpReferenceVO> mcps,
         @Schema(description = "创建人用户 ID") Long createdBy,
         @Schema(description = "发布人用户 ID") Long publishedBy,
         @Schema(description = "发布时间") LocalDateTime publishedAt,
@@ -31,4 +32,9 @@ public record AgentTemplateVersionVO(
     public record SkillReferenceVO(
             @Schema(description = "系统 Skill ID") Long skillId,
             @Schema(description = "固定 Skill 版本 ID") Long skillVersionId) { }
+
+    public record McpReferenceVO(
+            @Schema(description = "系统 MCP 模板 ID") Long mcpTemplateId,
+            @Schema(description = "固定 MCP 模板配置版本") Long mcpTemplateVersion,
+            @Schema(description = "默认远端工具白名单") List<String> toolWhitelist) { }
 }
