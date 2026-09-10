@@ -18,12 +18,11 @@ export function login(credentials: LoginRequest): Promise<LoginResponse> {
   )
 }
 
-export function refresh(refreshToken: string): Promise<LoginResponse> {
+export function refresh(): Promise<LoginResponse> {
   return request<LoginResponse>(
     {
       url: '/auth/refresh',
       method: 'POST',
-      data: { refreshToken },
     },
     { retryAfterRefresh: false },
   )
@@ -40,12 +39,11 @@ export function register(credentials: RegisterRequest): Promise<User> {
   )
 }
 
-export function logout(refreshToken: string): Promise<void> {
+export function logout(): Promise<void> {
   return request<void>(
     {
       url: '/auth/logout',
       method: 'POST',
-      data: { refreshToken },
     },
     { retryAfterRefresh: false },
   )

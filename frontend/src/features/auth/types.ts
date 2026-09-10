@@ -8,7 +8,6 @@ export interface User {
 
 export interface AuthSession {
   accessToken: string
-  refreshToken?: string
   user: User
   platformRoles?: string[]
 }
@@ -16,6 +15,7 @@ export interface AuthSession {
 export interface LoginRequest {
   username: string
   password: string
+  remember: boolean
 }
 
 export interface RegisterRequest {
@@ -31,7 +31,6 @@ export interface ChangePasswordRequest {
 }
 
 export interface LoginResponse extends AuthSession {
-  refreshToken: string
   tokenType: string
   expiresIn: number
 }

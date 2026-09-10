@@ -1,8 +1,8 @@
 <template>
   <div class="workbench-layout">
-    <AppSidebar :collapsed="appStore.sidebarCollapsed" />
+    <AppSidebar :collapsed="sidebarCollapsed" />
     <div class="workbench-layout__main">
-      <AppTopbar :collapsed="appStore.sidebarCollapsed" @toggle-sidebar="appStore.toggleSidebar" />
+      <AppTopbar :collapsed="sidebarCollapsed" @toggle-sidebar="appStore.toggleSidebar" />
       <main class="workbench-layout__content">
         <RouterView />
       </main>
@@ -11,6 +11,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterView } from 'vue-router'
 
 import AppSidebar from '@/shared/components/AppSidebar.vue'
@@ -18,6 +19,21 @@ import AppTopbar from '@/shared/components/AppTopbar.vue'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
+const narrowScreen = ref(false)
+const sidebarCollapsed = computed(() => appStore.sidebarCollapsed || narrowScreen.value)
+let narrowScreenQuery: MediaQueryList | null = null
+
+function updateNarrowScreen(event: MediaQueryListEvent | MediaQueryList): void {
+  narrowScreen.value = event.matches
+}
+
+onMounted(() => {
+  narrowScreenQuery = window.matchMedia('(max-width: 720px)')
+  updateNarrowScreen(narrowScreenQuery)
+  narrowScreenQuery.addEventListener('change', updateNarrowScreen)
+})
+
+onBeforeUnmount(() => narrowScreenQuery?.removeEventListener('change', updateNarrowScreen))
 </script>
 
 <style scoped>

@@ -242,7 +242,7 @@ const authStore = useAuthStore()
 const formRef = ref<FormInstance>()
 const registerFormRef = ref<FormInstance>()
 const submitting = ref(false)
-const rememberSession = ref(authStore.remembered)
+const rememberSession = ref(false)
 const errorMessage = ref('')
 const isRegisterMode = ref(false)
 const form = reactive({
@@ -298,9 +298,11 @@ async function submitLogin(): Promise<void> {
   submitting.value = true
   errorMessage.value = ''
   try {
-    await authStore.login({ username: form.username.trim(), password: form.password })
-    authStore.remembered = rememberSession.value
-    authStore.persistSession(rememberSession.value)
+    await authStore.login({
+      username: form.username.trim(),
+      password: form.password,
+      remember: rememberSession.value,
+    })
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
     await router.replace(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {

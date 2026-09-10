@@ -378,7 +378,8 @@ async function triggerRun(id: TaskListItem['id']) {
 function viewTask(id: TaskListItem['id']) {
   void router.push(`/spaces/${spaceId.value}/tasks/${id}`)
 }
-async function terminateRow(task: TaskListItem) {
+async function terminateRow(value: unknown) {
+  const task = value as TaskListItem
   if (actionId.value) return
   try {
     await ElMessageBox.confirm(`确定终止“${task.name}”吗？`, '终止任务', { type: 'warning' })
@@ -392,7 +393,8 @@ async function terminateRow(task: TaskListItem) {
     actionId.value = null
   }
 }
-async function rerunRow(task: TaskListItem) {
+async function rerunRow(value: unknown) {
+  const task = value as TaskListItem
   if (actionId.value) return
   try {
     await ElMessageBox.confirm(

@@ -2,7 +2,7 @@
 
 > Agent Doc Workbench 当前架构对应的新版高保真概念稿
 > 生成日期：2026-08-27
-> 目标前端：Vue 3 + TypeScript + Element Plus + ProseMirror
+> 实际前端：Vue 3 + TypeScript + Element Plus + Markdown 编辑器
 
 本目录是项目当前使用的正式 UI 效果图集。早期 v0.1 图集已经移除，根目录中英文 README 的预览也已切换到本套图片。
 

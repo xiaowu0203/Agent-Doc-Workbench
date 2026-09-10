@@ -3,14 +3,14 @@
 > 面向个人/小团队的 Agent 活文档协作开源 Web 工作台
 > 文档，作为 AI Agent 任务的唯一协作载体。
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%205%20completed-brightgreen)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%206%20completed-brightgreen)
 
 [English](./README.en.md) | 简体中文
 
 **仓库**
 - Gitee：https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub：https://github.com/xiaowu0203/Agent-Doc-Workbench
-- 分支：main（稳定）· 当前交付：Phase 5 已完成 · 下一阶段：Phase 6 前端权限页面
+- 分支：main（稳定）· `phase-6`：前端阶段已完成，可合并
 
 ---
 
@@ -50,7 +50,7 @@ Agent-Doc-Workbench 把「文档」作为 Agent 任务的协作载体，让每�
 | 存储 | MinIO（对象存储） |
 | 注册/配置 | Nacos 3.2.2 |
 | Agent 接入 | Spring AI · 官方 A2A Java SDK · MCP Java SDK |
-| 前端 | Vue 3 · TypeScript · Vite · Pinia · Element Plus · ProseMirror |
+| 前端 | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
 | 鉴权 | Spring Authorization Server · OAuth2 · JWT（RS256） |
 
 详细选型与理由见 [docs/tech/](docs/tech/README.md)。
@@ -58,7 +58,7 @@ Agent-Doc-Workbench 把「文档」作为 Agent 任务的协作载体，让每�
 ## 架构概览
 
 ```
-前端 (Vue 3 + ProseMirror)
+前端 (Vue 3 + Markdown)
    │  OAuth2 / JWT
    ▼
 Gateway (Spring Cloud Gateway · WebFlux)
@@ -82,12 +82,13 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | ✅ 已完成并合并入 main（2026-08-26） |
 | Phase 4 | Skill 管理、渐进式加载、外部多 MCP 与执行审计 | ✅ 已完成（2026-08-31） |
 | Phase 5 | 平台角色、空间 RBAC、权限标识符和接口权限校验 | ✅ 已完成（2026-08-31） |
+| Phase 6 | 前端核心业务、Skill、外部 MCP、角色与权限页面 | ✅ 已完成（2026-09-10，可合并 main） |
 
 架构设计文档见下方“文档导航”；阶段交接材料仅保留在本地工作区。
 
 ## 快速开始
 
-> Phase 0-5 已完成；下一阶段为 Phase 6 前端权限页面与核心业务接入。
+> Phase 0-6 已完成；`phase-6` 分支已通过类型、静态检查、单元测试、生产构建与真实浏览器联调，可合并到 `main`。
 
 ```bash
 # 1. 启动基础设施（MySQL / Redis / RabbitMQ / MinIO / Nacos）
@@ -118,8 +119,8 @@ pnpm dev
 | Phase 3 | Agent 与任务：异步任务、真实 MCP、Token 熔断、审计 | 已完成 |
 | Phase 4 | Skill 管理：目录包、版本、Agent 绑定、渐进式加载与外部 MCP | 已完成 |
 | Phase 5 | 平台角色、空间 RBAC、角色绑定权限标识符、接口权限校验 | 已完成 |
-| Phase 6 | 前端：核心业务、Skill、角色与权限管理页面 | 规划中 |
-| Phase 7 | 闭环联调与测试 | 待启动 |
+| Phase 6 | 前端：核心业务、Skill、角色与权限管理页面 | 已完成，可合并 |
+| Phase 7 | 系统能力库：系统 Skill、Agent 模板、MCP 模板与空间安装 | 设计已完成，待实施 |
 | Phase 8 | 开源发布准备 | 待启动 |
 
 阶段路线仅作为本地工作记录；长期有效的技术约束以 `docs/tech/` 和下方架构设计文档为准。

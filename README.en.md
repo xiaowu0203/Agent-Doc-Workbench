@@ -3,14 +3,14 @@
 > An open-source, lightweight web workbench for AI-agent-powered document collaboration, built for individuals and small teams.
 > Documents as the single collaboration vehicle for AI Agent tasks.
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%205%20completed-brightgreen)
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%206%20completed-brightgreen)
 
 English | [简体中文](./README.md)
 
 **Repository**
 - Gitee: https://gitee.com/wu_hai123/agent-doc-workbench
 - GitHub: https://github.com/xiaowu0203/Agent-Doc-Workbench
-- Branches: main (stable) · current delivery: Phase 5 completed · next: Phase 6 frontend permission pages
+- Branches: main (stable) · `phase-6`: frontend phase completed, ready to merge
 
 ---
 
@@ -50,7 +50,7 @@ Complete updated mockup set: [docs/ui-mockups/README.md](docs/ui-mockups/README.
 | Storage | MinIO (object storage) |
 | Registry/Config | Nacos 3.2.2 |
 | Agent integration | Spring AI · official A2A Java SDK · MCP Java SDK |
-| Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · ProseMirror |
+| Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
 | Auth | Spring Authorization Server · OAuth2 · JWT (RS256) |
 
 Details and rationale: [docs/tech/README.md](docs/tech/README.md).
@@ -58,7 +58,7 @@ Details and rationale: [docs/tech/README.md](docs/tech/README.md).
 ## Architecture Overview
 
 ```
-Frontend (Vue 3 + ProseMirror)
+Frontend (Vue 3 + Markdown)
    │  OAuth2 / JWT
    ▼
 Gateway (Spring Cloud Gateway · WebFlux)
@@ -82,12 +82,13 @@ Gateway (Spring Cloud Gateway · WebFlux)
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | ✅ Completed and merged into main (2026-08-26) |
 | Phase 4 | Skill management, progressive loading, external MCP servers, and execution auditing | ✅ Completed (2026-08-31) |
 | Phase 5 | Platform roles, workspace RBAC, permission identifiers, and API authorization | ✅ Completed (2026-08-31) |
+| Phase 6 | Frontend core flows, Skills, external MCP, roles, and permissions | ✅ Completed (2026-09-10; ready to merge to main) |
 
 Architecture documents are listed below; phase handoff materials remain local to the workspace.
 
 ## Getting Started
 
-> Phase 0-5 are complete. Phase 6 will integrate frontend permission pages and core business flows.
+> Phase 0-6 are complete. The `phase-6` branch passes type checks, lint, unit tests, production build, and real-browser integration checks, and is ready to merge into `main`.
 
 ```bash
 # 1. Start infrastructure (MySQL / Redis / RabbitMQ / MinIO / Nacos)
@@ -118,8 +119,8 @@ Frontend variables are documented in `frontend/.env.example`; infrastructure and
 | Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | Completed and merged |
 | Phase 4 | Skill management: packages, versions, Agent binding, progressive loading, and external MCP | Completed |
 | Phase 5 | Platform roles, workspace RBAC, role-permission mapping, and API authorization | Completed |
-| Phase 6 | Frontend: core business, Skill, role, and permission pages | In progress |
-| Phase 7 | Full-loop integration and testing | Planned |
+| Phase 6 | Frontend: core business, Skill, role, and permission pages | Completed; ready to merge |
+| Phase 7 | System capability catalog: Skills, Agent templates, MCP templates, and space installation | Design complete; implementation pending |
 | Phase 8 | Open-source release preparation | Planned |
 
 The phase roadmap is kept as a local working document; long-lived technical constraints are documented in `docs/tech/` and the architecture documents below.

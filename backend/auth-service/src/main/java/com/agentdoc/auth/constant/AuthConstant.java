@@ -14,6 +14,15 @@ public final class AuthConstant {
     /** Refresh Token 随机字节长度 */
     public static final int REFRESH_TOKEN_BYTE_LENGTH = 48;
 
+    /** 浏览器 Refresh Token Cookie 名称 */
+    public static final String REFRESH_TOKEN_COOKIE_NAME = "adw_refresh_token";
+
+    /** 记录 Refresh Token Cookie 是否需要跨浏览器会话保留 */
+    public static final String REFRESH_TOKEN_PERSISTENCE_COOKIE_NAME = "adw_refresh_persistent";
+
+    /** Refresh Token Cookie 仅发送到认证接口 */
+    public static final String REFRESH_TOKEN_COOKIE_PATH = "/api/auth";
+
     /** 任务能力令牌有效期（小时） */
     public static final long TASK_CAPABILITY_TTL_HOURS = 6L;
 

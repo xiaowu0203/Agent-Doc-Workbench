@@ -171,7 +171,7 @@ const directoryError = ref('')
 const restoringId = ref<string | null>(null)
 const documentPage = reactive({ total: 0, pageNum: 1, pageSize: 10 })
 const directoryPage = reactive({ total: 0, pageNum: 1, pageSize: 10 })
-const selectedDocument = ref<(ArchivedDocument & { content: string | null }) | null>(null)
+const selectedDocument = ref<(ArchivedDocument & { content?: string | null }) | null>(null)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailError = ref('')
@@ -192,7 +192,8 @@ function renderMarkdown(markdown: string): string {
   })
 }
 
-function parentDirectoryLabel(directory: DirectoryDetail): string {
+function parentDirectoryLabel(value: unknown): string {
+  const directory = value as DirectoryDetail
   if (directory.parentId === null) return '空间根层'
   return directory.parentTitle || '—'
 }

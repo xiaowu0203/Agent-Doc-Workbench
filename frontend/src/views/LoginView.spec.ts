@@ -73,7 +73,7 @@ describe('LoginView', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(login).toHaveBeenCalledWith({ username: 'alice', password: 'secret' })
+    expect(login).toHaveBeenCalledWith({ username: 'alice', password: 'secret', remember: false })
     expect(router.currentRoute.value.path).toBe('/')
   })
 
@@ -109,11 +109,10 @@ describe('LoginView', () => {
     )
   })
 
-  it('uses the remember me choice when persisting a login session', async () => {
+  it('sends the remember me choice with login', async () => {
     const { pinia, wrapper } = await mountLoginView()
     const authStore = useAuthStore(pinia)
     vi.spyOn(authStore, 'login').mockResolvedValue()
-    const persistSession = vi.spyOn(authStore, 'persistSession')
 
     await wrapper.get('input[type="checkbox"]').setValue(true)
     await wrapper.get('input[placeholder="请输入邮箱或用户名"]').setValue('alice')
@@ -121,6 +120,10 @@ describe('LoginView', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(persistSession).toHaveBeenCalledWith(true)
+    expect(authStore.login).toHaveBeenCalledWith({
+      username: 'alice',
+      password: 'secret',
+      remember: true,
+    })
   })
 })

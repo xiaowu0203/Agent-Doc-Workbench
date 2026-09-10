@@ -3,24 +3,26 @@ import type { RouteRecordRaw } from 'vue-router'
 import WorkbenchLayout from '@/layouts/WorkbenchLayout.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { PLATFORM_ROLES } from '@/shared/constants/platform-roles'
-import ForbiddenView from '@/views/ForbiddenView.vue'
-import HomeView from '@/views/HomeView.vue'
-import LoginView from '@/views/LoginView.vue'
-import SpaceOverviewView from '@/views/SpaceOverviewView.vue'
-import AccessControlView from '@/views/AccessControlView.vue'
-import DocumentEditorView from '@/views/DocumentEditorView.vue'
-import DocumentVersionHistoryView from '@/views/DocumentVersionHistoryView.vue'
-import SkillManagementView from '@/views/SkillManagementView.vue'
-import McpManagementView from '@/views/McpManagementView.vue'
-import AgentManagementView from '@/views/AgentManagementView.vue'
-import ModelManagementView from '@/views/ModelManagementView.vue'
-import PlatformDepartmentManagementView from '@/views/PlatformDepartmentManagementView.vue'
-import PlatformUserManagementView from '@/views/PlatformUserManagementView.vue'
-import TaskCreateView from '@/views/TaskCreateView.vue'
-import TaskListView from '@/views/TaskListView.vue'
-import TaskDetailView from '@/views/TaskDetailView.vue'
-import ChangeRequestReviewView from '@/views/ChangeRequestReviewView.vue'
-import UsageAuditView from '@/views/UsageAuditView.vue'
+
+const AccessControlView = () => import('@/views/AccessControlView.vue')
+const AgentManagementView = () => import('@/views/AgentManagementView.vue')
+const ChangeRequestReviewView = () => import('@/views/ChangeRequestReviewView.vue')
+const DocumentEditorView = () => import('@/views/DocumentEditorView.vue')
+const DocumentVersionHistoryView = () => import('@/views/DocumentVersionHistoryView.vue')
+const ForbiddenView = () => import('@/views/ForbiddenView.vue')
+const HomeView = () => import('@/views/HomeView.vue')
+const LoginView = () => import('@/views/LoginView.vue')
+const McpManagementView = () => import('@/views/McpManagementView.vue')
+const ModelManagementView = () => import('@/views/ModelManagementView.vue')
+const PlatformDepartmentManagementView = () =>
+  import('@/views/PlatformDepartmentManagementView.vue')
+const PlatformUserManagementView = () => import('@/views/PlatformUserManagementView.vue')
+const SkillManagementView = () => import('@/views/SkillManagementView.vue')
+const SpaceOverviewView = () => import('@/views/SpaceOverviewView.vue')
+const TaskCreateView = () => import('@/views/TaskCreateView.vue')
+const TaskDetailView = () => import('@/views/TaskDetailView.vue')
+const TaskListView = () => import('@/views/TaskListView.vue')
+const UsageAuditView = () => import('@/views/UsageAuditView.vue')
 
 export const routes: RouteRecordRaw[] = [
   {

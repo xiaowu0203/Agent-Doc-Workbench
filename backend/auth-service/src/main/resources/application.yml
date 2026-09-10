@@ -33,6 +33,10 @@ spring:
 
 # Auth JWT认证配置
 auth:
+  cookie:
+    # 本地 HTTP 开发默认为 false；prod Profile 会强制覆盖为 true
+    secure: ${AUTH_COOKIE_SECURE:false}
+    same-site: ${AUTH_COOKIE_SAME_SITE:Strict}
   jwt:
     # RSA私钥，环境变量 JWT_PRIVATE_KEY；生产环境填入PEM格式密钥；为空则启动自动生成临时密钥（仅开发调试使用）
     private-key: ${JWT_PRIVATE_KEY:}

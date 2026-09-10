@@ -198,26 +198,27 @@
                       </el-checkbox>
                     </header>
                     <div
-                      v-show="!isPermissionGroupCollapsed(group.category)"
+                      v-if="!isPermissionGroupCollapsed(group.category)"
                       class="permission-group__items"
                     >
-                      <el-checkbox
-                        v-for="permission in group.items"
-                        :key="permission.code"
-                        v-model="selectedPermissionCodes"
-                        :label="permission.code"
-                        :disabled="selectedRole.protectedRole || !canManageRoles"
-                      >
-                        <span>{{ permission.code }}</span>
-                        <el-tag
-                          v-if="isHighPermission(permission.code)"
-                          size="small"
-                          type="warning"
-                          effect="plain"
+                      <el-checkbox-group v-model="selectedPermissionCodes">
+                        <el-checkbox
+                          v-for="permission in group.items"
+                          :key="permission.code"
+                          :value="permission.code"
+                          :disabled="selectedRole.protectedRole || !canManageRoles"
                         >
-                          高权限
-                        </el-tag>
-                      </el-checkbox>
+                          <span>{{ permission.code }}</span>
+                          <el-tag
+                            v-if="isHighPermission(permission.code)"
+                            size="small"
+                            type="warning"
+                            effect="plain"
+                          >
+                            高权限
+                          </el-tag>
+                        </el-checkbox>
+                      </el-checkbox-group>
                     </div>
                   </section>
                 </div>
@@ -363,16 +364,18 @@
                   已选 {{ selectedCreatePermissionCount(selectedCreatePermissionGroup.items) }} 项
                 </span>
               </header>
-              <div class="role-dialog__permission-items">
+              <el-checkbox-group
+                v-model="createPermissionCodes"
+                class="role-dialog__permission-items"
+              >
                 <el-checkbox
                   v-for="permission in selectedCreatePermissionGroup.items"
                   :key="permission.code"
-                  v-model="createPermissionCodes"
-                  :label="permission.code"
+                  :value="permission.code"
                 >
                   {{ permission.name }}（{{ permission.code }}）
                 </el-checkbox>
-              </div>
+              </el-checkbox-group>
             </section>
             <div v-else class="role-dialog__permission-empty">暂无可用权限</div>
           </div>
@@ -425,6 +428,7 @@ import {
   ElAlert,
   ElButton,
   ElCheckbox,
+  ElCheckboxGroup,
   ElDialog,
   ElDivider,
   ElForm,
@@ -556,7 +560,7 @@ const selectedCreatePermissionGroup = computed(
     null,
 )
 
-const highPermissionCodes = new Set([
+const highPermissionCodes: ReadonlySet<string> = new Set([
   SPACE_PERMISSIONS.SPACE_MANAGE,
   SPACE_PERMISSIONS.MEMBER_MANAGE,
   SPACE_PERMISSIONS.ROLE_MANAGE,
@@ -690,7 +694,10 @@ function isPermissionGroupCollapsed(category: string): boolean {
 }
 
 function togglePermissionGroupCollapse(category: string): void {
-  collapsedPermissionGroups.value[category] = !isPermissionGroupCollapsed(category)
+  collapsedPermissionGroups.value = {
+    ...collapsedPermissionGroups.value,
+    [category]: !isPermissionGroupCollapsed(category),
+  }
 }
 
 function selectedCreatePermissionCount(items: PermissionItem[]): number {
@@ -920,7 +927,7 @@ const MemberTable = defineComponent({
                         class: 'member-table__select',
                         value: String(member.role.roleId),
                         onChange: (event: Event) =>
-                          emit('change-role', member, (event.target as { value: string }).value),
+                          emit('change-role', member, (event.target as HTMLSelectElement).value),
                       },
                       props.roles.map((role) =>
                         h('option', { value: String(role.id) }, role.displayName),

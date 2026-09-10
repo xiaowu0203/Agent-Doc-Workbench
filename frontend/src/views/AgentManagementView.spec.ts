@@ -86,13 +86,8 @@ beforeEach(() => {
     {
       id: 3,
       provider: 'OPENAI',
-      adapterType: 'OPENAI',
-      modelKey: 'gpt-5.2',
       displayName: 'GPT-5.2',
-      contextWindow: 128000,
-      maxOutputTokens: 16000,
       status: 'ENABLED',
-      description: null,
     },
   ])
 })

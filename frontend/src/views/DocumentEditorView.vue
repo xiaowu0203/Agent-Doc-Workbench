@@ -767,6 +767,7 @@
 import {
   CircleCheckFilled,
   Clock,
+  Delete,
   Document,
   Folder,
   InfoFilled,
@@ -1373,6 +1374,8 @@ async function loadDocument(documentId: EntityId): Promise<void> {
         status: 'NORMAL',
         createdAt: null,
         updatedAt: null,
+        parentTitle: null,
+        parentStatus: null,
       }
       draftTitle.value = ''
       draftContent.value = ''

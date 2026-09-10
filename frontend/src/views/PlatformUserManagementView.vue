@@ -402,10 +402,15 @@ function handlePageSizeChange(): void {
 function membershipsFor(userId: EntityId): PlatformUserMembership[] {
   return memberships.value.filter((membership) => String(membership.userId) === String(userId))
 }
-function isSuperAdmin(user: PlatformUser): boolean {
+function toPlatformUser(value: unknown): PlatformUser {
+  return value as PlatformUser
+}
+function isSuperAdmin(value: unknown): boolean {
+  const user = toPlatformUser(value)
   return user.platformRoles.includes(PLATFORM_ROLES.SUPER_ADMIN)
 }
-function initials(user: PlatformUser): string {
+function initials(value: unknown): string {
+  const user = toPlatformUser(value)
   return (user.nickname || user.username).slice(0, 1)
 }
 
@@ -427,7 +432,8 @@ function openCreate(): void {
   resetForm()
   drawerOpen.value = true
 }
-function openEdit(user: PlatformUser): void {
+function openEdit(value: unknown): void {
+  const user = toPlatformUser(value)
   editingUser.value = user
   Object.assign(form, {
     username: user.username,
@@ -493,7 +499,8 @@ async function saveUser(): Promise<void> {
   }
 }
 
-async function toggleStatus(user: PlatformUser): Promise<void> {
+async function toggleStatus(value: unknown): Promise<void> {
+  const user = toPlatformUser(value)
   const status = user.status === 1 ? 0 : 1
   try {
     await ElMessageBox.confirm(
@@ -514,7 +521,8 @@ async function toggleStatus(user: PlatformUser): Promise<void> {
   }
 }
 
-function openPasswordReset(user: PlatformUser): void {
+function openPasswordReset(value: unknown): void {
+  const user = toPlatformUser(value)
   passwordUser.value = user
   newPassword.value = ''
   passwordDialogOpen.value = true

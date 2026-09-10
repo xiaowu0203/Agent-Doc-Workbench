@@ -17,7 +17,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 const props = defineProps<{ option: EChartsCoreOption }>()
 const container = ref<HTMLElement | null>(null)
 let chart: EChartsType | null = null
-let resizeObserver: ReturnType<typeof window.ResizeObserver> | null = null
+let resizeObserver: ResizeObserver | null = null
 
 use([
   LineChart,

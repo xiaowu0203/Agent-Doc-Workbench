@@ -12,33 +12,26 @@
 | Element Plus + @element-plus/icons-vue | UI 组件库 |
 | Axios | HTTP 请求 |
 
-## 编辑器（ProseMirror）
+## 编辑器（v0.1 Markdown）
 
 ### 依赖包
 
 | 包 | 用途 |
 | ---- | ---- |
-| prosemirror-state | 编辑器状态管理 |
-| prosemirror-view | 编辑器视图渲染 |
-| prosemirror-model | 文档模型 |
-| prosemirror-schema-basic | 基础节点与标记 |
-| prosemirror-schema-list | 列表节点 |
-| prosemirror-tables | 表格支持 |
-| prosemirror-markdown | Markdown ↔ ProseMirror 双向转换 |
-| prosemirror-history | 撤销/重做 |
-| prosemirror-keymap | 快捷键绑定 |
+| markdown-it | Markdown 预览渲染 |
+| DOMPurify | 清理预览 HTML，防止 XSS |
+| 浏览器原生 contenteditable / textarea | 可视编辑与源码编辑 |
 
 ### 支持功能
 
-标题、多级列表、表格、代码块、图片、超链接、文本样式调整。
+标题、列表、引用、表格、代码块、图片、超链接、可视编辑、源码编辑和安全预览。
 
-### 文档存储三格式
+### 文档存储格式
 
 | 格式 | 用途 | 优先级 |
 | ---- | ---- | ------ |
 | **Markdown** | 持久化存储、导入导出、Agent 读取 | 主存储 |
-| ProseMirror JSON | 前端编辑、结构化 Diff 比较 | 辅助 |
-| HTML | 展示与预览，按需生成 | 按需 |
+| 净化后的 HTML | 前端预览，运行时按需生成 | 临时 |
 
 > 不建议只存 HTML，否则后续 Agent 处理、Markdown 导入导出和版本比较都会变复杂。
 
@@ -47,7 +40,7 @@
 | 技术 | 用途 | 启用版本 |
 | ---- | ---- | -------- |
 | Yjs | 协同编辑数据模型 | v0.2 |
-| y-prosemirror | ProseMirror 与 Yjs 适配 | v0.2 |
+| 编辑器适配层 | Markdown 编辑器与 Yjs 适配 | v0.2 评估 |
 | y-websocket | 实时同步 | v0.2 |
 | REST + 轮询 | 简易同步 | **v0.1（当前）** |
 
@@ -59,8 +52,7 @@ v0.1 使用普通 REST 接口加轮询同步，保留协同编辑的数据结构
 
 | 库 | 用途 |
 | ---- | ---- |
-| diff-match-patch | 文本级增删改比较 |
-| prosemirror-changeset | ProseMirror 结构化变更跟踪 |
+| 自定义稳定行 Diff | 文本级增删改比较、稳定变更块标识 |
 | 自定义组件 | 全部接受、部分接受、拒绝、修改后接受、批注退回 |
 
 ### 变更请求数据结构
@@ -89,7 +81,6 @@ v0.1 使用普通 REST 接口加轮询同步，保留协同编辑的数据结构
 | ---- | ---- |
 | markdown-it | Markdown 预览/渲染 |
 | DOMPurify | 清理 HTML，防止 XSS |
-| file-saver | Markdown / JSON 文件下载 |
 | JSZip | 浏览器端组装 Skill 标准 ZIP 包 |
 
 MinIO 文件通过后端生成临时签名 URL，前端不直接持有永久对象存储凭证。
@@ -124,7 +115,7 @@ Store 按页面需要逐步创建，不为了目录完整提前增加空 Store�
 | ---- | ---- |
 | Vitest | 单元测试 |
 | Vue Test Utils | 组件测试 |
-| Playwright | 端到端测试 |
+| 真实浏览器验收 | 核心用户链路端到端验证 |
 | ESLint | 代码检查 |
 | Prettier | 代码格式化 |
 | Husky + lint-staged | 提交前检查 |
@@ -142,7 +133,6 @@ frontend/
 │   ├── stores/          # Pinia 跨页面状态
 │   ├── shared/          # 无业务归属的组件、composable、常量、类型和工具
 │   ├── features/        # auth/workspace/document/agent/skill/mcp/task/approval 等业务切片
-│   ├── editor/          # ProseMirror 编辑器核心、schema 和转换逻辑
 │   ├── diff/            # 可被审批和版本历史复用的 Diff 展示原语
 │   ├── views/           # 轻量路由页，组合 feature 组件
 │   ├── styles/          # 设计令牌、Element Plus 覆盖和全局样式
@@ -186,9 +176,8 @@ Phase 5 的后端已提供平台角色与空间 RBAC，Phase 6 负责把权限�
 
 ```
 Vue 3 / TypeScript / Vite / Vue Router / Pinia / Element Plus / Axios
-ProseMirror（state/view/model/schema-basic/schema-list/tables/markdown/history/keymap）
-prosemirror-markdown / Yjs（v0.2）/ diff-match-patch / prosemirror-changeset
-markdown-it / DOMPurify / file-saver
+Markdown contenteditable / textarea / markdown-it / DOMPurify
+自定义稳定行 Diff / Yjs（v0.2 评估）
 JSZip / ECharts
-Vitest / Vue Test Utils / Playwright / ESLint / Prettier / Husky / pnpm
+Vitest / Vue Test Utils / ESLint / Prettier / Husky / pnpm
 ```

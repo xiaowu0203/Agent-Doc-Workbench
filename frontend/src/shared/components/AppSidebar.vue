@@ -271,6 +271,7 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
   display: flex;
   width: var(--adw-sidebar-width);
   min-height: 100vh;
+  flex: 0 0 var(--adw-sidebar-width);
   flex-direction: column;
   color: #ffffff;
   background: var(--adw-sidebar-background);
@@ -279,6 +280,7 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
 
 .app-sidebar--collapsed {
   width: var(--adw-sidebar-collapsed-width);
+  flex-basis: var(--adw-sidebar-collapsed-width);
 }
 
 .app-sidebar__brand {

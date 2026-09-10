@@ -173,9 +173,9 @@ describe('AccessControlView', () => {
     const group = wrapper.get('.permission-group')
     const title = group.get('.permission-group__title')
 
-    expect(group.get('.permission-group__items').isVisible()).toBe(true)
+    expect(group.find('.permission-group__items').exists()).toBe(true)
     await title.trigger('click')
-    expect(group.get('.permission-group__items').isVisible()).toBe(false)
+    expect(group.find('.permission-group__items').exists()).toBe(false)
   })
 
   it('loads the selected role change log', async () => {
@@ -218,7 +218,6 @@ describe('AccessControlView', () => {
 
     expect(wrapper.text()).not.toContain('新建角色')
     const saveButton = wrapper.findAll('button').find((button) => button.text() === '保存权限')
-    expect(saveButton).toBeDefined()
-    expect(saveButton!.attributes('disabled')).toBeDefined()
+    expect(saveButton).toBeUndefined()
   })
 })

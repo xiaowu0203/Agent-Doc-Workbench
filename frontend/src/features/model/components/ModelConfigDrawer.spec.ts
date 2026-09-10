@@ -14,7 +14,14 @@ vi.mock('@/features/model/api/model-api', () => ({
 async function mountCreateDrawer() {
   const wrapper = mount(ModelConfigDrawer, {
     props: { open: true, model: null },
-    global: { stubs: { teleport: true } },
+    global: {
+      stubs: {
+        teleport: true,
+        ElOption: true,
+        ElSelect: true,
+        ElSlider: true,
+      },
+    },
   })
   await flushPromises()
   await wrapper.get('input[placeholder="例如：GPT-5.2"]').setValue('GPT-5.2')

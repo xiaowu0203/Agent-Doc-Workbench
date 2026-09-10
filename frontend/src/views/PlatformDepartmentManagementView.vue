@@ -180,7 +180,8 @@
             clearable
             check-strictly
             :data="parentDepartmentOptions"
-            :props="{ label: 'name', children: 'children', value: 'id' }"
+            :props="{ label: 'name', children: 'children' }"
+            value-key="id"
             placeholder="无上级部门"
           />
         </el-form-item>
@@ -480,7 +481,8 @@ function isDescendantOrSelf(candidateId: string | number, departmentId: string |
   }
   return false
 }
-function filterTreeNode(value: string, data: Department): boolean {
+function filterTreeNode(value: string, node: unknown): boolean {
+  const data = node as Department
   return (
     !value.trim() || `${data.name} ${data.code}`.toLowerCase().includes(value.trim().toLowerCase())
   )

@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
@@ -115,7 +115,12 @@ async function mountDocument(
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/spaces/:spaceId/overview', name: 'space-overview', component: DocumentEditorView },
+      { path: '/', component: { template: '<div />' } },
+      {
+        path: '/spaces/:spaceId/overview',
+        name: 'space-overview',
+        component: { template: '<div data-test="space-overview" />' },
+      },
       {
         path: '/spaces/:spaceId/documents/:documentId?',
         name: 'space-documents',
@@ -124,13 +129,16 @@ async function mountDocument(
     ],
   })
   if (documentId === null) {
-    await router.push({ name: 'space-overview', params: { spaceId: 7 } })
-    await router.push({ name: 'space-documents', params: { spaceId: 7 } })
+    await router.push('/')
   } else {
     await router.push({ name: 'space-documents', params: { spaceId: 7, documentId } })
   }
   await router.isReady()
-  const wrapper = mount(DocumentEditorView, { global: { plugins: [pinia, router] } })
+  const wrapper = mount(RouterView, { global: { plugins: [pinia, router] } })
+  if (documentId === null) {
+    await router.push({ name: 'space-overview', params: { spaceId: 7 } })
+    await router.push({ name: 'space-documents', params: { spaceId: 7 } })
+  }
   await flushPromises()
   return wrapper
 }
@@ -187,17 +195,14 @@ describe('DocumentEditorView', () => {
     )
   })
 
-  it('replaces the list route when selecting the first document automatically', async () => {
+  it('selects the first document automatically from the list route', async () => {
     const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), null)
     const router = wrapper.vm.$router
 
     expect(router.currentRoute.value.fullPath).toBe('/spaces/7/documents/101')
-
-    wrapper.unmount()
-    router.back()
-    await flushPromises()
-
-    expect(router.currentRoute.value.fullPath).toBe('/spaces/7/overview')
+    expect(wrapper.get('[data-document-tree-node-id="101"]').classes()).toContain(
+      'document-tree-node__row--selected',
+    )
   })
 
   it('renders the document tree, creator as responsible person, and related activities', async () => {
@@ -223,11 +228,11 @@ describe('DocumentEditorView', () => {
     await detailButton!.trigger('click')
     await nextTick()
 
-    const detailList = document.body.querySelector('.document-detail')
-    expect(detailList?.textContent).toContain('产品上线方案')
-    expect(detailList?.textContent).toContain('最后修改人')
-    expect(detailList?.textContent).toContain('张三')
-    expect(detailList?.textContent).toContain('文档 ID')
+    const detailList = wrapper.get('.document-detail')
+    expect(detailList.text()).toContain('产品上线方案')
+    expect(detailList.text()).toContain('最后修改人')
+    expect(detailList.text()).toContain('张三')
+    expect(detailList.text()).toContain('文档 ID')
   })
 
   it('polls active document activities and stops after the task completes', async () => {
@@ -333,17 +338,17 @@ describe('DocumentEditorView', () => {
 
     const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), 503)
     const expansionToggle = () =>
-      wrapper.findAll('button').find((button) => button.text() === '展开')!
-    expect(expansionToggle().exists()).toBe(true)
+      wrapper.get('[data-document-tree-node-id="502"] .document-tree-node__toggle')
+    expect(expansionToggle().attributes('aria-label')).toBe('收起目录')
+    expect(wrapper.find('.document-tree').text()).toContain('目录内文档')
+    await expansionToggle().trigger('click')
+    expect(expansionToggle().attributes('aria-label')).toBe('展开目录')
+    expect(wrapper.find('.document-tree').text()).not.toContain('目录内文档')
     await expansionToggle().trigger('click')
     expect(wrapper.find('.document-tree').text()).toContain('目录内文档')
-    expect(wrapper.findAll('button').some((button) => button.text() === '收起')).toBe(true)
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === '收起')!
-      .trigger('click')
+    await expansionToggle().trigger('click')
     expect(wrapper.find('.document-tree').text()).not.toContain('目录内文档')
-    expect(expansionToggle().exists()).toBe(true)
+    expect(expansionToggle().attributes('aria-label')).toBe('展开目录')
 
     await wrapper.find('.document-tree-node__row').trigger('click')
     await flushPromises()
@@ -374,7 +379,7 @@ describe('DocumentEditorView', () => {
         },
       ])
 
-      const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), 602)
+      const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), 601)
       const searchInput = wrapper.get('input[aria-label="搜索文档或目录"]')
       expect(wrapper.find('.document-tree').text()).not.toContain('目录内文档')
 
@@ -544,8 +549,9 @@ describe('DocumentEditorView', () => {
       String(documentId) === '102' ? otherDetail : detail,
     )
     vi.mocked(documentApi.saveDocumentDraft).mockImplementation(async (documentId, payload) => {
-      cachedDraft = { documentId: Number(documentId), ...payload }
-      return cachedDraft
+      const saved = { documentId: Number(documentId), ...payload }
+      if (payload.content === '# 临时编辑内容') cachedDraft = saved
+      return saved
     })
     vi.mocked(documentApi.getDocumentDraft).mockImplementation(async (documentId) =>
       String(documentId) === '101' ? cachedDraft : null,
@@ -634,11 +640,8 @@ describe('DocumentEditorView', () => {
     await flushPromises()
 
     expect(agentApi.listAgents).toHaveBeenCalledWith(7, expect.any(AbortSignal))
-    const taskTextarea = document.body.querySelector(
-      'textarea[placeholder="告诉 Agent 需要如何处理这篇文档"]',
-    )
-    expect(taskTextarea).not.toBeNull()
-    const dialog = new DOMWrapper(taskTextarea!.closest('.el-dialog')!)
+    const taskTextarea = wrapper.get('textarea[placeholder="告诉 Agent 需要如何处理这篇文档"]')
+    const dialog = new DOMWrapper(taskTextarea.element.closest('.el-dialog')!)
     await dialog
       .get('textarea[placeholder="告诉 Agent 需要如何处理这篇文档"]')
       .setValue('请检查文档结构')
@@ -731,6 +734,8 @@ describe('DocumentEditorView', () => {
       status: 'NORMAL',
       createdAt: null,
       updatedAt: null,
+      parentTitle: null,
+      parentStatus: null,
     })
     vi.mocked(documentApi.listDocumentTree).mockResolvedValue([
       {
@@ -753,7 +758,6 @@ describe('DocumentEditorView', () => {
     ])
 
     const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), 402)
-    await wrapper.find('.document-tree-node__toggle').trigger('click')
     const rows = wrapper.findAll('.document-tree-node__row')
     const originalElementFromPoint = document.elementFromPoint
     Object.defineProperty(document, 'elementFromPoint', {
@@ -803,7 +807,6 @@ describe('DocumentEditorView', () => {
     ])
 
     const wrapper = await mountDocument(Object.values(SPACE_PERMISSIONS), 702)
-    await wrapper.find('.document-tree-node__toggle').trigger('click')
     const rows = wrapper.findAll('.document-tree-node__row')
     const treeElement = wrapper.find('[data-document-tree-root-container]').element
     const originalElementFromPoint = document.elementFromPoint

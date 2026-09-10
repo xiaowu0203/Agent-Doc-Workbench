@@ -29,7 +29,7 @@ configureAuthSession({
 })
 
 async function bootstrap(): Promise<void> {
-  authStore.restoreSession()
+  await authStore.restoreSession()
   app.use(pinia)
   app.use(router)
   await router.isReady()

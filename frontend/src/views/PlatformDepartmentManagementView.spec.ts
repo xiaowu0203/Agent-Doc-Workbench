@@ -55,7 +55,9 @@ beforeEach(() => {
 
 describe('PlatformDepartmentManagementView', () => {
   it('renders department scope and selected department details', async () => {
-    const wrapper = mount(PlatformDepartmentManagementView)
+    const wrapper = mount(PlatformDepartmentManagementView, {
+      global: { directives: { loading: () => undefined } },
+    })
     await flushPromises()
 
     expect(wrapper.text()).toContain('部门仅用于组织归属')

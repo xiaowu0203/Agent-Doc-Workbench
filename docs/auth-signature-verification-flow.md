@@ -70,13 +70,13 @@ sequenceDiagram
     A->>A: JwtService.createAccessToken(user, platformRoles)
     A->>A: JwtService.createRefreshToken()
     A->>R: 保存 refreshToken -> userId
-    A-->>U: accessToken + refreshToken
+    A-->>U: 正文返回 accessToken；Set-Cookie 写入 HttpOnly refreshToken
 
-    U->>G: POST /api/auth/refresh
+    U->>G: POST /api/auth/refresh（自动携带 Cookie）
     G->>A: 转发刷新请求
     A->>R: 校验并撤销旧 refreshToken
     A->>A: 重新签发 Access JWT + Refresh Token
-    A-->>U: 新令牌对
+    A-->>U: 正文返回新 accessToken；Set-Cookie 轮换 refreshToken
 ```
 
 核心代码：
@@ -149,7 +149,7 @@ agent-doc:
 | 接口 | Gateway | Auth-Service | 说明 |
 | --- | --- | --- | --- |
 | `/api/auth/me` | 验证用户 Access JWT | Resource Server 验证并建立身份 | `AuthUtils.getUserIdOrException()` 读取 `sub` |
-| `/api/auth/logout` | 白名单放行 | `permitAll` | 不验 Access JWT，只撤销 Refresh Token |
+| `/api/auth/logout` | 白名单放行 | `permitAll` | 从 HttpOnly Cookie 读取并撤销 Refresh Token，同时清除 Cookie |
 
 因此，登出不是“用户 JWT 验签链路”，而是“Refresh Token 撤销链路”。
 

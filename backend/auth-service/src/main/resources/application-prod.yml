@@ -1,0 +1,5 @@
+# 生产环境认证 Cookie 强制通过 HTTPS 传输，并限制跨站发送。
+auth:
+  cookie:
+    secure: true
+    same-site: Strict

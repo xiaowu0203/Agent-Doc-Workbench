@@ -1,6 +1,6 @@
 # Skill 选择与渐进式加载技术设计
 
-> 状态：后端已实现，待 Phase 6 前端接入
+> 状态：后端与 Phase 6 前端均已实现
 > 适用模块：`agent-service`、`auth-service` 数据库迁移
 > 前端实现：Phase 6，本设计仅定义后端 API 契约
 > 基线提交：`61aa80a`（Phase 4 Skill 管理）
