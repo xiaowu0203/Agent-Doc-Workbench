@@ -12,6 +12,10 @@ import lombok.EqualsAndHashCode;
 @Schema(description = "Agent 配置实体")
 public class AgentEntity extends BaseLogicDeleteEntity {
 
+    @Schema(description = "来源系统 Agent 模板 ID；空间自定义 Agent 为空")
+    private Long templateId;
+    @Schema(description = "安装或升级时采用的模板版本 ID")
+    private Long templateVersionId;
     @Schema(description = "空间 ID")
     private Long spaceId;
     @Schema(description = "Agent 名称")

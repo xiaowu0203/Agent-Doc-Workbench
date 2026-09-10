@@ -69,6 +69,14 @@ public class AgentSkillService {
         return loadBindings(agentId, true);
     }
 
+    /** 模板升级三方比较使用的当前启用 Skill 版本，不执行用户权限判断。 */
+    public List<Long> listEnabledVersionIds(Long agentId) {
+        return agentSkillMapper.selectList(new LambdaQueryWrapper<AgentSkillEntity>()
+                        .eq(AgentSkillEntity::getAgentId, agentId)
+                        .eq(AgentSkillEntity::getEnabled, true))
+                .stream().map(AgentSkillEntity::getSkillVersionId).sorted().toList();
+    }
+
     /**
      * 根据Skill ID查询绑定该技能的Agent列表（仅查询启用状态的绑定关系）
      *

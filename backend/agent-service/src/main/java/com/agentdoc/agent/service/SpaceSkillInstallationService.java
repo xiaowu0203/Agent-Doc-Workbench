@@ -152,23 +152,37 @@ public class SpaceSkillInstallationService {
         return entity;
     }
 
-    private SkillVersionEntity requirePublishedSystemVersion(Long skillId, Long versionId, boolean requireActive) {
-        SkillEntity skill = skillMapper.selectById(skillId);
-        if (skill == null || SkillScopeType.fromValue(skill.getScopeType()) != SkillScopeType.SYSTEM
-                || skill.getSpaceId() != null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 不存在");
+    /** 批量校验系统 Skill 与固定版本，供 Agent 模板等上层用例复用。 */
+    public void requirePublishedSystemVersions(Map<Long, Long> versionBySkillId, boolean requireActive) {
+        if (versionBySkillId == null || versionBySkillId.isEmpty()) {
+            return;
         }
-        if (requireActive && !SkillStatus.ACTIVE.matches(skill.getStatus())) {
-            throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 已停用");
+        Map<Long, SkillEntity> skills = skillMapper.selectBatchIds(versionBySkillId.keySet()).stream()
+                .collect(Collectors.toMap(SkillEntity::getId, Function.identity()));
+        Map<Long, SkillVersionEntity> versions = versionMapper.selectBatchIds(
+                        versionBySkillId.values().stream().collect(Collectors.toSet())).stream()
+                .collect(Collectors.toMap(SkillVersionEntity::getId, Function.identity()));
+        for (Map.Entry<Long, Long> entry : versionBySkillId.entrySet()) {
+            SkillEntity skill = skills.get(entry.getKey());
+            SkillVersionEntity version = versions.get(entry.getValue());
+            if (skill == null || SkillScopeType.fromValue(skill.getScopeType()) != SkillScopeType.SYSTEM
+                    || skill.getSpaceId() != null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 不存在");
+            }
+            if (requireActive && !SkillStatus.ACTIVE.matches(skill.getStatus())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 已停用");
+            }
+            if (version == null || !skill.getId().equals(version.getSkillId())) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 版本不存在");
+            }
+            if (!SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "只能安装已发布的系统 Skill 版本");
+            }
         }
-        SkillVersionEntity version = versionMapper.selectById(versionId);
-        if (version == null || !skillId.equals(version.getSkillId())) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "系统 Skill 版本不存在");
-        }
-        if (!SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {
-            throw new BusinessException(ErrorCode.CONFLICT, "只能安装已发布的系统 Skill 版本");
-        }
-        return version;
+    }
+
+    private void requirePublishedSystemVersion(Long skillId, Long versionId, boolean requireActive) {
+        requirePublishedSystemVersions(Map.of(skillId, versionId), requireActive);
     }
 
     private List<SpaceSkillInstallationVO> toVOs(List<SpaceSkillInstallationEntity> installations) {
