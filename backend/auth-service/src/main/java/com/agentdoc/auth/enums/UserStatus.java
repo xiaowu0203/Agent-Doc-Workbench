@@ -1,5 +1,7 @@
 package com.agentdoc.auth.enums;
 
+import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.exception.BusinessException;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -31,5 +33,19 @@ public enum UserStatus {
      */
     public static boolean isEnabled(Integer status) {
         return status != null && status == ENABLED.code;
+    }
+
+    /**
+     * 将数据库状态码转换为枚举。
+     * @param code 状态码
+     * @return 用户状态
+     */
+    public static UserStatus fromCode(Integer code) {
+        for (UserStatus status : values()) {
+            if (Integer.valueOf(status.code).equals(code)) {
+                return status;
+            }
+        }
+        throw new BusinessException(ErrorCode.BAD_REQUEST, "用户状态无效");
     }
 }

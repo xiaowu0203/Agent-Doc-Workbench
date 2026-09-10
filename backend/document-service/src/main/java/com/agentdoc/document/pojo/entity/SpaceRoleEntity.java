@@ -27,7 +27,7 @@ public class SpaceRoleEntity extends BaseLogicDeleteEntity {
     @Schema(description = "角色说明")
     private String description;
 
-    @Schema(description = "是否为受保护默认角色")
+    @Schema(description = "是否为受保护角色")
     private Boolean protectedRole;
 
     @Schema(description = "创建人用户 ID")

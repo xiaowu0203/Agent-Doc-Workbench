@@ -14,6 +14,7 @@ import com.agentdoc.document.pojo.vo.EffectivePermissionVO;
 import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.agentdoc.document.pojo.vo.SpaceVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
 
 /**
  * 空间服务
@@ -59,6 +61,17 @@ public class SpaceService {
         // 查询空间记录
         SpaceEntity space = getSpace(spaceId);
         return space.toBudgetVO();
+    }
+
+    /**
+     * 根据用量读取权限查询空间 Token 预算。
+     *
+     * @param spaceId 空间 ID
+     * @return 空间预算
+     */
+    public SpaceUsageBudgetVO getUsageBudget(Long spaceId) {
+        permissionService.requirePermission(spaceId, USAGE_READ);
+        return getSpace(spaceId).toUsageBudgetVO();
     }
 
     /**

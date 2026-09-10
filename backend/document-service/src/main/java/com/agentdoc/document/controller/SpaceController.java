@@ -3,10 +3,13 @@ package com.agentdoc.document.controller;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import com.agentdoc.document.pojo.dto.SpaceCreateDTO;
 import com.agentdoc.document.pojo.dto.SpaceUpdateDTO;
 import com.agentdoc.document.pojo.vo.SpaceVO;
 import com.agentdoc.document.pojo.vo.EffectivePermissionVO;
+import com.agentdoc.document.pojo.vo.DocumentStatsVO;
+import com.agentdoc.document.service.DocumentService;
 import com.agentdoc.document.service.SpaceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,6 +38,7 @@ import java.util.List;
 public class SpaceController {
 
     private final SpaceService spaceService;
+    private final DocumentService documentService;
 
     @Operation(summary = "创建空间")
     @PostMapping
@@ -53,6 +57,13 @@ public class SpaceController {
     @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.SPACE_READ + "')")
     public Result<SpaceVO> detail(@PathVariable Long id) {
         return Result.ok(spaceService.detail(id));
+    }
+
+    @Operation(summary = "查询空间文档数量统计")
+    @GetMapping("/{id}/document-stats")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ + "')")
+    public Result<DocumentStatsVO> documentStats(@PathVariable Long id) {
+        return Result.ok(documentService.getStats(id));
     }
 
     @Operation(summary = "更新空间（space:manage）")
@@ -81,6 +92,13 @@ public class SpaceController {
     @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE + "')")
     public Result<SpaceBudgetVO> executionBudget(@PathVariable Long id) {
         return Result.ok(spaceService.getExecutionBudget(id));
+    }
+
+    @Operation(summary = "查询空间 Token 预算")
+    @GetMapping("/{id}/token-budget")
+    @PreAuthorize("@SpacePermission.hasPermission(#id, '" + com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ + "')")
+    public Result<SpaceUsageBudgetVO> tokenBudget(@PathVariable Long id) {
+        return Result.ok(spaceService.getUsageBudget(id));
     }
 
     @Operation(summary = "删除空间（space:delete）：逻辑删除空间及其成员")

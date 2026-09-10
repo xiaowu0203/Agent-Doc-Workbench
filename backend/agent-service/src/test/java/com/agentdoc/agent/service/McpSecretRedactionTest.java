@@ -18,9 +18,9 @@ class McpSecretRedactionTest {
         McpServerEntity entity = new McpServerEntity();
         entity.setEncryptedAuthToken(secret);
         ExternalMcpConnection connection = new ExternalMcpConnection(1L, "demo", "Demo",
-                "https://example.com/mcp", McpAuthType.BEARER.name(), secret, 1L, List.of());
+                "https://example.com/mcp", McpAuthType.BEARER.name(), null, secret, 1L, List.of());
         McpServerCreateDTO dto = new McpServerCreateDTO(1L, "demo", "Demo",
-                "https://example.com/mcp", McpAuthType.BEARER, secret);
+                "https://example.com/mcp", McpAuthType.BEARER, null, secret);
 
         assertThat(entity.toString()).doesNotContain(secret);
         assertThat(connection.toString()).doesNotContain(secret);

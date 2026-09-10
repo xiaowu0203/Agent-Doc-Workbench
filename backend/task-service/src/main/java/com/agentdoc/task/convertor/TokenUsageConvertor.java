@@ -48,7 +48,7 @@ public final class TokenUsageConvertor {
         entity.setSnapshotDate(date);
         entity.setTotalInput(input == null ? 0 : input);
         entity.setTotalOutput(output == null ? 0 : output);
-        entity.setTotalEstimatedCost(cost == null ? BigDecimal.ZERO : cost);
+        entity.setTotalEstimatedCost(cost);
         entity.setSnapshotType(type.getCode());
         return entity;
     }

@@ -6,8 +6,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
+
+import static com.agentdoc.task.constant.TaskConstant.MAX_CHANGE_REVIEW_TEXT_LENGTH;
 
 /**
  * 提交变更请求参数。
@@ -30,6 +33,10 @@ public record ChangeRequestSubmitDTO(
 
         @Schema(description = "目标文档基线版本号（合并时校验防并发覆盖）", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull(message = "基线版本号不能为空")
-        Long baseVersion
+        Long baseVersion,
+
+        @Schema(description = "变更摘要")
+        @Size(max = MAX_CHANGE_REVIEW_TEXT_LENGTH)
+        String summary
 ) {
 }

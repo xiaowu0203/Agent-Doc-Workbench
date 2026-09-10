@@ -1,0 +1,21 @@
+:root {
+  --el-color-primary: var(--adw-color-primary);
+  --el-color-success: var(--adw-color-success);
+  --el-color-warning: var(--adw-color-warning);
+  --el-color-danger: var(--adw-color-danger);
+  --el-color-info: var(--adw-color-info);
+  --el-border-color: var(--adw-border-color);
+  --el-border-radius-base: var(--adw-radius-sm);
+  --el-text-color-primary: var(--adw-text-primary);
+  --el-text-color-regular: var(--adw-text-secondary);
+}
+
+.el-card {
+  border-color: var(--adw-border-color);
+  border-radius: var(--adw-radius-md);
+  box-shadow: var(--adw-shadow-card);
+}
+
+.el-button {
+  font-weight: 600;
+}

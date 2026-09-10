@@ -2,6 +2,7 @@ package com.agentdoc.document.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseLogicDeleteEntity;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import com.agentdoc.document.enums.SpaceStatus;
 import com.agentdoc.document.pojo.vo.SpaceVO;
 import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
@@ -31,6 +32,9 @@ public class SpaceEntity extends BaseLogicDeleteEntity {
     @Schema(description = "Token 预算上限")
     private Long tokenBudget;
 
+    @Schema(description = "月度 Token 预算，仅用于用量提示")
+    private Long monthlyTokenBudget;
+
     @Schema(description = "状态：0 禁用 / 1 正常")
     private Integer status;
 
@@ -41,7 +45,7 @@ public class SpaceEntity extends BaseLogicDeleteEntity {
      * @return 空间视图对象
      */
     public SpaceVO toVO(SpaceRoleSummaryVO role, boolean platformSuperAdmin) {
-        return new SpaceVO(getId(), name, description, ownerId, tokenBudget,
+        return new SpaceVO(getId(), name, description, ownerId, tokenBudget, monthlyTokenBudget,
                 SpaceStatus.fromCode(status), role, platformSuperAdmin, getCreatedAt());
     }
 
@@ -50,5 +54,12 @@ public class SpaceEntity extends BaseLogicDeleteEntity {
      */
     public SpaceBudgetVO toBudgetVO() {
         return new SpaceBudgetVO(getId(), tokenBudget);
+    }
+
+    /**
+     * 转换为空间月度用量预算投影。
+     */
+    public SpaceUsageBudgetVO toUsageBudgetVO() {
+        return new SpaceUsageBudgetVO(getId(), monthlyTokenBudget);
     }
 }

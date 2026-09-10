@@ -26,5 +26,6 @@ public record AgentVO(
         @Schema(description = "配置版本号") Long configVersion,
         @Schema(description = "状态") AgentStatus status,
         @Schema(description = "创建人用户 ID") Long createdBy,
-        @Schema(description = "创建时间") LocalDateTime createdAt) {
+        @Schema(description = "创建时间") LocalDateTime createdAt,
+        @Schema(description = "最近更新时间") LocalDateTime updatedAt) {
 }

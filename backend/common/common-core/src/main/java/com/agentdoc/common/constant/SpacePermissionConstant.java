@@ -83,6 +83,8 @@ public final class SpacePermissionConstant {
     // ====================== 用量、审计相关权限 ======================
     /** 用量-读取权限：查询资源调用、模型消耗用量统计 */
     public static final String USAGE_READ = "usage:read";
+    /** 用量-导出权限：导出空间执行记录 */
+    public static final String USAGE_EXPORT = "usage:export";
     /** 审计-读取权限：查看操作审计日志记录 */
     public static final String AUDIT_READ = "audit:read";
 }

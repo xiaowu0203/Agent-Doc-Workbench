@@ -25,6 +25,8 @@ public class AgentExecutionToolCallEntity extends BaseEntity {
     private String toolSourceKey;
     @Schema(description = "外部 MCP Server ID")
     private Long mcpServerId;
+    @Schema(description = "Skill 本地工具指向的版本 ID")
+    private Long skillVersionId;
     @Schema(description = "参数 SHA-256")
     private String argumentsSha256;
     @Schema(description = "参数 UTF-8 字节数")

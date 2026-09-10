@@ -1,8 +1,11 @@
 package com.agentdoc.auth.service;
 
+import com.agentdoc.auth.enums.UserStatus;
 import com.agentdoc.auth.mapper.PlatformRoleMapper;
+import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.auth.mapper.UserPlatformRoleMapper;
 import com.agentdoc.auth.pojo.entity.PlatformRoleEntity;
+import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.entity.UserPlatformRoleEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -13,6 +16,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+
+import static com.agentdoc.auth.constant.PlatformManagementConstant.PLATFORM_ROLE_CREATED;
+import static com.agentdoc.auth.constant.PlatformManagementConstant.PLATFORM_ROLE_DELETED;
+import static com.agentdoc.auth.constant.PlatformManagementConstant.PLATFORM_ROLE_TARGET;
+import static com.agentdoc.auth.constant.PlatformManagementConstant.PLATFORM_ROLE_UPDATED;
 
 /**
  * 平台角色管理服务。
@@ -23,6 +32,8 @@ public class PlatformRoleService {
 
     private final PlatformRoleMapper platformRoleMapper;
     private final UserPlatformRoleMapper userPlatformRoleMapper;
+    private final UserMapper userMapper;
+    private final PlatformAuditLogService auditLogService;
 
     /**
      * 查询用户当前有效的平台角色标识。
@@ -91,6 +102,8 @@ public class PlatformRoleService {
         role.setDisplayName(displayName);
         role.setProtectedRole(false);
         platformRoleMapper.insert(role);
+        auditLogService.record(PLATFORM_ROLE_CREATED, PLATFORM_ROLE_TARGET, role.getId(),
+                Map.of("roleKey", role.getRoleKey(), "displayName", role.getDisplayName()));
         return role;
     }
 
@@ -106,6 +119,8 @@ public class PlatformRoleService {
         PlatformRoleEntity role = requireMutableRole(roleId);
         role.setDisplayName(displayName);
         platformRoleMapper.updateById(role);
+        auditLogService.record(PLATFORM_ROLE_UPDATED, PLATFORM_ROLE_TARGET, roleId,
+                Map.of("roleKey", role.getRoleKey(), "displayName", role.getDisplayName()));
         return role;
     }
 
@@ -123,6 +138,8 @@ public class PlatformRoleService {
             throw new BusinessException(ErrorCode.CONFLICT, "平台角色仍有用户绑定，不能删除");
         }
         platformRoleMapper.deleteById(role);
+        auditLogService.record(PLATFORM_ROLE_DELETED, PLATFORM_ROLE_TARGET, roleId,
+                Map.of("roleKey", role.getRoleKey(), "displayName", role.getDisplayName()));
     }
 
     /**
@@ -133,7 +150,8 @@ public class PlatformRoleService {
      */
     public boolean hasCurrentUserRole(String roleKey) {
         Long userId = AuthUtils.getUserId();
-        return userId != null && roleKey != null && listRoleKeys(userId).contains(roleKey);
+        return userId != null && roleKey != null && isEnabledUser(userId)
+                && listRoleKeys(userId).contains(roleKey);
     }
 
     /**
@@ -142,9 +160,14 @@ public class PlatformRoleService {
      */
     public void requireCurrentUserRole(String roleKey) {
         Long userId = AuthUtils.getUserIdOrException();
-        if (!listRoleKeys(userId).contains(roleKey)) {
+        if (!isEnabledUser(userId) || !listRoleKeys(userId).contains(roleKey)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "缺少平台角色：" + roleKey);
         }
+    }
+
+    private boolean isEnabledUser(Long userId) {
+        UserEntity user = userMapper.selectById(userId);
+        return user != null && UserStatus.isEnabled(user.getStatus());
     }
 
     private PlatformRoleEntity requireMutableRole(Long roleId) {

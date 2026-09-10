@@ -10,6 +10,7 @@ import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.mapper.TaskMapper;
+import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +40,8 @@ class TaskServiceCapabilityTest {
     @Mock
     private TaskMapper taskMapper;
     @Mock
+    private TokenUsageDetailMapper tokenUsageDetailMapper;
+    @Mock
     private A2aTaskClient a2aTaskClient;
     @Mock
     private AgentFeign agentFeign;
@@ -61,7 +64,7 @@ class TaskServiceCapabilityTest {
 
     @BeforeEach
     void setUp() {
-        service = new TaskService(taskMapper, a2aTaskClient, agentFeign, documentFeign,
+        service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService,
                 authFeign, auditLogService, objectMapper, taskCapabilityVerifier);
     }

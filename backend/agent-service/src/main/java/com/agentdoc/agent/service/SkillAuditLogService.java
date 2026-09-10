@@ -2,12 +2,14 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.mapper.SkillAuditLogMapper;
 import com.agentdoc.agent.pojo.entity.SkillAuditLogEntity;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 技能模块操作审计日志服务
@@ -43,6 +45,9 @@ public class SkillAuditLogService {
         entity.setTargetType(targetType);
         entity.setTargetId(targetId);
         entity.setDetail(detail == null ? null : JsonUtils.toJson(detail));
+        String traceId = TraceContext.get();
+        entity.setTraceId(traceId == null || traceId.isBlank()
+                ? UUID.randomUUID().toString().replace("-", "") : traceId);
         mapper.insert(entity);
     }
 }

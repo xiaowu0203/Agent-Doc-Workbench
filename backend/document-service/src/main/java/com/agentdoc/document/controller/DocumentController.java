@@ -2,21 +2,32 @@ package com.agentdoc.document.controller;
 
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
+import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
+import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.pojo.dto.DocumentCreateDTO;
+import com.agentdoc.document.pojo.dto.DocumentDraftSaveDTO;
 import com.agentdoc.document.pojo.dto.DocumentMoveDTO;
+import com.agentdoc.document.pojo.dto.DocumentRollbackDTO;
 import com.agentdoc.document.pojo.dto.DocumentUpdateDTO;
+import com.agentdoc.document.pojo.param.DocumentRecentSearchParam;
+import com.agentdoc.document.pojo.param.DocumentTreeSearchParam;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
+import com.agentdoc.document.pojo.vo.DocumentDraftVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
+import com.agentdoc.document.pojo.vo.RecentDocumentVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
 import com.agentdoc.document.service.DocumentService;
+import com.agentdoc.document.service.DocumentDraftService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -25,10 +36,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,6 +57,7 @@ import java.util.List;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final DocumentDraftService documentDraftService;
 
     @Operation(summary = "创建文档")
     @PostMapping
@@ -58,10 +72,44 @@ public class DocumentController {
         return Result.ok(documentService.mergeForFeign(request));
     }
 
+    @Operation(summary = "预览待审批变更（服务间调用）")
+    @PostMapping("/change-preview")
+    public Result<DocumentChangePreviewVO> previewChanges(@RequestBody DocumentChangePreviewRequestDTO request) {
+        return Result.ok(documentService.previewChanges(request));
+    }
+
+    @Operation(summary = "校验人工提交的正式文档变更并生成预览")
+    @PostMapping("/change-submission-preview")
+    public Result<DocumentChangePreviewVO> previewSubmittedChanges(
+            @RequestBody DocumentChangePreviewRequestDTO request) {
+        return Result.ok(documentService.previewSubmittedChanges(request));
+    }
+
+    @Operation(summary = "幂等合并已审批变更（服务间调用）")
+    @PostMapping("/approval-merge")
+    public Result<MergeResultVO> mergeApproved(@RequestBody ApprovalMergeRequestDTO request) {
+        return Result.ok(documentService.mergeApproved(request));
+    }
+
     @Operation(summary = "Agent 直接更新草稿文档（服务间调用）")
     @PostMapping("/draft-agent-apply")
     public Result<MergeResultVO> applyDraftAgent(@RequestBody MergeRequestDTO request) {
         return Result.ok(documentService.applyAgentDraftChanges(request));
+    }
+
+    @Operation(summary = "提交 Agent 草稿暂存（服务间调用）")
+    @PostMapping("/draft-agent-finalize")
+    public Result<MergeResultVO> finalizeDraftAgent(@RequestParam Long documentId,
+                                                    @RequestHeader(HeaderConstants.X_TASK_CAPABILITY) String ignored) {
+        return Result.ok(documentService.finalizeAgentDraftChanges(documentId));
+    }
+
+    @Operation(summary = "丢弃 Agent 草稿暂存（服务间调用）")
+    @PostMapping("/draft-agent-discard")
+    public Result<Void> discardDraftAgent(@RequestParam Long documentId,
+                                          @RequestHeader(HeaderConstants.X_TASK_CAPABILITY) String ignored) {
+        documentService.discardAgentDraftChanges(documentId);
+        return Result.ok();
     }
 
     @Operation(summary = "文档引用批量查询（服务间调用）")
@@ -76,11 +124,17 @@ public class DocumentController {
         return Result.ok(documentService.listIdsBySpace(spaceId));
     }
 
-    @Operation(summary = "文档树")
-    @GetMapping("/tree")
-    @PreAuthorize("@SpacePermission.hasPermission(#spaceId, '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ + "')")
-    public Result<List<DocumentTreeNodeVO>> listTree(@RequestParam Long spaceId) {
-        return Result.ok(documentService.listTree(spaceId));
+    @Operation(summary = "查询最近文档")
+    @PostMapping("/recent/query")
+    public Result<PageVO<RecentDocumentVO>> listRecent(@Valid @RequestBody DocumentRecentSearchParam param) {
+        return Result.ok(documentService.listRecent(param));
+    }
+
+    @Operation(summary = "文档树查询")
+    @PostMapping("/tree")
+    @PreAuthorize("@SpacePermission.hasPermission(#param.spaceId(), '" + com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ + "')")
+    public Result<List<DocumentTreeNodeVO>> listTree(@Valid @RequestBody DocumentTreeSearchParam param) {
+        return Result.ok(documentService.listTree(param));
     }
 
     @Operation(summary = "回收站列表")
@@ -112,6 +166,26 @@ public class DocumentController {
         return Result.ok(documentService.detail(id));
     }
 
+    @Operation(summary = "查询文档未提交草稿")
+    @GetMapping("/{id}/draft")
+    public Result<DocumentDraftVO> draft(@PathVariable Long id) {
+        return Result.ok(documentDraftService.get(id));
+    }
+
+    @Operation(summary = "保存文档未提交草稿")
+    @PutMapping("/{id}/draft")
+    public Result<DocumentDraftVO> saveDraft(@PathVariable Long id,
+                                             @Valid @RequestBody DocumentDraftSaveDTO dto) {
+        return Result.ok(documentDraftService.save(id, dto));
+    }
+
+    @Operation(summary = "删除文档未提交草稿")
+    @DeleteMapping("/{id}/draft")
+    public Result<Void> deleteDraft(@PathVariable Long id) {
+        documentDraftService.delete(id);
+        return Result.ok();
+    }
+
     @Operation(summary = "更新文档（内容变化自动生成版本快照）")
     @PutMapping("/{id}")
     public Result<DocumentDetailVO> update(@PathVariable Long id, @Valid @RequestBody DocumentUpdateDTO dto) {
@@ -140,7 +214,8 @@ public class DocumentController {
 
     @Operation(summary = "回滚文档版本（生成新版本，不删历史快照）")
     @PutMapping("/{id}/rollback")
-    public Result<DocumentDetailVO> rollback(@PathVariable Long id, @RequestParam Long versionNo) {
-        return Result.ok(documentService.rollback(id, versionNo));
+    public Result<DocumentDetailVO> rollback(@PathVariable Long id,
+                                             @Valid @RequestBody DocumentRollbackDTO dto) {
+        return Result.ok(documentService.rollback(id, dto));
     }
 }

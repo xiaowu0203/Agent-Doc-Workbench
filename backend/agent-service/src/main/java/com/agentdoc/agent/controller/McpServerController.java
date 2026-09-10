@@ -4,6 +4,8 @@ import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
 import com.agentdoc.agent.pojo.dto.McpServerUpdateDTO;
 import com.agentdoc.agent.pojo.param.McpServerSearchParam;
 import com.agentdoc.agent.pojo.vo.McpServerVO;
+import com.agentdoc.agent.pojo.vo.McpConnectionTestVO;
+import com.agentdoc.agent.pojo.vo.McpToolVO;
 import com.agentdoc.agent.service.McpServerService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
@@ -20,6 +22,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @Tag(name = "MCP管理", description = "MCP 元数据管理")
 @RestController
@@ -45,6 +49,18 @@ public class McpServerController {
     @GetMapping("/{id}")
     public Result<McpServerVO> detail(@PathVariable Long id) {
         return Result.ok(service.detail(id));
+    }
+
+    @Operation(summary = "测试 MCP 连接并发现工具")
+    @PostMapping("/{id}/test-connect")
+    public Result<McpConnectionTestVO> testConnect(@PathVariable Long id) {
+        return Result.ok(service.testConnection(id));
+    }
+
+    @Operation(summary = "查询 MCP 最近一次成功发现的工具")
+    @GetMapping("/{id}/tools")
+    public Result<List<McpToolVO>> tools(@PathVariable Long id) {
+        return Result.ok(service.tools(id));
     }
 
     @Operation(summary = "更新 MCP")

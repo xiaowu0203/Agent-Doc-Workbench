@@ -21,8 +21,11 @@ public record SpaceCreateDTO(
         @Size(max = 500, message = "空间描述最长 500 字符")
         String description,
 
-        @Schema(description = "空间全局 Token 预算（Phase 3 熔断用）")
-        Long tokenBudget
+        @Schema(description = "空间全局 Token 预算")
+        Long tokenBudget,
+
+        @Schema(description = "空间月度 Token 预算，仅用于用量提示")
+        Long monthlyTokenBudget
 ) {
 
     /**
@@ -35,6 +38,7 @@ public record SpaceCreateDTO(
         entity.setName(name);
         entity.setDescription(description);
         entity.setTokenBudget(tokenBudget);
+        entity.setMonthlyTokenBudget(monthlyTokenBudget);
         entity.setOwnerId(ownerId);
         entity.setStatus(SpaceStatus.NORMAL.getCode());
         return entity;

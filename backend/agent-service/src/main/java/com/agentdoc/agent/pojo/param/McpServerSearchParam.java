@@ -1,5 +1,6 @@
 package com.agentdoc.agent.pojo.param;
 
+import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.common.pojo.dto.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
@@ -27,6 +28,9 @@ public class McpServerSearchParam extends PageParam {
     @Max(1)
     @Schema(description = "状态：0 禁用 / 1 启用")
     private Integer status;
+
+    @Schema(description = "认证类型")
+    private McpAuthType authType;
 
     @Size(max = MAX_SEARCH_KEYWORD_LENGTH)
     @Schema(description = "技术标识或展示名称关键字")

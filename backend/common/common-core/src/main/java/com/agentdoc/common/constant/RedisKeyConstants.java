@@ -28,6 +28,21 @@ public final class RedisKeyConstants {
     /** A2A 任务状态对账锁 */
     public static final String TASK_A2A_RECONCILE_LOCK_PREFIX = PROJECT_PREFIX + ":task:a2a:reconcile:lock:";
 
+    /** 文档未保存草稿：agent-doc-workbench:document:draft:{userId}:{spaceId}:{documentId} */
+    public static final String DOCUMENT_DRAFT_PREFIX = PROJECT_PREFIX + ":document:draft:";
+
+    /**
+     * 生成用户隔离的文档草稿键。
+     *
+     * @param userId 用户 ID
+     * @param spaceId 空间 ID
+     * @param documentId 文档 ID
+     * @return 文档草稿 Redis 键
+     */
+    public static String documentDraftKey(Long userId, Long spaceId, Long documentId) {
+        return DOCUMENT_DRAFT_PREFIX + userId + ":" + spaceId + ":" + documentId;
+    }
+
     private RedisKeyConstants() {
     }
 }

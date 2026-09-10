@@ -58,6 +58,12 @@ public final class SkillConstant {
      */
     public static final int MAX_NAME_LENGTH = 100;
 
+    /** Skill 展示名称最大字符长度。 */
+    public static final int MAX_DISPLAY_NAME_LENGTH = 100;
+
+    /** Skill 管理描述最大字符长度。 */
+    public static final int MAX_DESCRIPTION_LENGTH = 500;
+
     /**
      * 技能自定义工具名称最大字符长度
      */

@@ -19,6 +19,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.client.HttpClient;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -106,6 +107,8 @@ public final class TaskScopedMcpTools implements AutoCloseable {
      *
      * @param serverUrl MCP服务完整绝对地址
      * @param bearerToken 外部服务Bearer鉴权token，可以为null/空白代表不携带鉴权头
+     * @param queryParamName Query API Key 参数名；不使用时为空
+     * @param queryParamValue Query API Key 明文；不使用时为空
      * @param serverKey 命名空间标识，不为null时工具会被{@link NamespacedToolCallback}包装；null则不做命名空间
      * @param timeoutSeconds initialize握手超时秒数
      * @param cancelRequested 任务取消状态源
@@ -113,14 +116,34 @@ public final class TaskScopedMcpTools implements AutoCloseable {
      * @param resolvedAddressValidator DNS解析完成后地址校验回调，用于拦截内网地址防范SSRF；可为null
      * @return TaskScopedMcpTools实例
      */
-    public static TaskScopedMcpTools openExternal(String serverUrl, String bearerToken, String serverKey,
+    public static TaskScopedMcpTools openExternal(String serverUrl, String bearerToken,
+                                                  String queryParamName, String queryParamValue, String serverKey,
                                                   int timeoutSeconds, BooleanSupplier cancelRequested,
                                                   Collection<String> allowedToolNames,
                                                   Consumer<SocketAddress> resolvedAddressValidator) {
         Map<String, String> headers = bearerToken == null || bearerToken.isBlank() ? Map.of()
                 : Map.of(HttpHeaders.AUTHORIZATION, JwtConstant.TOKEN_TYPE_BEARER + " " + bearerToken);
-        return open(serverUrl, headers, serverKey, timeoutSeconds, cancelRequested, allowedToolNames,
-                resolvedAddressValidator);
+        String transportUrl = appendQueryCredential(serverUrl, queryParamName, queryParamValue);
+        try {
+            return open(transportUrl, headers, serverKey, timeoutSeconds, cancelRequested, allowedToolNames,
+                    resolvedAddressValidator);
+        } catch (RuntimeException exception) {
+            if (exception instanceof AgentExecutionCanceledException) {
+                throw exception;
+            }
+            if (queryParamValue != null && !queryParamValue.isBlank()) {
+                throw new IllegalStateException("MCP Query API Key 连接失败");
+            }
+            throw exception;
+        }
+    }
+
+    private static String appendQueryCredential(String serverUrl, String name, String value) {
+        if (name == null || name.isBlank() || value == null || value.isBlank()) {
+            return serverUrl;
+        }
+        return serverUrl + "?" + URLEncoder.encode(name, StandardCharsets.UTF_8)
+                + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
@@ -355,8 +378,10 @@ public final class TaskScopedMcpTools implements AutoCloseable {
             if (uri.getScheme() == null || uri.getAuthority() == null)
                 throw new IllegalArgumentException("MCP Server URL 必须是绝对地址");
             String path = uri.getRawPath();
+            String query = uri.getRawQuery();
             return new McpEndpoint(uri.getScheme() + "://" + uri.getAuthority(),
-                    path == null || path.isBlank() ? AgentConstant.DEFAULT_MCP_ENDPOINT : path);
+                    (path == null || path.isBlank() ? AgentConstant.DEFAULT_MCP_ENDPOINT : path)
+                            + (query == null || query.isBlank() ? "" : "?" + query));
         }
     }
 }

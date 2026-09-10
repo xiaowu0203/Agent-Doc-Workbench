@@ -27,15 +27,18 @@ public final class ChangeRequestConvertor {
     /**
      * 将用户提交参数转换为待审批变更请求。
      */
-    public static ChangeRequestEntity fromHumanSubmission(ChangeRequestSubmitDTO dto, Long userId) {
+    public static ChangeRequestEntity fromHumanSubmission(ChangeRequestSubmitDTO dto, Long userId, Long spaceId) {
         ChangeRequestEntity entity = new ChangeRequestEntity();
+        entity.setSpaceId(spaceId);
         entity.setDocumentId(dto.documentId());
         entity.setRequestType(dto.requestType().getCode());
         entity.setChanges(serializeChanges(dto.changes()));
+        entity.setSummary(dto.summary());
         entity.setBaseVersion(dto.baseVersion());
         entity.setStatus(ChangeRequestStatus.PENDING.getCode());
         entity.setProposedBy(userId);
         entity.setProposedActorType(ActorType.HUMAN.getCode());
+        entity.setRevisionNo(1);
         return entity;
     }
 
@@ -43,16 +46,21 @@ public final class ChangeRequestConvertor {
      * 将 Agent 执行结果转换为待审批正式文档变更请求。
      */
     public static ChangeRequestEntity fromAgentSubmission(
-            TaskEntity task, List<ChangeItemDTO> changes, Long baseVersion) {
+            TaskEntity task, List<ChangeItemDTO> changes, Long baseVersion, String summary,
+            Long parentRequestId, Integer revisionNo) {
         ChangeRequestEntity entity = new ChangeRequestEntity();
+        entity.setSpaceId(task.getSpaceId());
         entity.setDocumentId(task.getDocumentId());
         entity.setRequestType(ChangeRequestType.FORMAL.getCode());
         entity.setChanges(serializeChanges(changes));
+        entity.setSummary(summary);
         entity.setBaseVersion(baseVersion);
         entity.setStatus(ChangeRequestStatus.PENDING.getCode());
         entity.setSourceTaskId(task.getId());
         entity.setProposedBy(task.getAgentId());
         entity.setProposedActorType(ActorType.AGENT.getCode());
+        entity.setParentRequestId(parentRequestId);
+        entity.setRevisionNo(revisionNo == null ? 1 : revisionNo);
         return entity;
     }
 

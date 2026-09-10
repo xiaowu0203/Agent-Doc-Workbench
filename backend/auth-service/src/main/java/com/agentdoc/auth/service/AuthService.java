@@ -1,14 +1,17 @@
 package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.enums.UserStatus;
+import com.agentdoc.auth.mapper.UserMapper;
+import com.agentdoc.auth.pojo.dto.ChangePasswordRequestDTO;
 import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.pojo.vo.UserVO;
-import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -16,8 +19,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 /**
- * 认证服务：注册、登录、刷新、登出。
+ * 认证服务：注册、登录、刷新、登出、修改密码。
  */
 @Slf4j
 @Service
@@ -72,15 +78,25 @@ public class AuthService {
         // 根据用户名查询用户
         UserEntity user = userMapper.selectOne(
                 new LambdaQueryWrapper<UserEntity>().eq(UserEntity::getUsername, username));
-        // 用户不存在 或者密码校验失败，抛出异常
-        if (user == null || !passwordEncoder.matches(password, user.getPasswordHash())) {
+        // 用户不存在，抛出异常；日志不记录用户名，避免泄露登录标识
+        if (user == null) {
+            log.warn("登录失败：用户不存在");
+            throw new BusinessException(ErrorCode.LOGIN_FAILED);
+        }
+        // 密码校验失败，抛出异常；禁止记录明文密码或密码哈希
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            log.warn("登录失败：密码校验未通过，userId={}", user.getId());
             throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
         // 账号禁用，抛出异常
         if (!UserStatus.isEnabled(user.getStatus())) {
+            log.warn("登录失败：账号已禁用，userId={}", user.getId());
             throw new BusinessException(ErrorCode.USER_DISABLED);
         }
         // 下发全新一对令牌
+        user.setLastLoginAt(LocalDateTime.now());
+        userMapper.updateById(user);
+        log.info("登录成功，userId={}", user.getId());
         return issueTokens(user);
     }
 
@@ -116,6 +132,26 @@ public class AuthService {
     }
 
     /**
+     * 修改当前用户密码，并撤销该用户现有刷新令牌，要求重新登录。
+     *
+     * @param request 修改密码请求
+     */
+    @Transactional
+    public void changePassword(ChangePasswordRequestDTO request) {
+        Long userId = AuthUtils.getUserIdOrException();
+        UserEntity user = userMapper.selectById(userId);
+        if (user == null || !UserStatus.isEnabled(user.getStatus())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED);
+        }
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.CURRENT_PASSWORD_INVALID);
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userMapper.updateById(user);
+        refreshTokenService.revoke(userId);
+    }
+
+    /**
      * 根据用户ID查询用户信息
      * @param userId 用户ID
      * @return UserVO 用户VO，不存在返回null
@@ -123,6 +159,22 @@ public class AuthService {
     public UserVO getById(Long userId) {
         UserEntity user = userMapper.selectById(userId);
         return user == null ? null : user.toVO();
+    }
+
+    /**
+     * 批量查询用户最小展示信息，避免业务服务逐条查询用户。
+     *
+     * @param request 用户 ID 集合
+     * @return 用户展示信息；不存在的用户不返回
+     */
+    public List<UserRefVO> queryUsers(UserBatchQueryDTO request) {
+        if (request == null || request.userIds() == null || request.userIds().isEmpty()) {
+            return List.of();
+        }
+        return userMapper.selectBatchIds(request.userIds()).stream()
+                .map(user -> new UserRefVO(user.getId(), user.getUsername(), user.getNickname(),
+                        UserStatus.isEnabled(user.getStatus())))
+                .toList();
     }
 
     /**
@@ -158,14 +210,14 @@ public class AuthService {
      * @return AuthResponseVO 令牌响应对象
      */
     private AuthResponseVO issueTokens(UserEntity user) {
+        List<String> platformRoles = platformRoleService.listRoleKeys(user.getId());
         // 生成短期访问JWT
-        String accessToken = jwtService.createAccessToken(
-                user, platformRoleService.listRoleKeys(user.getId()));
+        String accessToken = jwtService.createAccessToken(user, platformRoles);
         // 生成refreshToken字符串
         String refreshToken = jwtService.createRefreshToken();
         // 将refreshToken存入服务端存储（Redis）
         refreshTokenService.store(refreshToken, user.getId());
         return AuthResponseVO.of(
-                accessToken, refreshToken, jwtService.props().accessTtl().toSeconds(), user.toVO());
+                accessToken, refreshToken, jwtService.props().accessTtl().toSeconds(), user.toVO(), platformRoles);
     }
 }

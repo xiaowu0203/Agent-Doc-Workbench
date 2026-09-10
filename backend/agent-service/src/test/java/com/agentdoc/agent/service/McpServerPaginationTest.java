@@ -34,13 +34,15 @@ class McpServerPaginationTest {
         entity.setAuthType("NONE");
         entity.setConfigVersion(1L);
         entity.setStatus(1);
+        entity.setConnectionStatus("UNTESTED");
+        entity.setDiscoveredToolCount(0);
         Page<McpServerEntity> selected = new Page<>(1, 10, 1);
         selected.setRecords(List.of(entity));
         when(mapper.selectPage(any(Page.class), any(Wrapper.class))).thenReturn(selected);
         McpServerService service = new McpServerService(mapper,
                 mock(AgentMcpBindingQueryService.class), mock(SpaceAccessService.class),
                 mock(AgentConfigCryptoService.class), mock(McpEndpointSecurityValidator.class),
-                immediateTransaction());
+                mock(McpConnectionTester.class), immediateTransaction());
         McpServerSearchParam param = new McpServerSearchParam();
         param.setSpaceId(2L);
 

@@ -1,12 +1,17 @@
 package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.constant.HeaderConstants;
+import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
+import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
-import com.agentdoc.common.feign.vo.DocumentRefVO;
+import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
+import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
+import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +37,19 @@ public interface DocumentFeign {
      */
     @PostMapping("/api/document/documents/merge")
     Result<MergeResultVO> mergeDocument(@RequestBody MergeRequestDTO request);
+
+    /** 生成审批页所需的基准正文与提案正文，不修改文档。 */
+    @PostMapping("/api/document/documents/change-preview")
+    Result<DocumentChangePreviewVO> previewDocumentChanges(@RequestBody DocumentChangePreviewRequestDTO request);
+
+    /** 校验人工提交并返回预览；权限语义为 change_request:submit。 */
+    @PostMapping("/api/document/documents/change-submission-preview")
+    Result<DocumentChangePreviewVO> previewSubmittedDocumentChanges(
+            @RequestBody DocumentChangePreviewRequestDTO request);
+
+    /** 按变更请求幂等合并审批结果。 */
+    @PostMapping("/api/document/documents/approval-merge")
+    Result<MergeResultVO> mergeApprovedDocument(@RequestBody ApprovalMergeRequestDTO request);
 
     /**
      * 批量查询文档引用投影（id/spaceId/title），用于标题回填等（登录即可，标题非敏感）。
@@ -72,6 +90,12 @@ public interface DocumentFeign {
             @PathVariable Long spaceId);
 
     /**
+     * 查询空间 Token 预算（用量读取权限）。
+     */
+    @GetMapping("/api/document/spaces/{spaceId}/token-budget")
+    Result<SpaceUsageBudgetVO> getSpaceTokenBudget(@PathVariable Long spaceId);
+
+    /**
      * 文档片段读取
      */
     @GetMapping("/api/document/documents/{documentId}/fragments")
@@ -83,4 +107,14 @@ public interface DocumentFeign {
      */
     @PostMapping("/api/document/documents/draft-agent-apply")
     Result<MergeResultVO> applyDraftAgentChanges(@RequestBody MergeRequestDTO request);
+
+    /** 提交当前任务的草稿暂存，整个任务只生成一个可见版本。 */
+    @PostMapping("/api/document/documents/draft-agent-finalize")
+    Result<MergeResultVO> finalizeDraftAgentChanges(@RequestParam Long documentId,
+                                                    @RequestHeader(HeaderConstants.X_TASK_CAPABILITY) String capability);
+
+    /** 任务失败或终止时丢弃草稿暂存。 */
+    @PostMapping("/api/document/documents/draft-agent-discard")
+    Result<Void> discardDraftAgentChanges(@RequestParam Long documentId,
+                                          @RequestHeader(HeaderConstants.X_TASK_CAPABILITY) String capability);
 }

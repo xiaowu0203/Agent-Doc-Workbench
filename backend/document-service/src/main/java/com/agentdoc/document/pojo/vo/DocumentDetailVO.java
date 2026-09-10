@@ -18,8 +18,8 @@ public record DocumentDetailVO(
         @Schema(description = "所属空间 ID")
         Long spaceId,
 
-        @Schema(description = "父目录 ID，null 为根")
-        Long parentId,
+        @Schema(description = "所属目录 ID，null 为空间根层")
+        Long directoryId,
 
         @Schema(description = "标题")
         String title,
@@ -40,6 +40,12 @@ public record DocumentDetailVO(
         LocalDateTime updatedAt,
 
         @Schema(description = "最后更新人用户 ID")
-        Long updatedBy
+        Long updatedBy,
+
+        @Schema(description = "创建人用户 ID；文档负责人取该用户")
+        Long createdBy,
+
+        @Schema(description = "创建人名称")
+        String creatorName
 ) {
 }

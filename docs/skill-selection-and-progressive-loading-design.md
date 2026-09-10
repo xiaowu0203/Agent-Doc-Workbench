@@ -1,6 +1,6 @@
 # Skill 选择与渐进式加载技术设计
 
-> 状态：后端已实现，待 Phase 6 前端接入
+> 状态：后端与 Phase 6 前端均已实现
 > 适用模块：`agent-service`、`auth-service` 数据库迁移
 > 前端实现：Phase 6，本设计仅定义后端 API 契约
 > 基线提交：`61aa80a`（Phase 4 Skill 管理）
@@ -524,7 +524,7 @@ skill_read_resource
 skillUnion = UNION(selectedSkill.allowedTools)
 
 if selectedSkills is empty:
-    effectiveMcpTools = []
+    effectiveMcpTools = agentWhitelist
 else if agentWhitelist is null:
     effectiveMcpTools = skillUnion
 else:
@@ -535,6 +535,7 @@ else:
 
 - `ALL_BOUND` 下 Selected Skill 等于全部 Bound Skill，因此行为与当前绑定后逻辑一致。
 - `ROUTER` 下未被选中的 Skill 不贡献 MCP 工具权限。
+- 没有选中 Skill 时，由 Agent 白名单直接决定工具权限；其中 `null` 表示不额外限制，空数组表示禁用全部工具。
 - 本地三个 Skill 工具不属于 MCP 白名单。
 - task-service 的 Capability 校验继续作为实际业务动作的最终授权边界。
 

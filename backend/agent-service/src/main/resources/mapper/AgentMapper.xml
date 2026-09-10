@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.agent.mapper.AgentMapper">
+    <select id="selectModelAgentCounts" resultType="com.agentdoc.agent.pojo.vo.ModelAgentCountVO">
+        SELECT model_ref.model_id AS modelId, COUNT(DISTINCT model_ref.agent_id) AS agentCount
+        FROM (
+            SELECT id AS agent_id, model_id FROM agent
+            WHERE deleted = 0 AND model_id IN
+                <foreach collection='modelIds' item='modelId' open='(' separator=',' close=')'>
+                    #{modelId}
+                </foreach>
+            UNION ALL
+            SELECT id AS agent_id, skill_router_model_id AS model_id FROM agent
+                WHERE deleted = 0 AND skill_router_model_id IN
+                <foreach collection='modelIds' item='modelId' open='(' separator=',' close=')'>
+                    #{modelId}
+                </foreach>
+        ) model_ref
+        GROUP BY model_ref.model_id;
+    </select>
+</mapper>

@@ -3,6 +3,7 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.convertor.AgentSkillConvertor;
+import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentSkillMapper;
@@ -15,6 +16,7 @@ import com.agentdoc.agent.pojo.entity.AgentSkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.pojo.vo.AgentSkillBindingVO;
+import com.agentdoc.agent.pojo.vo.SkillAgentBindingVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.utils.AuthUtils;
@@ -23,15 +25,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
 
 /**
  * Agent‑Skill绑定关系服务
@@ -66,6 +65,56 @@ public class AgentSkillService {
         spaceAccessService.requirePermission(agent.getSpaceId(), AGENT_READ);
         // 加载已启用的绑定关系
         return loadBindings(agentId, true);
+    }
+
+    /**
+     * 根据Skill ID查询绑定该技能的Agent列表（仅查询启用状态的绑定关系）
+     *
+     * @param skillId 技能ID
+     * @return 技能‑Agent绑定关系VO列表
+     */
+    public List<SkillAgentBindingVO> listBySkill(Long skillId) {
+        // 查询技能本体，不存在则抛出异常
+        SkillEntity skill = skillMapper.selectById(skillId);
+        if (skill == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
+        }
+
+        // 校验当前用户拥有该空间Skill读取权限
+        spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
+
+        // 查询该技能下，启用状态的Agent‑Skill绑定关系，按agentId升序
+        List<AgentSkillEntity> relations = agentSkillMapper.selectList(
+                new LambdaQueryWrapper<AgentSkillEntity>()
+                        .eq(AgentSkillEntity::getSkillId, skillId)
+                        .eq(AgentSkillEntity::getEnabled, true)
+                        .orderByAsc(AgentSkillEntity::getAgentId));
+        if (relations.isEmpty()) {
+            return List.of();
+        }
+
+        // 批量查询关联Agent实体，构建id->Agent映射，避免N+1查询
+        Map<Long, AgentEntity> agents = new HashMap<>();
+        agentMapper.selectBatchIds(relations.stream().map(AgentSkillEntity::getAgentId).collect(Collectors.toSet()))
+                .forEach(agent -> agents.put(agent.getId(), agent));
+
+        // 批量查询绑定对应的Skill版本实体，构建id->版本映射
+        Map<Long, SkillVersionEntity> versions = new HashMap<>();
+        versionMapper.selectBatchIds(relations.stream().map(AgentSkillEntity::getSkillVersionId)
+                        .collect(Collectors.toSet()))
+                .forEach(version -> versions.put(version.getId(), version));
+
+        // 组装VO；Agent或版本缺失则过滤掉该条绑定，防止空指针
+        return relations.stream().map(relation -> {
+            AgentEntity agent = agents.get(relation.getAgentId());
+            SkillVersionEntity version = versions.get(relation.getSkillVersionId());
+            if (agent == null || version == null) {
+                return null;
+            }
+            return new SkillAgentBindingVO(relation.getId(), agent.getId(), agent.getName(),
+                    AgentStatus.fromCode(agent.getStatus()), version.getId(), version.getVersionNo(),
+                    relation.getEnabled());
+        }).filter(Objects::nonNull).toList();
     }
 
     /**

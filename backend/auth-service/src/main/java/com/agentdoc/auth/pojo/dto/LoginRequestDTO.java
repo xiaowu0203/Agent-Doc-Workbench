@@ -14,6 +14,13 @@ public record LoginRequestDTO(
 
         @Schema(description = "明文密码")
         @NotBlank(message = "密码不能为空")
-        String password
+        String password,
+
+        @Schema(description = "是否在浏览器关闭后保持登录")
+        Boolean remember
 ) {
+
+    public boolean shouldRemember() {
+        return Boolean.TRUE.equals(remember);
+    }
 }

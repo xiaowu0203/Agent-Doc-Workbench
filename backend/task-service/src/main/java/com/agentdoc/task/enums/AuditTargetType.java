@@ -8,7 +8,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 public enum AuditTargetType {
 
     AGENT("agent"),
-    TASK("task");
+    TASK("task"),
+    CHANGE_REQUEST("change_request"),
+    DOCUMENT_VERSION("document_version"),
+    SPACE_ROLE("space_role");
 
     @Schema(description = "审计目标类型编码")
     private final String code;

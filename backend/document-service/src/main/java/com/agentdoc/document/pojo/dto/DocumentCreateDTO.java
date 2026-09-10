@@ -19,8 +19,8 @@ public record DocumentCreateDTO(
         @NotNull(message = "空间 ID 不能为空")
         Long spaceId,
 
-        @Schema(description = "父目录 ID，null 为根目录")
-        Long parentId,
+        @Schema(description = "所属目录 ID，null 为空间根层")
+        Long directoryId,
 
         @Schema(description = "文档标题", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank(message = "文档标题不能为空")
@@ -43,7 +43,7 @@ public record DocumentCreateDTO(
     public DocumentEntity toEntity(Long userId) {
         DocumentEntity entity = new DocumentEntity();
         entity.setSpaceId(spaceId);
-        entity.setParentId(parentId);
+        entity.setDirectoryId(directoryId);
         entity.setTitle(title);
         entity.setDocType(docType.getCode());
         entity.setContent(content);

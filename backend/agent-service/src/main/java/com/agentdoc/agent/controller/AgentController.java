@@ -2,10 +2,13 @@ package com.agentdoc.agent.controller;
 
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
+import com.agentdoc.agent.pojo.param.AgentSearchParam;
+import com.agentdoc.agent.pojo.vo.AgentCardVO;
 import com.agentdoc.agent.pojo.vo.AgentVO;
 import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.pojo.vo.PageVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -41,6 +44,12 @@ public class AgentController {
     @GetMapping
     public Result<List<AgentVO>> list(@RequestParam Long spaceId) {
         return Result.ok(agentService.list(spaceId));
+    }
+
+    @Operation(summary = "分页查询空间 Agent 卡片")
+    @PostMapping("/search")
+    public Result<PageVO<AgentCardVO>> search(@Valid @RequestBody AgentSearchParam param) {
+        return Result.ok(agentService.search(param));
     }
 
     @Operation(summary = "查询 Agent 详情")

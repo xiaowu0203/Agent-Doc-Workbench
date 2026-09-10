@@ -30,6 +30,15 @@ import static org.mockito.Mockito.when;
 class RuntimeContextPropagationTest {
 
     @Test
+    void runtimeContextKeepsNullAsUnrestrictedTools() {
+        AgentRuntimeContext context = new AgentRuntimeContext(99L, new AgentEntity(), new ModelEntity(),
+                new AgentTaskInputDTO(1L, 2L, 3L, null, null, null, null),
+                "instruction", "prompt", null, null, List.of());
+
+        assertThat(context.allowedMcpTools()).isNull();
+    }
+
+    @Test
     void runtimeContextDefensivelyCopiesMutableConfiguration() {
         AgentEntity agent = new AgentEntity();
         agent.setName("snapshot-agent");

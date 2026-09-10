@@ -1,7 +1,11 @@
 package com.agentdoc.agent.execution.tool;
 
+import com.agentdoc.agent.constant.SkillConstant;
+import com.agentdoc.agent.enums.ToolSource;
 import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.agent.execution.audit.AgentExecutionToolAuditService;
+import com.agentdoc.common.utils.JsonUtils;
+import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
@@ -12,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -29,6 +34,10 @@ import java.util.function.Function;
  */
 @Slf4j
 public class AuditingToolCallback implements ToolCallback {
+
+    private static final String INVALID_ARGUMENTS_ERROR_TYPE = "INVALID_TOOL_ARGUMENTS_JSON";
+    private static final String INVALID_ARGUMENTS_RESULT = "{\"error\":\"INVALID_TOOL_ARGUMENTS_JSON\","
+            + "\"message\":\"工具参数 JSON 不完整，本次调用未执行。请重新生成一份完整 JSON 后重试。\"}";
     /**
      * 被包装的原始工具回调委托对象，真实执行工具call逻辑
      */
@@ -148,9 +157,14 @@ public class AuditingToolCallback implements ToolCallback {
         // 创建审计记录：sequence自增拿到本次调用序号，记录入参hash、入参字节大小
         AgentExecutionToolCallEntity audit = auditService.start(executionId, sequence.incrementAndGet(),
                 getToolDefinition().name(), source, sourceKey, mcpServerId,
+                skillVersionId(input),
                 sha256(arguments), arguments.length);
 
         try {
+            if (!validRemoteArguments(input)) {
+                finishInvalidArguments(audit);
+                return INVALID_ARGUMENTS_RESULT;
+            }
             // 执行真实工具调用逻辑
             String result = invocation.apply(input);
             byte[] resultBytes = bytes(result);
@@ -177,12 +191,54 @@ public class AuditingToolCallback implements ToolCallback {
     }
 
     /**
+     * MCP 工具参数必须是完整 JSON。模型输出被截断时返回纠错结果，
+     * 使模型可以在当前会话中改用更短的合法参数重试。
+     */
+    private boolean validRemoteArguments(String input) {
+        return !ToolSource.MCP_REMOTE.name().equals(source)
+                || JsonUtils.parse(input, Object.class) != null;
+    }
+
+    private void finishInvalidArguments(AgentExecutionToolCallEntity audit) {
+        try {
+            auditService.fail(audit, INVALID_ARGUMENTS_ERROR_TYPE);
+        } catch (RuntimeException auditException) {
+            log.error("工具参数 JSON 不完整且结束审计失败: executionId={}, auditId={}, tool={}",
+                    executionId, audit.getId(), getToolDefinition().name(), auditException);
+        }
+    }
+
+    /**
      * 字符串转UTF‑8字节数组；null安全处理，null输出空字符串字节
      * @param value 原始字符串，可以为null
      * @return UTF‑8字节数组
      */
     private byte[] bytes(String value) {
         return (value == null ? "" : value).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 只提取 Skill 本地读取工具中可安全审计的版本 ID，不持久化完整参数。
+     */
+    private Long skillVersionId(String input) {
+        if (!ToolSource.SKILL_LOCAL.name().equals(source)) {
+            return null;
+        }
+        String toolName = getToolDefinition().name();
+        if (!SkillConstant.INSTRUCTION_READ_TOOL.equals(toolName)
+                && !SkillConstant.RESOURCE_LIST_TOOL.equals(toolName)
+                && !SkillConstant.RESOURCE_READ_TOOL.equals(toolName)) {
+            return null;
+        }
+        Map<String, Object> values = JsonUtils.parse(input, new TypeReference<>() { });
+        if (values == null || values.get("skillVersionId") == null) {
+            return null;
+        }
+        try {
+            return Long.valueOf(String.valueOf(values.get("skillVersionId")));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     /**
