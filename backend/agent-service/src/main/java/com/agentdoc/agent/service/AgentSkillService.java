@@ -206,18 +206,24 @@ public class AgentSkillService {
             if (skill == null) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
             }
+            // 获取Skill范围类型
             SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+            // 空间Skill
             if (scopeType == SkillScopeType.SPACE) {
+                // 校验Agent与Skill是否同空间
                 if (!agent.getSpaceId().equals(skill.getSpaceId())) {
                     throw new BusinessException(ErrorCode.FORBIDDEN, "Skill 不属于 Agent 所在空间");
                 }
+                // 校验Skill状态
                 if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
                     throw new BusinessException(ErrorCode.CONFLICT, "不能绑定已停用 Skill");
                 }
             } else {
+                // 系统Skill
                 if (skill.getSpaceId() != null) {
                     throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
                 }
+                // 运行时和绑定服务共同使用的空间授权校验
                 installationService.requireEnabledInstallation(
                         agent.getSpaceId(), skill.getId(), version.getId());
             }

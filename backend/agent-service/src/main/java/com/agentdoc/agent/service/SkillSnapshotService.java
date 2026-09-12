@@ -113,18 +113,24 @@ public class SkillSnapshotService {
             if (skill == null || version == null || !skill.getId().equals(version.getSkillId())) {
                 throw new BusinessException(ErrorCode.CONFLICT, "Agent Skill 绑定数据无效");
             }
+            // 获取Skill类型
             SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+            // 若为空间Skill
             if (scopeType == SkillScopeType.SPACE) {
+                // 校验Agent与Skill是否同空间
                 if (!agent.getSpaceId().equals(skill.getSpaceId())) {
                     throw new BusinessException(ErrorCode.CONFLICT, "Agent Skill 绑定数据无效");
                 }
+                // 校验Skill状态
                 if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
                     throw new BusinessException(ErrorCode.CONFLICT, "绑定的 Skill 已停用");
                 }
             } else {
+                // 若为系统Skill
                 if (skill.getSpaceId() != null) {
                     throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
                 }
+                // 运行时和绑定服务共同使用的空间授权校验
                 installationService.requireEnabledInstallation(
                         agent.getSpaceId(), skill.getId(), version.getId());
             }

@@ -12,6 +12,7 @@ public class SystemSkillSearchParam extends PageParam {
 
     @Schema(description = "状态；仅平台超级管理员可查询停用项")
     private Integer status;
+
     @Schema(description = "名称关键字")
     private String keyword;
 }
