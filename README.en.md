@@ -1,150 +1,504 @@
 # Agent-Doc-Workbench
 
-> An open-source, lightweight web workbench for AI-agent-powered document collaboration, built for individuals and small teams.
-> Documents as the single collaboration vehicle for AI Agent tasks.
+> **Let agents work autonomously --- without letting them silently
+> change your canonical content.**
 
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE) ![Status](https://img.shields.io/badge/Status-Phase%206%20completed-brightgreen)
+An open-source web workbench for practical Agent engineering.\
+Agents can read documents, load versioned Skills, call built-in or
+external MCP tools, and execute tasks. Changes to formal documents are
+never applied silently: they become reviewable Change Requests first,
+and humans decide what gets merged.
 
-English | [简体中文](./README.md)
+**Autonomous execution · Reviewable changes · Scoped permissions ·
+Controlled cost · Traceable runs**
 
-**Repository**
-- Gitee: https://gitee.com/wu_hai123/agent-doc-workbench
-- GitHub: https://github.com/xiaowu0203/Agent-Doc-Workbench
-- Branches: main (stable) · `phase-6`: frontend phase completed, ready to merge
+**English** \| [简体中文](./README.md)
 
----
+[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+![Java](https://img.shields.io/badge/Java-21-orange.svg) ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen.svg) ![Vue](https://img.shields.io/badge/Vue-3-42b883.svg) ![A2A](https://img.shields.io/badge/A2A-1.0-blueviolet.svg) ![MCP](https://img.shields.io/badge/MCP-enabled-6f42c1.svg)
 
-## Why this project?
+**Mirrors:** [GitHub](https://github.com/xiaowu0203/Agent-Doc-Workbench)
+· [Gitee](https://gitee.com/wu_hai123/agent-doc-workbench)
 
-Existing AI document tools (Notion AI, WPS AI) let AI rewrite documents directly — uncontrolled and untraceable.
-Orchestration frameworks (LangGraph, CrewAI) keep task results in memory only, with nothing persisted.
-Agent-Doc-Workbench treats **documents** as the collaboration carrier for Agent tasks, so every AI change is reviewable, revertible, and auditable.
+## At a Glance
 
-## Core Features
+![Space Overview](docs/ui-mockups/01-space-overview.png)
 
-- **Draft / Formal dual-document mode**: Agents may freely edit drafts for fast experimentation; formal documents are write-protected from Agents, preventing content tampering
-- **Diff-based change approval**: all Agent modifications become structured change requests supporting accept-all / partial accept / reject / comment-and-return; merging automatically creates a version snapshot
-- **Token budget circuit breaker**: per-task budgets plus a workspace-wide budget; automatic shutdown when limits are exceeded, keeping Agent costs under control
-- **Standard A2A + MCP protocols**: tasks are dispatched to an independent Agent Server over A2A; Agents use Workbench tools over MCP
-- **Versioned Skills with progressive loading**: Skill packages support versions, publishing, Agent binding, Router selection, and on-demand instruction/resource loading
-- **Built-in and external MCP servers**: Agents can bind space-scoped MCP servers under namespaced tools, layered allowlists, and task capabilities
-- **Agent permission control**: task capabilities bind workspace, document, and actions; Agents never inherit user permissions
-- **End-to-end audit log**: operator (human/Agent), operation type, linked task — immutable and traceable
-- **Version snapshots & rollback**: every merged change generates a version; one-click rollback to any historical version
-- **Platform roles and workspace RBAC**: platform administrators manage platform roles, while workspaces use `OWNER / EDITOR / VIEWER` and permission identifiers for member access
+Many Agent demos ask one question:
 
-## UI Mockups
+> **Can the Agent finish the task?**
 
-| Login | Space Overview | Diff Review (Core) |
-| --- | --- | --- |
-| ![00-login](docs/ui-mockups/00-login.png) | ![01-space-overview](docs/ui-mockups/01-space-overview.png) | ![08-diff-review](docs/ui-mockups/08-diff-review.png) |
+Agent-Doc-Workbench also asks:
 
-Complete updated mockup set: [docs/ui-mockups/README.md](docs/ui-mockups/README.md).
+> What exactly did the Agent do?\
+> Why was it allowed to do it?\
+> Which Agent, prompt, model, Skill, and MCP configuration did it use?\
+> Which tools were called, and how many tokens were spent?\
+> Who approves changes to canonical content?\
+> Can a historical execution still be explained and traced?
+
+The project explores how to move Agents beyond "chatbots that can call
+tools" toward **governed engineering execution units**.
+
+## AI Can Propose Changes. It Cannot Silently Rewrite Formal Documents.
+
+![Diff Review](docs/ui-mockups/08-diff-review.png)
+
+Documents have two modes:
+
+- **Draft documents** --- Agents may edit directly for fast iteration.
+- **Formal documents** --- Agents cannot overwrite them directly.
+    Every modification becomes a Change Request.
+
+The formal-document flow is intentionally explicit:
+
+``` text
+Agent Execution
+      │
+      ▼
+ChangeRequest / Structured Diff
+      │
+      ▼
+Human Review
+      │
+      ├── Accept All
+      ├── Partial Accept
+      ├── Edit & Accept
+      ├── Reject
+      └── Comment & Return
+      │
+      ▼
+New Document Version
+```
+
+Merges and rollbacks create new versions instead of destroying
+historical snapshots.
+
+## An Agent Run Is More Than a Chat Transcript
+
+![Task Execution](docs/ui-mockups/07-task-execution.png)
+
+In v0.1, users explicitly choose one Agent for each task. When execution
+starts, the system freezes the runtime configuration used by that run,
+including:
+
+- Agent configuration version
+- System prompt
+- Model and model parameters
+- Bound and selected Skills
+- Effective tool definitions
+- MCP configuration and tool allowlists
+- Task Capability
+- Token budget
+
+Later configuration changes do not mutate an already-running execution.
+
+The execution view records Skill routing, instruction loading, tool
+calls, token usage, status, and key execution events so failures, cost,
+and capability sources can be investigated.
+
+## Core Capabilities
+
+### 🧠 Let Agents Work
+
+- **Independent Agent Runtime** --- tasks are dispatched to Agent
+    Server over A2A.
+- **Versioned Skills** --- Skills are immutable, versioned capability
+    packages with publishing and Agent bindings.
+- **Progressive Skill Loading** --- models first see lightweight Skill
+    metadata and load full instructions/resources only when needed.
+- **Skill Router** --- supports `ALL_BOUND` and `ROUTER` selection
+    modes.
+- **Built-in + External MCP** --- every Agent has Workbench MCP and
+    may bind multiple space-scoped external MCP servers.
+
+### 🔐 Keep Agents Bounded
+
+- **Task Capability** --- every task scopes allowed Space, documents,
+    and actions.
+- **Agents do not inherit user permissions** --- human RBAC and Agent
+    Capability are separate authorization boundaries.
+- **Layered tool restrictions** --- Skills, Agent configuration, MCP
+    bindings, and Task Capability constrain effective tools.
+- **Token Budget Circuit Breaker** --- task-level and space-level
+    budgets stop runaway executions.
+- **External MCP security** --- tool namespaces, allowlists, encrypted
+    credentials, HTTPS and network-address validation.
+
+### 📝 Review What They Change
+
+- **Draft / Formal document model**
+- **Structured ChangeRequest / Diff**
+- **Accept all / partial accept / edit & accept / reject / comment &
+    return**
+- **Version snapshots and non-destructive rollback**
+- **Traceable links between task, execution, review, and document
+    version**
+
+### 🔎 Know Exactly What Happened
+
+- **Execution snapshots**
+- **Skill / MCP / tool provenance**
+- **Token and usage ledger**
+- **Redacted tool-call auditing**
+- **Human / Agent actor auditing**
+- **Platform roles + Space RBAC**
+
+![Usage & Audit](docs/ui-mockups/09-usage-audit.png)
+
+## Agent / Skill / MCP
+
+An Agent is not just a prompt. It is a governed collection of executable
+capabilities.
+
+![Agent Management](docs/ui-mockups/03-agent-management-card.png)
+
+A configured Agent may include:
+
+``` text
+Agent
+├── Main Model
+├── System Prompt
+├── Skill Selection Mode
+├── Versioned Skills
+├── Built-in Workbench MCP
+├── External MCP Servers
+├── Tool Whitelist
+└── Execution Limits
+```
+
+Skills and MCP solve different problems:
+
+- **Skill** --- describes how the Agent should perform a class of
+    work, with versioned instructions, resources, and allowed tool
+    scope.
+- **MCP** --- exposes actual Workbench or external capabilities the
+    Agent can invoke.
+| Skills | MCP Servers |
+| --- | --- |
+| ![Skill Management](docs/ui-mockups/04-skill-management-card.png) | ![MCP Management](docs/ui-mockups/05-mcp-management-card.png) |
+See the complete [UI gallery](docs/ui-mockups/README.md).
+
+## A2A and MCP Have Deliberately Different Roles
+
+Agent-Doc-Workbench does not treat A2A and MCP as interchangeable RPC
+mechanisms.
+
+``` text
+                         A2A
+┌──────────────┐  ─────────────────►  ┌───────────────┐
+│ task-service │                      │ agent-service │
+│ Orchestration│  ◄─────────────────  │ Agent Runtime │
+└──────────────┘   Task / Callback    └───────┬───────┘
+                                             │
+                                             │ MCP
+                                             ▼
+                                    ┌──────────────────┐
+                                    │ Workbench Tools  │
+                                    │ External MCPs    │
+                                    └──────────────────┘
+```
+
+**A2A moves the work. MCP gives Agents capabilities.**
+
+- **A2A** is the Agent task protocol for send, query, cancel, status
+    synchronization, and callbacks.
+- **MCP** is the capability protocol for reading documents and Skills,
+    submitting changes, and accessing external tools.
+
+`agent-service` does not directly own or access Workbench
+document/task/change-request tables. It uses Workbench capabilities
+through MCP.
+
+## Permission Model
+
+Humans and Agents intentionally use different authorization models:
+
+``` text
+Human User
+    │
+    ▼
+Space RBAC
+OWNER / EDITOR / VIEWER / Custom Role
+
+Agent Execution
+    │
+    ▼
+Task Capability
+Space + Document + Actions + Budget
+```
+
+An Agent does not automatically receive all permissions of the user on
+whose behalf it runs.
+
+Effective tool access is constrained by multiple layers:
+
+``` text
+Effective Tools =
+Skill Allowed Tools
+∩ Agent Tool Whitelist
+∩ MCP Binding Whitelist
+∩ Task Capability
+```
+
+The Skill Router may reduce the Skill set needed for a task. It cannot
+expand authorization.
+
+## Architecture
+
+``` text
+Frontend (Vue 3 + TypeScript)
+          │
+          │ OAuth2 / JWT
+          ▼
+┌─────────────────────────────┐
+│ Spring Cloud Gateway :9090  │
+└──────────────┬──────────────┘
+               │
+     ┌─────────┼───────────┬─────────────┐
+     ▼         ▼           ▼             ▼
+ auth-service  document    task-service  agent-service
+    :8081      service        :8083         :8084
+               :8082           │              ▲
+                 │             │ A2A          │
+                 │             └──────────────┘
+                 │                            │
+                 └──── Workbench Domain ─────┤ MCP
+                                              ▼
+                                      External MCPs
+```
+| Service | Responsibility |
+| --- | --- |
+| `auth-service` | Users, OAuth2, JWT, platform identity |
+| `document-service` | Spaces, directories, documents, versions, ChangeRequest / Diff |
+| `task-service` | Agent tasks, A2A Client, Workbench MCP Server, Token Ledger, Audit |
+| `agent-service` | Agent / Model / Skill / MCP configuration, A2A Server, Spring AI Runtime |
+| `gateway-service` | API gateway and unified entry point |
 
 ## Tech Stack
 
-| Layer | Choice |
+| Layer | Technology |
 | --- | --- |
-| Backend | Spring Boot 3.5 · Java 21 · Spring Cloud 2025 · MyBatis-Plus · MySQL 5.7 |
-| Messaging/Cache | RabbitMQ · Redis 7 · Redisson |
-| Storage | MinIO (object storage) |
-| Registry/Config | Nacos 3.2.2 |
-| Agent integration | Spring AI · official A2A Java SDK · MCP Java SDK |
+| Backend | Java 21 · Spring Boot 3.5 · Spring Cloud 2025 · MyBatis-Plus |
+| Database | MySQL 5.7 |
+| Messaging / Cache | RabbitMQ · Redis 7 · Redisson |
+| Object Storage | MinIO |
+| Registry / Config | Nacos 3.2.2 |
+| Agent | Spring AI · Official A2A Java SDK · MCP Java SDK |
 | Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
-| Auth | Spring Authorization Server · OAuth2 · JWT (RS256) |
+| Auth | Spring Authorization Server · OAuth2 · JWT RS256 |
+See [docs/tech/README.md](docs/tech/README.md) for technical choices and
+constraints.
 
-Details and rationale: [docs/tech/README.md](docs/tech/README.md).
+## Quick Start
 
-## Architecture Overview
+### Requirements
 
-```
-Frontend (Vue 3 + Markdown)
-   │  OAuth2 / JWT
-   ▼
-Gateway (Spring Cloud Gateway · WebFlux)
-   │
-   ├── auth-service       Users, OAuth2, JWT
-   ├── document-service   Spaces, directories, documents, versions, Diff approval
-   ├── task-service       Agent tasks, A2A Client, Workbench MCP Server, Token ledger
-   └── agent-service      Agent/Model/Skill/MCP config, A2A Server, Spring AI Runtime
-         │
-         ├── A2A: task-service → agent-service
-         └── MCP: agent-service → task-service
-```
+Recommended local environment:
 
-## Current Progress
+- Java 21
+- Node.js / pnpm
+- Docker / Docker Compose
+- Maven Wrapper (included)
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| Phase 0 | Engineering foundation: Git, Docker Compose, frontend/backend scaffolding | ✅ Completed (2026-08-20) |
-| Phase 1 | Backend foundation: common (5 sub-modules), auth loop (JWT RS256 + JWKS), gateway routing/rate-limiting/OpenAPI aggregation, 14 tables (incl. Token stats 3-table architecture) | ✅ Completed and merged into main (2026-08-22) |
-| Phase 2 | Document core: spaces/documents/versions/Diff approval | ✅ Completed and merged into main (2026-08-23) |
-| Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | ✅ Completed and merged into main (2026-08-26) |
-| Phase 4 | Skill management, progressive loading, external MCP servers, and execution auditing | ✅ Completed (2026-08-31) |
-| Phase 5 | Platform roles, workspace RBAC, permission identifiers, and API authorization | ✅ Completed (2026-08-31) |
-| Phase 6 | Frontend core flows, Skills, external MCP, roles, and permissions | ✅ Completed (2026-09-10; ready to merge to main) |
+### 1. Start Infrastructure
 
-Architecture documents are listed below; phase handoff materials remain local to the workspace.
-
-## Getting Started
-
-> Phase 0-6 are complete. The `phase-6` branch passes type checks, lint, unit tests, production build, and real-browser integration checks, and is ready to merge into `main`.
-
-```bash
-# 1. Start infrastructure (MySQL / Redis / RabbitMQ / MinIO / Nacos)
+``` bash
 docker compose up -d
-# Tip: if MySQL / Redis are installed locally, start only the other three:
-# docker compose up -d rabbitmq minio nacos
+```
 
-# 2. Start backend (Maven multi-module)
+The default infrastructure includes:
+
+``` text
+MySQL
+Redis
+RabbitMQ
+MinIO
+Nacos
+```
+
+If MySQL and Redis already run locally:
+
+``` bash
+docker compose up -d rabbitmq minio nacos
+```
+
+### 2. Start Backend Services
+
+The backend is a Maven multi-module project:
+
+``` bash
 cd backend
-./mvnw spring-boot:run -pl auth-service -am
 
-# 3. Start frontend
+./mvnw spring-boot:run -pl auth-service -am
+./mvnw spring-boot:run -pl gateway-service -am
+./mvnw spring-boot:run -pl document-service -am
+./mvnw spring-boot:run -pl task-service -am
+./mvnw spring-boot:run -pl agent-service -am
+```
+
+Default ports:
+
+| Service | Port |
+| --- | ---: |
+| Gateway | `9090` |
+| Auth | `8081` |
+| Document | `8082` |
+| Task | `8083` |
+| Agent | `8084` |
+
+### 3. Start Frontend
+
+``` bash
 cd frontend
 pnpm install
 pnpm dev
 ```
 
-Backend service ports: Gateway `9090`, Auth `8081`, Document `8082`, Task `8083`, and Agent `8084`.
-Frontend variables are documented in `frontend/.env.example`; infrastructure and secret templates are in `.env.example`.
+Frontend variables are documented in
+[`frontend/.env.example`](frontend/.env.example). Infrastructure and
+secret templates are in [`.env.example`](.env.example).
 
-## Development Roadmap
+> For LLM provider and external MCP configuration, follow the current
+> configuration templates and documentation under `docs/`.
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| Phase 0 | Engineering foundation: Git, Docker Compose, frontend/backend scaffolding | Completed |
-| Phase 1 | Backend foundation: common, auth, gateway | Completed |
-| Phase 2 | Document core: spaces/documents/versions/Diff | Completed and merged |
-| Phase 3 | Agents & tasks: A2A Agent Server, Workbench MCP Server, Token circuit breaker | Completed and merged |
-| Phase 4 | Skill management: packages, versions, Agent binding, progressive loading, and external MCP | Completed |
-| Phase 5 | Platform roles, workspace RBAC, role-permission mapping, and API authorization | Completed |
-| Phase 6 | Frontend: core business, Skill, role, and permission pages | Completed; ready to merge |
-| Phase 7 | System capability catalog: Skills, Agent templates, MCP templates, and space installation | Design complete; implementation pending |
-| Phase 8 | Open-source release preparation | Planned |
+## Who Is This For?
 
-The phase roadmap is kept as a local working document; long-lived technical constraints are documented in `docs/tech/` and the architecture documents below.
+This project may be useful if you are exploring:
+
+- Java / Spring AI Agent engineering
+- Practical A2A / MCP protocol boundaries
+- Agent Skills and progressive loading
+- External MCP and tool governance
+- Human-in-the-loop workflows
+- Agent permissions and task-scoped capabilities
+- Execution snapshots, auditing, and token-cost control
+- AI-assisted document collaboration
+- Governed and traceable Agent runtimes
+
+It is intentionally more than a "chat UI + tool calling" demo. The
+project focuses on **how Agents should be executed and governed inside a
+real engineering system**.
+
+## Project Status
+
+### v0.1 --- Available
+
+The main v0.1 loop is implemented:
+
+- Space / Document / Version
+- Draft / Formal documents
+- ChangeRequest / Diff Review
+- Agent / Model configuration
+- Skill / Skill Router / Progressive Loading
+- Built-in Workbench MCP
+- External Multi-MCP
+- A2A task execution
+- Task Capability
+- Token Budget
+- Audit
+- Platform roles / Space RBAC
+- Vue Web UI
+
+v0.1 intentionally uses:
+
+> **One user-selected Agent per Task.**
+
+The project does not add free-form Multi-Agent orchestration merely for
+demo value.
+
+### Next: v0.2 --- Agent Engineering Foundation
+
+Planned areas include:
+
+``` text
+Execution Model / Run
+OpenTelemetry
+Evaluation
+Dataset / Replay
+Experiment / A-B
+Evidence / Context / Memory
+Skill Sandbox
+OAuth2 / OIDC
+Goal / Plan / Workflow v1
+```
+
+Multi-Agent orchestration is a later step, after the execution and
+evaluation foundations are solid.
+
+See the repository Roadmap / Architecture documents for the long-term
+direction.
 
 ## Documentation
 
-| Doc | Description |
+| Document | What it covers |
 | --- | --- |
-| [docs/Agent-Doc-Workbench 项目完整开发规划文档.md](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | Product planning: feature list, MVP scope, milestones (Chinese) |
-| [docs/tech/README.md](docs/tech/README.md) | Finalized tech stack: backend, frontend, auth |
-| [docs/common-modules.md](docs/common-modules.md) | Common modules and infrastructure architecture |
-| [docs/database-design.md](docs/database-design.md) | Database design and migration constraints |
-| [docs/agent-server-a2a-mcp-design.md](docs/agent-server-a2a-mcp-design.md) | Agent, A2A, and MCP architecture |
-| [docs/agent-task-execution-guide.md](docs/agent-task-execution-guide.md) | End-to-end Agent task flow with a concrete Skill/MCP example |
-| [docs/external-mcp-architecture-design.md](docs/external-mcp-architecture-design.md) | Multi-MCP architecture, permissions, and security constraints |
-| [docs/skill-selection-and-progressive-loading-design.md](docs/skill-selection-and-progressive-loading-design.md) | Skill selection, routing, and progressive loading design |
-| [docs/ui-mockups/README.md](docs/ui-mockups/README.md) | Complete UI mockups and interaction constraints for the current architecture |
+| [Full Development Plan](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | Product scope, MVP, and iteration background (Chinese) |
+| [Tech Stack](docs/tech/README.md) | Backend / frontend / auth choices |
+| [Common Modules](docs/common-modules.md) | Common modules and infrastructure |
+| [Database Design](docs/database-design.md) | Database design and migration constraints |
+| [A2A / MCP Design](docs/agent-server-a2a-mcp-design.md) | Agent Server, A2A, and MCP architecture |
+| [Agent Task Execution](docs/agent-task-execution-guide.md) | End-to-end Agent task execution |
+| [External MCP](docs/external-mcp-architecture-design.md) | Multi-MCP architecture, permissions, and security |
+| [Skill Selection](docs/skill-selection-and-progressive-loading-design.md) | Skill routing and progressive loading |
+| [UI Gallery](docs/ui-mockups/README.md) | Complete UI mockups and interaction constraints |
 
-## Open Source Plans
+## Open Source Direction
 
-- License: Apache-2.0
-- Goal: v0.1 should be clone-and-run; welcome individual developers and small teams to try and contribute
-- CONTRIBUTING and security notes will be completed before the Phase 8 release
+Agent-Doc-Workbench is currently driven primarily by **technical
+exploration, engineering practice, knowledge sharing, and community
+discussion**, and is open by default.
+
+The long-term architecture is gradually evolving toward:
+
+``` text
+Agent Platform Core
+        +
+Document Workbench
+        +
+Extensible Runtime / Evaluator / Sandbox / Memory
+```
+
+Document Workbench remains the first real-world domain and reference
+workbench for the platform core.
+
+Core Agent capabilities are not intentionally held back for a
+hypothetical closed edition.
+
+The project is ultimately interested in questions such as:
+
+> Why did the Agent act this way?\
+> Which capabilities did it use?\
+> What evidence supports the result?\
+> Were its permissions bounded?\
+> Can the execution be traced and reproduced?\
+> How good was the result?\
+> After changing the Agent, can we prove that it actually improved?
+
+## Contributing
+
+Issues, architecture discussions, bug reports, documentation
+improvements, and code contributions are welcome.
+
+Topics especially worth discussing include:
+
+- A2A vs MCP
+- Agent Capability
+- Skill / Tool boundaries
+- Human-in-the-loop
+- Execution snapshots
+- Agent Memory
+- Evaluation / Experiment
+- Sandbox execution
+- Multi-Agent governance
+
+For significant architectural changes, opening an Issue first to discuss
+the problem, proposed design, and trade-offs is recommended.
 
 ## License
 
-Licensed under the [Apache-2.0](LICENSE) License.
+Licensed under the [Apache License 2.0](LICENSE).
+<p align="center">
+<strong>Open by default. Extensible by design. Governed in execution.</strong><br/>
+<sub>Let agents act while keeping every action bounded, reviewable, and traceable.</sub>
+</p>
