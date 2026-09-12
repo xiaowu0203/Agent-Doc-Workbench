@@ -79,7 +79,7 @@ public final class McpServerConvertor {
         return new McpServerVO(
                 entity.getId(),
                 entity.getTemplateId(),
-                entity.getTemplateVersion(),
+                entity.getTemplateVersionId(),
                 entity.getSpaceId(),
                 entity.getServerKey(),
                 entity.getDisplayName(),

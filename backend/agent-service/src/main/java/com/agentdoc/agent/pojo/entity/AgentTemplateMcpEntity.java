@@ -13,6 +13,6 @@ import lombok.EqualsAndHashCode;
 public class AgentTemplateMcpEntity extends BaseEntity {
     @Schema(description = "Agent 模板版本 ID") private Long templateVersionId;
     @Schema(description = "系统 MCP 模板 ID") private Long mcpTemplateId;
-    @Schema(description = "固定的 MCP 模板配置版本") private Long mcpTemplateVersion;
+    @Schema(description = "固定的 MCP 模板版本 ID") private Long mcpTemplateVersionId;
     @Schema(description = "默认远端工具白名单 JSON") private String toolWhitelistJson;
 }

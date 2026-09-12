@@ -73,11 +73,11 @@ public class McpServerService {
     }
 
     /** 从系统模板创建携带来源信息的空间 MCP 连接。 */
-    public McpServerVO createFromTemplate(McpServerCreateDTO dto, Long templateId, Long templateVersion) {
+    public McpServerVO createFromTemplate(McpServerCreateDTO dto, Long templateId, Long templateVersionId) {
         spaceAccessService.requirePermission(dto.spaceId(), MCP_MANAGE);
         validateAuthConfig(dto.authType(), dto.authParamName());
         endpointValidator.validateExternal(dto.endpointUrl());
-        return transactionTemplate.execute(status -> createLocked(dto, templateId, templateVersion));
+        return transactionTemplate.execute(status -> createLocked(dto, templateId, templateVersionId));
     }
 
     /**
@@ -88,7 +88,7 @@ public class McpServerService {
      * @param dto 创建请求DTO
      * @return MCP Server视图对象
      */
-    private McpServerVO createLocked(McpServerCreateDTO dto, Long templateId, Long templateVersion) {
+    private McpServerVO createLocked(McpServerCreateDTO dto, Long templateId, Long templateVersionId) {
         if (templateId != null && mapper.selectCount(new LambdaQueryWrapper<McpServerEntity>()
                 .eq(McpServerEntity::getSpaceId, dto.spaceId())
                 .eq(McpServerEntity::getTemplateId, templateId)) > 0) {
@@ -105,7 +105,7 @@ public class McpServerService {
         McpServerEntity entity = McpServerConvertor.toEntity(dto,
                 encryptedToken(dto.authType(), dto.authToken(), null));
         entity.setTemplateId(templateId);
-        entity.setTemplateVersion(templateVersion);
+        entity.setTemplateVersionId(templateVersionId);
         try {
             mapper.insert(entity);
         } catch (DuplicateKeyException exception) {

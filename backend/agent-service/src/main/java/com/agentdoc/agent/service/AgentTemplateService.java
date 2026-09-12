@@ -26,6 +26,7 @@ import com.agentdoc.agent.pojo.entity.AgentTemplateMcpEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateSkillEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateVersionEntity;
 import com.agentdoc.agent.pojo.entity.McpServerEntity;
+import com.agentdoc.agent.pojo.entity.McpTemplateVersionEntity;
 import com.agentdoc.agent.pojo.param.AgentTemplateSearchParam;
 import com.agentdoc.agent.pojo.vo.AgentTemplateVO;
 import com.agentdoc.agent.pojo.vo.AgentTemplateVersionVO;
@@ -57,7 +58,16 @@ import java.util.stream.Collectors;
 import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_MANAGE;
 
-/** 系统 Agent 模板、不可变版本及空间安装服务。 */
+/**
+ * 系统 Agent 模板、不可变版本及空间安装服务。
+ *
+ * <p>
+ * 管理平台侧Agent模板与多版本生命周期：模板为主体，模板版本为快照；版本草稿创建、发布后不可修改。
+ * 模板版本可绑定系统Skill与MCP模板引用，发布后支持在空间内一键安装生成Agent实例，
+ * 同时提供已安装Agent基于模板版本的升级能力，并处理升级时的配置冲突合并逻辑。
+ * 权限约束：模板与版本的创建/更新/发布仅平台超管操作；空间安装、Agent升级由空间管理员操作。
+ * </p>
+ */
 @Service
 @RequiredArgsConstructor
 public class AgentTemplateService {
@@ -77,6 +87,12 @@ public class AgentTemplateService {
     private final SpaceAccessService spaceAccessService;
     private final SkillAuditLogService auditLogService;
 
+    /**
+     * 创建Agent模板主体（无版本，版本需要单独createVersion生成）。
+     *
+     * @param dto 模板基础信息入参
+     * @return 模板VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public AgentTemplateVO create(AgentTemplateCreateDTO dto) {
         requireManage();
@@ -93,6 +109,14 @@ public class AgentTemplateService {
         return toVO(entity);
     }
 
+    /**
+     * 分页查询Agent模板列表。
+     *
+     * <p>权限过滤：超管可见全部模板；普通用户仅可见【已启用模板+存在已发布版本】的模板。</p>
+     *
+     * @param param 分页+搜索参数
+     * @return 分页VO，附带模板最新发布版本号
+     */
     public PageVO<AgentTemplateVO> search(AgentTemplateSearchParam param) {
         param.validate();
         boolean manager = platformAccessService.hasRole(SUPER_ADMIN);
@@ -118,6 +142,7 @@ public class AgentTemplateService {
         }
         Set<Long> templateIds = page.getRecords().stream().map(AgentTemplateEntity::getId)
                 .collect(Collectors.toSet());
+        // 批量查询每个模板最新已发布版本
         Map<Long, AgentTemplateVersionEntity> latestByTemplate = versionMapper.selectList(
                         new LambdaQueryWrapper<AgentTemplateVersionEntity>()
                                 .in(AgentTemplateVersionEntity::getTemplateId, templateIds)
@@ -130,6 +155,13 @@ public class AgentTemplateService {
         }).toList(), page.getTotal(), param);
     }
 
+    /**
+     * 更新Agent模板主体基础信息（模板本体，不影响已存在的版本快照）。
+     *
+     * @param templateId 模板ID
+     * @param dto 更新入参：展示名称、描述、启用状态
+     * @return 更新后模板VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public AgentTemplateVO update(Long templateId, AgentTemplateUpdateDTO dto) {
         requireManage();
@@ -143,9 +175,20 @@ public class AgentTemplateService {
         return toVO(entity);
     }
 
+    /**
+     * 创建模板草稿版本快照，绑定Skill与MCP引用；版本号自动递增。
+     *
+     * <p>版本创建后默认为DRAFT草稿状态，草稿可发布；发布后版本不可修改。
+     * 事务内锁定模板，递增NextVersionNo保证版本号连续不重复。</p>
+     *
+     * @param templateId 所属模板ID
+     * @param dto 版本配置：模型、提示词、Skill/MCP引用、迭代限制等
+     * @return 新建草稿版本VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public AgentTemplateVersionVO createVersion(Long templateId, AgentTemplateVersionCreateDTO dto) {
         requireManage();
+        // 行锁锁定模板，防止并发创建版本造成版本号冲突
         AgentTemplateEntity template = templateMapper.selectOne(new LambdaQueryWrapper<AgentTemplateEntity>()
                 .eq(AgentTemplateEntity::getId, templateId).last("FOR UPDATE"));
         if (template == null) {
@@ -153,7 +196,7 @@ public class AgentTemplateService {
         }
         validateModel(dto.modelId(), dto.skillRouterModelId(), dto.skillSelectionMode().name());
         validateSkillReferences(dto.skills(), false);
-        validateMcpReferences(dto.mcps(), false);
+        Map<Long, McpTemplateVersionEntity> mcpVersions = validateMcpReferences(dto.mcps(), false);
         AgentTemplateVersionEntity version = new AgentTemplateVersionEntity();
         version.setTemplateId(templateId);
         version.setVersionNo(template.getNextVersionNo());
@@ -174,6 +217,7 @@ public class AgentTemplateService {
                 ? AgentConstant.DEFAULT_EXECUTION_TIMEOUT_SECONDS : dto.executionTimeoutSeconds());
         version.setCreatedBy(AuthUtils.getUserIdOrException());
         versionMapper.insert(version);
+        // 持久化模板版本绑定的Skill引用
         for (AgentTemplateSkillDTO skill : safeSkills(dto.skills())) {
             AgentTemplateSkillEntity reference = new AgentTemplateSkillEntity();
             reference.setTemplateVersionId(version.getId());
@@ -181,15 +225,18 @@ public class AgentTemplateService {
             reference.setSkillVersionId(skill.skillVersionId());
             templateSkillMapper.insert(reference);
         }
+        // 持久化模板版本绑定的MCP模板引用
         for (AgentTemplateMcpDTO mcp : safeMcps(dto.mcps())) {
+            McpTemplateVersionEntity mcpVersion = mcpVersions.get(mcp.mcpTemplateVersionId());
             AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
             reference.setTemplateVersionId(version.getId());
-            reference.setMcpTemplateId(mcp.mcpTemplateId());
-            reference.setMcpTemplateVersion(mcp.mcpTemplateVersion());
+            reference.setMcpTemplateId(mcpVersion.getTemplateId());
+            reference.setMcpTemplateVersionId(mcpVersion.getId());
             reference.setToolWhitelistJson(mcp.toolWhitelist() == null ? null
                     : JsonUtils.toJson(mcp.toolWhitelist().stream().distinct().sorted().toList()));
             templateMcpMapper.insert(reference);
         }
+        // 模板版本号自增，供下一次创建版本使用
         template.setNextVersionNo(template.getNextVersionNo() + 1);
         templateMapper.updateById(template);
         auditLogService.record(null, "AGENT_TEMPLATE_VERSION_CREATED", "agent_template_version", version.getId(),
@@ -197,6 +244,14 @@ public class AgentTemplateService {
         return toVersionVO(version);
     }
 
+    /**
+     * 发布草稿模板版本，状态变更为PUBLISHED。
+     *
+     * <p>发布前校验模型、Skill、MCP引用合法性；发布后的版本不可修改，可用于空间安装。</p>
+     *
+     * @param versionId 草稿版本ID
+     * @return 发布后版本VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public AgentTemplateVersionVO publish(Long versionId) {
         requireManage();
@@ -216,6 +271,14 @@ public class AgentTemplateService {
         return toVersionVO(version);
     }
 
+    /**
+     * 查询模板下全部版本列表。
+     *
+     * <p>权限过滤：普通用户仅可查看已发布版本；超管可查看草稿+已发布。</p>
+     *
+     * @param templateId 模板ID
+     * @return 版本VO列表，附带绑定的Skill、MCP引用
+     */
     public List<AgentTemplateVersionVO> listVersions(Long templateId) {
         AgentTemplateEntity template = requireTemplate(templateId);
         boolean manager = platformAccessService.hasRole(SUPER_ADMIN);
@@ -232,6 +295,7 @@ public class AgentTemplateService {
         if (versions.isEmpty()) {
             return List.of();
         }
+        // 批量查询版本关联的Skill、MCP引用，避免N+1
         Map<Long, List<AgentTemplateSkillEntity>> skillsByVersion = templateSkillMapper.selectList(
                         new LambdaQueryWrapper<AgentTemplateSkillEntity>()
                                 .in(AgentTemplateSkillEntity::getTemplateVersionId,
@@ -247,6 +311,20 @@ public class AgentTemplateService {
                 mcpsByVersion.getOrDefault(version.getId(), List.of()))).toList();
     }
 
+    /**
+     * 在指定空间安装已发布模板版本，生成空间Agent实例，并绑定模板版本快照。
+     *
+     * <p>安装逻辑：
+     * 1. 校验模板启用、版本已发布；
+     * 2. 使用模板版本配置创建Agent基础实例；
+     * 3. 将模板版本内Skill/MCP引用绑定到Agent；
+     * 4. 标记Agent来源templateId、templateVersionId，标记为模板实例。
+     * </p>
+     *
+     * @param spaceId 目标空间ID
+     * @param dto 安装参数（模板版本ID、Agent自定义名称、文档范围）
+     * @return 新建Agent详情VO
+     */
     @Transactional(rollbackFor = Exception.class)
     public AgentVO install(Long spaceId, AgentTemplateInstallDTO dto) {
         AgentTemplateVersionEntity version = requireVersion(dto.templateVersionId());
@@ -269,11 +347,13 @@ public class AgentTemplateService {
         agent.setTemplateId(template.getId());
         agent.setTemplateVersionId(version.getId());
         agentService.updateConfiguration(agent);
+        // 绑定模板版本定义的Skill
         List<Long> skillVersionIds = listSkillReferences(version.getId()).stream()
                 .map(AgentTemplateSkillEntity::getSkillVersionId).toList();
         if (!skillVersionIds.isEmpty()) {
             agentSkillService.replace(agent.getId(), new AgentSkillReplaceDTO(skillVersionIds));
         }
+        // 解析MCP引用并绑定到Agent
         List<AgentMcpBindingItemDTO> mcpBindings = resolveMcpBindings(spaceId, version.getId());
         if (!mcpBindings.isEmpty()) {
             agentMcpBindingService.replace(agent.getId(), new AgentMcpBindingReplaceDTO(mcpBindings));
@@ -283,6 +363,20 @@ public class AgentTemplateService {
         return agentService.detail(agent.getId());
     }
 
+    /**
+     * 已安装模板Agent升级到同模板的更高版本，支持预览模式与冲突合并。
+     *
+     * <p>升级核心逻辑：
+     * 1. 校验目标版本：同模板、已发布、版本号大于当前；
+     * 2. 对比【旧模板版本默认值】、【Agent当前用户修改配置】、【新版本默认值】做三向合并；
+     * 3. 存在冲突字段时，预览模式仅返回冲突列表；正式升级需要传入用户确认后的resolved配置；
+     * 4. 更新Agent配置、替换Skill/MCP绑定，更新Agent关联的templateVersionId并触发配置版本递增。
+     * </p>
+     *
+     * @param agentId 待升级AgentID
+     * @param dto 升级参数：目标版本ID、是否仅预览、用户确认后的冲突解决配置
+     * @return 升级结果VO（含冲突列表、合并后配置，预览标记）
+     */
     @Transactional(rollbackFor = Exception.class)
     public AgentTemplateUpgradeVO upgrade(Long agentId, AgentTemplateUpgradeDTO dto) {
         AgentEntity agent = agentService.require(agentId);
@@ -316,6 +410,7 @@ public class AgentTemplateService {
         List<AgentMcpBindingItemDTO> newMcps = resolveMcpBindings(agent.getSpaceId(), targetVersion.getId());
         List<AgentMcpBindingItemDTO> proposedMcps = mergeValue(oldMcps, currentMcps, newMcps, "mcps", conflicts);
 
+        // 预览模式：只计算冲突与推荐配置，不执行数据库修改
         if (dto.previewOnly()) {
             return new AgentTemplateUpgradeVO(agentId, currentVersion.getId(), targetVersion.getId(),
                     List.copyOf(conflicts), proposed, proposedSkills, proposedMcps, false);
@@ -355,6 +450,18 @@ public class AgentTemplateService {
                 List.copyOf(conflicts), finalConfig, finalSkills, finalMcps, true);
     }
 
+    /**
+     * 三向合并Agent基础配置：旧模板默认值 / Agent当前配置 / 新版本默认值。
+     *
+     * <p>合并规则：用户未修改的字段（当前==旧默认）直接升级为新版本默认；
+     * 用户已修改字段，新版本默认发生变更则标记冲突，保留用户当前值。</p>
+     *
+     * @param oldValue 旧模板版本默认配置
+     * @param current Agent当前生效配置
+     * @param target 新版本模板默认配置
+     * @param conflicts 输出：冲突字段名列表
+     * @return 合并后的推荐AgentUpdateDTO
+     */
     private AgentUpdateDTO mergeConfig(AgentUpdateDTO oldValue, AgentUpdateDTO current,
                                        AgentUpdateDTO target, List<String> conflicts) {
         return new AgentUpdateDTO(
@@ -379,6 +486,22 @@ public class AgentTemplateService {
                 current.status());
     }
 
+    /**
+     * 泛型三向合并单个字段，升级冲突判断核心方法。
+     *
+     * <p>规则：
+     * 1. current == oldValue：用户没有修改，直接使用新版本target值；
+     * 2. target == oldValue 或 current == target：无冲突，保留用户当前值；
+     * 3. 其他场景：用户修改过，新版本默认又变了 → 标记冲突，保留用户当前值。
+     * </p>
+     *
+     * @param oldValue 旧版本默认值
+     * @param current Agent当前值
+     * @param target 新版本默认值
+     * @param field 字段名称，冲突时记录
+     * @param conflicts 冲突列表
+     * @return 合并后推荐值
+     */
     private <T> T mergeValue(T oldValue, T current, T target, String field, List<String> conflicts) {
         if (Objects.equals(current, oldValue)) {
             return target;
@@ -390,6 +513,12 @@ public class AgentTemplateService {
         return current;
     }
 
+    /**
+     * 将Agent实体转换为AgentUpdateDTO，用于升级配置对比。
+     *
+     * @param agent Agent实体
+     * @return AgentUpdateDTO
+     */
     private AgentUpdateDTO fromAgent(AgentEntity agent) {
         return new AgentUpdateDTO(agent.getName(), agent.getDescription(), agent.getSystemPrompt(), agent.getModelId(),
                 SkillSelectionMode.valueOf(agent.getSkillSelectionMode()),
@@ -398,6 +527,14 @@ public class AgentTemplateService {
                 agent.getExecutionTimeoutSeconds(), agent.getStatus());
     }
 
+    /**
+     * 将模板版本快照转换为AgentUpdateDTO（模板默认配置）。
+     *
+     * @param version 模板版本实体
+     * @param documentScope 文档范围（不属于模板版本，取自Agent）
+     * @param status Agent状态
+     * @return AgentUpdateDTO
+     */
     private AgentUpdateDTO fromVersion(AgentTemplateVersionEntity version, String documentScope, Integer status) {
         return new AgentUpdateDTO(version.getDisplayName(), version.getDescription(), version.getSystemPrompt(),
                 version.getModelId(), SkillSelectionMode.valueOf(version.getSkillSelectionMode()),
@@ -406,11 +543,24 @@ public class AgentTemplateService {
                 status);
     }
 
+    /**
+     * 获取模板版本绑定的全部Skill版本ID列表，去重排序。
+     *
+     * @param templateVersionId 模板版本ID
+     * @return skillVersionId列表
+     */
     private List<Long> skillVersionIds(Long templateVersionId) {
         return listSkillReferences(templateVersionId).stream().map(AgentTemplateSkillEntity::getSkillVersionId)
                 .distinct().sorted().toList();
     }
 
+    /**
+     * 校验模型配置合法性，校验主模型启用状态，校验路由模型与选择模式互斥约束。
+     *
+     * @param modelId 主模型ID
+     * @param routerModelId 路由模型ID
+     * @param selectionMode Skill选择模式名称
+     */
     private void validateModel(Long modelId, Long routerModelId, String selectionMode) {
         modelService.requireEnabled(modelId);
         if ("ALL_BOUND".equals(selectionMode) && routerModelId != null) {
@@ -421,31 +571,60 @@ public class AgentTemplateService {
         }
     }
 
+    /**
+     * 读取数据库中已保存的Skill引用，再做引用合法性校验。
+     *
+     * @param templateVersionId 模板版本ID
+     * @param requireActive 是否强制校验系统Skill主状态启用
+     */
     private void validateStoredSkillReferences(Long templateVersionId, boolean requireActive) {
         List<AgentTemplateSkillEntity> references = listSkillReferences(templateVersionId);
         validateSkillReferences(references.stream()
-                .map(value -> new AgentTemplateSkillDTO(value.getSkillId(), value.getSkillVersionId())).toList(),
+                        .map(value -> new AgentTemplateSkillDTO(value.getSkillId(), value.getSkillVersionId())).toList(),
                 requireActive);
     }
 
+    /**
+     * 读取数据库中已保存的MCP引用，再做引用合法性校验。
+     *
+     * @param templateVersionId 模板版本ID
+     * @param requireActive 是否强制校验MCP模板启用
+     */
     private void validateStoredMcpReferences(Long templateVersionId, boolean requireActive) {
         validateMcpReferences(listMcpReferences(templateVersionId).stream()
-                .map(value -> new AgentTemplateMcpDTO(value.getMcpTemplateId(), value.getMcpTemplateVersion(),
+                .map(value -> new AgentTemplateMcpDTO(value.getMcpTemplateVersionId(),
                         parseTools(value.getToolWhitelistJson()))).toList(), requireActive);
     }
 
-    private void validateMcpReferences(List<AgentTemplateMcpDTO> references, boolean requireActive) {
+    /**
+     * 校验MCP模板引用：不能重复引用同一个MCP模板，调用McpTemplateService校验版本合法性。
+     *
+     * @param references MCP模板引用DTO列表
+     * @param requireActive 是否强制MCP模板启用
+     */
+    private Map<Long, McpTemplateVersionEntity> validateMcpReferences(List<AgentTemplateMcpDTO> references,
+                                                                       boolean requireActive) {
+        Map<Long, McpTemplateVersionEntity> versions = mcpTemplateService.requirePublishedVersions(
+                safeMcps(references).stream().map(AgentTemplateMcpDTO::mcpTemplateVersionId).toList(), requireActive);
         Set<Long> templateIds = new HashSet<>();
         for (AgentTemplateMcpDTO reference : safeMcps(references)) {
-            if (!templateIds.add(reference.mcpTemplateId())) {
+            if (!templateIds.add(versions.get(reference.mcpTemplateVersionId()).getTemplateId())) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED,
                         "模板不能重复引用同一系统 MCP 模板");
             }
         }
-        mcpTemplateService.requireVersions(safeMcps(references).stream().collect(Collectors.toMap(
-                AgentTemplateMcpDTO::mcpTemplateId, AgentTemplateMcpDTO::mcpTemplateVersion)), requireActive);
+        return versions;
     }
 
+    /**
+     * 根据模板版本MCP引用，解析当前空间对应的McpServer实例绑定关系。
+     *
+     * <p>前置约束：空间必须预先安装模板要求的MCP模板指定版本，否则抛出异常。</p>
+     *
+     * @param spaceId 目标空间
+     * @param templateVersionId 模板版本ID
+     * @return AgentMcpBindingItemDTO绑定列表
+     */
     private List<AgentMcpBindingItemDTO> resolveMcpBindings(Long spaceId, Long templateVersionId) {
         List<AgentTemplateMcpEntity> references = listMcpReferences(templateVersionId);
         if (references.isEmpty()) {
@@ -458,7 +637,7 @@ public class AgentTemplateService {
         List<AgentMcpBindingItemDTO> bindings = new ArrayList<>();
         for (AgentTemplateMcpEntity reference : references) {
             McpServerEntity server = installedByTemplate.get(reference.getMcpTemplateId());
-            if (server == null || !reference.getMcpTemplateVersion().equals(server.getTemplateVersion())) {
+            if (server == null || !reference.getMcpTemplateVersionId().equals(server.getTemplateVersionId())) {
                 throw new BusinessException(ErrorCode.CONFLICT,
                         "请先在当前空间安装 Agent 模板要求的 MCP 模板版本");
             }
@@ -468,6 +647,12 @@ public class AgentTemplateService {
         return normalizeMcpBindings(bindings);
     }
 
+    /**
+     * MCP绑定归一化：工具白名单去重排序，整体按mcpServerId排序，保证对比一致性。
+     *
+     * @param bindings MCP绑定列表
+     * @return 归一化后的绑定列表
+     */
     private List<AgentMcpBindingItemDTO> normalizeMcpBindings(List<AgentMcpBindingItemDTO> bindings) {
         return bindings.stream().map(value -> new AgentMcpBindingItemDTO(value.mcpServerId(),
                         value.toolWhitelist() == null ? null
@@ -475,6 +660,13 @@ public class AgentTemplateService {
                 .sorted(java.util.Comparator.comparing(AgentMcpBindingItemDTO::mcpServerId)).toList();
     }
 
+    /**
+     * 校验Skill引用：同一模板版本不可重复引用同一个系统Skill；
+     * 调用SpaceSkillInstallationService批量校验系统Skill+版本合法性。
+     *
+     * @param references Skill引用DTO列表
+     * @param requireActive 是否强制系统Skill启用
+     */
     private void validateSkillReferences(List<AgentTemplateSkillDTO> references, boolean requireActive) {
         List<AgentTemplateSkillDTO> values = safeSkills(references);
         if (values.isEmpty()) {
@@ -490,6 +682,12 @@ public class AgentTemplateService {
                 AgentTemplateSkillDTO::skillId, AgentTemplateSkillDTO::skillVersionId)), requireActive);
     }
 
+    /**
+     * 根据ID查询模板实体，不存在抛NOT_FOUND。
+     *
+     * @param id templateId
+     * @return AgentTemplateEntity
+     */
     private AgentTemplateEntity requireTemplate(Long id) {
         AgentTemplateEntity entity = templateMapper.selectById(id);
         if (entity == null) {
@@ -498,6 +696,12 @@ public class AgentTemplateService {
         return entity;
     }
 
+    /**
+     * 根据ID查询模板版本实体，不存在抛NOT_FOUND。
+     *
+     * @param id templateVersionId
+     * @return AgentTemplateVersionEntity
+     */
     private AgentTemplateVersionEntity requireVersion(Long id) {
         AgentTemplateVersionEntity entity = versionMapper.selectById(id);
         if (entity == null) {
@@ -506,16 +710,34 @@ public class AgentTemplateService {
         return entity;
     }
 
+    /**
+     * 查询模板版本下所有Skill引用记录。
+     *
+     * @param versionId 模板版本ID
+     * @return AgentTemplateSkillEntity列表
+     */
     private List<AgentTemplateSkillEntity> listSkillReferences(Long versionId) {
         return templateSkillMapper.selectList(new LambdaQueryWrapper<AgentTemplateSkillEntity>()
                 .eq(AgentTemplateSkillEntity::getTemplateVersionId, versionId));
     }
 
+    /**
+     * 查询模板版本下所有MCP引用记录。
+     *
+     * @param versionId 模板版本ID
+     * @return AgentTemplateMcpEntity列表
+     */
     private List<AgentTemplateMcpEntity> listMcpReferences(Long versionId) {
         return templateMcpMapper.selectList(new LambdaQueryWrapper<AgentTemplateMcpEntity>()
                 .eq(AgentTemplateMcpEntity::getTemplateVersionId, versionId));
     }
 
+    /**
+     * 转换模板实体到VO，自动查询最新发布版本号。
+     *
+     * @param entity 模板实体
+     * @return AgentTemplateVO
+     */
     private AgentTemplateVO toVO(AgentTemplateEntity entity) {
         AgentTemplateVersionEntity latest = versionMapper.selectOne(
                 new LambdaQueryWrapper<AgentTemplateVersionEntity>()
@@ -525,25 +747,46 @@ public class AgentTemplateService {
         return toVO(entity, latest == null ? null : latest.getVersionNo());
     }
 
+    /**
+     * 转换模板实体到VO，传入已知最新版本号。
+     *
+     * @param entity 模板实体
+     * @param latestPublishedVersionNo 最新发布版本号（可为null）
+     * @return AgentTemplateVO
+     */
     private AgentTemplateVO toVO(AgentTemplateEntity entity, Integer latestPublishedVersionNo) {
         return new AgentTemplateVO(entity.getId(), entity.getName(), entity.getDisplayName(), entity.getDescription(),
                 entity.getStatus(), latestPublishedVersionNo, entity.getCreatedAt(),
                 entity.getUpdatedAt());
     }
 
+    /**
+     * 转换模板版本实体到VO，自动查询Skill/MCP引用。
+     *
+     * @param version 模板版本实体
+     * @return AgentTemplateVersionVO
+     */
     private AgentTemplateVersionVO toVersionVO(AgentTemplateVersionEntity version) {
         return toVersionVO(version, listSkillReferences(version.getId()), listMcpReferences(version.getId()));
     }
 
+    /**
+     * 转换模板版本实体+预加载的Skill/MCP引用到VO。
+     *
+     * @param version 模板版本实体
+     * @param skillReferences 预加载Skill引用列表
+     * @param mcpReferences 预加载MCP引用列表
+     * @return AgentTemplateVersionVO
+     */
     private AgentTemplateVersionVO toVersionVO(AgentTemplateVersionEntity version,
-                                                List<AgentTemplateSkillEntity> skillReferences,
-                                                List<AgentTemplateMcpEntity> mcpReferences) {
+                                               List<AgentTemplateSkillEntity> skillReferences,
+                                               List<AgentTemplateMcpEntity> mcpReferences) {
         List<AgentTemplateVersionVO.SkillReferenceVO> skills = skillReferences.stream()
                 .map(value -> new AgentTemplateVersionVO.SkillReferenceVO(
                         value.getSkillId(), value.getSkillVersionId())).toList();
         List<AgentTemplateVersionVO.McpReferenceVO> mcps = mcpReferences.stream()
                 .map(value -> new AgentTemplateVersionVO.McpReferenceVO(value.getMcpTemplateId(),
-                        value.getMcpTemplateVersion(), parseTools(value.getToolWhitelistJson()))).toList();
+                        value.getMcpTemplateVersionId(), parseTools(value.getToolWhitelistJson()))).toList();
         return new AgentTemplateVersionVO(version.getId(), version.getTemplateId(), version.getVersionNo(),
                 version.getStatus(), version.getDisplayName(), version.getDescription(), version.getSystemPrompt(),
                 version.getModelId(), SkillSelectionMode.valueOf(version.getSkillSelectionMode()),
@@ -553,18 +796,39 @@ public class AgentTemplateService {
                 version.getCreatedAt());
     }
 
+    /**
+     * 解析JSON字符串为工具白名单List<String>。
+     *
+     * @param json 序列化后的工具列表JSON
+     * @return 工具名称列表
+     */
     private List<String> parseTools(String json) {
         return json == null ? null : JsonUtils.parse(json, new TypeReference<List<String>>() { });
     }
 
+    /**
+     * 空安全包装Skill列表，null转为空集合。
+     *
+     * @param skills 原始dto.skills
+     * @return 非空List
+     */
     private List<AgentTemplateSkillDTO> safeSkills(List<AgentTemplateSkillDTO> skills) {
         return skills == null ? List.of() : skills;
     }
 
+    /**
+     * 空安全包装MCP列表，null转为空集合。
+     *
+     * @param mcps 原始dto.mcps
+     * @return 非空List
+     */
     private List<AgentTemplateMcpDTO> safeMcps(List<AgentTemplateMcpDTO> mcps) {
         return mcps == null ? List.of() : mcps;
     }
 
+    /**
+     * 权限校验：平台超管角色，用于模板/版本的新建、修改、发布。
+     */
     private void requireManage() {
         platformAccessService.requireRole(SUPER_ADMIN);
     }

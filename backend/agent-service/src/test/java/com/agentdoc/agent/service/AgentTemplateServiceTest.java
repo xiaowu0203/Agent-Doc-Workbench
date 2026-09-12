@@ -16,7 +16,7 @@ import com.agentdoc.agent.pojo.entity.AgentTemplateEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateMcpEntity;
 import com.agentdoc.agent.pojo.entity.AgentTemplateVersionEntity;
 import com.agentdoc.agent.pojo.entity.McpServerEntity;
-import com.agentdoc.agent.pojo.entity.McpTemplateEntity;
+import com.agentdoc.agent.pojo.entity.McpTemplateVersionEntity;
 import com.agentdoc.agent.pojo.vo.AgentTemplateUpgradeVO;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -134,20 +134,23 @@ class AgentTemplateServiceTest {
         AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
         reference.setTemplateVersionId(200L);
         reference.setMcpTemplateId(11L);
-        reference.setMcpTemplateVersion(3L);
+        reference.setMcpTemplateVersionId(31L);
         reference.setToolWhitelistJson("[\"search\"]");
         McpServerEntity server = new McpServerEntity();
         server.setId(21L);
         server.setSpaceId(9L);
         server.setTemplateId(11L);
-        server.setTemplateVersion(3L);
+        server.setTemplateVersionId(31L);
         server.setStatus(1);
         when(versionMapper.selectById(200L)).thenReturn(published);
         when(templateMapper.selectById(10L)).thenReturn(template);
         when(skillReferenceMapper.selectList(any())).thenReturn(List.of());
         when(mcpReferenceMapper.selectList(any())).thenReturn(List.of(reference));
-        when(mcpTemplateService.requireVersions(java.util.Map.of(11L, 3L), false))
-                .thenReturn(java.util.Map.of(11L, new McpTemplateEntity()));
+        McpTemplateVersionEntity mcpVersion = new McpTemplateVersionEntity();
+        mcpVersion.setId(31L);
+        mcpVersion.setTemplateId(11L);
+        when(mcpTemplateService.requirePublishedVersions(List.of(31L), false))
+                .thenReturn(java.util.Map.of(31L, mcpVersion));
         when(agentService.create(any())).thenReturn(AgentConvertor.toVO(created));
         when(agentService.requireForUpdate(1L)).thenReturn(created);
         when(agentService.detail(1L)).thenAnswer(ignored -> AgentConvertor.toVO(created));

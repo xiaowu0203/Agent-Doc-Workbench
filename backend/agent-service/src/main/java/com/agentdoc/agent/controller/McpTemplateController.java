@@ -2,8 +2,10 @@ package com.agentdoc.agent.controller;
 
 import com.agentdoc.agent.pojo.dto.McpTemplateCreateDTO;
 import com.agentdoc.agent.pojo.dto.McpTemplateUpdateDTO;
+import com.agentdoc.agent.pojo.dto.McpTemplateVersionCreateDTO;
 import com.agentdoc.agent.pojo.param.McpTemplateSearchParam;
 import com.agentdoc.agent.pojo.vo.McpTemplateVO;
+import com.agentdoc.agent.pojo.vo.McpTemplateVersionVO;
 import com.agentdoc.agent.service.McpTemplateService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
@@ -20,6 +22,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
 
@@ -56,5 +60,19 @@ public class McpTemplateController {
     public Result<McpTemplateVO> update(@PathVariable Long id,
                                         @Valid @RequestBody McpTemplateUpdateDTO dto) {
         return Result.ok(service.update(id, dto));
+    }
+
+    @Operation(summary = "查询 MCP 模板版本")
+    @GetMapping("/{id}/versions")
+    public Result<List<McpTemplateVersionVO>> versions(@PathVariable Long id) {
+        return Result.ok(service.listVersions(id));
+    }
+
+    @Operation(summary = "创建 MCP 模板草稿版本")
+    @PostMapping("/{id}/versions")
+    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    public Result<McpTemplateVersionVO> createVersion(@PathVariable Long id,
+                                                       @Valid @RequestBody McpTemplateVersionCreateDTO dto) {
+        return Result.ok(service.createVersion(id, dto));
     }
 }

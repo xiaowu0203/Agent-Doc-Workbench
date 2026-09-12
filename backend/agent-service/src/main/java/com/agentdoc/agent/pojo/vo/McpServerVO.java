@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 public record McpServerVO(
         @Schema(description = "MCP Server ID") Long id,
         @Schema(description = "来源系统 MCP 模板 ID") Long templateId,
-        @Schema(description = "安装时采用的模板配置版本") Long templateVersion,
+        @Schema(description = "安装时采用的 MCP 模板版本 ID") Long templateVersionId,
         @Schema(description = "所属空间 ID") Long spaceId,
         @Schema(description = "空间内唯一技术标识") String serverKey,
         @Schema(description = "展示名称") String displayName,

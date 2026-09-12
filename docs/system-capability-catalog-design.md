@@ -70,14 +70,20 @@
 
 升级过程必须提供差异预览；后端根据旧模板版本和当前实例判断空间是否修改过字段。首版不做复杂三方自动合并，发生冲突时要求空间管理员确认最终配置。
 
-### 2.3 MCP：共享模板，空间连接独立持有凭证
+### 2.3 MCP：共享不可变版本，空间连接独立持有凭证
 
-新增 `mcp_template`：
+新增 `mcp_template` 与 `mcp_template_version`。模板主体保存稳定技术标识、目录展示信息、状态和下一个版本号；模板版本保存不可变的可安装配置：
 
-- `server_key`、展示名称、说明。
+- 递增版本号和草稿/已发布状态。
+- 安装后的默认展示名称。
 - 默认公网 HTTPS Endpoint。
 - 认证类型与 Query 参数名。
-- 配置版本、状态。
+- 创建、发布审计信息。
+
+模板主体可以更新目录展示信息和启停状态，但不能覆盖已发布版本。只有已发布版本可以被 Agent 模板引用或安装；新版本发布后，历史已发布版本保持可读、可引用和可安装。
+
+模板主体还可以保存最近一次平台级工具发现结果作为目录观测信息，该信息不属于安装配置版本：
+
 - 最近一次平台级工具发现结果可作为目录展示信息。
 - 不保存供普通空间共同使用的认证凭证。
 
@@ -86,11 +92,13 @@
 | 字段 | 说明 |
 | --- | --- |
 | `template_id` | 来源系统模板，可空 |
-| `template_version` | 安装时采用的模板配置版本，可空 |
+| `template_version_id` | 安装时采用的 MCP 模板版本 ID，可空 |
 
 安装 MCP 模板时，空间管理员必须按模板认证类型填写本空间凭证；`NONE` 无需凭证。安装后仍执行当前的地址校验、加密存储、连接测试、工具发现和 Agent 绑定流程。
 
-Agent 模板引用固定的 MCP 模板配置版本。系统 MCP 模板连接配置更新后，旧引用不会静默切换到新版本；需要由平台管理员创建新的 Agent 模板版本并显式升级空间 Agent。
+Agent 模板通过 `mcp_template_version_id` 引用固定的已发布 MCP 模板版本。系统 MCP 模板发布新版本后，旧引用不会静默切换；需要由平台管理员创建新的 Agent 模板版本并显式升级空间 Agent。
+
+空间 MCP 连接同时保存 `template_id` 和 `template_version_id`，用于记录安装来源并保持版本引用稳定。
 
 平台托管的共享凭证不纳入首版。后续如增加，必须另行设计空间授权范围、平台配额、密钥轮换和停用影响。
 
@@ -113,15 +121,15 @@ Agent 模板引用固定的 MCP 模板配置版本。系统 MCP 模板连接配�
 
 ## 4. 数据库迁移
 
-新增 `V19__system_capability_catalog.sql`，不得修改已执行的 V1～V18：
+V19 已完成系统能力目录首版结构且已经在开发环境执行。本次 MCP 不可变版本改造新增 `V20__mcp_template_version.sql`，不得回改 V1～V19：
 
 1. `skill.space_id` 改为可空，增加 `scope_type`，现有数据回填为 `SPACE`。
 2. 调整 Skill 唯一约束，使系统和空间名称分别唯一。
 3. 新增 `space_skill_installation`。
 4. 新增 `agent_template`、`agent_template_version` 及模板 Skill/MCP 引用表。
 5. `agent` 增加可空的模板来源字段。
-6. 新增 `mcp_template`。
-7. `mcp_server` 增加可空的模板来源与版本字段。
+6. V19 已新增 `mcp_template`；V20 新增 `mcp_template_version`，并将 V19 当前配置回填为已发布版本。
+7. V20 将 `mcp_server` 的来源版本数字迁移为可空的 `template_version_id`。
 8. 为目录查询、空间安装查询和升级检查建立组合索引。
 
 迁移只回填结构和来源标识，不自动把既有空间资源提升为系统资源。
@@ -155,6 +163,9 @@ POST   /api/agent/agents/{agentId}/template-upgrades
 POST   /api/agent/mcp-templates/search
 POST   /api/agent/mcp-templates
 PUT    /api/agent/mcp-templates/{id}
+GET    /api/agent/mcp-templates/{id}/versions
+POST   /api/agent/mcp-templates/{id}/versions
+POST   /api/agent/mcp-template-versions/{id}/publish
 POST   /api/agent/spaces/{spaceId}/mcp-installations
 ```
 
@@ -165,7 +176,7 @@ POST   /api/agent/spaces/{spaceId}/mcp-installations
 - Task 仍只保存空间 `agent.id`，现有“Agent 与文档同空间”校验不变。
 - Agent 模板只参与安装和升级，不进入运行时查询。
 - 系统 Skill 通过 `space_skill_installation` 获得空间使用权；执行准备阶段同时验证安装状态和固定版本。
-- MCP Runtime 仍只读取空间 `mcp_server`，不直接读取 `mcp_template`。
+- MCP Runtime 仍只读取空间 `mcp_server`，不直接读取 `mcp_template` 或 `mcp_template_version`。
 - Agent 执行快照继续保存实际 Agent 配置、SkillVersion、MCP 连接配置版本和工具定义。
 - 快照可增加模板/系统 Skill 来源 ID 和版本，用于追踪，但不能以模板当前状态替代实际执行快照。
 - Token、工具调用和预算全部计入任务所属空间。
@@ -175,7 +186,7 @@ POST   /api/agent/spaces/{spaceId}/mcp-installations
 - 系统能力已被安装后禁止物理删除，只允许停用或废弃。
 - 停用阻止新的空间安装；已安装实例是否继续可用由操作时明确选择，首版默认不影响已安装实例。
 - Skill 已安装版本保持可读，不能因目录下架而删除对象。
-- Agent 模板和 MCP 模板升级必须显式触发。
+- Agent 模板和空间 MCP 实例升级必须显式触发。
 - 空间卸载只删除安装关系或空间实例，不删除系统定义。
 - 系统与空间 `server_key` 在一个 Agent 的最终工具集合内仍必须唯一，冲突时拒绝绑定，不做隐式覆盖。
 
@@ -194,7 +205,7 @@ POST   /api/agent/spaces/{spaceId}/mcp-installations
 
 ### 阶段一：系统 Skill 库与空间安装
 
-- V19 中完成 Skill 作用域和安装关系。
+- V19 中完成 Skill 作用域和安装关系；MCP 版本拆分通过 V20 向前迁移。
 - 系统 Skill 管理、版本发布、空间安装/升级/卸载 API 完成。
 - Agent 绑定和执行快照支持已安装系统 Skill。
 - 原空间 Skill API 和历史数据回归通过。
@@ -209,7 +220,8 @@ POST   /api/agent/spaces/{spaceId}/mcp-installations
 ### 阶段三：MCP 模板与空间独立凭证
 
 - 系统模板不持久化空间凭证明文或密文。
-- 安装生成独立 `mcp_server`，凭证加密、地址校验、连接测试与工具发现复用现有实现。
+- 模板主体与不可变版本分离，历史已发布版本保持可安装。
+- 安装指定 `mcp_template_version_id` 并生成独立 `mcp_server`，凭证加密、地址校验、连接测试与工具发现复用现有实现。
 - Agent 仍只绑定空间 MCP 连接。
 
 ### 阶段四：统一系统能力中心

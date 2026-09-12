@@ -16,8 +16,8 @@ import java.time.LocalDateTime;
 public class McpServerEntity extends BaseLogicDeleteEntity {
     @Schema(description = "来源系统 MCP 模板 ID")
     private Long templateId;
-    @Schema(description = "安装时采用的模板配置版本")
-    private Long templateVersion;
+    @Schema(description = "安装时采用的 MCP 模板版本 ID")
+    private Long templateVersionId;
     @Schema(description = "所属空间 ID")
     private Long spaceId;
     @Schema(description = "空间内唯一技术标识")

@@ -35,6 +35,6 @@ public record AgentTemplateVersionVO(
 
     public record McpReferenceVO(
             @Schema(description = "系统 MCP 模板 ID") Long mcpTemplateId,
-            @Schema(description = "固定 MCP 模板配置版本") Long mcpTemplateVersion,
+            @Schema(description = "固定 MCP 模板版本 ID") Long mcpTemplateVersionId,
             @Schema(description = "默认远端工具白名单") List<String> toolWhitelist) { }
 }

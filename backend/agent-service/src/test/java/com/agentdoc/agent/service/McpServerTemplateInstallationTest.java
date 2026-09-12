@@ -38,7 +38,7 @@ class McpServerTemplateInstallationTest {
         ArgumentCaptor<McpServerEntity> captor = ArgumentCaptor.forClass(McpServerEntity.class);
         verify(mapper).insert(captor.capture());
         assertThat(captor.getValue().getTemplateId()).isEqualTo(11L);
-        assertThat(captor.getValue().getTemplateVersion()).isEqualTo(3L);
+        assertThat(captor.getValue().getTemplateVersionId()).isEqualTo(3L);
         assertThat(captor.getValue().getEncryptedAuthToken()).isEqualTo("encrypted-value");
         assertThat(captor.getValue().toString()).doesNotContain("space-secret", "encrypted-value");
         assertThat(result.authConfigured()).isTrue();
