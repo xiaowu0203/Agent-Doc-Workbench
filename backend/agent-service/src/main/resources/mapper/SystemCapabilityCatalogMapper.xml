@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.agent.mapper.SystemCapabilityCatalogMapper">
+
+    <sql id="catalogUnion">
+        SELECT skill.id,
+               'SKILL' AS type,
+               skill.name AS technicalKey,
+               skill.display_name AS displayName,
+               skill.description,
+               skill.status,
+               skill_version.id AS latestPublishedVersionId,
+               skill_version.version_no AS latestPublishedVersionNo,
+               skill.created_at AS createdAt,
+               skill.updated_at AS updatedAt
+        FROM skill
+        LEFT JOIN skill_version
+          ON skill_version.skill_id = skill.id
+         AND skill_version.status = 1
+         AND NOT EXISTS (
+             SELECT 1 FROM skill_version newer
+             WHERE newer.skill_id = skill_version.skill_id
+               AND newer.status = 1
+               AND newer.version_no > skill_version.version_no
+         )
+        WHERE skill.deleted = 0
+          AND skill.scope_type = 'SYSTEM'
+          AND skill.space_id IS NULL
+
+        UNION ALL
+
+        SELECT agent_template.id,
+               'AGENT_TEMPLATE' AS type,
+               agent_template.name AS technicalKey,
+               agent_template.display_name AS displayName,
+               agent_template.description,
+               agent_template.status,
+               agent_template_version.id AS latestPublishedVersionId,
+               agent_template_version.version_no AS latestPublishedVersionNo,
+               agent_template.created_at AS createdAt,
+               agent_template.updated_at AS updatedAt
+        FROM agent_template
+        LEFT JOIN agent_template_version
+          ON agent_template_version.template_id = agent_template.id
+         AND agent_template_version.status = 1
+         AND NOT EXISTS (
+             SELECT 1 FROM agent_template_version newer
+             WHERE newer.template_id = agent_template_version.template_id
+               AND newer.status = 1
+               AND newer.version_no > agent_template_version.version_no
+         )
+        WHERE agent_template.deleted = 0
+
+        UNION ALL
+
+        SELECT mcp_template.id,
+               'MCP_TEMPLATE' AS type,
+               mcp_template.server_key AS technicalKey,
+               mcp_template.display_name AS displayName,
+               mcp_template.description,
+               mcp_template.status,
+               mcp_template_version.id AS latestPublishedVersionId,
+               mcp_template_version.version_no AS latestPublishedVersionNo,
+               mcp_template.created_at AS createdAt,
+               mcp_template.updated_at AS updatedAt
+        FROM mcp_template
+        LEFT JOIN mcp_template_version
+          ON mcp_template_version.template_id = mcp_template.id
+         AND mcp_template_version.status = 1
+         AND NOT EXISTS (
+             SELECT 1 FROM mcp_template_version newer
+             WHERE newer.template_id = mcp_template_version.template_id
+               AND newer.status = 1
+               AND newer.version_no > mcp_template_version.version_no
+         )
+        WHERE mcp_template.deleted = 0
+    </sql>
+
+    <sql id="catalogConditions">
+        <where>
+            <if test="publishedOnly">
+                capability.status = 1
+                AND capability.latestPublishedVersionId IS NOT NULL
+            </if>
+            <if test="type != null">
+                AND capability.type = #{type}
+            </if>
+            <if test="status != null">
+                AND capability.status = #{status}
+            </if>
+            <if test="keyword != null">
+                AND (
+                    capability.technicalKey LIKE CONCAT('%', #{keyword}, '%')
+                    OR capability.displayName LIKE CONCAT('%', #{keyword}, '%')
+                    OR capability.description LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectCatalogPage"
+            resultType="com.agentdoc.agent.pojo.vo.SystemCapabilityCatalogVO">
+        SELECT capability.*
+        FROM (<include refid="catalogUnion"/>) capability
+        <include refid="catalogConditions"/>
+        ORDER BY capability.updatedAt DESC, capability.id DESC, capability.type
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countCatalog" resultType="long">
+        SELECT COUNT(*)
+        FROM (<include refid="catalogUnion"/>) capability
+        <include refid="catalogConditions"/>
+    </select>
+
+    <select id="selectStatistics"
+            resultType="com.agentdoc.agent.pojo.vo.SystemCapabilityTypeStatisticsVO">
+        SELECT 'SKILL' AS type,
+               COUNT(*) AS totalCount,
+               COALESCE(SUM(skill.status = 1), 0) AS enabledCount,
+               (SELECT COUNT(*)
+                FROM skill_version published_version
+                INNER JOIN skill system_skill ON system_skill.id = published_version.skill_id
+                WHERE published_version.status = 1
+                  AND system_skill.deleted = 0
+                  AND system_skill.scope_type = 'SYSTEM'
+                  AND system_skill.space_id IS NULL) AS publishedVersionCount,
+               (SELECT COUNT(*) FROM space_skill_installation) AS installationCount
+        FROM skill
+        WHERE skill.deleted = 0
+          AND skill.scope_type = 'SYSTEM'
+          AND skill.space_id IS NULL
+
+        UNION ALL
+
+        SELECT 'AGENT_TEMPLATE' AS type,
+               COUNT(*) AS totalCount,
+               COALESCE(SUM(agent_template.status = 1), 0) AS enabledCount,
+               (SELECT COUNT(*)
+                FROM agent_template_version published_version
+                INNER JOIN agent_template system_template ON system_template.id = published_version.template_id
+                WHERE published_version.status = 1
+                  AND system_template.deleted = 0) AS publishedVersionCount,
+               (SELECT COUNT(*) FROM agent WHERE deleted = 0 AND template_id IS NOT NULL) AS installationCount
+        FROM agent_template
+        WHERE agent_template.deleted = 0
+
+        UNION ALL
+
+        SELECT 'MCP_TEMPLATE' AS type,
+               COUNT(*) AS totalCount,
+               COALESCE(SUM(mcp_template.status = 1), 0) AS enabledCount,
+               (SELECT COUNT(*)
+                FROM mcp_template_version published_version
+                INNER JOIN mcp_template system_template ON system_template.id = published_version.template_id
+                WHERE published_version.status = 1
+                  AND system_template.deleted = 0) AS publishedVersionCount,
+               (SELECT COUNT(*) FROM mcp_server WHERE deleted = 0 AND template_id IS NOT NULL) AS installationCount
+        FROM mcp_template
+        WHERE mcp_template.deleted = 0
+    </select>
+</mapper>

@@ -1,6 +1,6 @@
 # 系统能力库与空间安装架构设计
 
-> 状态：实施中；后端阶段一至三代码已完成，待集成环境验收
+> 状态：实施中；后端阶段一至三已完成本地编译与启动验收，阶段四开发中
 > 适用范围：系统 Skill 库、Agent 模板、MCP 模板、空间安装和统一系统能力中心  
 > 核心原则：系统级可复用不等于跨空间直接执行；任务执行始终以空间实例、空间权限和不可变快照为边界。
 
@@ -167,9 +167,17 @@ GET    /api/agent/mcp-templates/{id}/versions
 POST   /api/agent/mcp-templates/{id}/versions
 POST   /api/agent/mcp-template-versions/{id}/publish
 POST   /api/agent/spaces/{spaceId}/mcp-installations
+
+# 统一系统能力中心
+POST   /api/agent/system-capabilities/search
+GET    /api/agent/system-capabilities/statistics
 ```
 
 首版接口可以按实施阶段逐步开放，但资源语义保持稳定。
+
+统一目录查询返回三类能力的共同字段，包括类型、稳定技术标识、展示信息、状态和最新已发布版本。
+普通登录用户只看到已启用且存在已发布版本的能力；平台超级管理员可以查看全部状态。
+平台统计仅平台超级管理员可访问，按能力类型统计能力总数、启用数、已发布版本数和空间安装实例数。
 
 ## 6. 执行链与快照
 
@@ -226,7 +234,9 @@ POST   /api/agent/spaces/{spaceId}/mcp-installations
 
 ### 阶段四：统一系统能力中心
 
-- 完成系统目录聚合查询和平台统计。
+- 提供系统 Skill、Agent 模板和 MCP 模板的统一分页目录查询。
+- 提供按能力类型汇总的能力数、启用数、已发布版本数和空间安装实例数。
+- 统一目录沿用三类资源既有可见性规则；完整平台统计仅平台超级管理员可见。
 - 后端四阶段验收后再开发前端页面。
 
 ## 10. 测试重点
