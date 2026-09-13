@@ -391,7 +391,9 @@ real engineering system**.
 
 ## Project Status
 
-### v0.1 --- Release Candidate
+### v0.1.0 --- First Open-Source Release Candidate
+
+The `v0.1.0` open-source release candidate is ready, including the complete source tree, public documentation, and reproducible validation evidence. The formal tag and release will be created after this branch is merged into `main`.
 
 The main v0.1 loop is implemented:
 
