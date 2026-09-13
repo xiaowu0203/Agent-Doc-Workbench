@@ -7,9 +7,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.lang.reflect.Method;
@@ -56,7 +59,45 @@ class GlobalExceptionHandlerTest {
         assertEquals(ErrorCode.INTERNAL_ERROR.getCode(), resp.getBody().code());
     }
 
+    @Test
+    void accessDeniedExceptionMapsTo403() {
+        ResponseEntity<Result<Void>> resp = handler.handleAccessDenied(new AccessDeniedException("Access Denied"));
+        assertEquals(403, resp.getStatusCode().value());
+        assertEquals(ErrorCode.FORBIDDEN.getCode(), resp.getBody().code());
+    }
+
+    /**
+     * Spring Security 的 @PreAuthorize 拒绝抛的是 AuthorizationDeniedException，
+     * 它是 AccessDeniedException 的子类，必须同样映射为 403 而不是 500。
+     */
+    @Test
+    void authorizationDeniedExceptionMapsTo403() {
+        ResponseEntity<Result<Void>> resp = handler.handleAccessDenied(
+                new AuthorizationDeniedException("Access Denied", () -> false));
+        assertEquals(403, resp.getStatusCode().value());
+        assertEquals(ErrorCode.FORBIDDEN.getCode(), resp.getBody().code());
+    }
+
+    /**
+     * 路径变量不是合法数字（例如前端误把 undefined 拼进 URL）属于客户端参数错误，
+     * 必须返回 400 而不是 500。
+     */
+    @Test
+    void typeMismatchMapsTo400() throws Exception {
+        Method method = GlobalExceptionHandlerTest.class.getDeclaredMethod("pathTarget", Long.class);
+        MethodArgumentTypeMismatchException ex = new MethodArgumentTypeMismatchException(
+                "undefined", Long.class, "id", new MethodParameter(method, 0), new NumberFormatException("undefined"));
+
+        ResponseEntity<Result<Void>> resp = handler.handleTypeMismatch(ex);
+        assertEquals(400, resp.getStatusCode().value());
+        assertEquals(ErrorCode.BAD_REQUEST.getCode(), resp.getBody().code());
+    }
+
     @SuppressWarnings("unused")
     private void validationTarget(String username) {
+    }
+
+    @SuppressWarnings("unused")
+    private void pathTarget(Long id) {
     }
 }
