@@ -48,7 +48,10 @@ class AesGcmCryptoTest {
     void rejectsUnsupportedVersionAndTamperedCiphertext() {
         AesGcmCrypto crypto = new AesGcmCrypto(KEY);
         String ciphertext = crypto.encrypt("plaintext");
-        int mutationIndex = ciphertext.length() - 3;
+        // 篡改 IV 的首字节，保证解码后的字节必然变化。
+        // 不能在 Base64 末位字符上做替换：该字符只有高 4 位参与解码，
+        // 低 2 位属于无效比特，替换后解码字节可能完全不变，导致断言随机失败。
+        int mutationIndex = "v1:".length();
         char replacement = ciphertext.charAt(mutationIndex) == 'A' ? 'B' : 'A';
         String tamperedCiphertext = ciphertext.substring(0, mutationIndex) + replacement
                 + ciphertext.substring(mutationIndex + 1);

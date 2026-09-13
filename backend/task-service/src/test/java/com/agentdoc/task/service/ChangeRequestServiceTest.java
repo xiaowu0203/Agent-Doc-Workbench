@@ -1,6 +1,7 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -58,6 +59,7 @@ class ChangeRequestServiceTest {
                 .header("alg", "RS256")
                 .subject(String.valueOf(USER_ID))
                 .claim("username", "tester")
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         // lenient：不存在场景不会读取文档或校验空间权限。
