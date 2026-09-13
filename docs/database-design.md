@@ -27,7 +27,7 @@
 | `task` / `task_draft` | 任务 | 任务主表及用户私有的任务表单草稿；任务固化可读编号、文档类型与读取边界 |
 | `token_usage_detail` | 统计 | Token 调用明细【真相源】，无条件落库 |
 | `token_usage` | 统计 | 历史日聚合表（折线图，截止昨日） |
-| `token_daily_snapshot` | 统计 | 当日快照表（今日卡片，仅 UI 展示） |
+| `token_daily_snapshot` | 统计 | 当日空间累计用量的定时采样表；当前今日用量接口直接查询明细，不读取该表 |
 | `audit_log` | 审计 | 全链路审计，只 INSERT 不可篡改；V6 增加 `task_id` 关联 |
 | `agent_execution` | Agent | Agent Service 中的 A2A 执行快照、状态和 Token 用量 |
 | `a2a_task_store` | A2A | A2A Task 协议状态及加密载荷持久化 |
@@ -50,7 +50,7 @@
 8. **task / task_draft**：Agent 任务主表及当前用户的表单草稿。正式任务使用唯一 `task_no` 对外展示，创建时固化目标文档类型以及 `FULL / RANGES` 读取模式；多个关注区域以 JSON 保存，包含字符范围、文本预览和独立处理要求，`RANGES` 模式下同时构成读取白名单。草稿允许除空间外的表单字段暂时为空，启动成功后逻辑删除。三层 Token 预算（任务 / Agent / 空间）全部基于**Token 数量**做熔断；**熔断逻辑完全不依赖任何统计报表表**（计数来源见「开放问题」）。
 9. **token_usage_detail【真相源】**：每次 MCP 调用插入一条原始明细，保存 input/output/cached token、调用时间、model_id、预估费用；所有统计、重算全部以此表为准。
 10. **token_usage【历史日聚合表】**：每日凌晨定时聚合**昨日以及更早完整自然日**；用于前端 7/30 天消耗折线图；**不包含今日数据**；联合唯一索引 `dimension+obj_id+usage_date`。
-11. **token_daily_snapshot【当日快照表】**：存储当日统计快照；支持系统自动快照、用户手动异步触发快照；页面【今日消耗卡片】读取本表最新快照（同 `space_id + snapshot_date` 取 `created_at` 最大一条）；**只做 UI 展示，不用于业务熔断**。
+11. **token_daily_snapshot【当日快照表】**：由系统定时任务按空间写入当日累计输入、输出和费用采样；当前没有用户手动触发入口，今日用量接口直接聚合 `token_usage_detail`，该表也不参与业务熔断。
 12. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
 13. **agent_execution**：保存一次 A2A 执行的配置快照、状态、结果摘要和 Token 用量，使用 `workbench_task_id` 保证幂等。
 14. **a2a_task_store / a2a_push_config**：由 agent-service 使用 AES-GCM 加密保存官方 A2A SDK 的任务和推送配置载荷，服务重启后可恢复协议状态。
@@ -74,7 +74,7 @@
 2. model 表保存模型元数据和加密 API Key，不管控供应商真实可用性；`model_key` 是供应商模型标识。
 3. 所有人民币金额全部为**预估参考**，真实消费以 MCP 服务商账单为准；熔断只使用 Token 数量，绝对不使用预估金额。
 4. `token_usage_detail` 明细是唯一真相源；聚合表 `token_usage` 损坏可通过明细全量重建。
-5. 折线图只读取 `token_usage`，数据截止**前一天**；今日消耗从 `token_daily_snapshot` 快照获取；今日数据不参与折线图，避免图表抖动。
+5. 历史趋势接口读取 `token_usage`，数据截止**前一天**；今日用量接口直接实时聚合 `token_usage_detail`，今日数据不进入历史聚合表。
 6. v0.1 暂不实现 `model_pricing` 计价子表，峰谷 / 缓存复杂计价放到 v0.2 迭代。
 7. Skill 版本发布后不可覆盖；Agent 执行只使用准备阶段冻结的 Skill、Prompt、工具和 MCP 快照。
 8. 外部 MCP Bearer Token 使用 AES-GCM 加密保存，执行快照和调用审计不得持久化秘密明文。
@@ -89,24 +89,24 @@
 
 ## 定时 & 异步任务说明（已定稿）
 
-1. **凌晨历史日聚合**：Spring `@Scheduled` + Redisson 分布式锁（防多实例重复执行）从 `token_usage_detail` 聚合**昨日完整日期**写入 `token_usage`，不处理当日；**聚合逻辑必须幂等**（`uk_dim_obj_date` 唯一键，用「先删该日期再插入」或 `INSERT ... ON DUPLICATE KEY UPDATE`，禁止裸 INSERT）；v0.2 集群部署后迁移到 XXL‑Job 调度。聚合任务跨零点时**顺带生成 `token_daily_snapshot` 收尾快照**。
-2. **今日快照（懒加载异步触发，不做全局定时轮询）**：访问今日消耗页面时异步触发快照生成，同一 `space_id` 节流最小间隔 **3min**；用户可手动刷新快照。
-3. **后台管理**：支持重跑指定日期聚合，从明细重建 `token_usage`。
+1. **凌晨历史日聚合**：Spring `@Scheduled` 从 `token_usage_detail` 聚合**昨日完整日期**写入 `token_usage`，不处理当日；当前 v0.1 单实例部署不使用分布式调度锁，重跑时在事务内按日期先删后插以保证结果可重建。多实例部署会产生重复调度竞态，需在 v0.2 集群化时引入带持有者校验和故障回收能力的互斥机制或 XXL‑Job。
+2. **今日快照定时采样**：Spring `@Scheduled` 默认每 180000ms 扫描当天产生过明细的空间，分别写入空间维度的累计快照；该方法没有全局事务，每个空间独立写入，允许少量采样丢失。
+3. **指定日期重算能力**：应用服务可按日期从明细重建 `token_usage`；v0.1 没有公开的后台重跑接口。
 
 ## 数据流
 
 - **任务执行 / 明细流**：任务经 A2A 下发 → agent-service 调用模型并通过 MCP 访问 Workbench → 每次模型调用**无条件插入** `token_usage_detail` → 任务级 `task.tokens_used` 本地累计熔断，任务结束 / 异常用明细 SUM 对账补偿 → 空间 / Agent 级熔断实时 SUM 明细。
-- **统计展示流**：`token_usage_detail` → 每日凌晨聚合 → `token_usage`（折线图，昨日及以前）；访问今日页面懒加载 / 手动刷新 → `token_daily_snapshot`（今日卡片）；聚合表损坏可由明细全量重建。
+- **统计展示流**：`token_usage_detail` → 每日凌晨聚合 → `token_usage`（历史趋势，昨日及以前）；今日用量与审计看板直接按查询区间汇总明细。`token_daily_snapshot` 由独立定时任务保留当日空间采样，不是当前页面查询的数据源。
 
 ## 页面表现
 
 - 📈 消耗折线图：数据源 `token_usage`，时间范围 N 天前～昨日，数据稳定无抖动。
-- 📊 今日消耗卡片：读取 `token_daily_snapshot` 当天最新一条（`space_id + snapshot_date` 取 `created_at` 最大）；**无快照时提示用户手动刷新**；提示"今日为快照数据，折线统计截止昨日，金额仅为预估"。
+- 📊 今日消耗卡片：实时汇总 `token_usage_detail` 的当天输入、输出和费用；存在缺失费用时返回不可用状态，不用快照值替代。
 
 ## 查询索引
 
 - `token_usage (space_id, usage_date)`：折线图按空间 + 日期范围查询（`idx_tu_space_date`）。
-- `token_daily_snapshot (space_id, snapshot_date, created_at)`：今日卡片取最新快照（`idx_snap_space_date_created`）。
+- `token_daily_snapshot (space_id, snapshot_date, created_at)`：按空间和日期查询采样历史（`idx_snap_space_date_created`）。
 - MySQL 5.7 无降序索引，最新快照查询靠 `ORDER BY created_at DESC` 反向扫描。
 - `token_usage_detail` 增长较快，v0.2 需定归档 / 冷备策略（预留）。
 

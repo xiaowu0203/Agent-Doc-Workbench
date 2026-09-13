@@ -265,7 +265,7 @@ Frontend (Vue 3 + TypeScript)
 | --- | --- |
 | Backend | Java 21 · Spring Boot 3.5 · Spring Cloud 2025 · MyBatis-Plus |
 | Database | MySQL 5.7 |
-| Messaging / Cache | RabbitMQ · Redis 7 · Redisson |
+| Messaging / Cache | RabbitMQ · Redis 7 |
 | Object Storage | MinIO |
 | Registry / Config | Nacos 3.2.2（随 Compose 提供，v0.1 服务使用静态路由，暂不接入注册中心） |
 | Agent | Spring AI · Official A2A Java SDK · MCP Java SDK |
@@ -280,7 +280,8 @@ Frontend (Vue 3 + TypeScript)
 建议准备：
 
 - Java 21
-- Node.js / pnpm
+- Node.js 22
+- pnpm 10.24.0
 - Docker / Docker Compose
 - Maven Wrapper（仓库已提供）
 
@@ -289,6 +290,8 @@ Frontend (Vue 3 + TypeScript)
 ``` bash
 docker compose up -d
 ```
+
+Compose 已为本地开发提供 Nacos 启动所需的示例身份参数；生产部署前必须通过环境变量替换 `NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY` 和 `NACOS_AUTH_IDENTITY_VALUE`。
 
 默认会使用：
 
@@ -310,7 +313,9 @@ docker compose up -d rabbitmq minio nacos
 
 后端为 Maven 多模块工程。进入 `backend` 后启动所需服务：
 
-``` bash
+Linux / macOS：
+
+```bash
 cd backend
 
 ./mvnw spring-boot:run -pl auth-service -am
@@ -319,6 +324,8 @@ cd backend
 ./mvnw spring-boot:run -pl task-service -am
 ./mvnw spring-boot:run -pl agent-service -am
 ```
+
+Windows PowerShell 或 Command Prompt 将 `./mvnw` 替换为 `.\mvnw.cmd`。
 
 默认端口：
 
@@ -332,9 +339,9 @@ cd backend
 
 ### 3. 启动前端
 
-``` bash
+```bash
 cd frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
@@ -364,7 +371,7 @@ pnpm dev
 
 ## Project Status
 
-### v0.1 --- Available
+### v0.1 --- 发布候选
 
 当前 v0.1 已完成主要闭环：
 
@@ -421,6 +428,9 @@ Goal / Plan / Workflow v1
 | [External MCP](docs/external-mcp-architecture-design.md) | 多 MCP、权限与安全模型 |
 | [Skill Selection](docs/skill-selection-and-progressive-loading-design.md) | Skill Router 与渐进加载 |
 | [UI Gallery](docs/ui-mockups/README.md) | 完整 UI 效果图与交互约束 |
+| [安全策略](SECURITY.md) | 漏洞报告方式、运行边界与生产部署建议 |
+| [贡献指南](CONTRIBUTING.md) | 开发环境、工程约束、测试和 PR 流程 |
+| [变更日志](CHANGELOG.md) | v0.1.0 能力、修复与已知限制 |
 
 ## 开源与设计方向
 
@@ -454,7 +464,8 @@ Reference Workbench。
 
 ## Contributing
 
-Issue、架构讨论、Bug Report、文档改进和代码贡献都欢迎。
+Issue、架构讨论、Bug Report、文档改进和代码贡献都欢迎。开始前请阅读
+[贡献指南](CONTRIBUTING.md)；安全漏洞请按[安全策略](SECURITY.md)私密报告。
 
 如果你对以下主题有不同设计观点，也很欢迎直接讨论：
 
