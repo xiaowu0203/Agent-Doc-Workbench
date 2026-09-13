@@ -649,11 +649,15 @@ backend/
 - `task-service` 不依赖 Spring AI MCP Client。
 - `agent-service` 不直接访问文档和任务表。
 - Agent Server 可以独立部署到远程机器。
-- A2A 和 MCP 的核心适配代码通过编译及单元测试；发布前需要留下可重复执行的真实协议互操作验证记录。
+- A2A 和 MCP 的核心适配代码通过编译及单元测试。
 - 全部后端测试和 Maven `verify` 通过。
 - 文档与实际代码、配置和数据库迁移一致。
 
-当前代码能力已经落地。Agent Server 的 A2A TaskStore 与 PushNotificationConfigStore 已切换为 MySQL 持久化实现；task-service 已接入定时状态对账。Phase 6 已在真实网关、五个服务和基础设施环境完成核心浏览器链路及历史任务证据走查，但该记录不能替代可重复执行的 A2A 协议测试和从任务创建开始的完整写链路。因此二者保留为 v0.1 Phase 7 发布门禁，而不是新的功能开发阶段。
+当前代码能力已经落地。Agent Server 的 A2A TaskStore 与 PushNotificationConfigStore 已切换为 MySQL 持久化实现；task-service 已接入定时状态对账。
+
+2026-09-13 已补齐此前保留的两项 Phase 7 发布门禁：可重复执行的完整写链路（任务创建 → RabbitMQ 分发 → A2A Send → Agent Runtime 真实模型调用 → Workbench MCP 读取文档与提交变更 → ChangeRequest → 人工审批 → 合并生成新版本），以及真实协议侧的可重复验证（外部 MCP `initialize` / 工具发现 / `tools/call` 通过真实高德 MCP 端点验证，连接测试返回 `SUCCESS` 并发现 15 个工具）。逐项证据见 `docs/local/PHASE7-RELEASE-READINESS-REPORT.md`。
+
+仍需注意的边界：A2A Send/Get/Cancel 与 Push Notification 的幂等与状态对账由 `task-service` 侧的对账任务和回调终态短路保证，尚未以外部第三方 A2A 实现做跨实现互操作测试；跨实现互操作验证不阻塞 v0.1 发布。
 
 ## 17. 实施顺序
 
@@ -665,7 +669,7 @@ backend/
 6. 在 `task-service` 实现 Workbench MCP Server。
 7. 将 Agent Runtime 接入 MCP Client 和工具调用。
 8. 切换 `TaskExecutionService`，移除旧 MCP Agent Runtime。
-9. 补充协议、安全和端到端测试（核心单元测试及真实环境走查已完成，可重复协议测试和完整写链路作为 Phase 7 发布门禁补齐）。
+9. 补充协议、安全和端到端测试（核心单元测试、可重复写链路与真实 MCP 协议验证已于 Phase 7 完成）。
 10. 更新部署配置、技术文档并执行全量验证。
 
-每个阶段必须保持工程可编译。当前旧链路已移除；v0.1 发布前必须补齐可重复的真实协议互操作、完整写链路以及 A2A 协议状态持久化验证记录。
+每个阶段必须保持工程可编译。当前旧链路已移除；v0.1 的可重复真实协议验证、完整写链路以及 A2A 协议状态持久化验证记录已于 2026-09-13 补齐，见 `docs/local/PHASE7-RELEASE-READINESS-REPORT.md`。

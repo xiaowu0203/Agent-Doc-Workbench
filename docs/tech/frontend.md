@@ -1,4 +1,4 @@
-﻿# 前端技术栈
+# 前端技术栈
 
 ## 核心框架
 
@@ -127,26 +127,30 @@ Store 按页面需要逐步创建，不为了目录完整提前增加空 Store�
 frontend/
 ├── src/
 │   ├── api/             # Axios 实例、Result 解包、认证刷新和错误模型
-│   ├── assets/          # 图片、字体、全局资源
 │   ├── layouts/         # 主布局、登录布局
 │   ├── router/          # 路由和权限守卫
 │   ├── stores/          # Pinia 跨页面状态
-│   ├── shared/          # 无业务归属的组件、composable、常量、类型和工具
-│   ├── features/        # auth/workspace/document/agent/skill/mcp/task/approval 等业务切片
+│   ├── shared/          # 无业务归属的组件与常量
+│   ├── features/        # 业务切片：access-control/agent/approval/auth/document/mcp/
+│   │                    #   model/platform-management/search/skill/system-capability/task/usage/workspace
 │   ├── diff/            # 可被审批和版本历史复用的 Diff 展示原语
 │   ├── views/           # 轻量路由页，组合 feature 组件
 │   ├── styles/          # 设计令牌、Element Plus 覆盖和全局样式
 │   ├── App.vue
 │   └── main.ts
-├── public/
-├── tests/
-│   ├── unit/
-│   └── e2e/
+├── index.html
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
 └── .env.example
 ```
+
+说明（与早期规划的差异）：
+
+- 单元测试与源码**同目录**（`*.spec.ts` 与实现文件并列），没有独立的 `tests/unit`；浏览器 E2E 使用本地工具目录下的 `playwright-core`，不在仓库依赖中，因此也没有 `tests/e2e`。
+- 没有 `public/`：`index.html` 通过内联 SVG data-URI 声明站点图标，避免默认 `/favicon.ico` 请求产生 404。
+- 没有 `src/assets/`：当前不包含图片、字体等静态资源，样式统一在 `src/styles/`。
+- `src/editor/` 为空目录，可视编辑能力直接实现在 `views/DocumentEditorView.vue` 中（见「编辑器」一节）。
 
 ## v0.1 页面（按优先级）
 

@@ -120,8 +120,9 @@ and capability sources can be investigated.
     Capability are separate authorization boundaries.
 - **Layered tool restrictions** --- Skills, Agent configuration, MCP
     bindings, and Task Capability constrain effective tools.
-- **Token Budget Circuit Breaker** --- task-level and space-level
-    budgets stop runaway executions.
+- **Token Budget Circuit Breaker** --- a task stops automatically once its
+    budget is exhausted; the effective budget is the minimum of the task,
+    Agent, and space budgets resolved at creation time.
 - **External MCP security** --- tool namespaces, allowlists, encrypted
     credentials, HTTPS and network-address validation.
 
@@ -281,9 +282,9 @@ Frontend (Vue 3 + TypeScript)
 | --- | --- |
 | Backend | Java 21 · Spring Boot 3.5 · Spring Cloud 2025 · MyBatis-Plus |
 | Database | MySQL 5.7 |
-| Messaging / Cache | RabbitMQ · Redis 7 · Redisson |
+| Messaging / Cache | RabbitMQ · Redis |
 | Object Storage | MinIO |
-| Registry / Config | Nacos 3.2.2 |
+| Registry / Config | Nacos 3.2.2 (shipped via Compose; v0.1 services use static routes and do not register with it) |
 | Agent | Spring AI · Official A2A Java SDK · MCP Java SDK |
 | Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
 | Auth | Spring Authorization Server · OAuth2 · JWT RS256 |

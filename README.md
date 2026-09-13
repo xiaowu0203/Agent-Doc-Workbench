@@ -112,7 +112,8 @@ Agent 配置之后发生变化，也不会改变已经运行中的任务。
 - **多层工具约束**：Skill、Agent、MCP Binding 与 Task Capability
     共同限制最终可调用能力。
 - **Token Budget Circuit
-    Breaker**：支持任务级预算与空间级全局预算，超限自动停止。
+    Breaker**：任务级预算超限自动终止；任务创建时按任务 / Agent / 空间预算取最小值收敛，
+    空间月度预算用于创建期约束与用量报表。
 - **外部 MCP 安全约束**：工具命名空间、白名单、认证信息加密、HTTPS /
     网络地址检查。
 
@@ -266,7 +267,7 @@ Frontend (Vue 3 + TypeScript)
 | Database | MySQL 5.7 |
 | Messaging / Cache | RabbitMQ · Redis 7 · Redisson |
 | Object Storage | MinIO |
-| Registry / Config | Nacos 3.2.2 |
+| Registry / Config | Nacos 3.2.2（随 Compose 提供，v0.1 服务使用静态路由，暂不接入注册中心） |
 | Agent | Spring AI · Official A2A Java SDK · MCP Java SDK |
 | Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
 | Auth | Spring Authorization Server · OAuth2 · JWT RS256 |

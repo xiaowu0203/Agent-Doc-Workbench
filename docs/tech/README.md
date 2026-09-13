@@ -10,7 +10,7 @@
 |    前端    | Vue 3 + TypeScript + Vite + Pinia + Element Plus + Markdown 编辑器 |
 |    鉴权    | v0.1 账号密码登录 + JWT（RSA RS256）与 HttpOnly Refresh Cookie，平台角色 + 空间 RBAC；OAuth2 入口保留为后续能力 |
 | Agent 接入 | Spring AI + 官方 A2A/MCP Java SDK，业务编排自研 |
-|  基础设施  | Nacos + Spring Cloud Gateway + RabbitMQ + Redis 5.0.14.1 + MinIO，Docker Compose 一键启动；定时任务 v0.1 用 Spring `@Scheduled` + Redisson 锁，XXL‑Job 待 v0.2 集群化后引入 |
+|  基础设施  | Nacos + Spring Cloud Gateway + RabbitMQ + Redis + MinIO，Docker Compose 一键启动；Nacos 随 Compose 提供但 v0.1 服务使用静态路由，未接入注册中心与统一配置；定时任务 v0.1 用 Spring `@Scheduled`，分布式互斥用 Redis `setIfAbsent`，未引入 Redisson；XXL‑Job 待 v0.2 集群化后引入 |
 
 ## 文档导航
 
@@ -35,4 +35,4 @@
 - 前端页面：登录 → 工作空间首页 → 文档树与编辑 → Agent 配置 → 任务创建 → Diff 审批 → 版本历史 → Token 用量与审计日志
 - 许可证：Apache‑2.0
 
-Phase 5 已完成平台角色 CRUD 和空间 RBAC 基础能力；Phase 6 已接入角色、成员、平台管理、核心业务与外部 MCP 页面，并完成真实浏览器验收。部门模型与按部门统计不属于当前实现范围。系统能力目录与空间安装属于下一阶段设计。
+Phase 5 已完成平台角色 CRUD 和空间 RBAC 基础能力；Phase 6 已接入角色、成员、平台管理、核心业务与外部 MCP 页面，并完成真实浏览器验收。部门模型与组织页面（V18 迁移、`/system/departments`）已落地，按部门统计任务与 Token 仍属后续范围。系统能力目录与空间安装已由 V19–V22 迁移落地并通过定向验收。

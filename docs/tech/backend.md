@@ -27,28 +27,32 @@
 | 安全 |           JWT（RSA RS256）           |         非对称签名令牌         |
 | 数据 |         MyBatis‑Plus 3.5.10          |           数据访问层           |
 | 数据 |          MySQL Connector/J           |           数据库驱动           |
-| 缓存 |            Redis 5.0.14.1            |   缓存、临时上下文、限流辅助   |
-| 缓存 |           Redisson 3.23.5            | 分布式锁、分布式对象、任务互斥 |
+| 缓存 |              Redis                   |   缓存、草稿暂存、限流辅助、任务投递阶段的空间串行锁   |
 | 消息 | Spring AMQP（RabbitMQ 3‑management） |    Agent 任务分发、异步事件    |
 | 存储 |            MinIO Java SDK            |   文档、附件、Agent 生成文件   |
 | 文档 |          SpringDoc OpenAPI           |            接口文档            |
 | 工具 |                Lombok                |          减少样板代码          |
-| 工具 |              MapStruct               |     DTO / VO / Entity 转换     |
-| 迁移 |                Flyway                |     数据库版本迁移（可选）     |
+| 迁移 |                Flyway                |        数据库版本迁移（由 auth-service 统一托管）     |
 | 测试 |          JUnit 5 + Mockito           |            单元测试            |
+
+> 说明：分布式锁与定时任务调度当前使用 Redis（`RedisUtils.setIfAbsent`）与 Spring
+> `@Scheduled`，未引入 Redisson，也未使用 MapStruct（对象转换由实体 `toVO()` 与业务模块
+> `convertor` 包承担）。
 
 ## 基础设施
 
 |         组件         |           版本           |                 用途                 |
 | :------------------: | :----------------------: | :----------------------------------: |
-|        Nacos         |          3.2.2           |       服务注册、发现、统一配置       |
+|        Nacos         |          3.2.2           | 已随 Compose 提供，但 v0.1 未引入 Nacos 客户端依赖：各服务路由为静态配置，不使用注册中心 |
 | Spring Cloud Gateway |            —             | 统一入口、JWT 鉴权、路由、跨域、限流 |
 |       RabbitMQ       |       3‑management       |          任务分发、异步事件          |
-|        Redis         |         5.0.14.1         |            缓存、分布式锁            |
+|        Redis         |            —             |      缓存、草稿暂存、分布式锁        |
 |        MinIO         |            —             |               对象存储               |
-|       XXL‑Job        |            —             | 定时任务（v0.1 用 Spring `@Scheduled` + Redisson 锁，XXL‑Job 待 v0.2 集群化引入） |
+|       XXL‑Job        |            —             | 定时任务当前使用 Spring `@Scheduled`（agent-service 审计/技能对账、task-service Token 聚合），XXL‑Job 待 v0.2 集群化引入 |
 |         ELK          | 可选（非 v0.1 启动依赖） |             日志收集分析             |
 |    Docker Compose    |            —             |         本地一键启动基础设施         |
+
+> 并发说明：v0.1 不使用数据库悲观锁；任务投递阶段用 Redis `setIfAbsent` 做空间维度串行，释放时必须校验持有者标识；文档写入用 `baseVersion` 乐观锁条件更新。同一空间可以并发执行多个任务，详见 [`agent-task-execution-guide.md`](../agent-task-execution-guide.md) 的「并发语义」。
 
 ## 模块划分
 

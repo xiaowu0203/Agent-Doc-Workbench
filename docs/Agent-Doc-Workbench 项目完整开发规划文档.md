@@ -9,7 +9,7 @@
 - 用户 JWT 携带平台角色声明；普通业务接口通过 Controller 的 `@PreAuthorize` 进入权限校验，空间资源最终由空间成员关系和权限标识符判定。平台超级管理员只用于平台管理及约定的跨空间读取能力，不自动获得所有空间写权限。
 - Phase 6 已接入空间权限页面，并补充平台用户、部门及超级管理员绑定；部门只维护组织归属，不参与 Space 授权。
 - Phase 6 后续扩展已交付系统 Skill 库、Agent 模板、MCP 模板、空间安装、显式版本升级及统一系统能力中心。
-- 核心前后端、真实外部 MCP 和浏览器链路已经联调；当前按开发路线图关闭干净环境启动、系统能力安装后执行回归和可重复演示脚本等发布门禁，随后进入 Phase 8 开源发布准备。
+- 核心前后端、真实外部 MCP 和浏览器链路已经联调；Phase 7 的 Gate 0–8 已于 2026-09-13 全部执行完毕（干净环境迁移、系统能力安装后任务执行回归、可重复演示脚本、安全边界回归均通过），P0/P1 缺陷为零，等待维护者确认后进入 Phase 8 开源发布准备。
 
 ## 一、项目基础概述
 
@@ -151,7 +151,7 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 #### 2.3.3 版本能力限制规则
 
-- **v0.1 MVP**：仅支持单 Agent 串行执行；同一空间同一时刻只允许运行一个 Agent 任务，无并行多 Agent 能力。
+- **v0.1 MVP**：仅支持单 Agent 执行（一个任务只由一个 Agent 完成），无并行多 Agent 协作能力。任务创建不做"同空间唯一运行中任务"限制，同一空间可以同时运行多个任务；不同任务对同一文档的写入由文档 `baseVersion` 乐观锁防覆盖，冲突时后到者被拒绝而不是静默覆盖。实际并发语义见 [`docs/agent-task-execution-guide.md`](agent-task-execution-guide.md) 的「并发语义」一节。
 - **v0.2 迭代**：新增 Orchestrator‑Worker 多 Agent 分工模式，**需要用户手动开启开关**；开启前 UI 弹窗提示 Token 成倍消耗风险。
 
 ### 2.4 Token 成本管控系统（核心差异化、刚需能力）
@@ -226,9 +226,9 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 核心目标：验证建空间、建文档、配置 Agent、下发任务、Skill/MCP 工具调用、Diff 审批、合并、版本和审计的完整人机协作闭环。
 
-当前状态：主体联调已经完成，不再重复开发；发布前补齐干净环境启动与迁移验证、系统能力安装后任务执行回归、可重复演示脚本，并统一仍标记为待验证的协议文档状态。
+当前状态：Gate 0–8 已全部执行完毕，P0/P1 缺陷为零，等待维护者确认进入 Phase 8。已关闭的发布门禁包括：空库 Flyway V1–V22 全量迁移与五服务健康验证、确定性核心闭环、系统能力安装到真实任务执行的回归、真实模型与外部 MCP 完整写链路、可重复的浏览器 E2E 演示入口、以及安全与边界回归。
 
-验收口径以 [`docs/local/development-plan.md`](local/development-plan.md) 的 Phase 7 清单为准。
+验收口径以 [`docs/local/development-plan.md`](local/development-plan.md) 的 Phase 7 清单为准，逐项证据见 [`docs/local/PHASE7-RELEASE-READINESS-REPORT.md`](local/PHASE7-RELEASE-READINESS-REPORT.md)。
 
 ### 5.3 Phase 8：开源发布准备
 
