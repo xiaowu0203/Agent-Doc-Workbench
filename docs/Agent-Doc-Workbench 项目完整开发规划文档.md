@@ -1,13 +1,15 @@
 # Agent‑Doc‑Workbench 项目完整开发规划文档
 
-> **基线说明（2026-08-31）**：本文保留早期产品规划，其中关于“仅 MCP Client”“v0.1 不实现 A2A”以及 Agent 合并在 task-service 的描述已被 Phase 3 实现取代。当前协议架构以 [`docs/agent-server-a2a-mcp-design.md`](agent-server-a2a-mcp-design.md) 为准；Phase 4 已增加版本化 Skill、渐进式加载与空间级外部 MCP，分别以 [`docs/skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`docs/external-mcp-architecture-design.md`](external-mcp-architecture-design.md) 为准。Phase 5 的平台角色与空间 RBAC 已落地，权限细节以 [`docs/tech/security.md`](tech/security.md) 为准。
+> **基线说明（2026-09-13）**：开发阶段编号统一以 [`docs/local/development-plan.md`](local/development-plan.md) 为准。Phase 0-8 全部属于 v0.1：Phase 7 为闭环联调，Phase 8 为开源发布准备；系统能力中心也是 v0.1 已交付能力。项目当前尚未进入 v0.2 或 v0.3，这两个版本号只表示 v0.1 发布后的未来规划。本文保留的早期产品设想如与专项设计或当前代码冲突，以专项设计和当前实现为准。
 
-### 当前实现状态（Phase 5）
+### 当前实现状态（Phase 7 发布门禁收尾）
 
 - `auth-service` 已提供 `/api/platform/roles` 平台角色 CRUD；所有接口要求当前用户具备 `PLATFORM_SUPER_ADMIN`，该平台角色由数据库初始化并保持受保护，首次绑定用户暂不提供业务接口。
 - `document-service` 已实现空间级 RBAC：每个空间默认创建 `OWNER`、`EDITOR`、`VIEWER`，仅 `OWNER` 受保护；`EDITOR`、`VIEWER` 可由拥有 `role:manage` 的用户调整或删除，`VIEWER` 默认不能查看空间成员和角色。
 - 用户 JWT 携带平台角色声明；普通业务接口通过 Controller 的 `@PreAuthorize` 进入权限校验，空间资源最终由空间成员关系和权限标识符判定。平台超级管理员只用于平台管理及约定的跨空间读取能力，不自动获得所有空间写权限。
 - Phase 6 已接入空间权限页面，并补充平台用户、部门及超级管理员绑定；部门只维护组织归属，不参与 Space 授权。
+- Phase 6 后续扩展已交付系统 Skill 库、Agent 模板、MCP 模板、空间安装、显式版本升级及统一系统能力中心。
+- 核心前后端、真实外部 MCP 和浏览器链路已经联调；当前按开发路线图关闭干净环境启动、系统能力安装后执行回归和可重复演示脚本等发布门禁，随后进入 Phase 8 开源发布准备。
 
 ## 一、项目基础概述
 
@@ -214,25 +216,29 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 ## 五、版本迭代里程碑规划
 
-### 5.1 Phase 5-6 / v0.1 核心底座与前端交付版本（可开源发布）
+### 5.1 Phase 5-6：权限、前端与系统能力扩展（已完成）
 
-核心目标：跑通完整人机协作闭环，形成可用、稳定的开源基础版本
+核心目标：完成权限体系和前端交付，并补齐可跨空间复用的系统能力目录。
 
-覆盖能力：空间文档管理、空间 RBAC、平台角色管理、平台用户与部门管理、双文档模式、Markdown 编辑器、单 Agent A2A/MCP 执行、Skill 渐进加载、外部多 MCP、Diff 审批流程、多层 Token 预算熔断、审计日志、基础导入导出、REST API，以及对应前端页面和真实服务验收。
+覆盖能力：空间文档管理、空间 RBAC、平台角色管理、平台用户与部门管理、双文档模式、Markdown 编辑器、单 Agent A2A/MCP 执行、Skill 渐进加载、外部多 MCP、Diff 审批流程、多层 Token 预算熔断、审计日志、基础导入导出、REST API，以及对应前端页面和真实服务验收。Phase 6 完成后追加系统 Skill 库、Agent 模板、MCP 模板、空间安装与统一系统能力中心；任务仍只使用空间实例并保存实际配置和版本快照。
 
-### 5.2 Phase 7 / v0.2 系统能力复用版本
+### 5.2 Phase 7：闭环联调（发布门禁收尾）
 
-核心目标：建立系统能力目录，避免不同空间重复搭建相同 Agent、Skill 和 MCP。
+核心目标：验证建空间、建文档、配置 Agent、下发任务、Skill/MCP 工具调用、Diff 审批、合并、版本和审计的完整人机协作闭环。
 
-新增能力：系统 Skill 库与空间安装、Agent 模板与空间实例、MCP 模板与空间独立凭证、统一系统能力中心、显式版本固定与升级。
+当前状态：主体联调已经完成，不再重复开发；发布前补齐干净环境启动与迁移验证、系统能力安装后任务执行回归、可重复演示脚本，并统一仍标记为待验证的协议文档状态。
 
-> 系统能力不会绕过空间权限；任务始终使用空间实例，执行记录保存实际配置和版本快照。设计详见 `docs/system-capability-catalog-design.md`。
+验收口径以 [`docs/local/development-plan.md`](local/development-plan.md) 的 Phase 7 清单为准。
 
-### 5.3 Phase 8 / v0.3 生态与编排扩展版本
+### 5.3 Phase 8：开源发布准备
 
-核心目标：打通外部生态、提升性能、拓展场景边界
+核心目标：形成合规、干净、可复现运行的 v0.1 开源版本。
 
-新增能力：对外暴露 MCP Server、Excalidraw 绘图嵌入、超大文档渲染性能优化、第三方生态适配优化。
+主要工作：补齐 CONTRIBUTING、安全说明、架构说明、CHANGELOG 和发布说明；完成敏感信息与依赖许可证审计；记录 Skill 包和权限模型的安全使用规范；验证 GitHub 仓库 clone 后可按双语 README 启动。创建 tag、推送及正式发布仍由维护者明确确认后执行。
+
+### 5.4 v0.2+ 后续产品版本
+
+系统能力目录已经作为 v0.1 扩展能力完成，不再占用 Phase 7 编号。项目尚未进入 v0.2；Agent Engineering Foundation、工作流、多 Agent 编排、对外 MCP Server、Excalidraw、大文档性能和第三方生态等后续能力，在 v0.1 发布后依据独立设计与真实需求排期。
 
 ## 六、核心业务完整闭环（v0.1 可演示）
 

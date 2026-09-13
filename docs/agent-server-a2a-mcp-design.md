@@ -1,6 +1,6 @@
 # Agent Server + MCP Server + 标准远程协议总体设计
 
-> 状态：Phase 3 基线、Phase 4 的 Skill 渐进加载与外部多 MCP、Phase 5 的平台角色与空间 RBAC 已实现；Skill/MCP 细节分别见 [`skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`external-mcp-architecture-design.md`](external-mcp-architecture-design.md)，权限细节见 [`tech/security.md`](tech/security.md)。
+> 状态：v0.1 Phase 3 基线、Phase 4 的 Skill 渐进加载与外部多 MCP、Phase 5 的平台角色与空间 RBAC 已实现；Phase 6 已完成真实环境浏览器走查，Phase 7 仅剩可重复协议测试和完整写链路发布门禁。Skill/MCP 细节分别见 [`skill-selection-and-progressive-loading-design.md`](skill-selection-and-progressive-loading-design.md) 和 [`external-mcp-architecture-design.md`](external-mcp-architecture-design.md)，权限细节见 [`tech/security.md`](tech/security.md)。
 > 适用项目：Agent-Doc-Workbench
 > 目标：落地独立 Agent Server、Workbench MCP Server，以及基于 A2A 与 MCP 的完整远程调用链路。
 
@@ -610,7 +610,7 @@ backend/
 - Task 预算传递、最大迭代和取消。
 - Agent 变更统一创建 ChangeRequest。
 
-### 16.2 协议测试（待接入真实服务环境）
+### 16.2 协议测试（Phase 7 发布门禁）
 
 - Agent Card 可发现且内容有效。
 - A2A Send/Get/List/Cancel 可互操作。
@@ -627,7 +627,7 @@ backend/
 - 用户 JWT 不能替代 Task Capability 调用 MCP。
 - Task Capability 不能调用普通用户 API。
 
-### 16.4 集成测试（待接入真实基础设施）
+### 16.4 集成测试（Phase 7 发布门禁）
 
 必须通过完整闭环：
 
@@ -649,11 +649,11 @@ backend/
 - `task-service` 不依赖 Spring AI MCP Client。
 - `agent-service` 不直接访问文档和任务表。
 - Agent Server 可以独立部署到远程机器。
-- A2A 和 MCP 的核心适配代码通过编译及单元测试；真实协议互操作测试待执行。
+- A2A 和 MCP 的核心适配代码通过编译及单元测试；发布前需要留下可重复执行的真实协议互操作验证记录。
 - 全部后端测试和 Maven `verify` 通过。
 - 文档与实际代码、配置和数据库迁移一致。
 
-当前代码完成定义中，除真实协议互操作与完整基础设施闭环外，其余条目已落地。Agent Server 的 A2A TaskStore 与 PushNotificationConfigStore 已切换为 MySQL 持久化实现；task-service 已接入定时状态对账。仍需在部署环境执行完整的协议互操作和端到端基础设施闭环验证。
+当前代码能力已经落地。Agent Server 的 A2A TaskStore 与 PushNotificationConfigStore 已切换为 MySQL 持久化实现；task-service 已接入定时状态对账。Phase 6 已在真实网关、五个服务和基础设施环境完成核心浏览器链路及历史任务证据走查，但该记录不能替代可重复执行的 A2A 协议测试和从任务创建开始的完整写链路。因此二者保留为 v0.1 Phase 7 发布门禁，而不是新的功能开发阶段。
 
 ## 17. 实施顺序
 
@@ -665,7 +665,7 @@ backend/
 6. 在 `task-service` 实现 Workbench MCP Server。
 7. 将 Agent Runtime 接入 MCP Client 和工具调用。
 8. 切换 `TaskExecutionService`，移除旧 MCP Agent Runtime。
-9. 补充协议、安全和端到端测试（当前已完成核心单元测试，真实基础设施闭环待执行）。
+9. 补充协议、安全和端到端测试（核心单元测试及真实环境走查已完成，可重复协议测试和完整写链路作为 Phase 7 发布门禁补齐）。
 10. 更新部署配置、技术文档并执行全量验证。
 
-每个阶段必须保持工程可编译。当前旧链路已移除；正式部署前必须补齐真实协议互操作、基础设施闭环以及 A2A 协议状态持久化验证。
+每个阶段必须保持工程可编译。当前旧链路已移除；v0.1 发布前必须补齐可重复的真实协议互操作、完整写链路以及 A2A 协议状态持久化验证记录。
