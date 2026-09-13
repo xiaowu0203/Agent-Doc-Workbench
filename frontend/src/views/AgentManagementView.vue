@@ -5,6 +5,7 @@
         ><span class="agent-page__breadcrumb">工作台 / Agent 管理</span></template
       >
       <template #actions>
+        <el-button v-if="canManage" @click="installDrawerOpen = true">从系统模板安装</el-button>
         <el-button v-if="canManage" type="primary" :icon="Plus" @click="openCreateDrawer">
           新建 Agent
         </el-button>
@@ -29,6 +30,16 @@
         <el-option label="全部状态" value="ALL" />
         <el-option label="已启用" value="ENABLED" />
         <el-option label="已停用" value="DISABLED" />
+      </el-select>
+      <el-select
+        v-model="sourceFilter"
+        class="agent-toolbar__select"
+        aria-label="Agent 来源"
+        @change="applyFilters"
+      >
+        <el-option label="全部来源" value="ALL" />
+        <el-option label="空间创建" value="SPACE" />
+        <el-option label="系统安装" value="SYSTEM" />
       </el-select>
       <el-select
         v-model="modelFilter"
@@ -123,6 +134,12 @@
       :can-read-mcp="canReadMcp"
       @saved="refreshAfterMutation"
     />
+    <SystemCapabilityInstallDrawer
+      v-model:open="installDrawerOpen"
+      :space-id="spaceId"
+      type="AGENT_TEMPLATE"
+      @installed="refreshAfterMutation"
+    />
   </section>
 </template>
 
@@ -152,6 +169,7 @@ import {
 } from '@/features/agent/api/agent-api'
 import AgentCard from '@/features/agent/components/AgentCard.vue'
 import AgentConfigDrawer from '@/features/agent/components/AgentConfigDrawer.vue'
+import SystemCapabilityInstallDrawer from '@/features/system-capability/components/SystemCapabilityInstallDrawer.vue'
 import type {
   AgentCard as AgentCardData,
   AgentPage,
@@ -169,6 +187,7 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const keyword = ref('')
 const statusFilter = ref<'ALL' | AgentStatus>('ALL')
+const sourceFilter = ref<'ALL' | 'SYSTEM' | 'SPACE'>('ALL')
 const modelFilter = ref<EntityId | null>(null)
 const layout = ref<'grid' | 'list'>('grid')
 const loading = ref(false)
@@ -179,6 +198,7 @@ const activeAgentCount = ref<number | null>(null)
 const page = reactive<AgentPage>({ records: [], total: 0, pageNum: 1, pageSize: 9 })
 const drawerOpen = ref(false)
 const selectedAgentId = ref<EntityId | null>(null)
+const installDrawerOpen = ref(false)
 let requestController: AbortController | null = null
 
 const spaceId = computed<EntityId>(() => String(route.params.spaceId))
@@ -191,7 +211,11 @@ const canReadSkill = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIO
 const canReadMcp = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.MCP_READ))
 const canConfigure = computed(() => canManage.value || canBindSkill.value || canBindMcp.value)
 const hasFilters = computed(
-  () => keyword.value.trim() || statusFilter.value !== 'ALL' || modelFilter.value !== null,
+  () =>
+    keyword.value.trim() ||
+    statusFilter.value !== 'ALL' ||
+    sourceFilter.value !== 'ALL' ||
+    modelFilter.value !== null,
 )
 
 onMounted(() => {
@@ -234,6 +258,7 @@ async function loadAgents(): Promise<void> {
     const result = await searchAgents(spaceId.value, {
       keyword: keyword.value.trim(),
       status: statusFilter.value === 'ALL' ? undefined : statusFilter.value,
+      sourceType: sourceFilter.value === 'ALL' ? undefined : sourceFilter.value,
       modelId: modelFilter.value || undefined,
       pageNum: page.pageNum,
       pageSize: page.pageSize,

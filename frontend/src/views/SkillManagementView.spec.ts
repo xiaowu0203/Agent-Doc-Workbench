@@ -26,6 +26,8 @@ vi.mock('@/features/skill/api/skill-api', () => ({
 
 const skill: Skill = {
   id: 11,
+  scopeType: 'SPACE',
+  installationId: null,
   spaceId: 7,
   name: 'document-review',
   displayName: '文档审查',
@@ -88,7 +90,30 @@ describe('SkillManagementView', () => {
     expect(wrapper.text()).toContain('2 Agent')
     expect(wrapper.text()).toContain('4 工具')
     expect(wrapper.text()).toContain('v3 已发布')
+    expect(wrapper.get('.skill-card').text()).toContain('空间')
     expect(wrapper.text()).toContain('上传 Skill ZIP')
+  })
+
+  it('renders an installed system Skill as a read-only card with its installed version', async () => {
+    vi.mocked(skillApi.searchSkills).mockResolvedValue({
+      records: [
+        {
+          ...skill,
+          scopeType: 'SYSTEM',
+          installationId: 91,
+          latestVersion: { ...skill.latestVersion!, versionNo: 2 },
+        },
+      ],
+      total: 1,
+      pageNum: 1,
+      pageSize: 12,
+    })
+
+    const wrapper = await mountView([SPACE_PERMISSIONS.SKILL_READ, SPACE_PERMISSIONS.SKILL_MANAGE])
+
+    expect(wrapper.get('.skill-card').text()).toContain('系统')
+    expect(wrapper.get('.skill-card').text()).toContain('安装版本 v2')
+    expect(wrapper.find('[aria-label="Skill 操作"]').exists()).toBe(false)
   })
 
   it('hides management actions from read-only members', async () => {

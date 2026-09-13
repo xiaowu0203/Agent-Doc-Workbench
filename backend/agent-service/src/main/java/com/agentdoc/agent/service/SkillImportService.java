@@ -1,6 +1,7 @@
 package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.pojo.dto.SkillCreateDTO;
+import com.agentdoc.agent.pojo.dto.SystemSkillCreateDTO;
 import com.agentdoc.agent.pojo.entity.SkillEntity;
 import com.agentdoc.agent.pojo.vo.SkillImportVO;
 import com.agentdoc.agent.pojo.vo.SkillVersionVO;
@@ -51,12 +52,32 @@ public class SkillImportService {
      */
     @Transactional(rollbackFor = Exception.class)
     public SkillImportVO importPackage(Long spaceId, String displayName, String description, MultipartFile file) {
+        return importPackage(spaceId, displayName, description, file, false);
+    }
+
+    /**
+     * 导入 ZIP 并原子创建系统 Skill 与首个草稿版本。
+     *
+     * @param displayName 前端传入展示名称；为空则使用包内技术名称
+     * @param description 前端传入管理描述；为空则使用包内激活描述
+     * @param file 技能 ZIP 压缩包文件
+     * @return 系统 Skill 与首个草稿版本
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SkillImportVO importSystemPackage(String displayName, String description, MultipartFile file) {
+        return importPackage(null, displayName, description, file, true);
+    }
+
+    private SkillImportVO importPackage(Long spaceId, String displayName, String description, MultipartFile file,
+                                         boolean system) {
         // 校验空间ID不能为空
-        if (spaceId == null) {
+        if (!system && spaceId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "spaceId 不能为空");
         }
         // 校验用户拥有该空间Skill管理权限
-        skillService.requireManage(spaceId);
+        if (!system) {
+            skillService.requireManage(spaceId);
+        }
 
         // 校验上传文件不为空
         if (file == null || file.isEmpty()) {
@@ -78,14 +99,18 @@ public class SkillImportService {
             ParsedSkillPackage parsed = validator.validate(zip);
 
             // 创建Skill实体，字段做兜底：前端传参为空则使用包内解析出来的值
-            SkillEntity skill = skillService.create(new SkillCreateDTO(
-                    spaceId,
-                    parsed.name(),
-                    valueOrDefault(displayName, parsed.name(), MAX_DISPLAY_NAME_LENGTH, "展示名称"),
-                    valueOrDefault(description, parsed.description(), MAX_DESCRIPTION_LENGTH, "管理描述")));
+            String resolvedDisplayName = valueOrDefault(displayName, parsed.name(), MAX_DISPLAY_NAME_LENGTH, "展示名称");
+            String resolvedDescription = valueOrDefault(description, parsed.description(), MAX_DESCRIPTION_LENGTH, "管理描述");
+            SkillEntity skill = system
+                    ? skillService.createSystem(new SystemSkillCreateDTO(parsed.name(), resolvedDisplayName,
+                    resolvedDescription))
+                    : skillService.create(new SkillCreateDTO(spaceId, parsed.name(), resolvedDisplayName,
+                    resolvedDescription));
 
             // 上传zip包，生成Skill的第一个草稿版本
-            SkillVersionVO version = versionService.upload(skill.getId(), file);
+            SkillVersionVO version = system
+                    ? versionService.uploadSystem(skill.getId(), file)
+                    : versionService.upload(skill.getId(), file);
             return new SkillImportVO(skillService.toVO(skill), version);
         } catch (SkillPackageValidationException exception) {
             // 技能包校验异常，转换为业务异常抛出

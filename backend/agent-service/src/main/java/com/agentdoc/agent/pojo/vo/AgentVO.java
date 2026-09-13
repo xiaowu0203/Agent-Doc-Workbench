@@ -10,6 +10,8 @@ import java.util.List;
 @Schema(description = "Agent 配置信息")
 public record AgentVO(
         @Schema(description = "Agent ID") Long id,
+        @Schema(description = "来源系统 Agent 模板 ID") Long templateId,
+        @Schema(description = "来源系统 Agent 模板版本 ID") Long templateVersionId,
         @Schema(description = "空间 ID") Long spaceId,
         @Schema(description = "Agent 名称") String name,
         @Schema(description = "Agent 描述") String description,

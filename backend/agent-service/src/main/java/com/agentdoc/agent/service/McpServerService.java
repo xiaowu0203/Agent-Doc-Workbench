@@ -2,6 +2,7 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.McpServerConvertor;
 import com.agentdoc.agent.enums.McpAuthType;
+import com.agentdoc.agent.enums.CapabilitySourceType;
 import com.agentdoc.agent.enums.McpConnectionStatus;
 import com.agentdoc.agent.mapper.McpServerMapper;
 import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
@@ -69,7 +70,15 @@ public class McpServerService {
         validateAuthConfig(dto.authType(), dto.authParamName());
         // 校验外部端点URL安全
         endpointValidator.validateExternal(dto.endpointUrl());
-        return transactionTemplate.execute(status -> createLocked(dto));
+        return transactionTemplate.execute(status -> createLocked(dto, null, null));
+    }
+
+    /** 从系统模板创建携带来源信息的空间 MCP 连接。 */
+    public McpServerVO createFromTemplate(McpServerCreateDTO dto, Long templateId, Long templateVersionId) {
+        spaceAccessService.requirePermission(dto.spaceId(), MCP_MANAGE);
+        validateAuthConfig(dto.authType(), dto.authParamName());
+        endpointValidator.validateExternal(dto.endpointUrl());
+        return transactionTemplate.execute(status -> createLocked(dto, templateId, templateVersionId));
     }
 
     /**
@@ -80,7 +89,12 @@ public class McpServerService {
      * @param dto 创建请求DTO
      * @return MCP Server视图对象
      */
-    private McpServerVO createLocked(McpServerCreateDTO dto) {
+    private McpServerVO createLocked(McpServerCreateDTO dto, Long templateId, Long templateVersionId) {
+        if (templateId != null && mapper.selectCount(new LambdaQueryWrapper<McpServerEntity>()
+                .eq(McpServerEntity::getSpaceId, dto.spaceId())
+                .eq(McpServerEntity::getTemplateId, templateId)) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前空间已安装该 MCP 模板");
+        }
         // 校验MCP是否重复（SpaceId+ServerKey）
         if (mapper.selectCount(new LambdaQueryWrapper<McpServerEntity>()
                 .eq(McpServerEntity::getSpaceId, dto.spaceId())
@@ -91,6 +105,8 @@ public class McpServerService {
         // 类型转换(encryptedToken：令牌加密)
         McpServerEntity entity = McpServerConvertor.toEntity(dto,
                 encryptedToken(dto.authType(), dto.authToken(), null));
+        entity.setTemplateId(templateId);
+        entity.setTemplateVersionId(templateVersionId);
         try {
             mapper.insert(entity);
         } catch (DuplicateKeyException exception) {
@@ -130,6 +146,11 @@ public class McpServerService {
         if (param.getAuthType() != null) {
             query.eq(McpServerEntity::getAuthType, param.getAuthType().name());
         }
+        if (param.getSourceType() == CapabilitySourceType.SYSTEM) {
+            query.isNotNull(McpServerEntity::getTemplateId);
+        } else if (param.getSourceType() == CapabilitySourceType.SPACE) {
+            query.isNull(McpServerEntity::getTemplateId);
+        }
 
         // 进行分页查询
         Page<McpServerEntity> page = mapper.selectPage(PageUtils.toPage(param), query);
@@ -149,6 +170,13 @@ public class McpServerService {
         McpServerEntity entity = require(id);
         // 校验空间查看权限
         spaceAccessService.requirePermission(entity.getSpaceId(), MCP_READ);
+        return McpServerConvertor.toVO(entity);
+    }
+
+    /** 返回管理操作后的最新视图，不额外要求只读权限。 */
+    public McpServerVO managementDetail(Long id) {
+        McpServerEntity entity = require(id);
+        spaceAccessService.requirePermission(entity.getSpaceId(), MCP_MANAGE);
         return McpServerConvertor.toVO(entity);
     }
 
@@ -329,6 +357,16 @@ public class McpServerService {
      */
     public List<McpServerEntity> findByIds(Collection<Long> ids) {
         return ids.isEmpty() ? List.of() : mapper.selectBatchIds(ids);
+    }
+
+    /** 查询空间中来源于指定系统模板的 MCP 连接。 */
+    public List<McpServerEntity> findTemplateInstallations(Long spaceId, Collection<Long> templateIds) {
+        if (templateIds.isEmpty()) {
+            return List.of();
+        }
+        return mapper.selectList(new LambdaQueryWrapper<McpServerEntity>()
+                .eq(McpServerEntity::getSpaceId, spaceId)
+                .in(McpServerEntity::getTemplateId, templateIds));
     }
 
     /**

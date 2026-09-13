@@ -29,7 +29,12 @@
         >
           {{ item.group }}
         </div>
-        <RouterLink v-if="item.path" class="app-sidebar__link" :to="item.path">
+        <RouterLink
+          v-if="item.path"
+          class="app-sidebar__link"
+          :class="{ 'app-sidebar__link--active': isMenuItemActive(item) }"
+          :to="item.path"
+        >
           <el-icon :size="20"><component :is="item.icon" /></el-icon>
           <span v-if="!collapsed">{{ item.label }}</span>
         </RouterLink>
@@ -55,6 +60,7 @@ import {
   Aim,
   Briefcase,
   Checked,
+  Collection,
   Cpu,
   DataAnalysis,
   Document,
@@ -196,6 +202,13 @@ const menuItems: MenuItem[] = [
     path: '/system/models',
     group: '系统',
   },
+  {
+    label: '系统能力中心',
+    icon: Collection,
+    scope: 'platform',
+    path: '/system/capabilities',
+    group: '系统',
+  },
 ]
 
 const visibleMenuItems = computed(() =>
@@ -263,6 +276,11 @@ async function initializeSpaceNavigation(): Promise<void> {
 async function switchSpace(spaceId: EntityId): Promise<void> {
   if (String(spaceId) === String(workspaceStore.currentSpaceId)) return
   await router.push(`/spaces/${spaceId}/overview`)
+}
+
+function isMenuItemActive(item: { path: string | null }): boolean {
+  if (!item.path) return false
+  return route.path === item.path || route.path.startsWith(`${item.path}/`)
 }
 </script>
 
@@ -372,7 +390,8 @@ async function switchSpace(spaceId: EntityId): Promise<void> {
 }
 
 .app-sidebar__link:hover,
-.app-sidebar__link.router-link-exact-active {
+.app-sidebar__link.router-link-exact-active,
+.app-sidebar__link--active {
   color: #ffffff;
   background: var(--adw-sidebar-active-background);
 }

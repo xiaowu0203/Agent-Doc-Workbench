@@ -17,6 +17,7 @@ export function searchMcpServers(
     keyword?: string
     status?: McpServerStatus
     authType?: McpAuthType
+    sourceType?: 'SYSTEM' | 'SPACE'
     pageNum?: number
     pageSize?: number
     signal?: AbortSignal
@@ -30,6 +31,7 @@ export function searchMcpServers(
       keyword: options.keyword || undefined,
       status: options.status,
       authType: options.authType,
+      sourceType: options.sourceType,
       pageNum: options.pageNum ?? 1,
       pageSize: options.pageSize ?? 12,
     },

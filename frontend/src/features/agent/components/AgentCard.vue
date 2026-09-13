@@ -8,6 +8,9 @@
         <strong :title="agent.name">{{ agent.name }}</strong>
         <p :title="agent.description || ''">{{ agent.description || '暂未填写 Agent 描述' }}</p>
       </div>
+      <el-tag :type="agent.templateId ? 'primary' : 'info'" effect="light" size="small">
+        {{ agent.templateId ? '系统' : '空间' }}
+      </el-tag>
       <el-tag :type="agent.status === 'ENABLED' ? 'success' : 'info'" effect="light" size="small">
         {{ agent.status === 'ENABLED' ? '已启用' : '已停用' }}
       </el-tag>

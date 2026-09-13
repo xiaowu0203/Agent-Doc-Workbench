@@ -6,6 +6,8 @@ import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
 import com.agentdoc.document.enums.SpaceStatus;
 import com.agentdoc.document.pojo.vo.SpaceVO;
 import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -30,9 +32,11 @@ public class SpaceEntity extends BaseLogicDeleteEntity {
     private Long ownerId;
 
     @Schema(description = "Token 预算上限")
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long tokenBudget;
 
     @Schema(description = "月度 Token 预算，仅用于用量提示")
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long monthlyTokenBudget;
 
     @Schema(description = "状态：0 禁用 / 1 正常")

@@ -5,6 +5,7 @@ import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.convertor.AgentSkillConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.AgentSkillMapper;
 import com.agentdoc.agent.mapper.AgentMapper;
@@ -45,11 +46,13 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
 public class AgentSkillService {
 
     private final AgentService agentService;
+    private final SkillService skillService;
     private final SpaceAccessService spaceAccessService;
     private final AgentMapper agentMapper;
     private final AgentSkillMapper agentSkillMapper;
     private final SkillMapper skillMapper;
     private final SkillVersionMapper versionMapper;
+    private final SpaceSkillInstallationService installationService;
     private final SkillAuditLogService auditLogService;
 
     /**
@@ -67,6 +70,14 @@ public class AgentSkillService {
         return loadBindings(agentId, true);
     }
 
+    /** 模板升级三方比较使用的当前启用 Skill 版本，不执行用户权限判断。 */
+    public List<Long> listEnabledVersionIds(Long agentId) {
+        return agentSkillMapper.selectList(new LambdaQueryWrapper<AgentSkillEntity>()
+                        .eq(AgentSkillEntity::getAgentId, agentId)
+                        .eq(AgentSkillEntity::getEnabled, true))
+                .stream().map(AgentSkillEntity::getSkillVersionId).sorted().toList();
+    }
+
     /**
      * 根据Skill ID查询绑定该技能的Agent列表（仅查询启用状态的绑定关系）
      *
@@ -79,9 +90,15 @@ public class AgentSkillService {
         if (skill == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
         }
-
-        // 校验当前用户拥有该空间Skill读取权限
-        spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
+        SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+        if (scopeType == SkillScopeType.SYSTEM) {
+            skillService.requireSystemRead(skill);
+        } else if (scopeType == SkillScopeType.SPACE && skill.getSpaceId() != null) {
+            // 校验当前用户拥有该空间Skill读取权限
+            spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
+        } else {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "空间 Skill 不存在");
+        }
 
         // 查询该技能下，启用状态的Agent‑Skill绑定关系，按agentId升序
         List<AgentSkillEntity> relations = agentSkillMapper.selectList(
@@ -187,15 +204,31 @@ public class AgentSkillService {
                 throw new BusinessException(ErrorCode.CONFLICT, "只能绑定已发布 Skill 版本");
             }
 
-            // 校验Skill存在，且Skill属于Agent所在空间，跨空间不允许绑定
+            // 空间 Skill 必须与 Agent 同空间；系统 Skill 必须在该空间安装、启用且固定为当前版本。
             SkillEntity skill = skills.get(version.getSkillId());
-            if (skill == null || !agent.getSpaceId().equals(skill.getSpaceId())) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "Skill 不属于 Agent 所在空间");
+            if (skill == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
             }
-
-            // 校验Skill主状态为启用，不能绑定已停用Skill
-            if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
-                throw new BusinessException(ErrorCode.CONFLICT, "不能绑定已停用 Skill");
+            // 获取Skill范围类型
+            SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+            // 空间Skill
+            if (scopeType == SkillScopeType.SPACE) {
+                // 校验Agent与Skill是否同空间
+                if (!agent.getSpaceId().equals(skill.getSpaceId())) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "Skill 不属于 Agent 所在空间");
+                }
+                // 校验Skill状态
+                if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "不能绑定已停用 Skill");
+                }
+            } else {
+                // 系统Skill
+                if (skill.getSpaceId() != null) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
+                }
+                // 运行时和绑定服务共同使用的空间授权校验
+                installationService.requireEnabledInstallation(
+                        agent.getSpaceId(), skill.getId(), version.getId());
             }
 
             // 校验同一个Skill不能绑定多个不同版本

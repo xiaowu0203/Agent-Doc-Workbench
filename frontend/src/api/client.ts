@@ -15,11 +15,60 @@ const apiClient = axios.create({
   transformResponse: [
     (data: unknown) => {
       if (typeof data !== 'string' || data.length === 0) return data
-      const preserved = data.replace(/(:\s*)(-?\d{16,})(?=\s*[,}\]])/g, '$1"$2"')
-      return JSON.parse(preserved) as unknown
+      return JSON.parse(preserveLargeIntegers(data)) as unknown
     },
   ],
 })
+
+/**
+ * Preserve snowflake-style IDs as strings without rewriting digits inside JSON string values.
+ * A response may contain a JSON-encoded detail field, so a regular expression over the whole
+ * response would corrupt that nested string before the outer JSON is parsed.
+ */
+export function preserveLargeIntegers(data: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+
+  for (let index = 0; index < data.length; index += 1) {
+    const character = data[index]
+    if (inString) {
+      result += character
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (character === '"') {
+      inString = true
+      result += character
+      continue
+    }
+
+    if (character === '-' || /\d/.test(character)) {
+      const start = index
+      if (character === '-') index += 1
+      while (index + 1 < data.length && /\d/.test(data[index + 1])) index += 1
+      const token = data.slice(start, index + 1)
+      const next = data.slice(index + 1)
+      if (/^-?\d{16,}\s*[,}\]]/.test(`${token}${next}`)) {
+        result += `"${token}"`
+      } else {
+        result += token
+      }
+      continue
+    }
+
+    result += character
+  }
+
+  return result
+}
 
 apiClient.interceptors.request.use((config) => {
   const accessToken = getAccessToken()

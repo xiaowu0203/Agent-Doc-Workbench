@@ -4,7 +4,7 @@
     append-to-body
     destroy-on-close
     class="agent-config-drawer"
-    :title="agentId ? 'Agent 配置' : '新建 Agent'"
+    :title="drawerTitle"
     size="min(760px, 92vw)"
     @close="emit('update:open', false)"
   >
@@ -23,11 +23,30 @@
           show-icon
         />
 
+        <div v-if="sourceTemplateId" class="agent-template-source">
+          <div>
+            <strong>来源：系统 Agent 模板</strong>
+            <span>当前安装版本 v{{ currentTemplateVersionNo ?? '-' }}</span>
+          </div>
+          <el-button
+            v-if="canManage"
+            link
+            type="primary"
+            :loading="upgradeLoading"
+            @click="openUpgradeDialog"
+          >
+            检查模板升级
+          </el-button>
+        </div>
+
         <el-tabs v-model="activeTab">
           <el-tab-pane label="基础与执行" name="basic">
             <el-form label-position="top" class="agent-config__form">
               <div class="agent-config__two-columns">
-                <el-form-item label="Agent 名称" required>
+                <el-form-item
+                  :label="isTemplateVersionMode ? '版本展示名称' : 'Agent 名称'"
+                  required
+                >
                   <el-input
                     v-model="form.name"
                     maxlength="100"
@@ -35,7 +54,7 @@
                     :disabled="!canManage"
                   />
                 </el-form-item>
-                <el-form-item label="执行状态">
+                <el-form-item v-if="!isTemplateVersionMode" label="执行状态">
                   <el-switch
                     v-model="form.enabled"
                     active-text="已启用"
@@ -45,7 +64,7 @@
                 </el-form-item>
               </div>
 
-              <el-form-item label="Agent 描述">
+              <el-form-item :label="isTemplateVersionMode ? '版本说明' : 'Agent 描述'">
                 <el-input
                   v-model="form.description"
                   type="textarea"
@@ -175,7 +194,7 @@
 
               <el-collapse class="agent-config__advanced">
                 <el-collapse-item title="高级范围与工具裁剪" name="advanced">
-                  <el-form-item label="文档访问范围 JSON">
+                  <el-form-item v-if="!isTemplateVersionMode" label="文档访问范围 JSON">
                     <el-input
                       v-model="form.documentScope"
                       type="textarea"
@@ -210,169 +229,164 @@
             </el-form>
           </el-tab-pane>
 
-          <el-tab-pane :label="`Skill 绑定 (${skillRows.length})`" name="skills">
-            <section class="agent-config__section">
-              <header>
-                <div>
-                  <strong>绑定不可变 Skill 版本</strong>
-                  <span>工具统计包含这里所有 Skill 声明的工具，不受 ROUTER 当次选择影响。</span>
-                </div>
-              </header>
-
-              <div v-if="canBindSkill && canReadSkill" class="agent-binding-add">
-                <el-select v-model="skillToAdd" filterable placeholder="选择一个已启用 Skill">
-                  <el-option
-                    v-for="skill in availableSkills"
-                    :key="String(skill.id)"
-                    :label="skill.displayName"
-                    :value="skill.id"
-                  >
-                    <span>{{ skill.displayName }}</span>
-                    <small class="agent-config__option-meta">{{ skill.name }}</small>
-                  </el-option>
-                </el-select>
-                <el-button :disabled="!skillToAdd" :loading="addingSkill" @click="addSkill">
-                  添加绑定
-                </el-button>
-              </div>
-
-              <el-empty v-if="!skillRows.length" description="尚未绑定 Skill" :image-size="76" />
-              <div v-else class="agent-binding-list">
-                <article
-                  v-for="row in skillRows"
-                  :key="String(row.skillId)"
-                  class="agent-binding-row"
-                >
-                  <div>
-                    <strong>{{ row.skillDisplayName }}</strong>
-                    <code>{{ row.skillName }}</code>
-                  </div>
-                  <el-select
-                    v-model="row.skillVersionId"
-                    :loading="row.loadingVersions"
-                    :disabled="!canBindSkill"
-                    placeholder="选择已发布版本"
-                    @visible-change="(visible: boolean) => visible && loadVersions(row)"
-                  >
-                    <el-option
-                      v-for="version in row.versions"
-                      :key="String(version.id)"
-                      :label="`v${version.versionNo}`"
-                      :value="version.id"
-                    />
-                  </el-select>
-                  <el-button
-                    v-if="canBindSkill"
-                    type="danger"
-                    link
-                    @click="removeSkill(row.skillId)"
-                  >
-                    移除
-                  </el-button>
-                </article>
-              </div>
-              <el-alert
-                v-if="canBindSkill && !canReadSkill"
-                title="当前账号可以修改绑定，但缺少 skill:read，无法选择新的 Skill。"
-                type="warning"
-                :closable="false"
-              />
-            </section>
+          <el-tab-pane
+            v-if="isTemplateVersionMode"
+            :label="`系统 Skill (${templateSkillRows.length})`"
+            name="template-skills"
+          >
+            <AgentSkillBindingPanel
+              scope="template"
+              :rows="templateSkillBindingRows"
+              :available-skills="templateSkillOptions"
+              :can-bind="true"
+              :can-read="true"
+              :adding="addingTemplateSkill"
+              @add="addTemplateSkillFromPanel"
+              @remove="removeTemplateSkill"
+              @load-versions="loadTemplateSkillVersions"
+            />
           </el-tab-pane>
 
-          <el-tab-pane :label="`MCP 绑定 (${mcpRows.length})`" name="mcp">
-            <section class="agent-config__section">
-              <header class="agent-config__switch-heading">
-                <div>
-                  <strong>外部 MCP</strong>
-                  <span>总开关关闭时保留绑定配置，但执行时不会连接外部服务。</span>
-                </div>
-                <el-switch v-model="form.externalMcpEnabled" :disabled="!canManage" />
-              </header>
+          <el-tab-pane
+            v-if="isTemplateVersionMode"
+            :label="`系统 MCP (${templateMcpRows.length})`"
+            name="template-mcp"
+          >
+            <AgentMcpBindingPanel
+              scope="template"
+              :rows="templateMcpBindingRows"
+              :available-items="templateMcpOptions"
+              :can-manage="true"
+              :can-bind="true"
+              :can-read="true"
+              @add="addTemplateMcp"
+              @remove="removeTemplateMcp"
+              @load-versions="loadTemplateMcpVersions"
+            />
+          </el-tab-pane>
 
-              <div v-if="canBindMcp && canReadMcp" class="agent-binding-add">
-                <el-select v-model="mcpToAdd" filterable placeholder="选择一个已启用 MCP 服务">
-                  <el-option
-                    v-for="server in availableMcpServers"
-                    :key="String(server.id)"
-                    :label="server.displayName"
-                    :value="server.id"
-                  >
-                    <span>{{ server.displayName }}</span>
-                    <small class="agent-config__option-meta">{{ server.serverKey }}</small>
-                  </el-option>
-                </el-select>
-                <el-button :disabled="!mcpToAdd" @click="addMcp">添加绑定</el-button>
-              </div>
+          <el-tab-pane
+            v-if="!isTemplateVersionMode"
+            :label="`Skill 绑定 (${skillRows.length})`"
+            name="skills"
+          >
+            <AgentSkillBindingPanel
+              scope="space"
+              :rows="spaceSkillRows"
+              :available-skills="availableSkills"
+              :can-bind="canBindSkill"
+              :can-read="canReadSkill"
+              :adding="addingSkill"
+              @add="addSpaceSkillFromPanel"
+              @remove="removeSkill"
+              @load-versions="loadSpaceSkillVersions"
+            />
+          </el-tab-pane>
 
-              <el-empty v-if="!mcpRows.length" description="尚未绑定外部 MCP" :image-size="76" />
-              <div v-else class="agent-mcp-list">
-                <article
-                  v-for="row in mcpRows"
-                  :key="String(row.mcpServerId)"
-                  class="agent-mcp-row"
-                >
-                  <header>
-                    <div>
-                      <strong>{{ row.displayName }}</strong>
-                      <code>{{ row.serverKey }}</code>
-                    </div>
-                    <el-button
-                      v-if="canBindMcp"
-                      type="danger"
-                      link
-                      @click="removeMcp(row.mcpServerId)"
-                    >
-                      移除
-                    </el-button>
-                  </header>
-                  <div class="agent-mcp-row__policy">
-                    <span>工具白名单</span>
-                    <el-radio-group
-                      v-model="row.mode"
-                      size="small"
-                      :disabled="!canBindMcp"
-                      @change="handleMcpModeChange(row)"
-                    >
-                      <el-radio-button value="ALL">全部发现工具</el-radio-button>
-                      <el-radio-button value="CUSTOM">指定工具</el-radio-button>
-                      <el-radio-button value="NONE">禁用全部</el-radio-button>
-                    </el-radio-group>
-                  </div>
-                  <el-select
-                    v-if="row.mode === 'CUSTOM'"
-                    v-model="row.toolWhitelist"
-                    class="agent-config__full-width"
-                    multiple
-                    filterable
-                    :loading="row.loadingTools"
-                    :disabled="!canBindMcp"
-                    placeholder="选择该服务允许调用的工具"
-                    @visible-change="(visible: boolean) => visible && loadMcpTools(row)"
-                  >
-                    <el-option
-                      v-for="tool in row.tools"
-                      :key="tool.name"
-                      :label="tool.name"
-                      :value="tool.name"
-                    >
-                      <span>{{ tool.name }}</span>
-                      <small class="agent-config__option-meta">{{
-                        tool.description || '无描述'
-                      }}</small>
-                    </el-option>
-                  </el-select>
-                </article>
-              </div>
-              <el-alert
-                v-if="canBindMcp && !canReadMcp"
-                title="当前账号可以修改绑定，但缺少 mcp:read，无法选择新的 MCP 服务或工具。"
-                type="warning"
-                :closable="false"
-              />
-            </section>
+          <el-tab-pane
+            v-if="!isTemplateVersionMode"
+            :label="`MCP 绑定 (${mcpRows.length})`"
+            name="mcp"
+          >
+            <AgentMcpBindingPanel
+              v-model:external-mcp-enabled="form.externalMcpEnabled"
+              scope="space"
+              :rows="spaceMcpBindingRows"
+              :available-items="spaceMcpOptions"
+              :can-manage="canManage"
+              :can-bind="canBindMcp"
+              :can-read="canReadMcp"
+              @add="addSpaceMcpFromPanel"
+              @remove="removeMcp"
+              @mode-change="handleMcpModeChangeFromPanel"
+              @load-tools="loadMcpToolsFromPanel"
+            />
           </el-tab-pane>
         </el-tabs>
+
+        <el-dialog
+          v-model="upgradeDialogOpen"
+          append-to-body
+          destroy-on-close
+          title="升级系统 Agent 模板"
+          width="min(620px, 92vw)"
+        >
+          <div class="agent-upgrade">
+            <el-form label-position="top">
+              <el-form-item label="目标版本" required>
+                <el-select
+                  v-model="upgradeTargetVersionId"
+                  class="agent-config__full-width"
+                  placeholder="选择更高的已发布版本"
+                  @change="upgradePreview = null"
+                >
+                  <el-option
+                    v-for="version in upgradeVersions"
+                    :key="String(version.id)"
+                    :label="`v${version.versionNo} · ${version.displayName || '未命名版本'}`"
+                    :value="version.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <el-empty
+              v-if="!upgradeLoading && !upgradeVersions.length"
+              description="当前已是最新可用版本"
+              :image-size="72"
+            />
+            <template v-if="upgradePreview">
+              <el-alert
+                v-if="upgradePreview.conflictingFields.length"
+                type="warning"
+                :closable="false"
+                show-icon
+                :title="`检测到 ${upgradePreview.conflictingFields.length} 项冲突，应用时保留当前空间配置`"
+              />
+              <el-alert
+                v-else
+                type="success"
+                :closable="false"
+                show-icon
+                title="未检测到冲突，可以安全应用升级"
+              />
+              <dl class="agent-upgrade__summary">
+                <div>
+                  <dt>配置冲突</dt>
+                  <dd>{{ upgradeConflictLabels }}</dd>
+                </div>
+                <div>
+                  <dt>升级后 Skill</dt>
+                  <dd>{{ upgradePreview.proposedSkillVersionIds.length }} 个版本</dd>
+                </div>
+                <div>
+                  <dt>升级后 MCP</dt>
+                  <dd>{{ upgradePreview.proposedMcpBindings.length }} 个绑定</dd>
+                </div>
+              </dl>
+              <p class="agent-config__hint">
+                这是旧模板、当前空间修改和新模板之间的三方合并结果。发生冲突时默认保留当前空间值。
+              </p>
+            </template>
+          </div>
+          <template #footer>
+            <el-button @click="upgradeDialogOpen = false">取消</el-button>
+            <el-button
+              v-if="upgradeVersions.length"
+              :loading="upgradeLoading"
+              @click="previewTemplateUpgrade"
+            >
+              预览变更
+            </el-button>
+            <el-button
+              v-if="upgradePreview"
+              type="primary"
+              :loading="upgradeLoading"
+              @click="applyTemplateUpgrade"
+            >
+              确认并应用
+            </el-button>
+          </template>
+        </el-dialog>
       </div>
     </DataState>
 
@@ -382,7 +396,7 @@
         <div>
           <el-button @click="emit('update:open', false)">{{ canSave ? '取消' : '关闭' }}</el-button>
           <el-button v-if="canSave" type="primary" :loading="saving" @click="saveConfiguration">
-            保存配置
+            {{ isTemplateVersionMode ? '保存草稿版本' : '保存配置' }}
           </el-button>
         </div>
       </div>
@@ -397,6 +411,7 @@ import {
   ElCollapse,
   ElCollapseItem,
   ElDrawer,
+  ElDialog,
   ElEmpty,
   ElForm,
   ElFormItem,
@@ -422,21 +437,39 @@ import {
   replaceAgentMcpBindings,
   replaceAgentSkills,
   updateAgent,
+  upgradeAgentTemplate,
 } from '@/features/agent/api/agent-api'
+import {
+  createAgentTemplateVersion,
+  listCapabilityVersions,
+  searchSystemCapabilities,
+  updateAgentTemplateVersion,
+} from '@/features/system-capability/api/system-capability-api'
 import type {
   AgentDetail,
   AgentInput,
   AgentMcpBinding,
   AgentSkillBinding,
+  AgentTemplateUpgradePreview,
   ModelOption,
   SkillSelectionMode,
 } from '@/features/agent/types'
+import type {
+  AgentTemplateVersionCreateInput,
+  CapabilityVersion,
+  SystemCapability,
+  SystemCapabilityType,
+} from '@/features/system-capability/types'
 import { listMcpTools, searchMcpServers } from '@/features/mcp/api/mcp-api'
 import type { McpServer, McpTool } from '@/features/mcp/types'
 import { listSkillVersions, searchSkills } from '@/features/skill/api/skill-api'
 import type { Skill, SkillVersion } from '@/features/skill/types'
 import type { EntityId } from '@/features/workspace/types'
 import DataState from '@/shared/components/DataState.vue'
+import AgentMcpBindingPanel from './AgentMcpBindingPanel.vue'
+import AgentSkillBindingPanel from './AgentSkillBindingPanel.vue'
+import type { McpBindingRow } from './AgentMcpBindingPanel.vue'
+import type { SkillBindingOption, SkillBindingRow } from './AgentSkillBindingPanel.vue'
 
 type ToolLimitMode = 'ALL' | 'CUSTOM' | 'NONE'
 
@@ -460,9 +493,34 @@ interface McpRow {
   loadingTools: boolean
 }
 
+interface TemplateSkillRow {
+  skillId: EntityId
+  skillName: string
+  skillDisplayName: string
+  skillVersionId: EntityId | null
+  versions: CapabilityVersion[]
+  loadingVersions: boolean
+}
+
+interface TemplateMcpRow {
+  mcpTemplateId: EntityId
+  mcpTemplateVersionId: EntityId | null
+  serverKey: string
+  displayName: string
+  versions: CapabilityVersion[]
+  toolWhitelistText: string
+  loadingVersions: boolean
+}
+
 const props = defineProps<{
   open: boolean
   agentId: EntityId | null
+  /** 模板版本模式下所属的系统 Agent 模板 ID。 */
+  templateId?: EntityId | null
+  /** 编辑草稿时的版本 ID；为空时保存为新草稿。 */
+  templateVersionId?: EntityId | null
+  mode?: 'space-agent' | 'template-version'
+  templateVersion?: CapabilityVersion | null
   spaceId: EntityId
   canManage: boolean
   canBindSkill: boolean
@@ -476,17 +534,39 @@ const emit = defineEmits<{
   saved: []
 }>()
 
+const isTemplateVersionMode = computed(() => props.mode === 'template-version')
+const drawerTitle = computed(() => {
+  if (!isTemplateVersionMode.value) return props.agentId ? 'Agent 配置' : '新建 Agent'
+  if (props.templateVersionId) return '编辑 Agent 模板草稿'
+  return props.templateVersion ? '复制 Agent 模板版本' : '新建 Agent 模板版本'
+})
+
 const activeTab = ref('basic')
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref('')
 const activeAgentId = ref<EntityId | null>(null)
 const currentConfigVersion = ref<number | null>(null)
+const sourceTemplateId = ref<EntityId | null>(null)
+const sourceTemplateVersionId = ref<EntityId | null>(null)
+const currentTemplateVersionNo = ref<number | null>(null)
+const upgradeDialogOpen = ref(false)
+const upgradeLoading = ref(false)
+const upgradeVersions = ref<CapabilityVersion[]>([])
+const upgradeTargetVersionId = ref<EntityId | null>(null)
+const upgradePreview = ref<AgentTemplateUpgradePreview | null>(null)
 const models = ref<ModelOption[]>([])
 const skills = ref<Skill[]>([])
 const mcpServers = ref<McpServer[]>([])
 const skillRows = ref<SkillRow[]>([])
 const mcpRows = ref<McpRow[]>([])
+const systemSkills = ref<SystemCapability[]>([])
+const systemMcpTemplates = ref<SystemCapability[]>([])
+const templateSkillRows = ref<TemplateSkillRow[]>([])
+const templateMcpRows = ref<TemplateMcpRow[]>([])
+const templateSkillToAdd = ref<EntityId | null>(null)
+const templateMcpToAdd = ref<EntityId | null>(null)
+const addingTemplateSkill = ref(false)
 const skillToAdd = ref<EntityId | null>(null)
 const mcpToAdd = ref<EntityId | null>(null)
 const addingSkill = ref(false)
@@ -521,9 +601,59 @@ const availableMcpServers = computed(() => {
   const selected = new Set(mcpRows.value.map((row) => String(row.mcpServerId)))
   return mcpServers.value.filter((server) => !selected.has(String(server.id)))
 })
+const templateSkillOptions = computed<SkillBindingOption[]>(() =>
+  systemSkills.value.map((skill) => ({
+    id: skill.id,
+    name: skill.technicalKey,
+    displayName: skill.displayName,
+  })),
+)
+const templateMcpOptions = computed(() =>
+  systemMcpTemplates.value.map((template) => ({
+    id: template.id,
+    name: template.technicalKey,
+    displayName: template.displayName,
+  })),
+)
+const spaceMcpOptions = computed(() =>
+  availableMcpServers.value.map((server) => ({
+    id: server.id,
+    name: server.serverKey,
+    displayName: server.displayName,
+  })),
+)
+const spaceSkillRows = computed(() => skillRows.value as unknown as SkillBindingRow[])
+const templateSkillBindingRows = computed(() => templateSkillRows.value as SkillBindingRow[])
+const spaceMcpBindingRows = computed(() => mcpRows.value as unknown as McpBindingRow[])
+const templateMcpBindingRows = computed(() => templateMcpRows.value as unknown as McpBindingRow[])
+const upgradeConflictLabels = computed(() => {
+  const labels: Record<string, string> = {
+    name: '名称',
+    description: '描述',
+    systemPrompt: '系统提示词',
+    modelId: '主模型',
+    skillSelectionMode: 'Skill 选择模式',
+    skillRouterModelId: 'Router 模型',
+    externalMcpEnabled: '外部 MCP 开关',
+    tokenBudget: 'Token 预算',
+    toolWhitelist: '工具白名单',
+    maxIterations: '最大迭代次数',
+    executionTimeoutSeconds: '执行超时',
+    skills: 'Skill 绑定',
+    mcps: 'MCP 绑定',
+  }
+  return upgradePreview.value?.conflictingFields.length
+    ? upgradePreview.value.conflictingFields.map((field) => labels[field] || field).join('、')
+    : '无'
+})
 
 watch(
-  [() => props.open, () => props.agentId],
+  [
+    () => props.open,
+    () => props.agentId,
+    () => props.templateVersionId,
+    () => props.templateVersion?.id,
+  ],
   ([open]) => {
     if (open) void loadConfiguration()
     else loadSequence++
@@ -538,12 +668,34 @@ async function loadConfiguration(): Promise<void> {
   activeTab.value = 'basic'
   activeAgentId.value = props.agentId
   currentConfigVersion.value = null
+  sourceTemplateId.value = null
+  sourceTemplateVersionId.value = null
+  currentTemplateVersionNo.value = null
+  upgradeDialogOpen.value = false
+  upgradePreview.value = null
   skillRows.value = []
   mcpRows.value = []
+  templateSkillRows.value = []
+  templateMcpRows.value = []
+  templateSkillToAdd.value = null
+  templateMcpToAdd.value = null
   skillToAdd.value = null
   mcpToAdd.value = null
   resetForm()
   try {
+    if (isTemplateVersionMode.value) {
+      const [modelOptions, skillOptions, mcpOptions] = await Promise.all([
+        listModels(true),
+        loadAllSystemCapabilities('SKILL'),
+        loadAllSystemCapabilities('MCP_TEMPLATE'),
+      ])
+      if (sequence !== loadSequence) return
+      models.value = modelOptions
+      systemSkills.value = skillOptions
+      systemMcpTemplates.value = mcpOptions
+      if (props.templateVersion) await applyTemplateVersion(props.templateVersion)
+      return
+    }
     const detailPromise = props.agentId ? getAgent(props.agentId) : Promise.resolve(null)
     const skillBindingsPromise = props.agentId
       ? listAgentSkills(props.agentId)
@@ -557,14 +709,27 @@ async function loadConfiguration(): Promise<void> {
         listModels(true),
         skillBindingsPromise,
         mcpBindingsPromise,
-        props.canReadSkill ? loadAllSkills() : Promise.resolve<Skill[]>([]),
-        props.canReadMcp ? loadAllMcpServers() : Promise.resolve<McpServer[]>([]),
+        !isTemplateVersionMode.value && props.canReadSkill
+          ? loadAllSkills()
+          : Promise.resolve<Skill[]>([]),
+        !isTemplateVersionMode.value && props.canReadMcp
+          ? loadAllMcpServers()
+          : Promise.resolve<McpServer[]>([]),
       ])
     if (sequence !== loadSequence) return
     models.value = modelOptions
     skills.value = skillOptions
     mcpServers.value = serverOptions
-    if (detail) applyDetail(detail)
+    if (detail) {
+      applyDetail(detail)
+      if (detail.templateId && detail.templateVersionId) {
+        const templateVersions = await listCapabilityVersions('AGENT_TEMPLATE', detail.templateId)
+        currentTemplateVersionNo.value =
+          templateVersions.find(
+            (version) => String(version.id) === String(detail.templateVersionId),
+          )?.versionNo ?? null
+      }
+    }
     skillRows.value = skillBindings.map(toSkillRow)
     mcpRows.value = mcpBindings.map(toMcpRow)
   } catch (error) {
@@ -599,6 +764,22 @@ async function loadAllMcpServers(): Promise<McpServer[]> {
   return [first, ...rest].flatMap((page) => page.records)
 }
 
+async function loadAllSystemCapabilities(type: SystemCapabilityType): Promise<SystemCapability[]> {
+  const first = await searchSystemCapabilities({ type, status: 1, pageNum: 1, pageSize: 100 })
+  if (first.total <= first.records.length) {
+    return first.records.filter((item) => item.latestPublishedVersionId !== null)
+  }
+  const pageCount = Math.ceil(first.total / 100)
+  const rest = await Promise.all(
+    Array.from({ length: pageCount - 1 }, (_, index) =>
+      searchSystemCapabilities({ type, status: 1, pageNum: index + 2, pageSize: 100 }),
+    ),
+  )
+  return [first, ...rest]
+    .flatMap((page) => page.records)
+    .filter((item) => item.latestPublishedVersionId !== null)
+}
+
 function resetForm(): void {
   Object.assign(form, {
     name: '',
@@ -621,6 +802,8 @@ function resetForm(): void {
 function applyDetail(agent: AgentDetail): void {
   activeAgentId.value = agent.id
   currentConfigVersion.value = agent.configVersion
+  sourceTemplateId.value = agent.templateId
+  sourceTemplateVersionId.value = agent.templateVersionId
   Object.assign(form, {
     name: agent.name,
     description: agent.description || '',
@@ -638,6 +821,134 @@ function applyDetail(agent: AgentDetail): void {
     executionTimeoutSeconds: agent.executionTimeoutSeconds,
     enabled: agent.status === 'ENABLED',
   })
+}
+
+async function openUpgradeDialog(): Promise<void> {
+  if (!sourceTemplateId.value || !sourceTemplateVersionId.value) return
+  upgradeDialogOpen.value = true
+  upgradeLoading.value = true
+  upgradePreview.value = null
+  try {
+    const versions = (
+      await listCapabilityVersions('AGENT_TEMPLATE', sourceTemplateId.value)
+    ).filter(isPublishedCapabilityVersion)
+    const current = versions.find(
+      (version) => String(version.id) === String(sourceTemplateVersionId.value),
+    )
+    currentTemplateVersionNo.value = current?.versionNo ?? null
+    // 当前来源版本可能已被平台停用，普通空间成员无法读取该历史版本；
+    // 此时仍展示其余已发布版本，由后端继续校验必须高于当前版本。
+    upgradeVersions.value = current
+      ? versions.filter((version) => version.versionNo > current.versionNo)
+      : versions
+    upgradeTargetVersionId.value = upgradeVersions.value[0]?.id ?? null
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '模板版本加载失败')
+  } finally {
+    upgradeLoading.value = false
+  }
+}
+
+async function previewTemplateUpgrade(): Promise<void> {
+  if (!activeAgentId.value || !upgradeTargetVersionId.value) return
+  upgradeLoading.value = true
+  try {
+    upgradePreview.value = await upgradeAgentTemplate(activeAgentId.value, {
+      targetVersionId: upgradeTargetVersionId.value,
+      previewOnly: true,
+    })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '模板升级预览失败')
+  } finally {
+    upgradeLoading.value = false
+  }
+}
+
+async function applyTemplateUpgrade(): Promise<void> {
+  if (!activeAgentId.value || !upgradePreview.value) return
+  upgradeLoading.value = true
+  try {
+    const preview = upgradePreview.value
+    await upgradeAgentTemplate(activeAgentId.value, {
+      targetVersionId: preview.targetTemplateVersionId,
+      previewOnly: false,
+      resolvedConfig: preview.proposedConfig,
+      resolvedSkillVersionIds: preview.proposedSkillVersionIds,
+      resolvedMcpBindings: preview.proposedMcpBindings,
+    })
+    ElMessage.success('Agent 模板升级已应用')
+    upgradeDialogOpen.value = false
+    emit('saved')
+    await loadConfiguration()
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : 'Agent 模板升级失败')
+  } finally {
+    upgradeLoading.value = false
+  }
+}
+
+async function applyTemplateVersion(version: CapabilityVersion): Promise<void> {
+  Object.assign(form, {
+    name: version.displayName || '',
+    description: version.description || '',
+    systemPrompt: version.systemPrompt || '',
+    modelId: version.modelId || '',
+    skillSelectionMode: version.skillSelectionMode || 'ALL_BOUND',
+    skillRouterModelId: version.skillRouterModelId || null,
+    externalMcpEnabled: version.externalMcpEnabled ?? false,
+    tokenBudget: version.tokenBudget ?? undefined,
+    toolLimitMode:
+      version.toolWhitelist === null || version.toolWhitelist === undefined
+        ? 'ALL'
+        : version.toolWhitelist.length
+          ? 'CUSTOM'
+          : 'NONE',
+    toolWhitelist: version.toolWhitelist || [],
+    maxIterations: version.maxIterations || 12,
+    executionTimeoutSeconds: version.executionTimeoutSeconds || 600,
+  })
+  const skillRefs = version.skills || []
+  const mcpRefs = version.mcps || []
+  templateSkillRows.value = await Promise.all(
+    skillRefs.map(async (reference) => {
+      const capability = systemSkills.value.find(
+        (item) => String(item.id) === String(reference.skillId),
+      )
+      const allVersions = await listCapabilityVersions('SKILL', reference.skillId)
+      return {
+        skillId: reference.skillId,
+        skillName: capability?.technicalKey || String(reference.skillId),
+        skillDisplayName: capability?.displayName || String(reference.skillId),
+        skillVersionId: reference.skillVersionId,
+        versions: allVersions.filter((item) => isPublishedCapabilityVersion(item)),
+        loadingVersions: false,
+      }
+    }),
+  )
+  templateMcpRows.value = await Promise.all(
+    mcpRefs.map(async (reference) => {
+      const template = systemMcpTemplates.value.find(
+        (item) => String(item.id) === String(reference.mcpTemplateId),
+      )
+      const allVersions = await listCapabilityVersions(
+        'MCP_TEMPLATE',
+        reference.mcpTemplateId || reference.mcpTemplateVersionId,
+      )
+      return {
+        mcpTemplateId: reference.mcpTemplateId || reference.mcpTemplateVersionId,
+        mcpTemplateVersionId: reference.mcpTemplateVersionId,
+        serverKey: template?.technicalKey || String(reference.mcpTemplateId || ''),
+        displayName: template?.displayName || String(reference.mcpTemplateId || ''),
+        versions: allVersions.filter((item) => isPublishedCapabilityVersion(item)),
+        toolWhitelistText: (reference.toolWhitelist || []).join('\n'),
+        loadingVersions: false,
+      }
+    }),
+  )
+}
+
+function isPublishedCapabilityVersion(version: CapabilityVersion): boolean {
+  return version.status === 1 || version.status === 'PUBLISHED'
 }
 
 function toSkillRow(binding: AgentSkillBinding): SkillRow {
@@ -756,6 +1067,21 @@ function addMcp(): void {
   mcpToAdd.value = null
 }
 
+function addSpaceMcpFromPanel(serverId: EntityId): void {
+  mcpToAdd.value = serverId
+  addMcp()
+}
+function handleMcpModeChangeFromPanel(row: McpBindingRow): void {
+  if (row.mcpServerId == null) return
+  const target = mcpRows.value.find((item) => String(item.mcpServerId) === String(row.mcpServerId))
+  if (target) handleMcpModeChange(target)
+}
+function loadMcpToolsFromPanel(row: McpBindingRow): Promise<void> {
+  if (row.mcpServerId == null) return Promise.resolve()
+  const target = mcpRows.value.find((item) => String(item.mcpServerId) === String(row.mcpServerId))
+  return target ? loadMcpTools(target) : Promise.resolve()
+}
+
 function removeMcp(serverId: EntityId): void {
   mcpRows.value = mcpRows.value.filter((row) => String(row.mcpServerId) !== String(serverId))
 }
@@ -775,6 +1101,107 @@ async function loadMcpTools(row: McpRow): Promise<void> {
     ElMessage.error(error instanceof Error ? error.message : 'MCP 工具加载失败')
   } finally {
     row.loadingTools = false
+  }
+}
+
+async function addTemplateSkill(skillId?: unknown): Promise<void> {
+  if (typeof skillId === 'string' || typeof skillId === 'number') templateSkillToAdd.value = skillId
+  const skill = systemSkills.value.find(
+    (item) => String(item.id) === String(templateSkillToAdd.value),
+  )
+  if (!skill) return
+  addingTemplateSkill.value = true
+  try {
+    const versions = (await listCapabilityVersions('SKILL', skill.id)).filter(
+      isPublishedCapabilityVersion,
+    )
+    templateSkillRows.value.push({
+      skillId: skill.id,
+      skillName: skill.technicalKey,
+      skillDisplayName: skill.displayName,
+      skillVersionId: versions[0]?.id || null,
+      versions,
+      loadingVersions: false,
+    })
+    templateSkillToAdd.value = null
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '系统 Skill 版本加载失败')
+  } finally {
+    addingTemplateSkill.value = false
+  }
+}
+
+function addTemplateSkillFromPanel(skillId: EntityId): Promise<void> {
+  return addTemplateSkill(skillId)
+}
+function addSpaceSkillFromPanel(skillId: EntityId): Promise<void> {
+  skillToAdd.value = skillId
+  return addSkill()
+}
+function loadSpaceSkillVersions(row: SkillBindingRow): Promise<void> {
+  const target = skillRows.value.find((item) => String(item.skillId) === String(row.skillId))
+  return target ? loadVersions(target) : Promise.resolve()
+}
+
+function removeTemplateSkill(skillId: EntityId): void {
+  templateSkillRows.value = templateSkillRows.value.filter(
+    (row) => String(row.skillId) !== String(skillId),
+  )
+}
+
+function addTemplateMcp(templateId?: unknown): void {
+  if (typeof templateId === 'string' || typeof templateId === 'number')
+    templateMcpToAdd.value = templateId
+  const template = systemMcpTemplates.value.find(
+    (item) => String(item.id) === String(templateMcpToAdd.value),
+  )
+  if (!template) return
+  const row: TemplateMcpRow = {
+    mcpTemplateId: template.id,
+    mcpTemplateVersionId: null,
+    serverKey: template.technicalKey,
+    displayName: template.displayName,
+    versions: [],
+    toolWhitelistText: '',
+    loadingVersions: false,
+  }
+  templateMcpRows.value.push(row)
+  templateMcpToAdd.value = null
+  void loadTemplateMcpVersions(row)
+}
+
+function removeTemplateMcp(mcpTemplateId: EntityId): void {
+  templateMcpRows.value = templateMcpRows.value.filter(
+    (row) => String(row.mcpTemplateId) !== String(mcpTemplateId),
+  )
+}
+
+async function loadTemplateSkillVersions(row: SkillBindingRow): Promise<void> {
+  if (row.loadingVersions || row.versions?.length) return
+  row.loadingVersions = true
+  try {
+    row.versions = (await listCapabilityVersions('SKILL', row.skillId)).filter(
+      isPublishedCapabilityVersion,
+    )
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '系统 Skill 版本加载失败')
+  } finally {
+    row.loadingVersions = false
+  }
+}
+
+async function loadTemplateMcpVersions(row: McpBindingRow): Promise<void> {
+  if (row.mcpTemplateId == null) return
+  if (row.loadingVersions || row.versions?.length) return
+  row.loadingVersions = true
+  try {
+    row.versions = (await listCapabilityVersions('MCP_TEMPLATE', row.mcpTemplateId)).filter(
+      isPublishedCapabilityVersion,
+    )
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '系统 MCP 版本加载失败')
+  } finally {
+    row.loadingVersions = false
   }
 }
 
@@ -799,6 +1226,14 @@ function validateForm(): boolean {
   }
   if (form.toolLimitMode === 'CUSTOM' && !form.toolWhitelist.length) {
     ElMessage.warning('指定工具模式至少需要填写一个工具名')
+    return false
+  }
+  if (
+    isTemplateVersionMode.value &&
+    (templateSkillRows.value.some((row) => !row.skillVersionId) ||
+      templateMcpRows.value.some((row) => !row.mcpTemplateVersionId))
+  ) {
+    ElMessage.warning('请为每个系统 Skill 和 MCP 引用选择已发布版本')
     return false
   }
   return true
@@ -830,11 +1265,66 @@ function buildPayload(): AgentInput {
   return payload
 }
 
+function buildTemplateVersionPayload(): AgentTemplateVersionCreateInput {
+  return {
+    displayName: form.name.trim(),
+    description: form.description.trim() || undefined,
+    systemPrompt: form.systemPrompt.trim(),
+    modelId: form.modelId,
+    skillSelectionMode: form.skillSelectionMode,
+    skillRouterModelId:
+      form.skillSelectionMode === 'ROUTER' ? form.skillRouterModelId || null : null,
+    externalMcpEnabled: form.externalMcpEnabled,
+    tokenBudget: form.tokenBudget ?? null,
+    toolWhitelist:
+      form.toolLimitMode === 'ALL'
+        ? null
+        : form.toolLimitMode === 'NONE'
+          ? []
+          : [...new Set(form.toolWhitelist.map((tool) => tool.trim()).filter(Boolean))],
+    maxIterations: form.maxIterations,
+    executionTimeoutSeconds: form.executionTimeoutSeconds,
+    skills: templateSkillRows.value
+      .filter((row) => row.skillVersionId)
+      .map((row) => ({ skillId: row.skillId, skillVersionId: row.skillVersionId! })),
+    mcps: templateMcpRows.value
+      .filter((row) => row.mcpTemplateVersionId)
+      .map((row) => ({
+        mcpTemplateVersionId: row.mcpTemplateVersionId!,
+        toolWhitelist: parseToolWhitelist(row.toolWhitelistText),
+      })),
+  }
+}
+
+function parseToolWhitelist(value: string): string[] | null {
+  const tools = value
+    .split(/\r?\n/)
+    .map((tool) => tool.trim())
+    .filter(Boolean)
+  return tools.length ? [...new Set(tools)] : null
+}
+
 async function saveConfiguration(): Promise<void> {
   if (!validateForm()) return
   saving.value = true
   const bindingErrors: string[] = []
   try {
+    if (isTemplateVersionMode.value) {
+      if (!props.templateId) {
+        ElMessage.error('缺少 Agent 模板 ID')
+        return
+      }
+      const payload = buildTemplateVersionPayload()
+      if (props.templateVersionId) {
+        await updateAgentTemplateVersion(props.templateVersionId, payload)
+      } else {
+        await createAgentTemplateVersion(props.templateId, payload)
+      }
+      emit('saved')
+      ElMessage.success('Agent 模板草稿版本创建成功')
+      emit('update:open', false)
+      return
+    }
     let savedAgent: AgentDetail | null = null
     if (props.canManage) {
       const payload = buildPayload()
@@ -896,6 +1386,47 @@ async function saveConfiguration(): Promise<void> {
 .agent-config__section {
   display: grid;
   gap: var(--adw-space-3);
+}
+.agent-template-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--adw-space-4);
+  padding: var(--adw-space-3) var(--adw-space-4);
+  border: 1px solid var(--adw-color-primary-soft);
+  border-radius: var(--adw-radius-md);
+  background: var(--adw-color-primary-soft);
+}
+.agent-template-source > div {
+  display: grid;
+  gap: 3px;
+}
+.agent-template-source span,
+.agent-upgrade__summary dt {
+  color: var(--adw-text-secondary);
+  font-size: 12px;
+}
+.agent-upgrade {
+  display: grid;
+  gap: var(--adw-space-4);
+}
+.agent-upgrade__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--adw-space-3);
+  margin: 0;
+}
+.agent-upgrade__summary > div {
+  display: grid;
+  gap: 5px;
+  padding: var(--adw-space-3);
+  border: 1px solid var(--adw-border-color-light);
+  border-radius: var(--adw-radius-sm);
+}
+.agent-upgrade__summary dd {
+  margin: 0;
+  color: var(--adw-text-primary);
+  font-weight: 600;
 }
 .agent-config__two-columns {
   display: grid;
@@ -1040,6 +1571,9 @@ async function saveConfiguration(): Promise<void> {
   .agent-config__two-columns,
   .agent-mode-grid,
   .agent-binding-row {
+    grid-template-columns: 1fr;
+  }
+  .agent-upgrade__summary {
     grid-template-columns: 1fr;
   }
   .agent-mcp-row__policy {

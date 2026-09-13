@@ -6,6 +6,8 @@ export type McpServerStatus = 0 | 1
 
 export interface McpServer {
   id: EntityId
+  templateId?: EntityId | null
+  templateVersionId?: EntityId | null
   spaceId: EntityId
   serverKey: string
   displayName: string

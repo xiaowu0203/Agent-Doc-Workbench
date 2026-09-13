@@ -20,4 +20,13 @@
         ) model_ref
         GROUP BY model_ref.model_id;
     </select>
+
+    <update id="incrementConfigVersions">
+        UPDATE agent
+        SET config_version = config_version + 1
+        WHERE deleted = 0 AND id IN
+        <foreach collection="agentIds" item="agentId" open="(" separator="," close=")">
+            #{agentId}
+        </foreach>
+    </update>
 </mapper>

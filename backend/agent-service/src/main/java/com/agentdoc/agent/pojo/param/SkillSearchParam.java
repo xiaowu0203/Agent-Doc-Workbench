@@ -1,5 +1,6 @@
 package com.agentdoc.agent.pojo.param;
 
+import com.agentdoc.agent.enums.CapabilitySourceType;
 import com.agentdoc.common.pojo.dto.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -14,6 +15,8 @@ public class SkillSearchParam extends PageParam {
     private Long spaceId;
     @Schema(description = "状态")
     private Integer status;
+    @Schema(description = "来源：SYSTEM 系统安装 / SPACE 空间创建")
+    private CapabilitySourceType sourceType;
     @Schema(description = "名称关键字")
     private String keyword;
 }

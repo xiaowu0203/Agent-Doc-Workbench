@@ -4,10 +4,15 @@ import type {
   EffectivePermission,
   EntityId,
   Space,
+  UpdateSpaceRequest,
 } from '@/features/workspace/types'
 
 export function createSpace(payload: CreateSpaceRequest): Promise<Space> {
   return request<Space>({ method: 'POST', url: '/document/spaces', data: payload })
+}
+
+export function updateSpace(spaceId: EntityId, payload: UpdateSpaceRequest): Promise<Space> {
+  return request<Space>({ method: 'PUT', url: `/document/spaces/${spaceId}`, data: payload })
 }
 
 export function deleteSpace(spaceId: EntityId): Promise<void> {

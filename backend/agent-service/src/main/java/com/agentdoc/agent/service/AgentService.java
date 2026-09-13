@@ -2,6 +2,7 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.AgentConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
+import com.agentdoc.agent.enums.CapabilitySourceType;
 import com.agentdoc.agent.enums.ModelStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.mapper.AgentMapper;
@@ -121,6 +122,11 @@ public class AgentService {
         }
         if (param.getModelId() != null) {
             wrapper.eq(AgentEntity::getModelId, param.getModelId());
+        }
+        if (param.getSourceType() == CapabilitySourceType.SYSTEM) {
+            wrapper.isNotNull(AgentEntity::getTemplateId);
+        } else if (param.getSourceType() == CapabilitySourceType.SPACE) {
+            wrapper.isNull(AgentEntity::getTemplateId);
         }
         // 关键词模糊搜索：匹配名称 OR 描述
         if (param.getKeyword() != null && !param.getKeyword().isBlank()) {

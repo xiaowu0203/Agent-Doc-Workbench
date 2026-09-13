@@ -1,5 +1,6 @@
 package com.agentdoc.agent.pojo.param;
 
+import com.agentdoc.agent.enums.CapabilitySourceType;
 import com.agentdoc.common.pojo.dto.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
@@ -30,6 +31,9 @@ public class AgentSearchParam extends PageParam {
 
     @Schema(description = "模型 ID")
     private Long modelId;
+
+    @Schema(description = "来源：SYSTEM 系统安装 / SPACE 空间创建")
+    private CapabilitySourceType sourceType;
 
     @Size(max = MAX_SEARCH_KEYWORD_LENGTH)
     @Schema(description = "Agent 名称或描述关键字")

@@ -5,6 +5,7 @@
         ><span class="skill-page__breadcrumb">工作台 / Skill 管理</span></template
       >
       <template #actions>
+        <el-button v-if="canManage" @click="installDrawerOpen = true">从系统库安装</el-button>
         <el-button
           v-if="canManage"
           type="primary"
@@ -14,9 +15,7 @@
         >
           上传 Skill ZIP
         </el-button>
-        <el-button v-if="canManage" :icon="Plus" @click="openCreateDialog">
-          新建 Skill
-        </el-button>
+        <el-button v-if="canManage" :icon="Plus" @click="openCreateDialog"> 新建 Skill </el-button>
         <input
           ref="importFileInput"
           class="visually-hidden"
@@ -51,6 +50,16 @@
         <el-option label="已启用" value="ACTIVE" />
         <el-option label="已停用" value="DISABLED" />
       </el-select>
+      <el-select
+        v-model="sourceFilter"
+        class="skill-toolbar__select"
+        aria-label="Skill 来源"
+        @change="applyFilters"
+      >
+        <el-option label="全部来源" value="ALL" />
+        <el-option label="空间创建" value="SPACE" />
+        <el-option label="系统安装" value="SYSTEM" />
+      </el-select>
       <el-select model-value="RECENT" class="skill-toolbar__select" aria-label="Skill 排序">
         <el-option label="最近更新" value="RECENT" />
       </el-select>
@@ -81,7 +90,7 @@
       :error="errorMessage"
       :empty="!loading && !skills.length"
       loading-text="正在加载 Skill"
-      :empty-text="keyword || status !== 'ALL' ? '没有匹配的 Skill' : '当前空间还没有 Skill'"
+      :empty-text="hasFilters ? '没有匹配的 Skill' : '当前空间还没有 Skill'"
       @retry="loadSkills"
     >
       <div class="skill-collection" :class="`skill-collection--${layout}`">
@@ -90,7 +99,8 @@
           :key="String(skill.id)"
           :skill="skill"
           :layout="layout"
-          :can-manage="canManage"
+          :can-manage="canManage && skill.scopeType === 'SPACE'"
+          show-source
           @detail="openDetail($event, 'overview')"
           @versions="openDetail($event, 'versions')"
           @edit="openEditDialog"
@@ -178,11 +188,18 @@
     <SkillDetailDrawer
       :open="detailOpen"
       :skill="selectedSkill"
-      :can-manage="canManage"
+      :can-manage="canManage && selectedSkill?.scopeType === 'SPACE'"
+      :scope="selectedSkill?.scopeType === 'SYSTEM' ? 'system' : 'space'"
       :initial-tab="detailInitialTab"
       @close="detailOpen = false"
       @edit="openEditDialog"
       @refresh="refreshAfterMutation"
+    />
+    <SystemCapabilityInstallDrawer
+      v-model:open="installDrawerOpen"
+      :space-id="spaceId"
+      type="SKILL"
+      @installed="refreshAfterMutation"
     />
   </section>
 </template>
@@ -216,6 +233,7 @@ import {
 import SkillCard from '@/features/skill/components/SkillCard.vue'
 import SkillDetailDrawer from '@/features/skill/components/SkillDetailDrawer.vue'
 import SkillPackageBuilder from '@/features/skill/components/SkillPackageBuilder.vue'
+import SystemCapabilityInstallDrawer from '@/features/system-capability/components/SystemCapabilityInstallDrawer.vue'
 import type { Skill, SkillPage, SkillStatus } from '@/features/skill/types'
 import type { EntityId } from '@/features/workspace/types'
 import DataState from '@/shared/components/DataState.vue'
@@ -227,6 +245,7 @@ const route = useRoute()
 const workspaceStore = useWorkspaceStore()
 const keyword = ref('')
 const status = ref<'ALL' | SkillStatus>('ALL')
+const sourceFilter = ref<'ALL' | 'SYSTEM' | 'SPACE'>('ALL')
 const layout = ref<'grid' | 'list'>('grid')
 const loading = ref(false)
 const importing = ref(false)
@@ -241,6 +260,7 @@ const importFileInput = ref<HTMLInputElement | null>(null)
 const existingVersionFileInput = ref<HTMLInputElement | null>(null)
 const uploadTarget = ref<Skill | null>(null)
 const detailOpen = ref(false)
+const installDrawerOpen = ref(false)
 const selectedSkill = ref<Skill | null>(null)
 const detailInitialTab = ref<'overview' | 'versions' | 'bindings'>('overview')
 const createPackageBuilder = ref<{
@@ -251,6 +271,9 @@ let requestController: AbortController | null = null
 
 const spaceId = computed<EntityId>(() => String(route.params.spaceId))
 const canManage = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.SKILL_MANAGE))
+const hasFilters = computed(
+  () => Boolean(keyword.value.trim()) || status.value !== 'ALL' || sourceFilter.value !== 'ALL',
+)
 
 onMounted(loadSkills)
 onBeforeUnmount(() => requestController?.abort())
@@ -270,6 +293,7 @@ async function loadSkills(): Promise<void> {
     const result = await searchSkills(spaceId.value, {
       keyword: keyword.value.trim(),
       status: status.value === 'ALL' ? undefined : status.value,
+      sourceType: sourceFilter.value === 'ALL' ? undefined : sourceFilter.value,
       pageNum: page.pageNum,
       pageSize: page.pageSize,
       signal: controller.signal,

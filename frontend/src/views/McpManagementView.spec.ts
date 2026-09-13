@@ -81,6 +81,7 @@ describe('McpManagementView', () => {
     expect(wrapper.text()).toContain('凭证已配置')
     expect(wrapper.text()).toContain('3 工具')
     expect(wrapper.text()).toContain('265 ms')
+    expect(wrapper.get('.mcp-card').text()).toContain('空间')
     expect(wrapper.text()).toContain('添加 MCP 服务')
   })
 

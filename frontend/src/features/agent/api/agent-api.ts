@@ -8,6 +8,8 @@ import type {
   AgentPage,
   AgentSkillBinding,
   AgentStatus,
+  AgentTemplateUpgradeInput,
+  AgentTemplateUpgradePreview,
   ModelOption,
 } from '@/features/agent/types'
 import type { EntityId } from '@/features/workspace/types'
@@ -34,6 +36,7 @@ export function searchAgents(
     keyword?: string
     status?: AgentStatus
     modelId?: EntityId
+    sourceType?: 'SYSTEM' | 'SPACE'
     pageNum?: number
     pageSize?: number
     signal?: AbortSignal
@@ -47,6 +50,7 @@ export function searchAgents(
       keyword: options.keyword || undefined,
       status: options.status === 'ENABLED' ? 1 : options.status === 'DISABLED' ? 0 : undefined,
       modelId: options.modelId,
+      sourceType: options.sourceType,
       pageNum: options.pageNum ?? 1,
       pageSize: options.pageSize ?? 9,
     },
@@ -76,6 +80,17 @@ export function updateAgent(agentId: EntityId, payload: AgentInput): Promise<Age
 
 export function deleteAgent(agentId: EntityId): Promise<void> {
   return request<void>({ method: 'DELETE', url: `/agent/agents/${agentId}` })
+}
+
+export function upgradeAgentTemplate(
+  agentId: EntityId,
+  input: AgentTemplateUpgradeInput,
+): Promise<AgentTemplateUpgradePreview> {
+  return request<AgentTemplateUpgradePreview>({
+    method: 'POST',
+    url: `/agent/agents/${agentId}/template-upgrades`,
+    data: input,
+  })
 }
 
 export function listModels(enabledOnly = true): Promise<ModelOption[]> {

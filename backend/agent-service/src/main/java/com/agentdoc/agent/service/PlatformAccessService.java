@@ -2,6 +2,7 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.utils.AuthUtils;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +33,13 @@ public class PlatformAccessService {
             return result != null && result.code() == ErrorCode.SUCCESS.getCode();
         } catch (RuntimeException exception) {
             return false;
+        }
+    }
+
+    /** 要求当前用户具有指定平台角色。 */
+    public void requireRole(String roleKey) {
+        if (!hasRole(roleKey)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "需要平台超级管理员权限");
         }
     }
 }

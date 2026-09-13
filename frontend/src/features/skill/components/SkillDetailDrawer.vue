@@ -232,11 +232,19 @@ import {
 } from '@/features/skill/api/skill-api'
 import SkillPackageBuilder from '@/features/skill/components/SkillPackageBuilder.vue'
 import type { Skill, SkillAgentBinding, SkillVersion } from '@/features/skill/types'
+import {
+  downloadSystemSkillVersion,
+  listSystemSkillAgentBindings,
+  listSystemSkillVersions,
+  publishSystemSkillVersion,
+  uploadSystemSkillVersion,
+} from '@/features/system-capability/api/system-capability-api'
 
 const props = defineProps<{
   open: boolean
   skill: Skill | null
   canManage: boolean
+  scope?: 'space' | 'system'
   initialTab?: 'overview' | 'versions' | 'bindings'
 }>()
 
@@ -275,10 +283,17 @@ async function loadDetail(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    ;[versions.value, bindings.value] = await Promise.all([
-      listSkillVersions(props.skill.id),
-      listSkillAgentBindings(props.skill.id),
-    ])
+    if (props.scope === 'system') {
+      ;[versions.value, bindings.value] = await Promise.all([
+        listSystemSkillVersions(props.skill.id),
+        listSystemSkillAgentBindings(props.skill.id),
+      ])
+    } else {
+      ;[versions.value, bindings.value] = await Promise.all([
+        listSkillVersions(props.skill.id),
+        listSkillAgentBindings(props.skill.id),
+      ])
+    }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : 'Skill 详情加载失败'
   } finally {
@@ -302,7 +317,8 @@ async function uploadVersion(file: globalThis.File): Promise<void> {
   if (!props.skill) return
   uploading.value = true
   try {
-    await uploadSkillVersion(props.skill.id, file)
+    if (props.scope === 'system') await uploadSystemSkillVersion(props.skill.id, file)
+    else await uploadSkillVersion(props.skill.id, file)
     ElMessage.success('草稿版本上传成功')
     await loadDetail()
     emit('refresh')
@@ -340,7 +356,8 @@ async function publishVersion(version: SkillVersion): Promise<void> {
   )
   publishingId.value = version.id
   try {
-    await publishSkillVersion(props.skill.id, version.id)
+    if (props.scope === 'system') await publishSystemSkillVersion(version.id)
+    else await publishSkillVersion(props.skill.id, version.id)
     ElMessage.success(`v${version.versionNo} 已发布`)
     await loadDetail()
     emit('refresh')
@@ -354,11 +371,19 @@ async function publishVersion(version: SkillVersion): Promise<void> {
 async function downloadVersion(version: SkillVersion): Promise<void> {
   if (!props.skill) return
   try {
-    await downloadSkillVersion(
-      props.skill.id,
-      version.id,
-      `${props.skill.name}-${version.versionNo}.zip`,
-    )
+    if (props.scope === 'system') {
+      await downloadSystemSkillVersion(
+        props.skill.id,
+        version.id,
+        `${props.skill.name}-${version.versionNo}.zip`,
+      )
+    } else {
+      await downloadSkillVersion(
+        props.skill.id,
+        version.id,
+        `${props.skill.name}-${version.versionNo}.zip`,
+      )
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '版本下载失败')
   }

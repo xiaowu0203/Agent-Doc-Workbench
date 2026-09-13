@@ -3,6 +3,7 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.config.SkillPackageProperties;
 import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
 import com.agentdoc.agent.execution.skill.SkillCandidate;
@@ -66,6 +67,7 @@ public class SkillSnapshotService {
     private final SkillMapper skillMapper;
     private final SkillVersionMapper versionMapper;
     private final SkillPackageProperties skillPackageProperties;
+    private final SpaceSkillInstallationService installationService;
 
     /**
      * 批量加载指定 Agent 当前启用绑定的 Skill 版本候选集合
@@ -107,14 +109,30 @@ public class SkillSnapshotService {
         for (AgentSkillEntity binding : bindings) {
             SkillEntity skill = skillById.get(binding.getSkillId());
             SkillVersionEntity version = versionById.get(binding.getSkillVersionId());
-            // 校验绑定引用完整性 + 空间归属，防止跨空间越权绑定
-            if (skill == null || version == null || !skill.getId().equals(version.getSkillId())
-                    || !agent.getSpaceId().equals(skill.getSpaceId())) {
+            // 校验绑定引用完整性。
+            if (skill == null || version == null || !skill.getId().equals(version.getSkillId())) {
                 throw new BusinessException(ErrorCode.CONFLICT, "Agent Skill 绑定数据无效");
             }
-            // Skill必须为启用状态
-            if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
-                throw new BusinessException(ErrorCode.CONFLICT, "绑定的 Skill 已停用");
+            // 获取Skill类型
+            SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+            // 若为空间Skill
+            if (scopeType == SkillScopeType.SPACE) {
+                // 校验Agent与Skill是否同空间
+                if (!agent.getSpaceId().equals(skill.getSpaceId())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "Agent Skill 绑定数据无效");
+                }
+                // 校验Skill状态
+                if (!SkillStatus.ACTIVE.matches(skill.getStatus())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "绑定的 Skill 已停用");
+                }
+            } else {
+                // 若为系统Skill
+                if (skill.getSpaceId() != null) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
+                }
+                // 运行时和绑定服务共同使用的空间授权校验
+                installationService.requireEnabledInstallation(
+                        agent.getSpaceId(), skill.getId(), version.getId());
             }
             // 绑定的版本必须是已发布版本
             if (!SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {

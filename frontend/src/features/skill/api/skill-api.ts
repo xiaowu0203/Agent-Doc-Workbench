@@ -15,6 +15,7 @@ export function searchSkills(
   options: {
     keyword?: string
     status?: SkillStatus
+    sourceType?: 'SYSTEM' | 'SPACE'
     pageNum?: number
     pageSize?: number
     signal?: AbortSignal
@@ -28,6 +29,7 @@ export function searchSkills(
       spaceId,
       keyword: options.keyword || undefined,
       status,
+      sourceType: options.sourceType,
       pageNum: options.pageNum ?? 1,
       pageSize: options.pageSize ?? 12,
     },

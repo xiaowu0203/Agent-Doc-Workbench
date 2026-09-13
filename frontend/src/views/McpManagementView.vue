@@ -5,6 +5,7 @@
         ><span class="mcp-page__breadcrumb">MCP 服务 / 外部 MCP 服务</span></template
       >
       <template #actions>
+        <el-button v-if="canManage" @click="installDrawerOpen = true">从系统模板安装</el-button>
         <el-button v-if="canManage" type="primary" :icon="Plus" @click="openCreateDrawer">
           添加 MCP 服务
         </el-button>
@@ -36,6 +37,16 @@
         <el-option label="全部启停状态" value="ALL" />
         <el-option label="已启用" value="ENABLED" />
         <el-option label="已停用" value="DISABLED" />
+      </el-select>
+      <el-select
+        v-model="sourceFilter"
+        class="mcp-toolbar__select"
+        aria-label="MCP 来源"
+        @change="applyFilters"
+      >
+        <el-option label="全部来源" value="ALL" />
+        <el-option label="空间创建" value="SPACE" />
+        <el-option label="系统安装" value="SYSTEM" />
       </el-select>
       <el-select v-model="authFilter" class="mcp-toolbar__select" @change="applyFilters">
         <el-option label="全部认证方式" value="ALL" />
@@ -258,6 +269,12 @@
         </el-button>
       </template>
     </el-drawer>
+    <SystemCapabilityInstallDrawer
+      v-model:open="installDrawerOpen"
+      :space-id="spaceId"
+      type="MCP_TEMPLATE"
+      @installed="loadServers"
+    />
   </section>
 </template>
 
@@ -298,6 +315,7 @@ import {
   updateMcpServer,
 } from '@/features/mcp/api/mcp-api'
 import McpServerCard from '@/features/mcp/components/McpServerCard.vue'
+import SystemCapabilityInstallDrawer from '@/features/system-capability/components/SystemCapabilityInstallDrawer.vue'
 import type { McpAuthType, McpServer, McpServerPage, McpTool } from '@/features/mcp/types'
 import type { EntityId } from '@/features/workspace/types'
 import DataState from '@/shared/components/DataState.vue'
@@ -311,6 +329,7 @@ const route = useRoute()
 const workspaceStore = useWorkspaceStore()
 const keyword = ref('')
 const statusFilter = ref<'ALL' | 'ENABLED' | 'DISABLED'>('ALL')
+const sourceFilter = ref<'ALL' | 'SYSTEM' | 'SPACE'>('ALL')
 const authFilter = ref<'ALL' | McpAuthType>('ALL')
 const layout = ref<'grid' | 'list'>('grid')
 const loading = ref(false)
@@ -318,6 +337,7 @@ const errorMessage = ref('')
 const servers = ref<McpServer[]>([])
 const page = reactive<McpServerPage>({ records: [], total: 0, pageNum: 1, pageSize: 12 })
 const drawerOpen = ref(false)
+const installDrawerOpen = ref(false)
 const drawerMode = ref<DrawerMode>('create')
 const detailLoading = ref(false)
 const saving = ref(false)
@@ -339,7 +359,11 @@ let requestController: AbortController | null = null
 const spaceId = computed<EntityId>(() => String(route.params.spaceId))
 const canManage = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.MCP_MANAGE))
 const hasFilters = computed(
-  () => Boolean(keyword.value.trim()) || statusFilter.value !== 'ALL' || authFilter.value !== 'ALL',
+  () =>
+    Boolean(keyword.value.trim()) ||
+    statusFilter.value !== 'ALL' ||
+    sourceFilter.value !== 'ALL' ||
+    authFilter.value !== 'ALL',
 )
 const drawerTitle = computed(() => {
   if (drawerMode.value === 'create') return '添加 MCP 服务'
@@ -385,6 +409,7 @@ async function loadServers(): Promise<void> {
     const result = await searchMcpServers(spaceId.value, {
       keyword: keyword.value.trim(),
       status: statusFilter.value === 'ALL' ? undefined : statusFilter.value === 'ENABLED' ? 1 : 0,
+      sourceType: sourceFilter.value === 'ALL' ? undefined : sourceFilter.value,
       authType: authFilter.value === 'ALL' ? undefined : authFilter.value,
       pageNum: page.pageNum,
       pageSize: page.pageSize,

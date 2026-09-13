@@ -5,6 +5,7 @@ export type SkillSelectionMode = 'ALL_BOUND' | 'ROUTER'
 
 export interface AgentCard {
   id: EntityId
+  templateId: EntityId | null
   spaceId: EntityId
   name: string
   description: string | null
@@ -26,6 +27,8 @@ export interface AgentCard {
 
 export interface AgentDetail {
   id: EntityId
+  templateId: EntityId | null
+  templateVersionId: EntityId | null
   spaceId: EntityId
   name: string
   description: string | null
@@ -94,6 +97,25 @@ export interface AgentMcpBinding {
 export interface AgentMcpBindingInput {
   mcpServerId: EntityId
   toolWhitelist: string[] | null
+}
+
+export interface AgentTemplateUpgradePreview {
+  agentId: EntityId
+  currentTemplateVersionId: EntityId
+  targetTemplateVersionId: EntityId
+  conflictingFields: string[]
+  proposedConfig: AgentInput
+  proposedSkillVersionIds: EntityId[]
+  proposedMcpBindings: AgentMcpBindingInput[]
+  applied: boolean
+}
+
+export interface AgentTemplateUpgradeInput {
+  targetVersionId: EntityId
+  previewOnly: boolean
+  resolvedConfig?: AgentInput
+  resolvedSkillVersionIds?: EntityId[]
+  resolvedMcpBindings?: AgentMcpBindingInput[]
 }
 
 export interface ModelOption {

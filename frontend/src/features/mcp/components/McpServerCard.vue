@@ -8,6 +8,9 @@
         <strong>{{ server.displayName }}</strong>
         <code>{{ server.serverKey }}</code>
       </div>
+      <el-tag :type="server.templateId ? 'primary' : 'info'" effect="light" size="small">
+        {{ server.templateId ? '系统' : '空间' }}
+      </el-tag>
       <el-tag :type="connectionTag.type" effect="plain" size="small">
         {{ connectionTag.label }}
       </el-tag>

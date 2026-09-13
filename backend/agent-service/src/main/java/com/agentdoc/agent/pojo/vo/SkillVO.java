@@ -1,6 +1,7 @@
 package com.agentdoc.agent.pojo.vo;
 
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
@@ -8,6 +9,8 @@ import java.time.LocalDateTime;
 @Schema(description = "Skill 信息")
 public record SkillVO(
         @Schema(description = "Skill ID") Long id,
+        @Schema(description = "作用域") SkillScopeType scopeType,
+        @Schema(description = "空间内系统 Skill 安装记录 ID；空间自建 Skill 为空") Long installationId,
         @Schema(description = "空间 ID") Long spaceId,
         @Schema(description = "名称") String name,
         @Schema(description = "前端展示名称") String displayName,

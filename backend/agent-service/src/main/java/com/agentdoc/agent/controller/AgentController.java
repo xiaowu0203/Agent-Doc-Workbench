@@ -2,9 +2,12 @@ package com.agentdoc.agent.controller;
 
 import com.agentdoc.agent.pojo.dto.AgentCreateDTO;
 import com.agentdoc.agent.pojo.dto.AgentUpdateDTO;
+import com.agentdoc.agent.pojo.dto.AgentTemplateUpgradeDTO;
 import com.agentdoc.agent.pojo.param.AgentSearchParam;
 import com.agentdoc.agent.pojo.vo.AgentCardVO;
 import com.agentdoc.agent.pojo.vo.AgentVO;
+import com.agentdoc.agent.pojo.vo.AgentTemplateUpgradeVO;
+import com.agentdoc.agent.service.AgentTemplateService;
 import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
@@ -33,6 +36,7 @@ import java.util.List;
 public class AgentController {
 
     private final AgentService agentService;
+    private final AgentTemplateService agentTemplateService;
 
     @Operation(summary = "创建 Agent")
     @PostMapping
@@ -69,5 +73,12 @@ public class AgentController {
     public Result<Void> delete(@PathVariable Long id) {
         agentService.delete(id);
         return Result.ok();
+    }
+
+    @Operation(summary = "预览或应用 Agent 模板升级")
+    @PostMapping("/{id}/template-upgrades")
+    public Result<AgentTemplateUpgradeVO> upgradeTemplate(@PathVariable Long id,
+                                                           @Valid @RequestBody AgentTemplateUpgradeDTO dto) {
+        return Result.ok(agentTemplateService.upgrade(id, dto));
     }
 }
