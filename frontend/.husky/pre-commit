@@ -1,1 +1,0 @@
-cd frontend && corepack pnpm lint-staged

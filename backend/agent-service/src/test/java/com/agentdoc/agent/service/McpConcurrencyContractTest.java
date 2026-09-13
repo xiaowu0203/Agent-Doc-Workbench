@@ -12,7 +12,11 @@ import com.agentdoc.agent.pojo.entity.McpServerEntity;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.agent.security.McpEndpointSecurityValidator;
 import com.agentdoc.common.exception.BusinessException;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
@@ -30,6 +34,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class McpConcurrencyContractTest {
+
+    /**
+     * 初始化 MyBatis-Plus 实体元数据。
+     * <p>纯单元测试没有 Spring 上下文，λ 条件构造器需要显式初始化表信息缓存，
+     * 否则 LambdaQueryWrapper 解析实体字段时会抛出 "can not find lambda cache"。</p>
+     */
+    @BeforeAll
+    static void initializeTableMetadata() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
+        assistant.setCurrentNamespace(McpConcurrencyContractTest.class.getName());
+        TableInfoHelper.initTableInfo(assistant, McpServerEntity.class);
+    }
 
     @Test
     void locksMcpServersWhenReplacingBindings() {

@@ -1,6 +1,7 @@
 package com.agentdoc.agent.execution;
 
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
+import com.agentdoc.agent.execution.audit.AgentExecutionModelCallAuditService;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeProperties;
 import com.agentdoc.agent.execution.runtime.alibaba.SpringAiAlibabaAgentExecutionRuntime;
 import com.agentdoc.agent.execution.runtime.springai.SpringAiAgentExecutionRuntime;
@@ -62,5 +63,8 @@ class AgentRuntimeSelectionTest {
         @Bean ModelAdapterRegistry modelAdapterRegistry() { return mock(ModelAdapterRegistry.class); }
         @Bean ProviderNeutralToolLoop providerNeutralToolLoop() { return mock(ProviderNeutralToolLoop.class); }
         @Bean TokenUsageEstimator tokenUsageEstimator() { return new TokenUsageEstimator(); }
+        @Bean AgentExecutionModelCallAuditService modelCallAuditService() {
+            return mock(AgentExecutionModelCallAuditService.class);
+        }
     }
 }

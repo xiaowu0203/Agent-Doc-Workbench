@@ -18,7 +18,11 @@ import com.agentdoc.document.pojo.dto.DocumentRollbackDTO;
 import com.agentdoc.document.pojo.entity.DocumentEntity;
 import com.agentdoc.document.pojo.entity.DocumentVersionEntity;
 import com.agentdoc.document.pojo.vo.DocumentStatsVO;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -61,6 +65,18 @@ class DocumentServiceTest {
     private AuthFeign authFeign;
 
     private DocumentService documentService;
+
+    /**
+     * 初始化 MyBatis-Plus 实体元数据。
+     * <p>纯单元测试没有 Spring 上下文，λ 条件构造器需要显式初始化表信息缓存，
+     * 否则 LambdaUpdateWrapper 解析实体字段时会抛出 "can not find lambda cache"。</p>
+     */
+    @BeforeAll
+    static void initializeTableMetadata() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
+        assistant.setCurrentNamespace(DocumentServiceTest.class.getName());
+        TableInfoHelper.initTableInfo(assistant, DocumentEntity.class);
+    }
 
     @BeforeEach
     void setUp() {
@@ -133,13 +149,39 @@ class DocumentServiceTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> documentService.mergeForFeign(request));
         assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
+        verify(documentMapper, never()).update(any(), any());
+        verify(versionService, never()).createHumanEditSnapshot(anyLong(), anyLong(), any(String.class),
+                any(String.class), anyLong());
+    }
+
+    /**
+     * 并发覆盖防护：基线比较与写回之间存在窗口，写回的 UPDATE 必须带版本守卫条件。
+     * 当守卫未命中（受影响行数为 0）时必须按冲突拒绝，且不生成任何版本快照。
+     */
+    @Test
+    void shouldRejectMergeWhenVersionGuardDoesNotMatch() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
+        when(permissionService.requireUserId()).thenReturn(USER_ID);
+        // 读取到的内存版本仍是 2，但带守卫的 UPDATE 没有命中任何行（并发编辑已把版本推进）
+        when(documentMapper.update(any(), any())).thenReturn(0);
+        MergeRequestDTO request = new MergeRequestDTO(DOCUMENT_ID, 2L,
+                List.of(new ChangeItemDTO(ChangeOp.REPLACE, null, "合并后的内容")), "审批合并变更");
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> documentService.mergeForFeign(request));
+
+        assertEquals(ErrorCode.CONFLICT.getCode(), ex.getCode());
         verify(documentMapper, never()).updateById(any(DocumentEntity.class));
+        verify(versionService, never()).createHumanEditSnapshot(anyLong(), anyLong(), any(String.class),
+                any(String.class), anyLong());
     }
 
     @Test
     void shouldMergeAndCreateVersionWhenBaseVersionMatches() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
         when(permissionService.requireUserId()).thenReturn(USER_ID);
+        // 带版本守卫的原子 UPDATE 必须命中 1 行，否则按冲突拒绝
+        when(documentMapper.update(any(), any())).thenReturn(1);
         MergeRequestDTO request = new MergeRequestDTO(DOCUMENT_ID, 2L,
                 List.of(new ChangeItemDTO(ChangeOp.REPLACE, null, "合并后的内容")), "审批合并变更");
 
@@ -155,6 +197,7 @@ class DocumentServiceTest {
     void shouldAppendWhenAppendOp() {
         when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("旧内容"));
         when(permissionService.requireUserId()).thenReturn(USER_ID);
+        when(documentMapper.update(any(), any())).thenReturn(1);
         MergeRequestDTO request = new MergeRequestDTO(DOCUMENT_ID, 2L,
                 List.of(new ChangeItemDTO(ChangeOp.APPEND, null, "\n追加段落")), "追加");
 

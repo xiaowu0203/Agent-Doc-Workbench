@@ -1,6 +1,7 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
@@ -16,7 +17,11 @@ import com.agentdoc.task.mapper.ChangeRequestCommentMapper;
 import com.agentdoc.task.mapper.ChangeRequestMapper;
 import com.agentdoc.task.pojo.dto.ChangeRequestApproveDTO;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -62,6 +67,18 @@ class ChangeRequestReviewServiceTest {
 
     private ChangeRequestReviewService service;
 
+    /**
+     * 初始化 MyBatis-Plus 实体元数据。
+     * <p>纯单元测试没有 Spring 上下文，λ 条件构造器需要显式初始化表信息缓存，
+     * 否则 LambdaUpdateWrapper 解析实体字段时会抛出 "can not find lambda cache"。</p>
+     */
+    @BeforeAll
+    static void initializeTableMetadata() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
+        assistant.setCurrentNamespace(ChangeRequestReviewServiceTest.class.getName());
+        TableInfoHelper.initTableInfo(assistant, ChangeRequestEntity.class);
+    }
+
     @BeforeEach
     void setUp() {
         service = new ChangeRequestReviewService(changeRequestService, changeRequestMapper, commentMapper,
@@ -69,6 +86,7 @@ class ChangeRequestReviewServiceTest {
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")
                 .subject(String.valueOf(USER_ID))
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         when(documentFeign.checkSpacePermission(anyLong(), any())).thenReturn(Result.ok());

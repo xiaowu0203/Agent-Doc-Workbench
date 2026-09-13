@@ -1,0 +1,110 @@
+name: CI
+
+# 后端与前端质量门禁。
+#
+# 设计说明：
+# - 只做“能证明代码可构建、可测试”的检查，不做部署与发布；v0.1 阶段不需要。
+# - 后端测试不需要外部基础设施：SecurityIntegrationTest 使用 H2 且不触库，
+#   唯一需要真实 MySQL 的 MySqlA2aStoreIntegrationTest 由 @EnabledIfEnvironmentVariable
+#   默认跳过（如需在 CI 运行，请另行加 service container 并设置 RUN_MYSQL_INTEGRATION_TEST）。
+#   因此这里不启动 docker-compose。
+# - 前端使用 --frozen-lockfile：lockfile 与 package.json 不一致时直接失败，避免漂移。
+# - 本项目已移除本地提交钩子（husky + lint-staged），因此这些检查是唯一的自动化门禁。
+
+on:
+  push:
+    branches:
+      - main
+      - 'phase-*'
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (JDK 21, Maven test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run backend tests
+        working-directory: backend
+        run: ./mvnw -B -ntp -fae test
+
+      # 失败时把用例级原因写进 job summary：这样在 Actions 页面直接可见，
+      # 不必下载 surefire artifact 才能定位是哪个类、哪条用例失败。
+      - name: Summarize test failures
+        if: failure()
+        working-directory: backend
+        run: |
+          {
+            echo '## Backend test failures'
+            echo
+            echo '```text'
+            found=0
+            while IFS= read -r report; do
+              if grep -qE 'Failures: [1-9]|Errors: [1-9]' "$report"; then
+                found=1
+                echo "===== $report"
+                grep -E '^Tests run:|<<< (FAILURE|ERROR)|^[a-zA-Z0-9_.]+[.][a-zA-Z0-9_]+ ' "$report" | head -n 60
+                echo
+              fi
+            done < <(find . -path '*/target/surefire-reports/*.txt' -type f | sort)
+            if [ "$found" -eq 0 ]; then
+              echo 'No surefire report contains failures; the build most likely failed before tests ran.'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports
+          path: backend/**/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  frontend:
+    name: Frontend (Node 22, pnpm type-check / lint / test / build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+          run_install: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm type-check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Production build
+        run: pnpm build

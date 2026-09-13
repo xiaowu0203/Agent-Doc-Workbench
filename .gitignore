@@ -54,3 +54,4 @@ logs/
 
 # === Local tooling ===
 /.zcode/
+/.codex-validation-store/

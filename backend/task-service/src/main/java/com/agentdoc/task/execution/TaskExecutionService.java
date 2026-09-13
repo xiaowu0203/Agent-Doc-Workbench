@@ -18,6 +18,7 @@ import com.agentdoc.task.service.TaskService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,7 @@ import org.a2aproject.sdk.spec.Task;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * RabbitMQ 任务消费者和 A2A 任务分发器。
@@ -36,6 +38,7 @@ import java.time.LocalDateTime;
  */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class TaskExecutionService {
 
     private final TaskService taskService;
@@ -50,7 +53,7 @@ public class TaskExecutionService {
      * RabbitMQ任务队列消费入口
      * <p>
      * 消息模式：手动ACK；处理任务执行全流程；
-     * Redis分布式锁控制空间任务串行；数据库乐观锁防止重复消费。
+     * Redis分布式锁控制空间任务串行（锁值携带持有者标识，释放时校验归属）；数据库乐观锁防止重复消费。
      * </p>
      * @param taskId 待执行任务ID
      * @param message Rabbit原始消息对象
@@ -69,8 +72,11 @@ public class TaskExecutionService {
         }
 
         // 空间维度分布式锁：同一个空间同一时间只允许一个任务执行，避免文档并发写冲突
+        // 锁值使用本次消费唯一的持有者标识：TTL 过期后锁可能已被其他实例获取，
+        // 释放时必须校验持有者，否则会误删他人的锁让空间任务并发执行
         String lockKey = RedisKeyConstants.TASK_SPACE_LOCK_PREFIX + task.getSpaceId();
-        if (!redisUtils.setIfAbsent(lockKey, taskId,
+        String lockOwner = taskId + ":" + UUID.randomUUID();
+        if (!redisUtils.setIfAbsent(lockKey, lockOwner,
                 Duration.ofMinutes(TaskConstant.TASK_LOCK_TIMEOUT_MINUTES))) {
             // 获取锁失败，Nack重回队列稍后重试
             channel.basicNack(tag, false, true);
@@ -94,8 +100,11 @@ public class TaskExecutionService {
             // 执行发生异常，进入失败&重试处理分支
             handleFailure(taskId, ex, channel, tag);
         } finally {
-            // 无论成功失败，必须释放空间分布式锁
-            redisUtils.delete(lockKey);
+            // 无论成功失败，释放空间分布式锁；锁已过期或已被他人持有时不删除，仅记录告警
+            if (!redisUtils.deleteIfValueMatches(lockKey, lockOwner)) {
+                log.warn("空间任务锁未释放：锁已过期或已被其他实例持有，spaceId={}, taskId={}",
+                        task.getSpaceId(), taskId);
+            }
         }
     }
 
