@@ -28,3 +28,11 @@ auth:
     access-ttl: 30m
     refresh-ttl: 7d
     issuer: test
+
+management:
+  health:
+    # 测试环境不提供 Redis，但 /actuator/health 默认会探测 Redis 连接；
+    # 探测失败会把聚合状态置为 DOWN 并返回 503，使 SecurityIntegrationTest
+    # 依赖"本机恰好有 Redis"这一环境条件。关闭该健康项，让测试自洽。
+    redis:
+      enabled: false
