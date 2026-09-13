@@ -28,6 +28,7 @@ vi.mock('@/features/agent/api/agent-api', () => ({
 
 const agent: AgentCard = {
   id: 41,
+  templateId: null,
   spaceId: 7,
   name: '文档审计 Agent',
   description: '检查事实、结构与发布风险',
@@ -106,6 +107,7 @@ describe('AgentManagementView', () => {
     expect(wrapper.text()).toContain('ROUTER')
     expect(wrapper.text()).toContain('已启用 5')
     expect(wrapper.text()).toContain('50K Token')
+    expect(wrapper.get('.agent-card').text()).toContain('空间')
     expect(wrapper.text()).toContain('新建 Agent')
     expect(wrapper.find('[aria-label="Agent 操作"]').exists()).toBe(true)
   })

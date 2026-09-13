@@ -3,7 +3,7 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.convertor.AgentConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
-import com.agentdoc.agent.enums.SkillVersionStatus;
+import com.agentdoc.agent.enums.TemplateVersionStatus;
 import com.agentdoc.agent.mapper.AgentTemplateMapper;
 import com.agentdoc.agent.mapper.AgentTemplateMcpMapper;
 import com.agentdoc.agent.mapper.AgentTemplateSkillMapper;
@@ -31,6 +31,63 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AgentTemplateServiceTest {
+
+    @Test
+    void restoresDisabledTemplateVersionAfterRevalidatingDependencies() {
+        AgentTemplateMapper templateMapper = mock(AgentTemplateMapper.class);
+        AgentTemplateVersionMapper versionMapper = mock(AgentTemplateVersionMapper.class);
+        AgentTemplateSkillMapper skillReferenceMapper = mock(AgentTemplateSkillMapper.class);
+        AgentTemplateMcpMapper mcpReferenceMapper = mock(AgentTemplateMcpMapper.class);
+        ModelService modelService = mock(ModelService.class);
+        McpTemplateService mcpTemplateService = mock(McpTemplateService.class);
+        AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
+                skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
+                mock(PlatformAccessService.class), modelService, mock(AgentService.class),
+                mock(AgentSkillService.class), mock(AgentMcpBindingService.class), mock(McpServerService.class),
+                mcpTemplateService, mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
+        AgentTemplateEntity template = new AgentTemplateEntity();
+        template.setId(10L);
+        template.setStatus(AgentStatus.ENABLED.getCode());
+        AgentTemplateVersionEntity version = version(200L, 2, "published-prompt");
+        version.setStatus(TemplateVersionStatus.DISABLED.getCode());
+        when(templateMapper.selectById(10L)).thenReturn(template);
+        when(versionMapper.selectById(200L)).thenReturn(version);
+        when(skillReferenceMapper.selectList(any())).thenReturn(List.of());
+        when(mcpReferenceMapper.selectList(any())).thenReturn(List.of());
+        when(mcpTemplateService.requirePublishedVersions(List.of(), true)).thenReturn(java.util.Map.of());
+
+        service.enableVersion(200L);
+
+        assertThat(version.getStatus()).isEqualTo(TemplateVersionStatus.PUBLISHED.getCode());
+        verify(modelService).requireEnabled(20L);
+        verify(versionMapper).updateById(version);
+    }
+
+    @Test
+    void normalUserCanReadEnabledTemplateWithPublishedVersion() {
+        AgentTemplateMapper templateMapper = mock(AgentTemplateMapper.class);
+        AgentTemplateVersionMapper versionMapper = mock(AgentTemplateVersionMapper.class);
+        PlatformAccessService accessService = mock(PlatformAccessService.class);
+        AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
+                mock(AgentTemplateSkillMapper.class), mock(AgentTemplateMcpMapper.class),
+                mock(SpaceSkillInstallationService.class), accessService, mock(ModelService.class),
+                mock(AgentService.class), mock(AgentSkillService.class), mock(AgentMcpBindingService.class),
+                mock(McpServerService.class), mock(McpTemplateService.class), mock(SpaceAccessService.class),
+                mock(SkillAuditLogService.class));
+        AgentTemplateEntity template = new AgentTemplateEntity();
+        template.setId(10L);
+        template.setName("content-review");
+        template.setDisplayName("内容审核");
+        template.setStatus(AgentStatus.ENABLED.getCode());
+        AgentTemplateVersionEntity published = version(200L, 2, "published-prompt");
+        when(templateMapper.selectById(10L)).thenReturn(template);
+        when(versionMapper.selectOne(any())).thenReturn(published);
+
+        var result = service.detail(10L);
+
+        assertThat(result.id()).isEqualTo(10L);
+        assertThat(result.latestPublishedVersionNo()).isEqualTo(2);
+    }
 
     @Test
     void previewsThreeWayConflictWithoutChangingAgent() {
@@ -190,7 +247,7 @@ class AgentTemplateServiceTest {
         version.setId(id);
         version.setTemplateId(10L);
         version.setVersionNo(versionNo);
-        version.setStatus(SkillVersionStatus.PUBLISHED.getCode());
+        version.setStatus(TemplateVersionStatus.PUBLISHED.getCode());
         version.setDisplayName("Template Agent");
         version.setDescription("description");
         version.setSystemPrompt(prompt);

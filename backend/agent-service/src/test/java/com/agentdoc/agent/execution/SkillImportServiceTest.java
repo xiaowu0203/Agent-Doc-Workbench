@@ -45,7 +45,7 @@ class SkillImportServiceTest {
         entity.setDisplayName(parsed.name());
         entity.setDescription(parsed.description());
         entity.setStatus(SkillStatus.ACTIVE.getCode());
-        SkillVO skillVO = new SkillVO(10L, SkillScopeType.SPACE, 7L,
+        SkillVO skillVO = new SkillVO(10L, SkillScopeType.SPACE, null, 7L,
                 parsed.name(), parsed.name(), parsed.description(),
                 SkillStatus.ACTIVE, 1, 0, null, 1L, null, null);
         SkillVersionVO versionVO = new SkillVersionVO(20L, 10L, 1, SkillVersionStatus.DRAFT,

@@ -5,7 +5,11 @@ import com.agentdoc.agent.pojo.dto.SkillUpdateDTO;
 import com.agentdoc.agent.pojo.dto.SystemSkillCreateDTO;
 import com.agentdoc.agent.pojo.param.SystemSkillSearchParam;
 import com.agentdoc.agent.pojo.vo.SkillVO;
+import com.agentdoc.agent.pojo.vo.SkillImportVO;
+import com.agentdoc.agent.pojo.vo.SkillAgentBindingVO;
 import com.agentdoc.agent.pojo.vo.SkillVersionVO;
+import com.agentdoc.agent.service.AgentSkillService;
+import com.agentdoc.agent.service.SkillImportService;
 import com.agentdoc.agent.service.SkillService;
 import com.agentdoc.agent.service.SkillVersionService;
 import com.agentdoc.common.annotation.RequireLogin;
@@ -15,7 +19,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,9 +31,13 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
@@ -39,7 +50,9 @@ import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
 public class SystemSkillController {
 
     private final SkillService skillService;
+    private final AgentSkillService agentSkillService;
     private final SkillVersionService versionService;
+    private final SkillImportService skillImportService;
 
     @Operation(summary = "查询系统 Skill 目录")
     @PostMapping("/search")
@@ -58,6 +71,15 @@ public class SystemSkillController {
     @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
     public Result<SkillVO> create(@Valid @RequestBody SystemSkillCreateDTO dto) {
         return Result.ok(skillService.toVO(skillService.createSystem(dto)));
+    }
+
+    @Operation(summary = "上传 ZIP 并自动创建系统 Skill 与首个草稿版本")
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    public Result<SkillImportVO> importPackage(@RequestParam(required = false) String displayName,
+                                                @RequestParam(required = false) String description,
+                                                @RequestPart("file") MultipartFile file) {
+        return Result.ok(skillImportService.importSystemPackage(displayName, description, file));
     }
 
     @Operation(summary = "更新系统 Skill")
@@ -85,6 +107,26 @@ public class SystemSkillController {
     @GetMapping("/{skillId}/versions/{versionId}")
     public Result<SkillVersionVO> versionDetail(@PathVariable Long skillId, @PathVariable Long versionId) {
         return Result.ok(versionService.toSystemVOForController(skillId, versionId));
+    }
+
+    @Operation(summary = "查询系统 Skill 关联的 Agent")
+    @GetMapping("/{skillId}/agents")
+    public Result<List<SkillAgentBindingVO>> agents(@PathVariable Long skillId) {
+        return Result.ok(agentSkillService.listBySkill(skillId));
+    }
+
+    @Operation(summary = "下载系统 Skill 版本 ZIP")
+    @GetMapping("/{skillId}/versions/{versionId}/package")
+    public ResponseEntity<InputStreamResource> downloadVersion(@PathVariable Long skillId,
+                                                                @PathVariable Long versionId) {
+        InputStream input = versionService.downloadSystem(skillId, versionId);
+        String filename = skillService.requireSystem(skillId).getName() + "-" +
+                versionService.detailSystem(skillId, versionId).getVersionNo() + ".zip";
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename*=UTF-8''" +
+                        URLEncoder.encode(filename, StandardCharsets.UTF_8))
+                .body(new InputStreamResource(input));
     }
 
     @Operation(summary = "停用系统 Skill")

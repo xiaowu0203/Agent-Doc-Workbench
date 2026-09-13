@@ -3,7 +3,7 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
-import com.agentdoc.agent.enums.SkillVersionStatus;
+import com.agentdoc.agent.enums.TemplateVersionStatus;
 import com.agentdoc.agent.mapper.AgentTemplateMapper;
 import com.agentdoc.agent.mapper.AgentTemplateMcpMapper;
 import com.agentdoc.agent.mapper.AgentTemplateSkillMapper;
@@ -126,7 +126,7 @@ public class AgentTemplateService {
             query.eq(AgentTemplateEntity::getStatus, AgentStatus.ENABLED.getCode());
             query.inSql(AgentTemplateEntity::getId,
                     "SELECT DISTINCT template_id FROM agent_template_version WHERE status = "
-                            + SkillVersionStatus.PUBLISHED.getCode());
+                            + TemplateVersionStatus.PUBLISHED.getCode());
         } else if (param.getStatus() != null) {
             query.eq(AgentTemplateEntity::getStatus, param.getStatus());
         }
@@ -146,13 +146,31 @@ public class AgentTemplateService {
         Map<Long, AgentTemplateVersionEntity> latestByTemplate = versionMapper.selectList(
                         new LambdaQueryWrapper<AgentTemplateVersionEntity>()
                                 .in(AgentTemplateVersionEntity::getTemplateId, templateIds)
-                                .eq(AgentTemplateVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode()))
+                                .eq(AgentTemplateVersionEntity::getStatus, TemplateVersionStatus.PUBLISHED.getCode()))
                 .stream().collect(Collectors.toMap(AgentTemplateVersionEntity::getTemplateId, Function.identity(),
                         (left, right) -> left.getVersionNo() >= right.getVersionNo() ? left : right));
         return PageVO.of(page.getRecords().stream().map(entity -> {
             AgentTemplateVersionEntity latest = latestByTemplate.get(entity.getId());
             return toVO(entity, latest == null ? null : latest.getVersionNo());
         }).toList(), page.getTotal(), param);
+    }
+
+    /**
+     * 查询 Agent 模板详情。
+     *
+     * <p>普通用户仅可查看已启用且存在已发布版本的模板；平台超级管理员可查看全部模板。</p>
+     *
+     * @param templateId 模板 ID
+     * @return 模板详情
+     */
+    public AgentTemplateVO detail(Long templateId) {
+        AgentTemplateEntity entity = requireTemplate(templateId);
+        AgentTemplateVersionEntity latestPublished = findLatestPublishedVersion(templateId);
+        if (!platformAccessService.hasRole(SUPER_ADMIN)
+                && (!AgentStatus.ENABLED.matches(entity.getStatus()) || latestPublished == null)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 模板不存在");
+        }
+        return toVO(entity, latestPublished == null ? null : latestPublished.getVersionNo());
     }
 
     /**
@@ -200,7 +218,7 @@ public class AgentTemplateService {
         AgentTemplateVersionEntity version = new AgentTemplateVersionEntity();
         version.setTemplateId(templateId);
         version.setVersionNo(template.getNextVersionNo());
-        version.setStatus(SkillVersionStatus.DRAFT.getCode());
+        version.setStatus(TemplateVersionStatus.DRAFT.getCode());
         version.setDisplayName(dto.displayName());
         version.setDescription(dto.description());
         version.setSystemPrompt(dto.systemPrompt());
@@ -245,6 +263,66 @@ public class AgentTemplateService {
     }
 
     /**
+     * 更新 Agent 模板草稿版本。已发布版本不可覆盖修改，发布版本的调整应创建新版本。
+     *
+     * @param versionId 草稿版本 ID
+     * @param dto       版本配置
+     * @return 更新后的草稿版本
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentTemplateVersionVO updateVersion(Long versionId, AgentTemplateVersionCreateDTO dto) {
+        requireManage();
+        AgentTemplateVersionEntity version = requireVersion(versionId);
+        if (!TemplateVersionStatus.DRAFT.matches(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有草稿模板版本可以修改，已发布版本请创建新版本");
+        }
+        validateModel(dto.modelId(), dto.skillRouterModelId(), dto.skillSelectionMode().name());
+        validateSkillReferences(dto.skills(), false);
+        Map<Long, McpTemplateVersionEntity> mcpVersions = validateMcpReferences(dto.mcps(), false);
+
+        version.setDisplayName(dto.displayName());
+        version.setDescription(dto.description());
+        version.setSystemPrompt(dto.systemPrompt());
+        version.setModelId(dto.modelId());
+        version.setSkillSelectionMode(dto.skillSelectionMode().name());
+        version.setSkillRouterModelId(dto.skillRouterModelId());
+        version.setExternalMcpEnabled(dto.externalMcpEnabled());
+        version.setTokenBudget(dto.tokenBudget());
+        version.setToolWhitelist(dto.toolWhitelist() == null ? null
+                : JsonUtils.toJson(dto.toolWhitelist().stream().distinct().sorted().toList()));
+        version.setMaxIterations(dto.maxIterations() == null
+                ? AgentConstant.DEFAULT_MAX_ITERATIONS : dto.maxIterations());
+        version.setExecutionTimeoutSeconds(dto.executionTimeoutSeconds() == null
+                ? AgentConstant.DEFAULT_EXECUTION_TIMEOUT_SECONDS : dto.executionTimeoutSeconds());
+        versionMapper.updateById(version);
+
+        templateSkillMapper.delete(new LambdaQueryWrapper<AgentTemplateSkillEntity>()
+                .eq(AgentTemplateSkillEntity::getTemplateVersionId, versionId));
+        for (AgentTemplateSkillDTO skill : safeSkills(dto.skills())) {
+            AgentTemplateSkillEntity reference = new AgentTemplateSkillEntity();
+            reference.setTemplateVersionId(versionId);
+            reference.setSkillId(skill.skillId());
+            reference.setSkillVersionId(skill.skillVersionId());
+            templateSkillMapper.insert(reference);
+        }
+        templateMcpMapper.delete(new LambdaQueryWrapper<AgentTemplateMcpEntity>()
+                .eq(AgentTemplateMcpEntity::getTemplateVersionId, versionId));
+        for (AgentTemplateMcpDTO mcp : safeMcps(dto.mcps())) {
+            McpTemplateVersionEntity mcpVersion = mcpVersions.get(mcp.mcpTemplateVersionId());
+            AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
+            reference.setTemplateVersionId(versionId);
+            reference.setMcpTemplateId(mcpVersion.getTemplateId());
+            reference.setMcpTemplateVersionId(mcpVersion.getId());
+            reference.setToolWhitelistJson(mcp.toolWhitelist() == null ? null
+                    : JsonUtils.toJson(mcp.toolWhitelist().stream().distinct().sorted().toList()));
+            templateMcpMapper.insert(reference);
+        }
+        auditLogService.record(null, "AGENT_TEMPLATE_VERSION_UPDATED", "agent_template_version", versionId,
+                Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
+        return toVersionVO(version);
+    }
+
+    /**
      * 发布草稿模板版本，状态变更为PUBLISHED。
      *
      * <p>发布前校验模型、Skill、MCP引用合法性；发布后的版本不可修改，可用于空间安装。</p>
@@ -256,17 +334,59 @@ public class AgentTemplateService {
     public AgentTemplateVersionVO publish(Long versionId) {
         requireManage();
         AgentTemplateVersionEntity version = requireVersion(versionId);
-        if (!SkillVersionStatus.DRAFT.matches(version.getStatus())) {
+        if (!TemplateVersionStatus.DRAFT.matches(version.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有草稿模板版本可以发布");
         }
         validateModel(version.getModelId(), version.getSkillRouterModelId(), version.getSkillSelectionMode());
         validateStoredSkillReferences(versionId, true);
         validateStoredMcpReferences(versionId, true);
-        version.setStatus(SkillVersionStatus.PUBLISHED.getCode());
+        version.setStatus(TemplateVersionStatus.PUBLISHED.getCode());
         version.setPublishedBy(AuthUtils.getUserIdOrException());
         version.setPublishedAt(LocalDateTime.now());
         versionMapper.updateById(version);
         auditLogService.record(null, "AGENT_TEMPLATE_VERSION_PUBLISHED", "agent_template_version", version.getId(),
+                Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
+        return toVersionVO(version);
+    }
+
+    /**
+     * 停用已发布的 Agent 模板版本。停用只影响后续安装和升级，不修改已经安装的空间 Agent。
+     *
+     * @param versionId 版本 ID
+     * @return 停用后的版本
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentTemplateVersionVO disableVersion(Long versionId) {
+        requireManage();
+        AgentTemplateVersionEntity version = requireVersion(versionId);
+        if (!TemplateVersionStatus.PUBLISHED.matches(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有已发布版本可以停用");
+        }
+        version.setStatus(TemplateVersionStatus.DISABLED.getCode());
+        versionMapper.updateById(version);
+        auditLogService.record(null, "AGENT_TEMPLATE_VERSION_DISABLED", "agent_template_version", versionId,
+                Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
+        return toVersionVO(version);
+    }
+
+    /** 恢复已停用的 Agent 模板版本，供后续安装和升级使用。 */
+    @Transactional(rollbackFor = Exception.class)
+    public AgentTemplateVersionVO enableVersion(Long versionId) {
+        requireManage();
+        AgentTemplateVersionEntity version = requireVersion(versionId);
+        if (!TemplateVersionStatus.DISABLED.matches(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有已停用版本可以恢复");
+        }
+        AgentTemplateEntity template = requireTemplate(version.getTemplateId());
+        if (!AgentStatus.ENABLED.matches(template.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "请先启用 Agent 模板主体");
+        }
+        validateModel(version.getModelId(), version.getSkillRouterModelId(), version.getSkillSelectionMode());
+        validateStoredSkillReferences(versionId, true);
+        validateStoredMcpReferences(versionId, true);
+        version.setStatus(TemplateVersionStatus.PUBLISHED.getCode());
+        versionMapper.updateById(version);
+        auditLogService.record(null, "AGENT_TEMPLATE_VERSION_ENABLED", "agent_template_version", versionId,
                 Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
         return toVersionVO(version);
     }
@@ -289,7 +409,7 @@ public class AgentTemplateService {
                 .eq(AgentTemplateVersionEntity::getTemplateId, templateId)
                 .orderByDesc(AgentTemplateVersionEntity::getVersionNo);
         if (!manager) {
-            query.eq(AgentTemplateVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode());
+            query.eq(AgentTemplateVersionEntity::getStatus, TemplateVersionStatus.PUBLISHED.getCode());
         }
         List<AgentTemplateVersionEntity> versions = versionMapper.selectList(query);
         if (versions.isEmpty()) {
@@ -330,7 +450,7 @@ public class AgentTemplateService {
         AgentTemplateVersionEntity version = requireVersion(dto.templateVersionId());
         AgentTemplateEntity template = requireTemplate(version.getTemplateId());
         if (!AgentStatus.ENABLED.matches(template.getStatus())
-                || !SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {
+                || !TemplateVersionStatus.PUBLISHED.matches(version.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "只能安装已启用模板的已发布版本");
         }
         validateStoredSkillReferences(version.getId(), false);
@@ -389,7 +509,7 @@ public class AgentTemplateService {
         AgentTemplateVersionEntity targetVersion = requireVersion(dto.targetVersionId());
         if (!AgentStatus.ENABLED.matches(template.getStatus())
                 || !template.getId().equals(targetVersion.getTemplateId())
-                || !SkillVersionStatus.PUBLISHED.matches(targetVersion.getStatus())
+                || !TemplateVersionStatus.PUBLISHED.matches(targetVersion.getStatus())
                 || targetVersion.getVersionNo() <= currentVersion.getVersionNo()) {
             throw new BusinessException(ErrorCode.CONFLICT, "目标版本不是当前模板的可用新版本");
         }
@@ -739,12 +859,15 @@ public class AgentTemplateService {
      * @return AgentTemplateVO
      */
     private AgentTemplateVO toVO(AgentTemplateEntity entity) {
-        AgentTemplateVersionEntity latest = versionMapper.selectOne(
-                new LambdaQueryWrapper<AgentTemplateVersionEntity>()
-                        .eq(AgentTemplateVersionEntity::getTemplateId, entity.getId())
-                        .eq(AgentTemplateVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode())
-                        .orderByDesc(AgentTemplateVersionEntity::getVersionNo).last("LIMIT 1"));
+        AgentTemplateVersionEntity latest = findLatestPublishedVersion(entity.getId());
         return toVO(entity, latest == null ? null : latest.getVersionNo());
+    }
+
+    private AgentTemplateVersionEntity findLatestPublishedVersion(Long templateId) {
+        return versionMapper.selectOne(new LambdaQueryWrapper<AgentTemplateVersionEntity>()
+                .eq(AgentTemplateVersionEntity::getTemplateId, templateId)
+                .eq(AgentTemplateVersionEntity::getStatus, TemplateVersionStatus.PUBLISHED.getCode())
+                .orderByDesc(AgentTemplateVersionEntity::getVersionNo).last("LIMIT 1"));
     }
 
     /**

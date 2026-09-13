@@ -113,7 +113,7 @@ public final class AgentConvertor {
      */
     public static AgentCardVO toCardVO(AgentEntity entity, String modelDisplayName,
                                        long skillCount, long mcpCount, long toolCount) {
-        return new AgentCardVO(entity.getId(), entity.getSpaceId(), entity.getName(), entity.getDescription(),
+        return new AgentCardVO(entity.getId(), entity.getTemplateId(), entity.getSpaceId(), entity.getName(), entity.getDescription(),
                 entity.getModelId(), modelDisplayName, SkillSelectionMode.valueOf(entity.getSkillSelectionMode()),
                 entity.getExternalMcpEnabled(), entity.getTokenBudget(), entity.getMaxIterations(),
                 entity.getExecutionTimeoutSeconds(), entity.getConfigVersion(), AgentStatus.fromCode(entity.getStatus()),

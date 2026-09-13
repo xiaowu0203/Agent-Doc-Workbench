@@ -11,7 +11,7 @@ public record AgentTemplateVersionVO(
         @Schema(description = "模板版本 ID") Long id,
         @Schema(description = "模板 ID") Long templateId,
         @Schema(description = "版本号") Integer versionNo,
-        @Schema(description = "状态：0 草稿 / 1 已发布") Integer status,
+        @Schema(description = "状态：0 草稿 / 1 已发布 / 2 已停用") Integer status,
         @Schema(description = "默认展示名称") String displayName,
         @Schema(description = "版本说明") String description,
         @Schema(description = "默认系统提示词") String systemPrompt,

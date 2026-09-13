@@ -14,6 +14,9 @@ public record AgentCardVO(
         @Schema(description = "Agent ID")
         Long id,
 
+        @Schema(description = "来源系统 Agent 模板 ID；空间自建 Agent 为空")
+        Long templateId,
+
         @Schema(description = "空间 ID")
         Long spaceId,
 

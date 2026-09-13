@@ -14,4 +14,54 @@
         </foreach>
         GROUP BY relation.skill_id;
     </select>
+
+    <select id="selectEnabledAgentCountsInSpace" resultType="com.agentdoc.agent.pojo.vo.SkillBindingCountVO">
+        SELECT relation.skill_id AS skillId, COUNT(DISTINCT relation.agent_id) AS boundAgentCount
+        FROM agent_skill relation
+            INNER JOIN agent ON agent.id = relation.agent_id
+                AND agent.deleted = 0
+                AND agent.space_id = #{spaceId}
+        WHERE relation.enabled = 1 AND relation.skill_id IN
+        <foreach collection='skillIds' item='skillId' open='(' separator=',' close=')'>
+            #{skillId}
+        </foreach>
+        GROUP BY relation.skill_id
+    </select>
+
+    <select id="selectVisibleInSpacePage" resultType="com.agentdoc.agent.pojo.entity.SkillEntity">
+        SELECT skill.id,
+               skill.scope_type,
+               CASE WHEN skill.scope_type = 'SYSTEM' THEN #{spaceId} ELSE skill.space_id END AS space_id,
+               skill.name,
+               skill.display_name,
+               skill.description,
+               CASE WHEN skill.scope_type = 'SYSTEM' THEN installation.enabled ELSE skill.status END AS status,
+               skill.next_version_no,
+               skill.created_by,
+               skill.created_at,
+               CASE WHEN skill.scope_type = 'SYSTEM' THEN installation.updated_at ELSE skill.updated_at END AS updated_at,
+               skill.deleted,
+               installation.id AS installation_id,
+               installation.skill_version_id AS installed_version_id
+        FROM skill
+        LEFT JOIN space_skill_installation installation
+            ON installation.skill_id = skill.id
+            AND installation.space_id = #{spaceId}
+        WHERE skill.deleted = 0
+          AND ((skill.scope_type = 'SPACE' AND skill.space_id = #{spaceId})
+            OR (skill.scope_type = 'SYSTEM' AND skill.space_id IS NULL AND installation.id IS NOT NULL))
+        <if test="status != null">
+            AND CASE WHEN skill.scope_type = 'SYSTEM' THEN installation.enabled ELSE skill.status END = #{status}
+        </if>
+        <if test="sourceType != null">
+            AND skill.scope_type = #{sourceType}
+        </if>
+        <if test="keyword != null and keyword != ''">
+            AND (skill.name LIKE CONCAT('%', #{keyword}, '%')
+              OR skill.display_name LIKE CONCAT('%', #{keyword}, '%')
+              OR skill.description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY CASE WHEN skill.scope_type = 'SYSTEM' THEN installation.updated_at ELSE skill.updated_at END DESC,
+                 skill.id DESC
+    </select>
 </mapper>

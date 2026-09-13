@@ -26,7 +26,7 @@ public final class SkillConvertor {
      */
     public static SkillVO toVO(SkillEntity entity, long versionCount, long boundAgentCount,
                                SkillLatestVersionVO latestVersion) {
-        return new SkillVO(entity.getId(), SkillScopeType.fromValue(entity.getScopeType()), entity.getSpaceId(),
+        return new SkillVO(entity.getId(), SkillScopeType.fromValue(entity.getScopeType()), entity.getInstallationId(), entity.getSpaceId(),
                 entity.getName(), entity.getDisplayName(),
                 entity.getDescription(),
                 SkillStatus.fromCode(entity.getStatus()), versionCount, boundAgentCount, latestVersion,

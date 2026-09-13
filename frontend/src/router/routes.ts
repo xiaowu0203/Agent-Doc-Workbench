@@ -19,6 +19,7 @@ const PlatformDepartmentManagementView = () =>
 const PlatformUserManagementView = () => import('@/views/PlatformUserManagementView.vue')
 const SkillManagementView = () => import('@/views/SkillManagementView.vue')
 const SpaceOverviewView = () => import('@/views/SpaceOverviewView.vue')
+const SystemCapabilityCenterView = () => import('@/views/SystemCapabilityCenterView.vue')
 const TaskCreateView = () => import('@/views/TaskCreateView.vue')
 const TaskDetailView = () => import('@/views/TaskDetailView.vue')
 const TaskListView = () => import('@/views/TaskListView.vue')
@@ -153,6 +154,12 @@ export const routes: RouteRecordRaw[] = [
         path: 'system/models',
         name: 'system-models',
         component: ModelManagementView,
+        meta: { platformRole: PLATFORM_ROLES.SUPER_ADMIN },
+      },
+      {
+        path: 'system/capabilities',
+        name: 'system-capabilities',
+        component: SystemCapabilityCenterView,
         meta: { platformRole: PLATFORM_ROLES.SUPER_ADMIN },
       },
       {

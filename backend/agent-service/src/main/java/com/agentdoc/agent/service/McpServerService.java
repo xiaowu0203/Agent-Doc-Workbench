@@ -2,6 +2,7 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.convertor.McpServerConvertor;
 import com.agentdoc.agent.enums.McpAuthType;
+import com.agentdoc.agent.enums.CapabilitySourceType;
 import com.agentdoc.agent.enums.McpConnectionStatus;
 import com.agentdoc.agent.mapper.McpServerMapper;
 import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
@@ -144,6 +145,11 @@ public class McpServerService {
         }
         if (param.getAuthType() != null) {
             query.eq(McpServerEntity::getAuthType, param.getAuthType().name());
+        }
+        if (param.getSourceType() == CapabilitySourceType.SYSTEM) {
+            query.isNotNull(McpServerEntity::getTemplateId);
+        } else if (param.getSourceType() == CapabilitySourceType.SPACE) {
+            query.isNull(McpServerEntity::getTemplateId);
         }
 
         // 进行分页查询

@@ -15,7 +15,9 @@ export interface SkillLatestVersion {
 
 export interface Skill {
   id: EntityId
-  spaceId: EntityId
+  scopeType: 'SYSTEM' | 'SPACE'
+  installationId: EntityId | null
+  spaceId: EntityId | null
   name: string
   displayName: string
   description: string

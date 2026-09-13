@@ -30,8 +30,8 @@ public class SystemCapabilityCatalogService {
         String keyword = normalizeKeyword(param.getKeyword());
         long offset = (long) (param.getPageNum() - 1) * param.getPageSize();
         List<SystemCapabilityCatalogVO> records = mapper.selectCatalogPage(
-                type, status, keyword, !manager, offset, param.getPageSize());
-        long total = mapper.countCatalog(type, status, keyword, !manager);
+                type, status, keyword, !manager, manager, offset, param.getPageSize());
+        long total = mapper.countCatalog(type, status, keyword, !manager, manager);
         return PageVO.of(records, total, param);
     }
 

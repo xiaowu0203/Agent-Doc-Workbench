@@ -25,14 +25,14 @@ class SystemCapabilityCatalogServiceTest {
         param.setType(SystemCapabilityType.MCP_TEMPLATE);
         param.setStatus(0);
         param.setKeyword("  search  ");
-        when(mapper.selectCatalogPage("MCP_TEMPLATE", null, "search", true, 0L, 10))
+        when(mapper.selectCatalogPage("MCP_TEMPLATE", null, "search", true, false, 0L, 10))
                 .thenReturn(List.of());
-        when(mapper.countCatalog("MCP_TEMPLATE", null, "search", true)).thenReturn(0L);
+        when(mapper.countCatalog("MCP_TEMPLATE", null, "search", true, false)).thenReturn(0L);
 
         service.search(param);
 
-        verify(mapper).selectCatalogPage("MCP_TEMPLATE", null, "search", true, 0L, 10);
-        verify(mapper).countCatalog("MCP_TEMPLATE", null, "search", true);
+        verify(mapper).selectCatalogPage("MCP_TEMPLATE", null, "search", true, false, 0L, 10);
+        verify(mapper).countCatalog("MCP_TEMPLATE", null, "search", true, false);
     }
 
     @Test
@@ -44,12 +44,12 @@ class SystemCapabilityCatalogServiceTest {
         param.setPageNum(2);
         param.setStatus(0);
         when(accessService.hasRole(SUPER_ADMIN)).thenReturn(true);
-        when(mapper.selectCatalogPage(null, 0, null, false, 10L, 10)).thenReturn(List.of());
-        when(mapper.countCatalog(null, 0, null, false)).thenReturn(0L);
+        when(mapper.selectCatalogPage(null, 0, null, false, true, 10L, 10)).thenReturn(List.of());
+        when(mapper.countCatalog(null, 0, null, false, true)).thenReturn(0L);
 
         service.search(param);
 
-        verify(mapper).selectCatalogPage(null, 0, null, false, 10L, 10);
+        verify(mapper).selectCatalogPage(null, 0, null, false, true, 10L, 10);
     }
 
     @Test

@@ -46,6 +46,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
 public class AgentSkillService {
 
     private final AgentService agentService;
+    private final SkillService skillService;
     private final SpaceAccessService spaceAccessService;
     private final AgentMapper agentMapper;
     private final AgentSkillMapper agentSkillMapper;
@@ -89,13 +90,15 @@ public class AgentSkillService {
         if (skill == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Skill 不存在");
         }
-        if (SkillScopeType.fromValue(skill.getScopeType()) != SkillScopeType.SPACE
-                || skill.getSpaceId() == null) {
+        SkillScopeType scopeType = SkillScopeType.fromValue(skill.getScopeType());
+        if (scopeType == SkillScopeType.SYSTEM) {
+            skillService.requireSystemRead(skill);
+        } else if (scopeType == SkillScopeType.SPACE && skill.getSpaceId() != null) {
+            // 校验当前用户拥有该空间Skill读取权限
+            spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
+        } else {
             throw new BusinessException(ErrorCode.NOT_FOUND, "空间 Skill 不存在");
         }
-
-        // 校验当前用户拥有该空间Skill读取权限
-        spaceAccessService.requirePermission(skill.getSpaceId(), SKILL_READ);
 
         // 查询该技能下，启用状态的Agent‑Skill绑定关系，按agentId升序
         List<AgentSkillEntity> relations = agentSkillMapper.selectList(

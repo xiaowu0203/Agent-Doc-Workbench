@@ -1,5 +1,6 @@
 package com.agentdoc.agent.pojo.param;
 
+import com.agentdoc.agent.enums.CapabilitySourceType;
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.common.pojo.dto.PageParam;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -31,6 +32,9 @@ public class McpServerSearchParam extends PageParam {
 
     @Schema(description = "认证类型")
     private McpAuthType authType;
+
+    @Schema(description = "来源：SYSTEM 系统安装 / SPACE 空间创建")
+    private CapabilitySourceType sourceType;
 
     @Size(max = MAX_SEARCH_KEYWORD_LENGTH)
     @Schema(description = "技术标识或展示名称关键字")

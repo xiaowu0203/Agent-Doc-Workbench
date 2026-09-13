@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
+
 @Tag(name = "系统 Agent 模板", description = "平台 Agent 模板与不可变版本")
 @RestController
 @RequestMapping("/api/agent/agent-templates")
@@ -39,15 +41,21 @@ public class AgentTemplateController {
         return Result.ok(service.search(param));
     }
 
+    @GetMapping("/{id}")
+    @Operation(summary = "查询系统 Agent 模板详情")
+    public Result<AgentTemplateVO> detail(@PathVariable Long id) {
+        return Result.ok(service.detail(id));
+    }
+
     @PostMapping
-    @PreAuthorize("hasRole('PLATFORM_SUPER_ADMIN')")
+    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "创建系统 Agent 模板")
     public Result<AgentTemplateVO> create(@Valid @RequestBody AgentTemplateCreateDTO dto) {
         return Result.ok(service.create(dto));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('PLATFORM_SUPER_ADMIN')")
+    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "更新系统 Agent 模板")
     public Result<AgentTemplateVO> update(@PathVariable Long id, @Valid @RequestBody AgentTemplateUpdateDTO dto) {
         return Result.ok(service.update(id, dto));
@@ -60,7 +68,7 @@ public class AgentTemplateController {
     }
 
     @PostMapping("/{id}/versions")
-    @PreAuthorize("hasRole('PLATFORM_SUPER_ADMIN')")
+    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "创建 Agent 模板草稿版本")
     public Result<AgentTemplateVersionVO> createVersion(@PathVariable Long id,
                                                         @Valid @RequestBody AgentTemplateVersionCreateDTO dto) {

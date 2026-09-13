@@ -190,20 +190,15 @@ public class SkillService {
         // 校验空间读权限
         requireRead(param.getSpaceId());
 
-        LambdaQueryWrapper<SkillEntity> wrapper = new LambdaQueryWrapper<SkillEntity>()
-                .eq(SkillEntity::getScopeType, SkillScopeType.SPACE.name())
-                .eq(SkillEntity::getSpaceId, param.getSpaceId())
-                .orderByDesc(SkillEntity::getUpdatedAt);
-
-        // 状态筛选
-        if (param.getStatus() != null) {
-            wrapper.eq(SkillEntity::getStatus, param.getStatus());
-        }
-
-        // 关键词搜索条件构建（匹配Name、DisplayName、Description）
-        appendKeywordCondition(wrapper, param.getKeyword());
-
-        return listPage(param, wrapper, false);
+        String keyword = param.getKeyword() == null ? null : param.getKeyword().trim();
+        Page<SkillEntity> page = skillMapper.selectVisibleInSpacePage(
+                PageUtils.toPage(param), param.getSpaceId(), param.getStatus(),
+                param.getSourceType() == null ? null : param.getSourceType().name(), keyword);
+        SkillListSummaries summaries = listSpaceVisibleSummaries(page.getRecords(), param.getSpaceId());
+        List<SkillVO> records = page.getRecords().stream()
+                .map(skill -> toVO(skill, summaries))
+                .toList();
+        return PageVO.of(records, page.getTotal(), param);
     }
 
     /**
@@ -892,6 +887,42 @@ public class SkillService {
                 boundAgentCounts,
                 latestVersions
         );
+    }
+
+    /**
+     * 聚合空间可见 Skill 卡片数据。系统 Skill 使用空间固定的安装版本，绑定数量限定当前空间。
+     */
+    private SkillListSummaries listSpaceVisibleSummaries(List<SkillEntity> skills, Long spaceId) {
+        if (skills.isEmpty()) {
+            return new SkillListSummaries(Map.of(), Map.of(), Map.of());
+        }
+        List<Long> skillIds = skills.stream().map(SkillEntity::getId).toList();
+        List<SkillVersionEntity> versions = skillVersionMapper.selectList(
+                new LambdaQueryWrapper<SkillVersionEntity>().in(SkillVersionEntity::getSkillId, skillIds));
+        Map<Long, Long> versionCounts = new HashMap<>();
+        Map<Long, SkillLatestVersionVO> latestVersions = new HashMap<>();
+        Map<Long, Long> installedVersionIds = skills.stream()
+                .filter(skill -> skill.getInstalledVersionId() != null)
+                .collect(Collectors.toMap(SkillEntity::getId, SkillEntity::getInstalledVersionId));
+        versions.forEach(version -> {
+            boolean systemSkill = installedVersionIds.containsKey(version.getSkillId());
+            if (!systemSkill || SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {
+                versionCounts.merge(version.getSkillId(), 1L, Long::sum);
+            }
+            if (systemSkill) {
+                if (version.getId().equals(installedVersionIds.get(version.getSkillId()))) {
+                    latestVersions.put(version.getSkillId(), SkillVersionConvertor.toLatestVersionVO(version));
+                }
+            } else {
+                latestVersions.compute(version.getSkillId(), (skillId, current) ->
+                        current == null || version.getVersionNo() > current.versionNo()
+                                ? SkillVersionConvertor.toLatestVersionVO(version) : current);
+            }
+        });
+        Map<Long, Long> boundAgentCounts = skillMapper.selectEnabledAgentCountsInSpace(spaceId, skillIds)
+                .stream().collect(Collectors.toMap(
+                        SkillBindingCountVO::getSkillId, SkillBindingCountVO::getBoundAgentCount));
+        return new SkillListSummaries(versionCounts, boundAgentCounts, latestVersions);
     }
 
     /**

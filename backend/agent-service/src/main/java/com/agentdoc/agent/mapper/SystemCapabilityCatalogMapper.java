@@ -12,6 +12,7 @@ public interface SystemCapabilityCatalogMapper {
             @Param("status") Integer status,
             @Param("keyword") String keyword,
             @Param("publishedOnly") boolean publishedOnly,
+            @Param("includeDraftSkillVersion") boolean includeDraftSkillVersion,
             @Param("offset") long offset,
             @Param("pageSize") int pageSize);
 
@@ -19,7 +20,8 @@ public interface SystemCapabilityCatalogMapper {
             @Param("type") String type,
             @Param("status") Integer status,
             @Param("keyword") String keyword,
-            @Param("publishedOnly") boolean publishedOnly);
+            @Param("publishedOnly") boolean publishedOnly,
+            @Param("includeDraftSkillVersion") boolean includeDraftSkillVersion);
 
     List<SystemCapabilityTypeStatisticsVO> selectStatistics();
 }

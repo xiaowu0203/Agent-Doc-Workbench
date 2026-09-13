@@ -1,6 +1,7 @@
 package com.agentdoc.agent.execution;
 
 import com.agentdoc.agent.enums.SkillStatus;
+import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
 import com.agentdoc.agent.mapper.SkillMapper;
 import com.agentdoc.agent.mapper.SkillVersionMapper;
@@ -20,6 +21,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,6 +38,7 @@ class SkillListSummaryServiceTest {
                 mock(SkillAuditLogService.class));
         SkillEntity skill = new SkillEntity();
         skill.setId(11L);
+        skill.setScopeType(SkillScopeType.SPACE.name());
         skill.setSpaceId(7L);
         skill.setName("document-review");
         skill.setDisplayName("文档审查");
@@ -49,9 +53,10 @@ class SkillListSummaryServiceTest {
         bindingCount.setSkillId(11L);
         bindingCount.setBoundAgentCount(3L);
 
-        when(skillMapper.selectPage(any(Page.class), any())).thenReturn(page);
+        when(skillMapper.selectVisibleInSpacePage(any(Page.class), eq(7L), nullable(Integer.class),
+                nullable(String.class), nullable(String.class))).thenReturn(page);
         when(versionMapper.selectList(any())).thenReturn(List.of(first, latest));
-        when(skillMapper.selectEnabledAgentCounts(List.of(11L))).thenReturn(List.of(bindingCount));
+        when(skillMapper.selectEnabledAgentCountsInSpace(7L, List.of(11L))).thenReturn(List.of(bindingCount));
 
         SkillSearchParam param = new SkillSearchParam();
         param.setSpaceId(7L);

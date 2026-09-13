@@ -2,6 +2,7 @@ package com.agentdoc.agent.pojo.entity;
 
 import com.agentdoc.common.pojo.entity.BaseLogicDeleteEntity;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -28,4 +29,10 @@ public class SkillEntity extends BaseLogicDeleteEntity {
     private Integer nextVersionNo;
     @Schema(description = "创建人用户 ID")
     private Long createdBy;
+    @TableField(exist = false)
+    @Schema(description = "空间内系统 Skill 安装记录 ID，仅空间可见列表使用")
+    private Long installationId;
+    @TableField(exist = false)
+    @Schema(description = "空间当前固定的系统 Skill 版本 ID，仅空间可见列表使用")
+    private Long installedVersionId;
 }

@@ -2,10 +2,12 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.agent.enums.McpConnectionStatus;
+import com.agentdoc.agent.enums.TemplateVersionStatus;
 import com.agentdoc.agent.mapper.McpTemplateMapper;
 import com.agentdoc.agent.mapper.McpTemplateVersionMapper;
 import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
 import com.agentdoc.agent.pojo.dto.McpTemplateInstallDTO;
+import com.agentdoc.agent.pojo.dto.McpTemplateVersionCreateDTO;
 import com.agentdoc.agent.pojo.entity.McpTemplateEntity;
 import com.agentdoc.agent.pojo.entity.McpTemplateVersionEntity;
 import com.agentdoc.agent.pojo.vo.McpConnectionTestVO;
@@ -22,12 +24,37 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class McpTemplateServiceTest {
+
+    @Test
+    void updatesDraftThenPublishesDisablesAndRestoresVersion() {
+        McpTemplateMapper mapper = mock(McpTemplateMapper.class);
+        McpTemplateVersionMapper versionMapper = mock(McpTemplateVersionMapper.class);
+        McpTemplateService service = service(mapper, versionMapper, mock(McpServerService.class));
+        McpTemplateEntity template = template();
+        McpTemplateVersionEntity version = version(31L, 1, "https://example.com/old");
+        version.setStatus(TemplateVersionStatus.DRAFT.getCode());
+        when(versionMapper.selectById(31L)).thenReturn(version);
+        when(mapper.selectById(11L)).thenReturn(template);
+
+        service.updateVersion(31L, new McpTemplateVersionCreateDTO(
+                "Search API v1", "https://example.com/new", McpAuthType.NONE, null));
+        assertThat(version.getEndpointUrl()).isEqualTo("https://example.com/new");
+
+        service.publish(31L);
+        assertThat(version.getStatus()).isEqualTo(TemplateVersionStatus.PUBLISHED.getCode());
+        service.disableVersion(31L);
+        assertThat(version.getStatus()).isEqualTo(TemplateVersionStatus.DISABLED.getCode());
+        service.enableVersion(31L);
+        assertThat(version.getStatus()).isEqualTo(TemplateVersionStatus.PUBLISHED.getCode());
+    }
 
     @Test
     void keepsPublishedHistoricalVersionResolvableAfterNewVersionExists() {
@@ -47,7 +74,8 @@ class McpTemplateServiceTest {
         McpTemplateMapper mapper = mock(McpTemplateMapper.class);
         McpTemplateVersionMapper versionMapper = mock(McpTemplateVersionMapper.class);
         McpServerService mcpServerService = mock(McpServerService.class);
-        McpTemplateService service = service(mapper, versionMapper, mcpServerService);
+        SkillAuditLogService auditLogService = mock(SkillAuditLogService.class);
+        McpTemplateService service = service(mapper, versionMapper, mcpServerService, auditLogService);
         McpTemplateEntity template = template();
         McpTemplateVersionEntity version = version(31L, 3, "https://example.com/mcp");
         McpServerVO installed = serverVO();
@@ -69,6 +97,9 @@ class McpTemplateServiceTest {
         assertThat(result.authConfigured()).isTrue();
         verify(mcpServerService).testConnection(21L);
         verify(mapper, never()).updateById(any(McpTemplateEntity.class));
+        verify(auditLogService).record(eq(9L), eq("MCP_TEMPLATE_INSTALLED"), eq("mcp_server"), eq(21L),
+                argThat(detail -> detail.equals(Map.of("templateId", 11L, "templateVersionId", 31L))
+                        && !detail.containsValue("space-secret")));
     }
 
     private McpServerVO serverVO() {
@@ -79,8 +110,13 @@ class McpTemplateServiceTest {
 
     private McpTemplateService service(McpTemplateMapper mapper, McpTemplateVersionMapper versionMapper,
                                        McpServerService mcpServerService) {
+        return service(mapper, versionMapper, mcpServerService, mock(SkillAuditLogService.class));
+    }
+
+    private McpTemplateService service(McpTemplateMapper mapper, McpTemplateVersionMapper versionMapper,
+                                       McpServerService mcpServerService, SkillAuditLogService auditLogService) {
         return new McpTemplateService(mapper, versionMapper, mock(PlatformAccessService.class),
-                mock(McpEndpointSecurityValidator.class), mcpServerService, mock(SkillAuditLogService.class),
+                mock(McpEndpointSecurityValidator.class), mcpServerService, auditLogService,
                 immediateTransaction());
     }
 

@@ -13,6 +13,23 @@
                skill.status,
                skill_version.id AS latestPublishedVersionId,
                skill_version.version_no AS latestPublishedVersionNo,
+               (SELECT COUNT(*) FROM space_skill_installation installation
+                WHERE installation.skill_id = skill.id) AS installationCount,
+               (SELECT COUNT(*) FROM skill_version version_count
+                WHERE version_count.skill_id = skill.id
+                <if test="!includeDraftSkillVersion">
+                  AND version_count.status = 1
+                </if>) AS skillVersionCount,
+               (SELECT COUNT(DISTINCT relation.agent_id)
+                FROM agent_skill relation
+                INNER JOIN agent bound_agent ON bound_agent.id = relation.agent_id AND bound_agent.deleted = 0
+                WHERE relation.skill_id = skill.id AND relation.enabled = 1) AS skillBoundAgentCount,
+               skill_card_version.version_no AS latestSkillVersionNo,
+               skill_card_version.status AS latestSkillVersionStatus,
+               skill_card_version.activation_description AS latestSkillActivationDescription,
+               COALESCE(JSON_LENGTH(skill_card_version.allowed_tools_json), 0) AS latestSkillAllowedToolCount,
+               skill_card_version.created_at AS latestSkillVersionCreatedAt,
+               skill_card_version.published_at AS latestSkillVersionPublishedAt,
                skill.created_at AS createdAt,
                skill.updated_at AS updatedAt
         FROM skill
@@ -24,6 +41,19 @@
              WHERE newer.skill_id = skill_version.skill_id
                AND newer.status = 1
                AND newer.version_no > skill_version.version_no
+         )
+        LEFT JOIN skill_version skill_card_version
+          ON skill_card_version.skill_id = skill.id
+         <if test="!includeDraftSkillVersion">
+           AND skill_card_version.status = 1
+         </if>
+         AND NOT EXISTS (
+             SELECT 1 FROM skill_version newer_card_version
+             WHERE newer_card_version.skill_id = skill_card_version.skill_id
+             <if test="!includeDraftSkillVersion">
+               AND newer_card_version.status = 1
+             </if>
+               AND newer_card_version.version_no > skill_card_version.version_no
          )
         WHERE skill.deleted = 0
           AND skill.scope_type = 'SYSTEM'
@@ -39,6 +69,17 @@
                agent_template.status,
                agent_template_version.id AS latestPublishedVersionId,
                agent_template_version.version_no AS latestPublishedVersionNo,
+               (SELECT COUNT(*) FROM agent installation
+                WHERE installation.template_id = agent_template.id
+                  AND installation.deleted = 0) AS installationCount,
+               NULL AS skillVersionCount,
+               NULL AS skillBoundAgentCount,
+               NULL AS latestSkillVersionNo,
+               NULL AS latestSkillVersionStatus,
+               NULL AS latestSkillActivationDescription,
+               NULL AS latestSkillAllowedToolCount,
+               NULL AS latestSkillVersionCreatedAt,
+               NULL AS latestSkillVersionPublishedAt,
                agent_template.created_at AS createdAt,
                agent_template.updated_at AS updatedAt
         FROM agent_template
@@ -63,6 +104,17 @@
                mcp_template.status,
                mcp_template_version.id AS latestPublishedVersionId,
                mcp_template_version.version_no AS latestPublishedVersionNo,
+               (SELECT COUNT(*) FROM mcp_server installation
+                WHERE installation.template_id = mcp_template.id
+                  AND installation.deleted = 0) AS installationCount,
+               NULL AS skillVersionCount,
+               NULL AS skillBoundAgentCount,
+               NULL AS latestSkillVersionNo,
+               NULL AS latestSkillVersionStatus,
+               NULL AS latestSkillActivationDescription,
+               NULL AS latestSkillAllowedToolCount,
+               NULL AS latestSkillVersionCreatedAt,
+               NULL AS latestSkillVersionPublishedAt,
                mcp_template.created_at AS createdAt,
                mcp_template.updated_at AS updatedAt
         FROM mcp_template

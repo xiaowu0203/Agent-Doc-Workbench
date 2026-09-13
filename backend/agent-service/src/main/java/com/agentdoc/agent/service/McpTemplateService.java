@@ -2,7 +2,7 @@ package com.agentdoc.agent.service;
 
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.agent.enums.McpServerStatus;
-import com.agentdoc.agent.enums.SkillVersionStatus;
+import com.agentdoc.agent.enums.TemplateVersionStatus;
 import com.agentdoc.agent.mapper.McpTemplateMapper;
 import com.agentdoc.agent.mapper.McpTemplateVersionMapper;
 import com.agentdoc.agent.pojo.dto.McpServerCreateDTO;
@@ -118,7 +118,7 @@ public class McpTemplateService {
             query.eq(McpTemplateEntity::getStatus, McpServerStatus.ENABLED.getCode())
                     .inSql(McpTemplateEntity::getId,
                             "SELECT DISTINCT template_id FROM mcp_template_version WHERE status = "
-                                    + SkillVersionStatus.PUBLISHED.getCode());
+                                    + TemplateVersionStatus.PUBLISHED.getCode());
         } else if (param.getStatus() != null) {
             // 管理员支持按状态筛选
             query.eq(McpTemplateEntity::getStatus, param.getStatus());
@@ -127,11 +127,11 @@ public class McpTemplateService {
         if (param.getAuthType() != null) {
             query.inSql(McpTemplateEntity::getId,
                     "SELECT mcpv.template_id FROM mcp_template_version mcpv "
-                            + "WHERE mcpv.status = " + SkillVersionStatus.PUBLISHED.getCode()
+                            + "WHERE mcpv.status = " + TemplateVersionStatus.PUBLISHED.getCode()
                             + " AND mcpv.auth_type = '" + param.getAuthType().name() + "'"
                             + " AND mcpv.version_no = (SELECT MAX(latest.version_no) "
                             + "FROM mcp_template_version latest WHERE latest.template_id = mcpv.template_id "
-                            + "AND latest.status = " + SkillVersionStatus.PUBLISHED.getCode() + ")");
+                            + "AND latest.status = " + TemplateVersionStatus.PUBLISHED.getCode() + ")");
         }
         // 关键词多字段模糊查询
         if (StringUtils.isNotBlank(param.getKeyword())) {
@@ -218,7 +218,7 @@ public class McpTemplateService {
         McpTemplateVersionEntity version = new McpTemplateVersionEntity();
         version.setTemplateId(templateId);
         version.setVersionNo(template.getNextVersionNo());
-        version.setStatus(SkillVersionStatus.DRAFT.getCode());
+        version.setStatus(TemplateVersionStatus.DRAFT.getCode());
         version.setDisplayName(dto.displayName());
         version.setEndpointUrl(dto.endpointUrl());
         version.setAuthType(dto.authType().name());
@@ -232,12 +232,31 @@ public class McpTemplateService {
         return toVersionVO(version);
     }
 
+    /** 更新 MCP 模板草稿版本；已发布或已停用版本只能复制为新草稿。 */
+    @Transactional(rollbackFor = Exception.class)
+    public McpTemplateVersionVO updateVersion(Long versionId, McpTemplateVersionCreateDTO dto) {
+        requireManage();
+        validateVersionConfig(dto.endpointUrl(), dto.authType(), dto.authParamName());
+        McpTemplateVersionEntity version = requireVersion(versionId);
+        if (!TemplateVersionStatus.DRAFT.matches(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有草稿 MCP 模板版本可以修改");
+        }
+        version.setDisplayName(dto.displayName());
+        version.setEndpointUrl(dto.endpointUrl());
+        version.setAuthType(dto.authType().name());
+        version.setAuthParamName(dto.authType() == McpAuthType.QUERY_PARAM ? dto.authParamName() : null);
+        versionMapper.updateById(version);
+        auditLogService.record(null, "MCP_TEMPLATE_VERSION_UPDATED", "mcp_template_version", versionId,
+                Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
+        return toVersionVO(version);
+    }
+
     /** 发布 MCP 模板草稿版本；已发布版本不再修改。 */
     @Transactional(rollbackFor = Exception.class)
     public McpTemplateVersionVO publish(Long versionId) {
         requireManage();
         McpTemplateVersionEntity version = requireVersion(versionId);
-        if (!SkillVersionStatus.DRAFT.matches(version.getStatus())) {
+        if (!TemplateVersionStatus.DRAFT.matches(version.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有草稿 MCP 模板版本可以发布");
         }
         McpTemplateEntity template = require(version.getTemplateId());
@@ -246,11 +265,47 @@ public class McpTemplateService {
         }
         validateVersionConfig(version.getEndpointUrl(), McpAuthType.valueOf(version.getAuthType()),
                 version.getAuthParamName());
-        version.setStatus(SkillVersionStatus.PUBLISHED.getCode());
+        version.setStatus(TemplateVersionStatus.PUBLISHED.getCode());
         version.setPublishedBy(AuthUtils.getUserIdOrException());
         version.setPublishedAt(LocalDateTime.now());
         versionMapper.updateById(version);
         auditLogService.record(null, "MCP_TEMPLATE_VERSION_PUBLISHED", "mcp_template_version", version.getId(),
+                Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
+        return toVersionVO(version);
+    }
+
+    /** 停用已发布 MCP 模板版本；已安装空间实例保持不变。 */
+    @Transactional(rollbackFor = Exception.class)
+    public McpTemplateVersionVO disableVersion(Long versionId) {
+        requireManage();
+        McpTemplateVersionEntity version = requireVersion(versionId);
+        if (!TemplateVersionStatus.PUBLISHED.matches(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有已发布 MCP 模板版本可以停用");
+        }
+        version.setStatus(TemplateVersionStatus.DISABLED.getCode());
+        versionMapper.updateById(version);
+        auditLogService.record(null, "MCP_TEMPLATE_VERSION_DISABLED", "mcp_template_version", versionId,
+                Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
+        return toVersionVO(version);
+    }
+
+    /** 恢复已停用 MCP 模板版本。 */
+    @Transactional(rollbackFor = Exception.class)
+    public McpTemplateVersionVO enableVersion(Long versionId) {
+        requireManage();
+        McpTemplateVersionEntity version = requireVersion(versionId);
+        if (!TemplateVersionStatus.DISABLED.matches(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有已停用 MCP 模板版本可以恢复");
+        }
+        McpTemplateEntity template = require(version.getTemplateId());
+        if (!McpServerStatus.ENABLED.matches(template.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "请先启用 MCP 模板主体");
+        }
+        validateVersionConfig(version.getEndpointUrl(), McpAuthType.valueOf(version.getAuthType()),
+                version.getAuthParamName());
+        version.setStatus(TemplateVersionStatus.PUBLISHED.getCode());
+        versionMapper.updateById(version);
+        auditLogService.record(null, "MCP_TEMPLATE_VERSION_ENABLED", "mcp_template_version", versionId,
                 Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
         return toVersionVO(version);
     }
@@ -267,7 +322,7 @@ public class McpTemplateService {
                         .eq(McpTemplateVersionEntity::getTemplateId, templateId)
                         .orderByDesc(McpTemplateVersionEntity::getVersionNo);
         if (!manager) {
-            query.eq(McpTemplateVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode());
+            query.eq(McpTemplateVersionEntity::getStatus, TemplateVersionStatus.PUBLISHED.getCode());
         }
         return versionMapper.selectList(query).stream().map(this::toVersionVO).toList();
     }
@@ -319,7 +374,7 @@ public class McpTemplateService {
             if (template == null) {
                 throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 模板引用的 MCP 模板不存在");
             }
-            if (!SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {
+            if (!TemplateVersionStatus.PUBLISHED.matches(version.getStatus())) {
                 throw new BusinessException(ErrorCode.CONFLICT, "Agent 模板只能引用已发布的 MCP 模板版本");
             }
             if (requireActive && !McpServerStatus.ENABLED.matches(template.getStatus())) {
@@ -363,7 +418,7 @@ public class McpTemplateService {
         }
         return versionMapper.selectList(new LambdaQueryWrapper<McpTemplateVersionEntity>()
                         .in(McpTemplateVersionEntity::getTemplateId, templateIds)
-                        .eq(McpTemplateVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode()))
+                        .eq(McpTemplateVersionEntity::getStatus, TemplateVersionStatus.PUBLISHED.getCode()))
                 .stream().collect(Collectors.toMap(McpTemplateVersionEntity::getTemplateId, Function.identity(),
                         (left, right) -> left.getVersionNo() >= right.getVersionNo() ? left : right));
     }
@@ -371,7 +426,7 @@ public class McpTemplateService {
     private McpTemplateVersionEntity latestPublishedVersion(Long templateId) {
         return versionMapper.selectOne(new LambdaQueryWrapper<McpTemplateVersionEntity>()
                 .eq(McpTemplateVersionEntity::getTemplateId, templateId)
-                .eq(McpTemplateVersionEntity::getStatus, SkillVersionStatus.PUBLISHED.getCode())
+                .eq(McpTemplateVersionEntity::getStatus, TemplateVersionStatus.PUBLISHED.getCode())
                 .orderByDesc(McpTemplateVersionEntity::getVersionNo).last("LIMIT 1"));
     }
 

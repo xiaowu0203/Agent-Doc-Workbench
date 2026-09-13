@@ -9,6 +9,14 @@
         <code>{{ skill.name }}</code>
       </div>
       <el-tag
+        v-if="showSource"
+        :type="skill.scopeType === 'SYSTEM' ? 'primary' : 'info'"
+        effect="light"
+        size="small"
+      >
+        {{ skill.scopeType === 'SYSTEM' ? '系统' : '空间' }}
+      </el-tag>
+      <el-tag
         v-if="skill.latestVersion"
         :type="skill.latestVersion.status === 'PUBLISHED' ? 'success' : 'warning'"
         effect="plain"
@@ -53,7 +61,11 @@
 
     <div class="skill-card__latest">
       <template v-if="skill.latestVersion">
-        <strong>最新版本&nbsp; v{{ skill.latestVersion.versionNo }}</strong>
+        <strong
+          >{{ showSource && skill.scopeType === 'SYSTEM' ? '安装版本' : '最新版本' }}&nbsp; v{{
+            skill.latestVersion.versionNo
+          }}</strong
+        >
         <span>{{ skill.latestVersion.activationDescription }}</span>
         <small>
           {{ skill.latestVersion.status === 'PUBLISHED' ? '发布时间' : '上传时间' }}：
@@ -84,6 +96,7 @@ const props = defineProps<{
   skill: Skill
   layout: 'grid' | 'list'
   canManage: boolean
+  showSource?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -288,7 +301,10 @@ function formatDate(value: string | null): string {
 .skill-card--list {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(230px, 1.1fr) minmax(220px, 1.35fr) minmax(210px, 1fr) minmax(250px, 1.15fr);
+  grid-template-columns: minmax(230px, 1.1fr) minmax(220px, 1.35fr) minmax(210px, 1fr) minmax(
+      250px,
+      1.15fr
+    );
   grid-template-rows: minmax(76px, auto) auto;
   column-gap: clamp(20px, 2.4vw, 36px);
   row-gap: 0;
@@ -437,5 +453,4 @@ function formatDate(value: string | null): string {
 .skill-card--list .skill-card__more {
   margin-left: 2px;
 }
-
 </style>
