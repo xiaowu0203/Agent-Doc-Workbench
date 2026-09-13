@@ -627,27 +627,11 @@ public class DocumentService {
     }
 
     /**
-     * 版本号自增，并生成版本快照记录
-     *
-     * @param doc 文档数据库实体（内存中已读取version字段）
-     * @param content 新版本文档正文
-     * @param summary 变更描述摘要
-     * @param userId 操作人ID
-     */
-    private void bumpVersion(DocumentEntity doc, String content, String summary, Long userId) {
-        // 计算下一个版本号
-        long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
-        // 更新文档主表版本号
-        doc.setVersion(nextVersion);
-        documentMapper.updateById(doc);
-        // 调用版本服务插入快照
-        versionService.createHumanEditSnapshot(doc.getId(), nextVersion, content, summary, userId);
-    }
-
-    /**
      * Feign调用入口：合并审批变更到正式文档（Task‑Service审批完成后调用）
      * 安全说明：操作人身份来自SecurityContext，由网关透传JWT，调用方不能伪造操作人
      * 业务逻辑：基线版本号校验防并发覆盖；应用结构化变更；生成新版本快照
+     * 并发说明：基线比较与写回在同一事务内完成，且写回的 UPDATE 带版本守卫条件，
+     * 受影响行数为 0 时按冲突拒绝，不会静默覆盖并发编辑产生的版本
      * 事务：异常全部回滚
      *
      * @param request 合并变更请求DTO，携带文档ID、基线版本、变更项、变更摘要
@@ -665,15 +649,28 @@ public class DocumentService {
         }
         // 将结构化变更应用到文档正文，生成新内容
         String newContent = applyChanges(doc.getContent(), request.changes());
+        long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
+        // 原子写入：正文与版本号在同一条 UPDATE 内完成，并以数据库当前版本作为守卫条件。
+        // 前面的版本比较与这次写入之间存在窗口，若只比较一次就无条件 updateById，
+        // 并发编辑会被静默覆盖；因此必须把守卫放进 SQL 条件并检查受影响行数。
+        int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                .eq(DocumentEntity::getId, doc.getId())
+                .eq(DocumentEntity::getVersion, request.baseVersion())
+                .set(DocumentEntity::getContent, newContent)
+                .set(DocumentEntity::getVersion, nextVersion)
+                .set(DocumentEntity::getUpdatedBy, operatorId));
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档版本已变化，请基于最新版本重新生成变更");
+        }
         doc.setContent(newContent);
+        doc.setVersion(nextVersion);
         doc.setUpdatedBy(operatorId);
-        documentMapper.updateById(doc);
 
         // 设置变更摘要，为空时使用默认文案
         String summary = request.changeSummary() == null || request.changeSummary().isBlank()
                 ? "审批合并变更" : request.changeSummary();
-        // 版本号+1，写入快照
-        bumpVersion(doc, newContent, summary, operatorId);
+        // 主表版本号已在原子 UPDATE 中递增，此处只需写入对应版本快照
+        versionService.createHumanEditSnapshot(doc.getId(), nextVersion, newContent, summary, operatorId);
         return doc.toMergeResultVO();
     }
 
