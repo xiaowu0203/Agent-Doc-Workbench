@@ -2,9 +2,9 @@
 
 本文件记录 Agent-Doc-Workbench 的用户可见变更。版本号遵循 [Semantic Versioning](https://semver.org/)，内容组织参考 [Keep a Changelog](https://keepachangelog.com/)。
 
-## [0.1.0] - 待发布
+## [0.1.0] - 2026-09-14
 
-首个开源发布候选，提供围绕文档操作、Agent 执行和人工审批构建的完整 Web 工作台。
+首个开源发布版本，提供围绕文档操作、Agent 执行和人工审批构建的完整 Web 工作台。
 
 ### Added
 
