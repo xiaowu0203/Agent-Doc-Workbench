@@ -37,6 +37,31 @@ jobs:
         working-directory: backend
         run: ./mvnw -B -ntp -fae test
 
+      # 失败时把用例级原因写进 job summary：这样在 Actions 页面直接可见，
+      # 不必下载 surefire artifact 才能定位是哪个类、哪条用例失败。
+      - name: Summarize test failures
+        if: failure()
+        working-directory: backend
+        run: |
+          {
+            echo '## Backend test failures'
+            echo
+            echo '```text'
+            found=0
+            while IFS= read -r report; do
+              if grep -qE 'Failures: [1-9]|Errors: [1-9]' "$report"; then
+                found=1
+                echo "===== $report"
+                grep -E '^Tests run:|<<< (FAILURE|ERROR)|^[a-zA-Z0-9_.]+[.][a-zA-Z0-9_]+ ' "$report" | head -n 60
+                echo
+              fi
+            done < <(find . -path '*/target/surefire-reports/*.txt' -type f | sort)
+            if [ "$found" -eq 0 ]; then
+              echo 'No surefire report contains failures; the build most likely failed before tests ran.'
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload surefire reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
