@@ -117,9 +117,28 @@ Store 按页面需要逐步创建，不为了目录完整提前增加空 Store�
 | Vue Test Utils | 组件测试 |
 | 真实浏览器验收 | 核心用户链路端到端验证 |
 | ESLint | 代码检查 |
-| Prettier | 代码格式化 |
-| Husky + lint-staged | 提交前检查 |
+| Prettier | 代码格式化（`pnpm format` 手动执行） |
 | pnpm | 依赖管理 |
+
+### 质量门禁的执行方式
+
+前端不再使用 Git 提交钩子。原 `husky + lint-staged` 方案（提交时对暂存文件跑 `eslint --fix` 与 `prettier --write`）已移除，原因：
+
+- 钩子配置为 `cd frontend && corepack pnpm lint-staged`，但 `core.hooksPath` 指向 `frontend/.husky/_`，钩子本来就在 `frontend/` 下执行，`cd frontend` 必然失败，`&&` 短路导致检查从未真正运行；失败也不显眼，属于"静默失效"。
+- 即使绕过上一点，本机环境下 `corepack pnpm lint-staged` 仍会失败并只报 `'node' is not recognized`：pnpm 自身可运行，但它派生命令行子进程时继承了缺少 node 的 PATH。该问题由 Windows + nvm-windows + Git 自带 sh 的环境组合导致，不是仓库配置错误。
+
+因此约定：**格式与 lint 由提交前手动执行，或由 CI 承担**。当前可用的检查命令为：
+
+```bash
+cd frontend
+pnpm type-check   # vue-tsc --noEmit
+pnpm lint         # eslint . --max-warnings 0
+pnpm test         # vitest run
+pnpm build        # vue-tsc --noEmit && vite build
+pnpm format       # 可选：prettier --write .
+```
+
+注意 `pnpm format` 会把文件行尾规范为 LF。仓库中多数文件按 CRLF 存储，因此全量格式化会产生行尾级的大 diff，建议只对本次改动涉及的文件执行，或先把 `prettier` 的 `endOfLine` 显式配置为 `crlf` 再全量执行。
 
 ## 前端目录结构
 
@@ -183,5 +202,5 @@ Vue 3 / TypeScript / Vite / Vue Router / Pinia / Element Plus / Axios
 Markdown contenteditable / textarea / markdown-it / DOMPurify
 自定义稳定行 Diff / Yjs（v0.2 评估）
 JSZip / ECharts
-Vitest / Vue Test Utils / ESLint / Prettier / Husky / pnpm
+Vitest / Vue Test Utils / ESLint / Prettier / pnpm
 ```
