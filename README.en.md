@@ -298,7 +298,8 @@ constraints.
 Recommended local environment:
 
 - Java 21
-- Node.js / pnpm
+- Node.js 22
+- pnpm 10.24.0
 - Docker / Docker Compose
 - Maven Wrapper (included)
 
@@ -307,6 +308,8 @@ Recommended local environment:
 ``` bash
 docker compose up -d
 ```
+
+The Compose file provides example Nacos identity settings for local development. Before production deployment, replace `NACOS_AUTH_TOKEN`, `NACOS_AUTH_IDENTITY_KEY`, and `NACOS_AUTH_IDENTITY_VALUE` through environment variables.
 
 The default infrastructure includes:
 
@@ -328,7 +331,9 @@ docker compose up -d rabbitmq minio nacos
 
 The backend is a Maven multi-module project:
 
-``` bash
+Linux / macOS:
+
+```bash
 cd backend
 
 ./mvnw spring-boot:run -pl auth-service -am
@@ -337,6 +342,9 @@ cd backend
 ./mvnw spring-boot:run -pl task-service -am
 ./mvnw spring-boot:run -pl agent-service -am
 ```
+
+On Windows PowerShell or Command Prompt, replace `./mvnw` with
+`.\mvnw.cmd`.
 
 Default ports:
 
@@ -350,9 +358,9 @@ Default ports:
 
 ### 3. Start Frontend
 
-``` bash
+```bash
 cd frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
@@ -383,7 +391,9 @@ real engineering system**.
 
 ## Project Status
 
-### v0.1 --- Available
+### v0.1.0 --- First Open-Source Release
+
+`v0.1.0` is the project's first open-source release, including the complete source tree, public documentation, and reproducible validation evidence. This release is source-only and does not include prebuilt JARs, frontend static assets, or container images.
 
 The main v0.1 loop is implemented:
 
@@ -443,6 +453,9 @@ direction.
 | [External MCP](docs/external-mcp-architecture-design.md) | Multi-MCP architecture, permissions, and security |
 | [Skill Selection](docs/skill-selection-and-progressive-loading-design.md) | Skill routing and progressive loading |
 | [UI Gallery](docs/ui-mockups/README.md) | Complete UI mockups and interaction constraints |
+| [Security Policy](SECURITY.md) | Vulnerability reporting, security boundaries, and production guidance (Chinese) |
+| [Contributing](CONTRIBUTING.md) | Development environment, tests, and pull-request workflow (Chinese) |
+| [Changelog](CHANGELOG.md) | v0.1.0 capabilities, fixes, and known limitations (Chinese) |
 
 ## Open Source Direction
 
@@ -479,7 +492,9 @@ The project is ultimately interested in questions such as:
 ## Contributing
 
 Issues, architecture discussions, bug reports, documentation
-improvements, and code contributions are welcome.
+improvements, and code contributions are welcome. Read the
+[contribution guide](CONTRIBUTING.md) before starting. Report security
+issues privately according to the [security policy](SECURITY.md).
 
 Topics especially worth discussing include:
 

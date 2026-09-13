@@ -13,10 +13,18 @@
 
     <groupId>com.agentdoc</groupId>
     <artifactId>agent-doc-workbench</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <packaging>pom</packaging>
     <name>agent-doc-workbench</name>
     <description>Agent-Doc-Workbench 后端多模块工程</description>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
 
     <modules>
         <module>common</module>

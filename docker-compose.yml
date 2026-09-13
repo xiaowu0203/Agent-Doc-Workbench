@@ -87,6 +87,9 @@ services:
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-VGhpc0lzTXlDdXN0b21TZWNyZXRLZXkwMTIzNDU2Nzg=}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-agent-doc-workbench}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-local-development}
       JVM_XMS: 256m
       JVM_XMX: 512m
       JVM_XMN: 128m
@@ -99,7 +102,7 @@ services:
       - nacos-data:/home/nacos/data
       - nacos-logs:/home/nacos/logs
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/v3/console/health/readiness || curl -fsS http://localhost:8848/nacos/v1/console/health/readiness"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8848/nacos/v3/admin/core/state/readiness"]
       interval: 15s
       timeout: 8s
       retries: 15

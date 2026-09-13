@@ -113,7 +113,7 @@ Spring Boot 3.5
 ├── 官方 MCP Java SDK（task-service Server / agent-service Client）
 ├── Spring AMQP + RabbitMQ
 ├── MyBatis‑Plus
-├── Redis / Redisson
+├── Redis
 ├── Spring Security OAuth2 Resource Server
 └── Task A2A Orchestrator（task-service）
 ```
