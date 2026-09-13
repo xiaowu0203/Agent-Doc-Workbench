@@ -5,12 +5,14 @@ import {
   deleteSpace as deleteSpaceRequest,
   getEffectivePermissions,
   listMySpaces,
+  updateSpace as updateSpaceRequest,
 } from '@/features/workspace/api/workspace-api'
 import type {
   CreateSpaceRequest,
   EffectivePermission,
   EntityId,
   Space,
+  UpdateSpaceRequest,
 } from '@/features/workspace/types'
 import type { SpacePermissionCode } from '@/shared/constants/permissions'
 
@@ -58,6 +60,12 @@ export const useWorkspaceStore = defineStore('workspace', {
       this.setCurrentSpace(space.id)
       await this.ensurePermissions(space.id, true)
       return space
+    },
+    async updateSpace(spaceId: EntityId, payload: UpdateSpaceRequest) {
+      const updated = await updateSpaceRequest(spaceId, payload)
+      const index = this.spaces.findIndex((item) => String(item.id) === String(spaceId))
+      if (index >= 0) this.spaces[index] = updated
+      return updated
     },
     async deleteSpace(spaceId: EntityId) {
       await deleteSpaceRequest(spaceId)

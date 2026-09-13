@@ -21,9 +21,9 @@
     </button>
 
     <div class="app-topbar__spacer" />
-    <el-button type="primary" @click="openSpaceCreate">
+    <el-button type="primary" @click="openSpaceDialog">
       <el-icon><Plus /></el-icon>
-      创建空间
+      创建/更新空间
     </el-button>
     <el-button
       v-if="canDeleteSpace"
@@ -58,42 +58,158 @@
 
     <el-dialog
       v-model="spaceDialogVisible"
-      title="创建空间"
+      title="创建/更新空间"
       width="460px"
       :close-on-click-modal="false"
-      @closed="resetSpaceForm"
+      @closed="resetSpaceDialog"
     >
-      <el-form
-        ref="spaceFormRef"
-        :model="spaceForm"
-        :rules="spaceRules"
-        label-position="top"
-        @submit.prevent="submitSpaceCreate"
-      >
-        <el-form-item label="空间名称" prop="name">
-          <el-input
-            v-model="spaceForm.name"
-            maxlength="100"
-            show-word-limit
-            placeholder="请输入空间名称"
-          />
-        </el-form-item>
-        <el-form-item label="空间描述" prop="description">
-          <el-input
-            v-model="spaceForm.description"
-            type="textarea"
-            :rows="4"
-            maxlength="500"
-            show-word-limit
-            placeholder="可选"
-          />
-        </el-form-item>
-        <el-alert v-if="spaceError" :title="spaceError" type="error" :closable="false" />
-      </el-form>
+      <el-tabs v-model="spaceDialogTab" @tab-change="handleSpaceTabChange">
+        <el-tab-pane label="创建" name="create">
+          <el-form
+            ref="spaceFormRef"
+            :model="spaceForm"
+            :rules="spaceRules"
+            label-position="top"
+            @submit.prevent="submitSpaceCreate"
+          >
+            <el-form-item label="空间名称" prop="name">
+              <el-input
+                v-model="spaceForm.name"
+                maxlength="100"
+                show-word-limit
+                placeholder="请输入空间名称"
+              />
+            </el-form-item>
+            <el-form-item label="空间描述" prop="description">
+              <el-input
+                v-model="spaceForm.description"
+                type="textarea"
+                :rows="4"
+                maxlength="500"
+                show-word-limit
+                placeholder="可选"
+              />
+            </el-form-item>
+            <el-form-item label="空间全局 Token 预算" prop="tokenBudgetOption">
+              <el-select v-model="spaceForm.tokenBudgetOption" style="width: 100%">
+                <el-option
+                  v-for="option in tokenBudgetOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-input-number
+                v-if="spaceForm.tokenBudgetOption === 'custom'"
+                v-model="spaceForm.tokenBudgetCustom"
+                class="app-topbar__budget-input"
+                :min="1"
+                :step="1000"
+                :precision="0"
+                controls-position="right"
+                placeholder="请输入 Token 数量"
+              />
+            </el-form-item>
+            <el-form-item label="空间月度 Token 预算" prop="monthlyTokenBudgetOption">
+              <el-select v-model="spaceForm.monthlyTokenBudgetOption" style="width: 100%">
+                <el-option
+                  v-for="option in tokenBudgetOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-input-number
+                v-if="spaceForm.monthlyTokenBudgetOption === 'custom'"
+                v-model="spaceForm.monthlyTokenBudgetCustom"
+                class="app-topbar__budget-input"
+                :min="1"
+                :step="1000"
+                :precision="0"
+                controls-position="right"
+                placeholder="请输入 Token 数量"
+              />
+            </el-form-item>
+            <el-alert v-if="spaceError" :title="spaceError" type="error" :closable="false" />
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="更新当前空间" name="update" :disabled="!canManageSpace">
+          <el-form
+            ref="spaceUpdateFormRef"
+            :model="spaceUpdateForm"
+            :rules="spaceRules"
+            label-position="top"
+            @submit.prevent="submitSpaceUpdate"
+          >
+            <el-form-item label="空间名称" prop="name">
+              <el-input v-model="spaceUpdateForm.name" maxlength="100" show-word-limit />
+            </el-form-item>
+            <el-form-item label="空间描述" prop="description">
+              <el-input
+                v-model="spaceUpdateForm.description"
+                type="textarea"
+                :rows="4"
+                maxlength="500"
+                show-word-limit
+              />
+            </el-form-item>
+            <el-form-item label="空间全局 Token 预算" prop="tokenBudgetOption">
+              <el-select v-model="spaceUpdateForm.tokenBudgetOption" style="width: 100%">
+                <el-option
+                  v-for="option in tokenBudgetOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-input-number
+                v-if="spaceUpdateForm.tokenBudgetOption === 'custom'"
+                v-model="spaceUpdateForm.tokenBudgetCustom"
+                class="app-topbar__budget-input"
+                :min="1"
+                :step="1000"
+                :precision="0"
+                controls-position="right"
+                placeholder="请输入 Token 数量"
+              />
+            </el-form-item>
+            <el-form-item label="空间月度 Token 预算" prop="monthlyTokenBudgetOption">
+              <el-select v-model="spaceUpdateForm.monthlyTokenBudgetOption" style="width: 100%">
+                <el-option
+                  v-for="option in tokenBudgetOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+              <el-input-number
+                v-if="spaceUpdateForm.monthlyTokenBudgetOption === 'custom'"
+                v-model="spaceUpdateForm.monthlyTokenBudgetCustom"
+                class="app-topbar__budget-input"
+                :min="1"
+                :step="1000"
+                :precision="0"
+                controls-position="right"
+                placeholder="请输入 Token 数量"
+              />
+            </el-form-item>
+            <el-alert
+              v-if="spaceUpdateError"
+              :title="spaceUpdateError"
+              type="error"
+              :closable="false"
+            />
+          </el-form>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="spaceDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="spaceSubmitting" @click="submitSpaceCreate">
-          创建并进入
+        <el-button
+          type="primary"
+          :loading="spaceDialogTab === 'create' ? spaceSubmitting : spaceUpdateSubmitting"
+          @click="spaceDialogTab === 'create' ? submitSpaceCreate() : submitSpaceUpdate()"
+        >
+          {{ spaceDialogTab === 'create' ? '创建并进入' : '保存更新' }}
         </el-button>
       </template>
     </el-dialog>
@@ -167,8 +283,13 @@ import {
   ElFormItem,
   ElIcon,
   ElInput,
+  ElInputNumber,
   ElMessage,
   ElMessageBox,
+  ElOption,
+  ElSelect,
+  ElTabPane,
+  ElTabs,
   type FormInstance,
   type FormItemRule,
   type FormRules,
@@ -191,14 +312,47 @@ const router = useRouter()
 const passwordDialogVisible = ref(false)
 const searchVisible = ref(false)
 const spaceDialogVisible = ref(false)
+const spaceDialogTab = ref<'create' | 'update'>('create')
 const spaceSubmitting = ref(false)
+const spaceUpdateSubmitting = ref(false)
 const spaceDeleting = ref(false)
 const spaceError = ref('')
+const spaceUpdateError = ref('')
 const passwordSubmitting = ref(false)
 const passwordError = ref('')
 const passwordFormRef = ref<FormInstance>()
 const spaceFormRef = ref<FormInstance>()
-const spaceForm = reactive({ name: '', description: '' })
+const spaceUpdateFormRef = ref<FormInstance>()
+type TokenBudgetOption =
+  'unlimited' | '1000000' | '10000000' | '100000000' | '1000000000' | 'custom'
+const tokenBudgetOptions: { label: string; value: TokenBudgetOption }[] = [
+  { label: '不限制', value: 'unlimited' },
+  { label: '100万', value: '1000000' },
+  { label: '1000万', value: '10000000' },
+  { label: '1亿', value: '100000000' },
+  { label: '10亿', value: '1000000000' },
+  { label: '自定义', value: 'custom' },
+]
+type SpaceForm = {
+  name: string
+  description: string
+  tokenBudgetOption: TokenBudgetOption
+  tokenBudgetCustom?: number
+  monthlyTokenBudgetOption: TokenBudgetOption
+  monthlyTokenBudgetCustom?: number
+}
+function createEmptySpaceForm(): SpaceForm {
+  return {
+    name: '',
+    description: '',
+    tokenBudgetOption: 'unlimited',
+    tokenBudgetCustom: undefined,
+    monthlyTokenBudgetOption: 'unlimited',
+    monthlyTokenBudgetCustom: undefined,
+  }
+}
+const spaceForm = reactive<SpaceForm>(createEmptySpaceForm())
+const spaceUpdateForm = reactive<SpaceForm>(createEmptySpaceForm())
 const passwordForm = reactive({
   currentPassword: '',
   newPassword: '',
@@ -221,6 +375,11 @@ const passwordRules: FormRules<typeof passwordForm> = {
 const spaceRules: FormRules<typeof spaceForm> = {
   name: [{ required: true, whitespace: true, message: '请输入空间名称', trigger: 'blur' }],
 }
+function resolveTokenBudget(option: TokenBudgetOption, customValue?: number): number | undefined {
+  if (option === 'unlimited') return undefined
+  if (option === 'custom') return customValue
+  return Number(option)
+}
 const initials = computed(() => {
   const name = authStore.user?.nickname || authStore.user?.username || 'AD'
   return name.slice(0, 2).toUpperCase()
@@ -230,14 +389,73 @@ const canDeleteSpace = computed(
     workspaceStore.currentSpaceId !== null &&
     workspaceStore.hasPermission(SPACE_PERMISSIONS.SPACE_DELETE),
 )
+const canManageSpace = computed(
+  () =>
+    workspaceStore.currentSpaceId !== null &&
+    workspaceStore.hasPermission(SPACE_PERMISSIONS.SPACE_MANAGE),
+)
+
+function budgetSelection(value: number | null | undefined): {
+  option: TokenBudgetOption
+  custom?: number
+} {
+  if (value === null || value === undefined) return { option: 'unlimited' }
+  const option = tokenBudgetOptions.find((item) => Number(item.value) === value)
+  return option ? { option: option.value } : { option: 'custom', custom: value }
+}
+
+function applyBudgetSelection(
+  form: SpaceForm,
+  tokenBudget: number | null | undefined,
+  monthlyTokenBudget: number | null | undefined,
+): void {
+  const global = budgetSelection(tokenBudget)
+  const monthly = budgetSelection(monthlyTokenBudget)
+  form.tokenBudgetOption = global.option
+  form.tokenBudgetCustom = global.custom
+  form.monthlyTokenBudgetOption = monthly.option
+  form.monthlyTokenBudgetCustom = monthly.custom
+}
 
 function openSpaceCreate(): void {
+  Object.assign(spaceForm, createEmptySpaceForm())
+  spaceDialogTab.value = 'create'
   spaceDialogVisible.value = true
   spaceError.value = ''
 }
 
+function openSpaceUpdate(): void {
+  const space = workspaceStore.currentSpace
+  if (!space) return
+  spaceUpdateForm.name = space.name
+  spaceUpdateForm.description = space.description ?? ''
+  applyBudgetSelection(spaceUpdateForm, space.tokenBudget, space.monthlyTokenBudget)
+  spaceUpdateError.value = ''
+}
+
+function openSpaceDialog(): void {
+  openSpaceCreate()
+}
+
+function handleSpaceTabChange(tab: string | number): void {
+  if (tab === 'update') openSpaceUpdate()
+}
+
 async function submitSpaceCreate(): Promise<void> {
   if (spaceSubmitting.value || !(await spaceFormRef.value?.validate().catch(() => false))) return
+
+  const tokenBudget = resolveTokenBudget(spaceForm.tokenBudgetOption, spaceForm.tokenBudgetCustom)
+  const monthlyTokenBudget = resolveTokenBudget(
+    spaceForm.monthlyTokenBudgetOption,
+    spaceForm.monthlyTokenBudgetCustom,
+  )
+  if (
+    (spaceForm.tokenBudgetOption === 'custom' && tokenBudget === undefined) ||
+    (spaceForm.monthlyTokenBudgetOption === 'custom' && monthlyTokenBudget === undefined)
+  ) {
+    spaceError.value = '请选择自定义预算后输入 Token 数量'
+    return
+  }
 
   spaceSubmitting.value = true
   spaceError.value = ''
@@ -245,6 +463,8 @@ async function submitSpaceCreate(): Promise<void> {
     const space = await workspaceStore.createSpace({
       name: spaceForm.name.trim(),
       description: spaceForm.description.trim() || undefined,
+      tokenBudget,
+      monthlyTokenBudget,
     })
     spaceDialogVisible.value = false
     ElMessage.success('空间创建成功')
@@ -258,9 +478,65 @@ async function submitSpaceCreate(): Promise<void> {
 
 function resetSpaceForm(): void {
   spaceFormRef.value?.resetFields()
-  spaceForm.name = ''
-  spaceForm.description = ''
+  Object.assign(spaceForm, createEmptySpaceForm())
   spaceError.value = ''
+}
+
+function resetSpaceDialog(): void {
+  resetSpaceForm()
+  resetSpaceUpdateForm()
+  spaceDialogTab.value = 'create'
+}
+
+function resetSpaceUpdateForm(): void {
+  spaceUpdateFormRef.value?.resetFields()
+  Object.assign(spaceUpdateForm, createEmptySpaceForm())
+  spaceUpdateError.value = ''
+}
+
+async function submitSpaceUpdate(): Promise<void> {
+  if (
+    spaceUpdateSubmitting.value ||
+    !(await spaceUpdateFormRef.value?.validate().catch(() => false))
+  ) {
+    return
+  }
+  const space = workspaceStore.currentSpace
+  if (!space) return
+  const tokenBudget = resolveTokenBudget(
+    spaceUpdateForm.tokenBudgetOption,
+    spaceUpdateForm.tokenBudgetCustom,
+  )
+  const monthlyTokenBudget = resolveTokenBudget(
+    spaceUpdateForm.monthlyTokenBudgetOption,
+    spaceUpdateForm.monthlyTokenBudgetCustom,
+  )
+  if (
+    (spaceUpdateForm.tokenBudgetOption === 'custom' && tokenBudget === undefined) ||
+    (spaceUpdateForm.monthlyTokenBudgetOption === 'custom' && monthlyTokenBudget === undefined)
+  ) {
+    spaceUpdateError.value = '请选择自定义预算后输入 Token 数量'
+    return
+  }
+
+  spaceUpdateSubmitting.value = true
+  spaceUpdateError.value = ''
+  try {
+    await workspaceStore.updateSpace(space.id, {
+      name: spaceUpdateForm.name.trim(),
+      description: spaceUpdateForm.description.trim(),
+      tokenBudget,
+      monthlyTokenBudget,
+      clearTokenBudget: spaceUpdateForm.tokenBudgetOption === 'unlimited',
+      clearMonthlyTokenBudget: spaceUpdateForm.monthlyTokenBudgetOption === 'unlimited',
+    })
+    spaceDialogVisible.value = false
+    ElMessage.success('空间更新成功')
+  } catch (error) {
+    spaceUpdateError.value = normalizeApiError(error).message
+  } finally {
+    spaceUpdateSubmitting.value = false
+  }
 }
 
 async function deleteCurrentSpace(): Promise<void> {
@@ -408,6 +684,11 @@ function resetPasswordForm(): void {
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.app-topbar__budget-input {
+  width: 100%;
+  margin-top: 4px;
 }
 
 .app-topbar__user:focus-visible {

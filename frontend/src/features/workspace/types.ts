@@ -22,6 +22,17 @@ export interface Space {
 export interface CreateSpaceRequest {
   name: string
   description?: string
+  tokenBudget?: number
+  monthlyTokenBudget?: number
+}
+
+export interface UpdateSpaceRequest {
+  name?: string
+  description?: string
+  tokenBudget?: number
+  monthlyTokenBudget?: number
+  clearTokenBudget?: boolean
+  clearMonthlyTokenBudget?: boolean
 }
 
 export interface EffectivePermission {
