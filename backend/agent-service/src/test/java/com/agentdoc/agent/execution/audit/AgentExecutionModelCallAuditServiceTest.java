@@ -25,8 +25,8 @@ class AgentExecutionModelCallAuditServiceTest {
     @Test
     void storesActualParametersAndHashesWithoutPersistingMessagePayload() {
         AgentExecutionModelCallMapper mapper = mock(AgentExecutionModelCallMapper.class);
-        when(mapper.insert(any())).thenReturn(1);
-        when(mapper.updateById(any())).thenReturn(1);
+        when(mapper.insert(any(AgentExecutionModelCallEntity.class))).thenReturn(1);
+        when(mapper.updateById(any(AgentExecutionModelCallEntity.class))).thenReturn(1);
         AgentExecutionModelCallAuditService service = new AgentExecutionModelCallAuditService(mapper);
         ModelEntity model = new ModelEntity();
         model.setId(7L);

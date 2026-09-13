@@ -13,14 +13,20 @@ import com.agentdoc.agent.pojo.entity.McpTemplateVersionEntity;
 import com.agentdoc.agent.pojo.vo.McpConnectionTestVO;
 import com.agentdoc.agent.pojo.vo.McpServerVO;
 import com.agentdoc.agent.security.McpEndpointSecurityValidator;
+import com.agentdoc.common.constant.JwtConstant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -33,6 +39,11 @@ import static org.mockito.Mockito.when;
 
 class McpTemplateServiceTest {
 
+    @AfterEach
+    void clearSecurityContext() {
+        SecurityContextHolder.clearContext();
+    }
+
     @Test
     void updatesDraftThenPublishesDisablesAndRestoresVersion() {
         McpTemplateMapper mapper = mock(McpTemplateMapper.class);
@@ -43,6 +54,7 @@ class McpTemplateServiceTest {
         version.setStatus(TemplateVersionStatus.DRAFT.getCode());
         when(versionMapper.selectById(31L)).thenReturn(version);
         when(mapper.selectById(11L)).thenReturn(template);
+        login(1001L);
 
         service.updateVersion(31L, new McpTemplateVersionCreateDTO(
                 "Search API v1", "https://example.com/new", McpAuthType.NONE, null));
@@ -106,6 +118,16 @@ class McpTemplateServiceTest {
         return new McpServerVO(21L, 11L, 31L, 9L, "search-api", "Search API",
                 "https://example.com/mcp", McpAuthType.BEARER, null, true, 1L, 1,
                 McpConnectionStatus.SUCCESS, LocalDateTime.now(), 10L, null, 2, LocalDateTime.now());
+    }
+
+    private void login(long userId) {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .subject(String.valueOf(userId))
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
     }
 
     private McpTemplateService service(McpTemplateMapper mapper, McpTemplateVersionMapper versionMapper,

@@ -16,6 +16,7 @@ import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.agent.service.AgentSkillService;
 import com.agentdoc.agent.service.SkillAuditLogService;
+import com.agentdoc.agent.service.SkillService;
 import com.agentdoc.agent.service.SpaceSkillInstallationService;
 import com.agentdoc.agent.service.SpaceAccessService;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,7 @@ class AgentSkillServiceTest {
         AgentSkillMapper agentSkillMapper = mock(AgentSkillMapper.class);
         SkillMapper skillMapper = mock(SkillMapper.class);
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
-        AgentSkillService service = new AgentSkillService(agentService, spaceAccessService, agentMapper,
+        AgentSkillService service = new AgentSkillService(agentService, mock(SkillService.class), spaceAccessService, agentMapper,
                 agentSkillMapper, skillMapper, versionMapper, mock(SpaceSkillInstallationService.class),
                 mock(SkillAuditLogService.class));
         SkillEntity skill = new SkillEntity();
@@ -87,7 +88,7 @@ class AgentSkillServiceTest {
         SkillMapper skillMapper = mock(SkillMapper.class);
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         SkillAuditLogService auditLogService = mock(SkillAuditLogService.class);
-        AgentSkillService service = new AgentSkillService(agentService, spaceAccessService, agentMapper,
+        AgentSkillService service = new AgentSkillService(agentService, mock(SkillService.class), spaceAccessService, agentMapper,
                 agentSkillMapper, skillMapper, versionMapper, mock(SpaceSkillInstallationService.class),
                 auditLogService);
 
@@ -132,7 +133,7 @@ class AgentSkillServiceTest {
         SkillMapper skillMapper = mock(SkillMapper.class);
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         SpaceSkillInstallationService installationService = mock(SpaceSkillInstallationService.class);
-        AgentSkillService service = new AgentSkillService(mock(AgentService.class), mock(SpaceAccessService.class),
+        AgentSkillService service = new AgentSkillService(mock(AgentService.class), mock(SkillService.class), mock(SpaceAccessService.class),
                 agentMapper, agentSkillMapper, skillMapper, versionMapper, installationService,
                 mock(SkillAuditLogService.class));
         AgentEntity agent = new AgentEntity();

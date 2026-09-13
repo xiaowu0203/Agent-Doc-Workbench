@@ -103,7 +103,7 @@ class McpConcurrencyContractTest {
                 mock(McpEndpointSecurityValidator.class), mock(McpConnectionTester.class),
                 immediateTransaction());
         when(mapper.selectCount(any())).thenReturn(0L);
-        when(mapper.insert(any())).thenThrow(new DuplicateKeyException("duplicate"));
+        when(mapper.insert(any(McpServerEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
 
         assertThatThrownBy(() -> service.create(new McpServerCreateDTO(
                 2L, "example", "Example", "https://example.com/mcp", McpAuthType.NONE, null, null)))

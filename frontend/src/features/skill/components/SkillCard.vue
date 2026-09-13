@@ -62,7 +62,7 @@
     <div class="skill-card__latest">
       <template v-if="skill.latestVersion">
         <strong
-          >{{ showSource && skill.scopeType === 'SYSTEM' ? '安装版本' : '最新版本' }}&nbsp; v{{
+          >{{ showSource && skill.scopeType === 'SYSTEM' ? '安装版本' : '最新版本' }} v{{
             skill.latestVersion.versionNo
           }}</strong
         >
