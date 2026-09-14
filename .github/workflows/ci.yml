@@ -15,7 +15,14 @@ on:
   push:
     branches:
       - main
-      - 'phase-*'
+      - 'feat/**'
+      - 'fix/**'
+      - 'docs/**'
+      - 'refactor/**'
+      - 'test/**'
+      - 'chore/**'
+      - 'release/**'
+      - 'hotfix/**'
   pull_request:
 
 jobs:

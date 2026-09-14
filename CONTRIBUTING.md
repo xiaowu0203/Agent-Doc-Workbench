@@ -9,6 +9,25 @@
 - 一个 Pull Request 应聚焦一个目标；不要夹带无关重构、格式化或依赖升级。
 - 当前稳定分支为 `main`。请从最新 `main` 创建描述性分支，不要直接向 `main` 推送。
 
+## 分支与版本边界
+
+开发分支必须短生命周期并表达具体目的，不使用 `phase-*` 作为工作分支。推荐格式为：
+
+```text
+feat/<issue-id>-<description>
+fix/<issue-id>-<description>
+docs/<description>
+refactor/<description>
+test/<description>
+chore/<description>
+release/vX.Y.Z
+hotfix/vX.Y.Z
+```
+
+分支名使用小写英文和连字符，例如 `feat/123-execution-model-v2`。Phase 只用于版本内部的计划与里程碑；`alpha`、`beta`、`rc` 用于表达预发布成熟度，不能由 Phase 名称替代。
+
+普通开发从最新 `main` 创建功能分支并通过 Pull Request 合并。只有版本范围冻结后才创建 `release/vX.Y.Z`；已合并分支在发布核验完成后清理，tag 和 Pull Request 保留追溯记录。
+
 ## 开发环境
 
 与 CI 对齐的环境为：
@@ -38,6 +57,7 @@
 - 已提交并执行的 Flyway 迁移视为不可变历史，禁止修改来迁就新代码。
 - 当前最新迁移为 V22；新的结构或数据修正从 V23 及更高版本继续追加。
 - 迁移应支持从全新数据库按顺序执行，不依赖手工 SQL。
+- 发布前必须分别验证全新空库安装和从上一正式版本升级；历史数据清洗不得作为新安装正确性的前置条件。
 - 数据结构变更必须同步更新 [数据库设计文档](docs/database-design.md)。
 
 ## 验证改动
@@ -90,5 +110,7 @@ Pull Request 请说明：
 - 执行过的验证命令及实际结果。
 - 数据库、配置、权限、安全和兼容性影响。
 - UI 改动的必要截图。
+
+仓库提供的 Pull Request 模板将上述影响面转换为检查项。检查项不是形式确认：不适用或未执行的项目应在 PR 中说明原因。
 
 提交前确认没有加入密钥、日志、构建产物、个人路径、测试数据库或本地工作文档。贡献一经提交，即表示你同意按本项目的 [Apache License 2.0](LICENSE) 提供该贡献。
