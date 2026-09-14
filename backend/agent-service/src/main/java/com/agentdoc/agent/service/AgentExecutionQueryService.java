@@ -26,9 +26,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import static com.agentdoc.agent.constant.AgentConstant.TOKEN_PRICING_CURRENCY;
+import static com.agentdoc.agent.constant.AgentConstant.TOKEN_PRICING_SCHEMA_VERSION;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
@@ -148,8 +152,12 @@ public class AgentExecutionQueryService {
         if (execution == null) {
             return null;
         }
-        // 组装输入、缓存、输出Token真实值与估算值
-        return new AgentExecutionTokenUsageVO(execution.getInputTokens(), execution.getInputTokensEstimated(),
+        Map<String, Object> model = map(execution.getModelSnapshot());
+        return new AgentExecutionTokenUsageVO(execution.getId(), longValue(model.get("id")),
+                execution.getModelConfigVersion(), decimalValue(model.get("inputPricePerMillion")),
+                decimalValue(model.get("outputPricePerMillion")), TOKEN_PRICING_CURRENCY,
+                TOKEN_PRICING_SCHEMA_VERSION, execution.getCreatedAt(),
+                execution.getInputTokens(), execution.getInputTokensEstimated(),
                 execution.getCachedInputTokens(), execution.getCachedInputTokensEstimated(),
                 execution.getOutputTokens(), execution.getOutputTokensEstimated());
     }
@@ -229,6 +237,7 @@ public class AgentExecutionQueryService {
                 execution.getAgentId(), execution.getAgentNameSnapshot(), execution.getAgentConfigVersion(),
                 execution.getMaxIterations(), execution.getExecutionTimeoutSeconds(), execution.getStatus(),
                 execution.getCancelRequested(), execution.getPromptHash(), execution.getExecutionSnapshotHash(),
+                execution.getExecutionSnapshotSchemaVersion(),
                 modelSnapshot(execution), skillSnapshot(execution), toolDefinitions(execution),
                 externalMcps(execution), modelCalls.stream().map(this::modelCall).toList(),
                 toolCalls.stream().map(this::toolCall).toList(), execution.getInputTokens(),
@@ -388,6 +397,17 @@ public class AgentExecutionQueryService {
         }
         try {
             return Integer.valueOf(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private BigDecimal decimalValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(String.valueOf(value));
         } catch (NumberFormatException exception) {
             return null;
         }

@@ -9,6 +9,7 @@ import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
+import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
@@ -76,6 +77,14 @@ public interface DocumentFeign {
     Result<DocumentExecutionContextVO> getExecutionContext(@PathVariable Long documentId);
 
     /**
+     * 按冻结版本与内容摘要查询执行上下文，版本或摘要不一致时失败。
+     */
+    @GetMapping("/api/document/documents/{documentId}/versions/{version}/execution-context")
+    Result<DocumentVersionExecutionContextVO> getVersionExecutionContext(
+            @PathVariable Long documentId, @PathVariable Long version,
+            @RequestParam String contentSha256);
+
+    /**
      * 校验当前用户空间权限（是否拥有该空间、该权限）
      */
     @GetMapping("/api/document/spaces/{spaceId}/permission")
@@ -101,6 +110,15 @@ public interface DocumentFeign {
     @GetMapping("/api/document/documents/{documentId}/fragments")
     Result<DocumentFragmentVO> readFragment(@PathVariable Long documentId,
                                             @RequestParam long start, @RequestParam int length);
+
+    /**
+     * 从任务冻结的文档版本读取片段，禁止回退到当前版本。
+     */
+    @GetMapping("/api/document/documents/{documentId}/versions/{version}/fragments")
+    Result<DocumentFragmentVO> readVersionFragment(
+            @PathVariable Long documentId, @PathVariable Long version,
+            @RequestParam String contentSha256,
+            @RequestParam long start, @RequestParam int length);
 
     /**
      * Agent 更新草稿文档

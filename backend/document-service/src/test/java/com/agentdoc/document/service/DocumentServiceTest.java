@@ -10,6 +10,7 @@ import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
+import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.mapper.DocumentMapper;
@@ -302,5 +303,73 @@ class DocumentServiceTest {
         assertEquals(5L, result.totalCount());
         assertEquals(3L, result.countAsOfLastMonth());
         verify(documentMapper, times(2)).selectCount(any());
+    }
+
+    @Test
+    void shouldReadFrozenVersionWhenVersionAndHashMatch() {
+        String content = "冻结版本内容";
+        String sha256 = StableSnapshotUtils.sha256Utf8(content);
+        DocumentVersionEntity version = version(2L, content, sha256);
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("已经变化的当前内容"));
+        when(versionService.requireVersion(DOCUMENT_ID, 2L)).thenReturn(version);
+
+        var context = documentService.getVersionExecutionContext(DOCUMENT_ID, 2L, sha256);
+        var fragment = documentService.readVersionFragment(DOCUMENT_ID, 2L, sha256, 2L, 4);
+
+        assertEquals(DOCUMENT_ID, context.documentId());
+        assertEquals(2L, context.version());
+        assertEquals(sha256, context.contentSha256());
+        assertEquals((long) content.length(), context.contentLength());
+        assertEquals(content.substring(2, 6), fragment.content());
+        verify(permissionService, times(2)).requirePermission(2001L, "document:read");
+    }
+
+    @Test
+    void shouldRejectFrozenVersionWhenStoredHashDoesNotMatch() {
+        String content = "冻结版本内容";
+        String sha256 = StableSnapshotUtils.sha256Utf8(content);
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+        when(versionService.requireVersion(DOCUMENT_ID, 2L))
+                .thenReturn(version(2L, content, StableSnapshotUtils.sha256Utf8("其他内容")));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> documentService.getVersionExecutionContext(DOCUMENT_ID, 2L, sha256));
+
+        assertEquals(ErrorCode.CONFLICT.getCode(), exception.getCode());
+    }
+
+    @Test
+    void shouldRejectFrozenVersionWhenPersistedContentDrifts() {
+        String expectedContent = "冻结版本内容";
+        String sha256 = StableSnapshotUtils.sha256Utf8(expectedContent);
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+        when(versionService.requireVersion(DOCUMENT_ID, 2L))
+                .thenReturn(version(2L, "被篡改的版本内容", sha256));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> documentService.readVersionFragment(DOCUMENT_ID, 2L, sha256, 0L, 10));
+
+        assertEquals(ErrorCode.CONFLICT.getCode(), exception.getCode());
+    }
+
+    @Test
+    void shouldPropagateMissingFrozenVersion() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+        when(versionService.requireVersion(DOCUMENT_ID, 99L))
+                .thenThrow(new BusinessException(ErrorCode.NOT_FOUND, "文档版本不存在"));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> documentService.getVersionExecutionContext(DOCUMENT_ID, 99L, "missing"));
+
+        assertEquals(ErrorCode.NOT_FOUND.getCode(), exception.getCode());
+    }
+
+    private DocumentVersionEntity version(Long versionNo, String content, String sha256) {
+        DocumentVersionEntity version = new DocumentVersionEntity();
+        version.setDocumentId(DOCUMENT_ID);
+        version.setVersionNo(versionNo);
+        version.setContent(content);
+        version.setContentSha256(sha256);
+        return version;
     }
 }

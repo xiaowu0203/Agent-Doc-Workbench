@@ -3,6 +3,8 @@ package com.agentdoc.task.pojo.vo;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.enums.TaskReadScope;
+import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.common.utils.JsonUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -16,6 +18,10 @@ import java.util.List;
  */
 @Schema(description = "任务信息")
 public record TaskVO(
+        @Schema(description = "父任务 ID") Long parentTaskId,
+        @Schema(description = "逻辑工作根任务 ID") Long rootTaskId,
+        @Schema(description = "执行血缘类型") TaskLineageType lineageType,
+        @Schema(description = "执行模式") TaskExecutionMode executionMode,
         @Schema(description = "任务 ID") Long id,
         @Schema(description = "可读任务编号") String taskNo,
         @Schema(description = "所属空间 ID") Long spaceId,
@@ -41,13 +47,16 @@ public record TaskVO(
         @Schema(description = "创建时间") LocalDateTime createdAt) {
 
     public TaskVO withTokenUsage(Long used, Boolean estimated) {
-        return new TaskVO(id, taskNo, spaceId, agentId, documentId, documentType, name, instruction, status,
+        return new TaskVO(parentTaskId, rootTaskId, lineageType, executionMode,
+                id, taskNo, spaceId, agentId, documentId, documentType, name, instruction, status,
                 tokenBudget, readScope, focusRegions, used, estimated, startTime, dispatchedAt, lastHeartbeatAt,
                 endTime, retryCount, errorMessage, resultSummary, createdBy, createdAt);
     }
 
     public static TaskVO from(TaskEntity entity) {
-        return new TaskVO(entity.getId(), entity.getTaskNo(), entity.getSpaceId(), entity.getAgentId(),
+        return new TaskVO(entity.getParentTaskId(), entity.getRootTaskId(),
+                TaskLineageType.valueOf(entity.getLineageType()), TaskExecutionMode.valueOf(entity.getExecutionMode()),
+                entity.getId(), entity.getTaskNo(), entity.getSpaceId(), entity.getAgentId(),
                 entity.getDocumentId(), DocType.fromCode(entity.getDocumentType()), entity.getName(), entity.getInstruction(),
                 TaskStatus.fromCode(entity.getStatus()), entity.getTokenBudget(), readScope(entity), focusRegions(entity),
                 entity.getTokensUsed(), entity.getTokensEstimated(), entity.getStartTime(), entity.getDispatchedAt(), entity.getLastHeartbeatAt(),

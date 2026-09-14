@@ -18,6 +18,7 @@ import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
@@ -28,13 +29,17 @@ import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.convertor.TaskConvertor;
+import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.enums.AuditAction;
 import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.enums.TaskReadScope;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.task.execution.TaskExecutionPolicy;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
@@ -69,6 +74,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -163,6 +169,8 @@ public class TaskService {
                 focusRegions.scope(), focusRegions.json(), userId);
         entity.setId(IdWorker.getId());
         entity.setTaskNo(buildTaskNo(entity.getId()));
+        initializeExecutionSemantics(entity, entity.getId(), TaskLineageType.ORIGINAL);
+        freezeInputSnapshot(entity, document.version(), document.contentSha256());
         taskMapper.insert(entity);
 
         // 生成任务能力令牌，并更新任务记录
@@ -580,6 +588,7 @@ public class TaskService {
         if (entity.getCapabilityToken() == null || entity.getCapabilityToken().isBlank()) {
             throw new BusinessException(ErrorCode.CONFLICT, "任务缺少执行能力令牌，请重新创建任务");
         }
+        TaskExecutionPolicy.requireSupported(entity);
         try {
             // 重新投递MQ消息
             messagePublisher.publish(entity.getId());
@@ -658,6 +667,17 @@ public class TaskService {
         if (!entity.getSpaceId().equals(document.spaceId()) || !document.normal()) {
             throw new BusinessException(ErrorCode.CONFLICT, "目标文档当前不可用于任务重跑");
         }
+        if (entity.getDocumentVersionSnapshot() == null || entity.getDocumentContentSha256() == null
+                || entity.getInputSnapshotSchemaVersion() == null || entity.getInputSnapshotHash() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "历史任务没有冻结输入，不能按 Run 契约重跑");
+        }
+        DocumentVersionExecutionContextVO frozenDocument = requireData(documentFeign.getVersionExecutionContext(
+                entity.getDocumentId(), entity.getDocumentVersionSnapshot(), entity.getDocumentContentSha256()));
+        if (!entity.getDocumentId().equals(frozenDocument.documentId())
+                || !entity.getDocumentVersionSnapshot().equals(frozenDocument.version())
+                || !entity.getDocumentContentSha256().equals(frozenDocument.contentSha256())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源任务冻结文档输入不可复用");
+        }
         // 校验Agent可用
         AgentExecutionProfileVO agent = requireData(agentFeign.getExecutionProfile(entity.getAgentId()));
         if (!agent.enabled() || !entity.getSpaceId().equals(agent.spaceId())) {
@@ -666,7 +686,8 @@ public class TaskService {
         requireDocumentScope(agent, entity.getDocumentId());
 
         // 复制生成新任务实体，parentTaskId指向原任务
-        TaskEntity rerunTask = copyForRerun(entity, agent.configVersion(), AuthUtils.getUserIdOrException());
+        TaskEntity rerunTask = copyForDerived(entity, agent.configVersion(), AuthUtils.getUserIdOrException(),
+                TaskLineageType.RERUN);
         taskMapper.insert(rerunTask);
         try {
             // 签发加密能力令牌
@@ -705,7 +726,7 @@ public class TaskService {
 
         Long userId = AuthUtils.getUserIdOrException();
         // 复制任务基础数据
-        TaskEntity rework = copyForRerun(source, agent.configVersion(), userId);
+        TaskEntity rework = copyForDerived(source, agent.configVersion(), userId, TaskLineageType.REVIEW_REWORK);
         // 任务名称追加后缀，做长度截断
         String suffix = "（审批重改）";
         String baseName = source.getName() == null ? "变更重改" : source.getName();
@@ -717,6 +738,7 @@ public class TaskService {
                 + "\n\n请基于当前正式文档重新处理，并提交新的变更请求。原变更请求 ID：" + changeRequestId;
         rework.setInstruction(instruction.length() <= TaskConstant.MAX_TASK_INSTRUCTION_LENGTH
                 ? instruction : instruction.substring(0, TaskConstant.MAX_TASK_INSTRUCTION_LENGTH));
+        freezeInputSnapshot(rework, document.version(), document.contentSha256());
         taskMapper.insert(rework);
         try {
             rework.setCapabilityToken(issueEncryptedCapability(rework));
@@ -778,7 +800,8 @@ public class TaskService {
      * @param userId 创建人ID
      * @return 新任务实体
      */
-    private TaskEntity copyForRerun(TaskEntity source, Long agentConfigVersion, Long userId) {
+    private TaskEntity copyForDerived(TaskEntity source, Long agentConfigVersion, Long userId,
+                                      TaskLineageType lineageType) {
         TaskEntity target = new TaskEntity();
         target.setId(IdWorker.getId());
         target.setTaskNo(buildTaskNo(target.getId()));
@@ -787,6 +810,8 @@ public class TaskService {
         target.setAgentConfigVersion(agentConfigVersion);
         target.setDocumentId(source.getDocumentId());
         target.setDocumentType(source.getDocumentType());
+        target.setDocumentVersionSnapshot(source.getDocumentVersionSnapshot());
+        target.setDocumentContentSha256(source.getDocumentContentSha256());
         target.setName(source.getName());
         target.setInstruction(source.getInstruction());
         target.setStatus(TaskStatus.PENDING.getCode());
@@ -795,9 +820,49 @@ public class TaskService {
         target.setFocusRegionsJson(source.getFocusRegionsJson());
         target.setTokensEstimated(Boolean.FALSE);
         target.setParentTaskId(source.getId());
+        initializeExecutionSemantics(target, source.getRootTaskId(), lineageType);
+        refreshInputSnapshot(target);
         target.setRetryCount(0);
         target.setCreatedBy(userId);
         return target;
+    }
+
+    /**
+     * 设置并校验 Phase 1 执行语义，所有新任务统一从这里进入。
+     */
+    private void initializeExecutionSemantics(TaskEntity task, Long rootTaskId, TaskLineageType lineageType) {
+        if (rootTaskId == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源任务缺少根任务血缘");
+        }
+        task.setRootTaskId(rootTaskId);
+        task.setLineageType(lineageType.name());
+        task.setExecutionMode(TaskExecutionMode.LIVE.name());
+        TaskExecutionPolicy.requireSupported(task);
+    }
+
+    /**
+     * 冻结文档输入并刷新 input snapshot v1 身份。
+     */
+    private void freezeInputSnapshot(TaskEntity task, Long documentVersion, String documentContentSha256) {
+        if (documentVersion == null || documentContentSha256 == null || documentContentSha256.length() != 64) {
+            throw new BusinessException(ErrorCode.CONFLICT, "文档服务未返回可冻结的版本与内容哈希");
+        }
+        task.setDocumentVersionSnapshot(documentVersion);
+        task.setDocumentContentSha256(documentContentSha256);
+        refreshInputSnapshot(task);
+    }
+
+    private void refreshInputSnapshot(TaskEntity task) {
+        if (task.getDocumentVersionSnapshot() == null || task.getDocumentContentSha256() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "任务缺少冻结文档输入");
+        }
+        int schemaVersion = TaskConstant.INPUT_SNAPSHOT_SCHEMA_VERSION;
+        TaskInputSnapshot snapshot = new TaskInputSnapshot(
+                task.getInstruction(), task.getSpaceId(), task.getDocumentId(), task.getDocumentType(),
+                task.getDocumentVersionSnapshot(), task.getDocumentContentSha256(), task.getReadScope(),
+                focusRegions(task), task.getTokenBudget(), task.getLineageType(), task.getExecutionMode());
+        task.setInputSnapshotSchemaVersion(schemaVersion);
+        task.setInputSnapshotHash(StableSnapshotUtils.snapshotHash(schemaVersion, snapshot));
     }
 
     /**
@@ -820,10 +885,12 @@ public class TaskService {
     /**
      * 组装 Agent 可见的任务文档上下文。
      */
-    public TaskDocumentContextVO getTaskDocumentContext(Long taskId, DocumentExecutionContextVO document) {
+    public TaskDocumentContextVO getTaskDocumentContext(Long taskId, DocumentVersionExecutionContextVO document) {
         TaskEntity task = require(taskId);
         // 校验任务与传入文档上下文匹配
-        if (!task.getDocumentId().equals(document.documentId()) || !task.getSpaceId().equals(document.spaceId())) {
+        if (!task.getDocumentId().equals(document.documentId())
+                || !task.getDocumentVersionSnapshot().equals(document.version())
+                || !task.getDocumentContentSha256().equals(document.contentSha256())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "任务文档上下文不匹配");
         }
         TaskReadScope scope = readScope(task);
@@ -961,7 +1028,11 @@ public class TaskService {
             }
             return new TaskFocusRegionDTO(region.start(), region.length(), trimToNull(region.textPreview()),
                     trimToNull(region.instruction()));
-        }).sorted((left, right) -> Long.compare(left.start(), right.start())).toList();
+        }).sorted(Comparator.comparing(TaskFocusRegionDTO::start)
+                .thenComparing(TaskFocusRegionDTO::length)
+                .thenComparing(TaskFocusRegionDTO::textPreview, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(TaskFocusRegionDTO::instruction, Comparator.nullsFirst(String::compareTo)))
+                .toList();
         return new FocusRegions(scope, normalized.isEmpty() ? null : JsonUtils.toJson(normalized));
     }
 
@@ -1024,6 +1095,15 @@ public class TaskService {
      * 内部记录：封装读取范围和序列化后的关注区域json
      */
     private record FocusRegions(TaskReadScope scope, String json) {
+    }
+
+    /**
+     * input snapshot v1 的固定字段集合。
+     */
+    private record TaskInputSnapshot(String instruction, Long spaceId, Long documentId, Integer documentType,
+                                     Long documentVersion, String documentContentSha256, String readScope,
+                                     List<TaskFocusRegionDTO> focusRegions, Long tokenBudget,
+                                     String lineageType, String executionMode) {
     }
 
     /**

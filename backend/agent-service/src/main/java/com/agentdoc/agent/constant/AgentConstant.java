@@ -53,6 +53,12 @@ public final class AgentConstant {
      * 错误信息最大截取长度，避免异常消息报文过大
      */
     public static final int MAX_ERROR_MESSAGE_LENGTH = 2000;
+    /** Phase 1 执行配置快照 schema 版本。 */
+    public static final int EXECUTION_SNAPSHOT_SCHEMA_VERSION = 2;
+    /** Phase 1 Token 计价快照 schema 版本。 */
+    public static final int TOKEN_PRICING_SCHEMA_VERSION = 1;
+    /** Phase 1 Token 计价币种。 */
+    public static final String TOKEN_PRICING_CURRENCY = "CNY";
     /**
      * MCP服务端默认端点路径，对应workbench暴露的MCP接口地址
      */

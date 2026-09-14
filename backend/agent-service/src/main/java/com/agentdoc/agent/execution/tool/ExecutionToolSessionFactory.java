@@ -190,7 +190,10 @@ public class ExecutionToolSessionFactory {
                 ToolDefinition definition = tool.callback().getToolDefinition();
                 return new ToolDefinitionSnapshot(definition.name(), definition.description(),
                         definition.inputSchema(), tool.source(), tool.sourceKey(), tool.mcpServerId());
-            }).toList();
+            }).sorted(Comparator.comparing(ToolDefinitionSnapshot::name)
+                    .thenComparing(ToolDefinitionSnapshot::sourceKey,
+                            Comparator.nullsFirst(String::compareTo)))
+                    .toList();
             executionPersistenceService.updateToolDefinitionSnapshot(context.executionId(),
                     JsonUtils.toJson(definitions));
 

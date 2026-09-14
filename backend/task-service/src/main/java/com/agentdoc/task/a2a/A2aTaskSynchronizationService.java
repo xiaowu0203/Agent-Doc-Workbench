@@ -7,7 +7,6 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
-import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
@@ -83,8 +82,8 @@ public class A2aTaskSynchronizationService {
                 || status == TaskStatus.FAILED)) {
             finalizeDraft(task, status);
         }
-        if (status == TaskStatus.COMPLETED) {
-            tokenUsageService.recordRemote(task, requireProfile(task.getAgentId()), resolveTokenUsage(task, remoteTask));
+        if (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED || status == TaskStatus.FAILED) {
+            tokenUsageService.recordRemote(task, resolveTokenUsage(task));
         }
         return true;
     }
@@ -116,29 +115,24 @@ public class A2aTaskSynchronizationService {
 
     /**
      * 解析任务Token用量信息
-     * 优先使用远程A2A任务返回的token用量；如果缺失输入/输出token，则调用Agent服务接口查询执行用量
+     * AgentExecution 是 Token 和价格快照的权威来源，终态统一读取内部投影。
      * @param task 本地任务实体
-     * @param remoteTask 远端A2A任务对象
      * @return A2A标准Token用量对象
      */
-    private A2aTokenUsage resolveTokenUsage(TaskEntity task, Task remoteTask) {
-        // 从远程任务转换得到token用量
-        A2aTokenUsage usage = A2aTaskConvertor.tokenUsage(remoteTask);
-        // 若远程返回的输入、输出token不为空，直接返回
-        if (usage.inputTokens() != null && usage.outputTokens() != null) {
-            return usage;
-        }
-        // 远程数据缺失，调用Agent服务查询本次执行真实token消耗
+    private A2aTokenUsage resolveTokenUsage(TaskEntity task) {
         Result<AgentExecutionTokenUsageVO> result = agentFeign.getExecutionTokenUsage(task.getId());
         if (result != null && result.code() == ErrorCode.SUCCESS.getCode() && result.data() != null) {
             AgentExecutionTokenUsageVO usageProjection = result.data();
             return new A2aTokenUsage(usageProjection.inputTokens(), usageProjection.cachedInputTokens(),
                     usageProjection.outputTokens(), Boolean.TRUE.equals(usageProjection.inputTokensEstimated()),
                     Boolean.TRUE.equals(usageProjection.cachedInputTokensEstimated()),
-                    Boolean.TRUE.equals(usageProjection.outputTokensEstimated()));
+                    Boolean.TRUE.equals(usageProjection.outputTokensEstimated()), usageProjection.executionId(),
+                    usageProjection.modelId(), usageProjection.modelConfigVersion(),
+                    usageProjection.inputPricePerMillion(), usageProjection.outputPricePerMillion(),
+                    usageProjection.currency(), usageProjection.pricingSchemaVersion(),
+                    usageProjection.pricingCapturedAt());
         }
-        // 查询失败，返回原始转换得到的用量对象
-        return usage;
+        throw new BusinessException(ErrorCode.CONFLICT, "无法读取 AgentExecution Token 权威账本投影");
     }
 
     /**
@@ -154,21 +148,4 @@ public class A2aTaskSynchronizationService {
         }
     }
 
-    /**
-     * 根据agentId远程获取Agent执行配置档案
-     * <p>Feign调用Agent服务，校验返回结果，非成功则抛出业务异常中断同步流程。</p>
-     *
-     * @param agentId Agent唯一ID
-     * @return Agent执行档案VO
-     * @throws BusinessException Feign调用返回失败、返回数据为空时抛出
-     */
-    private AgentExecutionProfileVO requireProfile(Long agentId) {
-        // 根据AgentId查询Agent执行档案VO信息
-        Result<AgentExecutionProfileVO> result = agentFeign.getExecutionProfile(agentId);
-        if (result == null || result.code() != ErrorCode.SUCCESS.getCode() || result.data() == null) {
-            throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
-                    result == null ? "Agent Service 调用失败" : result.message());
-        }
-        return result.data();
-    }
 }

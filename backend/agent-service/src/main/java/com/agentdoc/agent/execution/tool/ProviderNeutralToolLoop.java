@@ -79,7 +79,16 @@ public class ProviderNeutralToolLoop {
                                        Long tokenBudget, int maxIterations,
                                        BooleanSupplier cancelRequested) {
         return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
-                cancelRequested, ignored -> { }, false);
+                cancelRequested, ignored -> { }, ignored -> { }, false);
+    }
+
+    public AgentRuntimeResult executeTrackingUsage(ModelAdapter adapter, ModelAdapterContext context,
+                                                   String systemPrompt, String instruction,
+                                                   Long tokenBudget, int maxIterations,
+                                                   BooleanSupplier cancelRequested,
+                                                   Consumer<TokenUsage> onUsage) {
+        return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
+                cancelRequested, ignored -> { }, onUsage, false);
     }
 
     /**
@@ -104,7 +113,17 @@ public class ProviderNeutralToolLoop {
                                        BooleanSupplier cancelRequested,
                                        Consumer<String> onTextDelta) {
         return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
-                cancelRequested, onTextDelta, true);
+                cancelRequested, onTextDelta, ignored -> { }, true);
+    }
+
+    public AgentRuntimeResult executeTrackingUsage(ModelAdapter adapter, ModelAdapterContext context,
+                                                   String systemPrompt, String instruction,
+                                                   Long tokenBudget, int maxIterations,
+                                                   BooleanSupplier cancelRequested,
+                                                   Consumer<String> onTextDelta,
+                                                   Consumer<TokenUsage> onUsage) {
+        return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
+                cancelRequested, onTextDelta, onUsage, true);
     }
 
     /**
@@ -125,6 +144,7 @@ public class ProviderNeutralToolLoop {
                                                 Long tokenBudget, int maxIterations,
                                                 BooleanSupplier cancelRequested,
                                                 Consumer<String> onTextDelta,
+                                                Consumer<TokenUsage> onUsage,
                                                 boolean streaming) {
         // 构建工具调用管理器，注入已经包装好取消校验的ToolCallback列表
         ToolCallingManager toolCallingManager = DefaultToolCallingManager.builder()
@@ -174,6 +194,7 @@ public class ProviderNeutralToolLoop {
             TokenUsage turnUsage = tokenUsageEstimator.complete(turn.tokenUsage(), prompt.getInstructions(),
                     context.toolCallbacks(), turn.response());
             totalUsage = totalUsage == null ? turnUsage : totalUsage.add(turnUsage);
+            onUsage.accept(totalUsage);
 
             // LLM返回后再次校验取消与预算
             requireNotCanceled(cancelRequested);

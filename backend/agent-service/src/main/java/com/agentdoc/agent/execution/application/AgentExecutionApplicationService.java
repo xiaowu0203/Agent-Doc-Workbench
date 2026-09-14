@@ -6,6 +6,7 @@ import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
 import com.agentdoc.agent.execution.context.AgentRuntimeContext;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.execution.runtime.AgentExecutionTerminatedException;
 import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
@@ -23,6 +24,7 @@ import org.a2aproject.sdk.server.tasks.AgentEmitter;
 import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
 import org.a2aproject.sdk.spec.TextPart;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -73,8 +75,17 @@ public class AgentExecutionApplicationService {
         // 用户原始输入指令
         String instruction = context.getUserInput();
         // 短事务捕获配置后，在事务外完成路由与快照，并通过独立短事务写入执行记录
-        ExecutionPreparationService.PreparedExecution prepared = preparationService.prepare(
-                context.getTaskId(), context.getContextId(), input, instruction);
+        ExecutionPreparationService.PreparedExecution prepared;
+        try {
+            prepared = preparationService.prepare(context.getTaskId(), context.getContextId(), input, instruction);
+        } catch (DuplicateKeyException exception) {
+            AgentExecutionEntity concurrent = findByWorkbenchTaskId(input.workbenchTaskId());
+            if (concurrent == null) {
+                throw exception;
+            }
+            emitExisting(concurrent, emitter);
+            return;
+        }
         AgentEntity agent = prepared.agent();
         ModelEntity model = prepared.model();
         SkillExecutionSnapshot skillSnapshot = prepared.skillSnapshot();
@@ -113,6 +124,16 @@ public class AgentExecutionApplicationService {
                     tokenMetadata(execution, result));
             // 触发回调task-service，任务已经完成了
             emitter.complete(agentMessage(result.summary()));
+        } catch (AgentExecutionTerminatedException exception) {
+            RuntimeException cause = exception.originalCause();
+            if (cause instanceof AgentExecutionCanceledException) {
+                executionPersistenceService.markCanceled(execution, exception.tokenUsage());
+                emitter.cancel(agentMessage(cause.getMessage()));
+            } else {
+                String errorMessage = safeMessage(cause);
+                executionPersistenceService.markFailed(execution, errorMessage, exception.tokenUsage());
+                emitter.fail(agentMessage(errorMessage));
+            }
         } catch (AgentExecutionCanceledException exception) {
             // 捕获主动取消异常，状态置为CANCELED
             executionPersistenceService.markCanceled(execution);

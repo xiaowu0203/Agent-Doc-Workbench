@@ -9,14 +9,12 @@ import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.common.enums.TokenValueSource;
 import com.agentdoc.common.pojo.TokenValue;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.StableSnapshotUtils;
+import com.fasterxml.jackson.databind.JsonNode;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
-import java.util.Map;
+
+import static com.agentdoc.agent.constant.AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION;
 
 /**
  * Agent执行记录转换器
@@ -87,37 +85,25 @@ public final class AgentExecutionConvertor {
      * @return 小写 SHA-256
      */
     public static String snapshotHash(AgentExecutionEntity execution) {
-        Map<String, Object> snapshot = new LinkedHashMap<>();
-        snapshot.put("workbenchTaskId", execution.getWorkbenchTaskId());
-        snapshot.put("spaceId", execution.getSpaceId());
-        snapshot.put("agentId", execution.getAgentId());
-        snapshot.put("agentName", execution.getAgentNameSnapshot());
-        snapshot.put("agentConfigVersion", execution.getAgentConfigVersion());
-        snapshot.put("maxIterations", execution.getMaxIterations());
-        snapshot.put("executionTimeoutSeconds", execution.getExecutionTimeoutSeconds());
-        snapshot.put("systemPrompt", execution.getSystemPromptSnapshot());
-        snapshot.put("userInstruction", execution.getUserInstructionSnapshot());
-        snapshot.put("model", execution.getModelSnapshot());
-        snapshot.put("modelConfigVersion", execution.getModelConfigVersion());
-        snapshot.put("skillSnapshot", execution.getSkillSnapshotJson());
-        snapshot.put("skillInstructionHash", execution.getSkillInstructionHash());
-        snapshot.put("skillSelectionMode", execution.getSkillSelectionMode());
-        snapshot.put("skillSelectionEffectiveMode", execution.getSkillSelectionEffectiveMode());
-        snapshot.put("skillRouterModelId", execution.getSkillRouterModelId());
-        snapshot.put("selectedSkillVersionIds", execution.getSelectedSkillVersionIdsJson());
-        snapshot.put("skillRouterSnapshot", execution.getSkillRouterSnapshotJson());
-        snapshot.put("toolWhitelist", execution.getToolWhitelistSnapshot());
-        snapshot.put("externalMcpSnapshot", execution.getExternalMcpSnapshotJson());
-        return sha256(JsonUtils.toJson(snapshot));
+        ExecutionSnapshot snapshot = new ExecutionSnapshot(
+                execution.getAgentConfigVersion(), execution.getMaxIterations(),
+                execution.getExecutionTimeoutSeconds(), execution.getSystemPromptSnapshot(),
+                jsonValue(execution.getModelSnapshot()), execution.getModelConfigVersion(),
+                jsonValue(execution.getSkillSnapshotJson()), execution.getSkillInstructionHash(),
+                execution.getSkillSelectionMode(), execution.getSkillSelectionEffectiveMode(),
+                execution.getSkillRouterModelId(), jsonValue(execution.getSelectedSkillVersionIdsJson()),
+                jsonValue(execution.getSkillRouterSnapshotJson()),
+                jsonValue(execution.getToolWhitelistSnapshot()),
+                jsonValue(execution.getToolDefinitionSnapshotJson()),
+                jsonValue(execution.getExternalMcpSnapshotJson()));
+        return StableSnapshotUtils.snapshotHash(EXECUTION_SNAPSHOT_SCHEMA_VERSION, snapshot);
     }
 
-    private static String sha256(String value) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("当前 JDK 不支持 SHA-256", exception);
+    private static JsonNode jsonValue(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
         }
+        return JsonUtils.parse(value, JsonNode.class);
     }
 
     /**
@@ -139,14 +125,22 @@ public final class AgentExecutionConvertor {
      */
     public static void complete(AgentExecutionEntity entity, AgentRuntimeResult result) {
         entity.setStatus(AgentExecutionStatus.COMPLETED.name());
-        entity.setInputTokens(result.tokenUsage().input().value());
-        entity.setInputTokensEstimated(isEstimated(result.tokenUsage().input()));
-        entity.setCachedInputTokens(result.tokenUsage().cachedInput().value());
-        entity.setCachedInputTokensEstimated(isEstimated(result.tokenUsage().cachedInput()));
-        entity.setOutputTokens(result.tokenUsage().output().value());
-        entity.setOutputTokensEstimated(isEstimated(result.tokenUsage().output()));
+        applyTokenUsage(entity, result.tokenUsage());
         entity.setResultSummary(result.summary());
         entity.setFinishedAt(LocalDateTime.now());
+    }
+
+    public static void applyTokenUsage(AgentExecutionEntity entity,
+                                       com.agentdoc.agent.execution.model.TokenUsage usage) {
+        if (usage == null) {
+            return;
+        }
+        entity.setInputTokens(usage.input().value());
+        entity.setInputTokensEstimated(isEstimated(usage.input()));
+        entity.setCachedInputTokens(usage.cachedInput().value());
+        entity.setCachedInputTokensEstimated(isEstimated(usage.cachedInput()));
+        entity.setOutputTokens(usage.output().value());
+        entity.setOutputTokensEstimated(isEstimated(usage.output()));
     }
 
     private static boolean isEstimated(TokenValue value) {
@@ -188,7 +182,7 @@ public final class AgentExecutionConvertor {
     private static String toModelSnapshot(ModelEntity model) {
         return JsonUtils.toJson(new ModelSnapshot(model.getId(), model.getProvider(),
                 model.getAdapterType(), model.getModelKey(), model.getDisplayName(), model.getBaseUrl(),
-                model.getMaxOutputTokens()));
+                model.getMaxOutputTokens(), model.getInputPricePerMillion(), model.getOutputPricePerMillion()));
     }
 
     /**
@@ -203,6 +197,18 @@ public final class AgentExecutionConvertor {
      * @param maxOutputTokens 最大输出token
      */
     private record ModelSnapshot(Long id, String provider, String adapterType, String modelKey, String displayName,
-                                 String baseUrl, Long maxOutputTokens) {
+                                 String baseUrl, Long maxOutputTokens, java.math.BigDecimal inputPricePerMillion,
+                                 java.math.BigDecimal outputPricePerMillion) {
+    }
+
+    /** execution snapshot v2 固定字段集合，不包含任务输入、运行标识、状态、时间和 Token 结果。 */
+    private record ExecutionSnapshot(Long agentConfigVersion, Integer maxIterations,
+                                     Integer executionTimeoutSeconds, String systemPrompt,
+                                     JsonNode model, Long modelConfigVersion, JsonNode skillSnapshot,
+                                     String skillInstructionHash, String skillSelectionMode,
+                                     String skillSelectionEffectiveMode, Long skillRouterModelId,
+                                     JsonNode selectedSkillVersionIds, JsonNode skillRouterSnapshot,
+                                     JsonNode toolWhitelist, JsonNode toolDefinitions,
+                                     JsonNode externalMcpSnapshot) {
     }
 }

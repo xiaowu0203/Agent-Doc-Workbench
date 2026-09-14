@@ -13,6 +13,7 @@ import com.agentdoc.agent.execution.model.ModelCapabilities;
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.model.ModelSamplingOptions;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
+import com.agentdoc.agent.execution.runtime.AgentExecutionTerminatedException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionLimitExceededException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
@@ -170,6 +171,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
         if (toolSessionFactory == null) {
             throw new IllegalStateException("Skill 工具会话工厂未配置");
         }
+        try {
         try (ExecutionToolSession tools = toolSessionFactory.open(context, executionCanceled)) {
             ModelSamplingOptions samplingOptions = ModelSamplingOptions.from(context.model());
 
@@ -263,6 +265,12 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                 // 其余未知异常直接透传
                 throw exception;
             }
+        }
+        } catch (RuntimeException exception) {
+            if (exception instanceof AgentExecutionTerminatedException) {
+                throw exception;
+            }
+            throw new AgentExecutionTerminatedException(exception, control.usage());
         }
     }
 

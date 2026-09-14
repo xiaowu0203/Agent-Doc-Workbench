@@ -13,6 +13,14 @@ export type TaskStatus =
   | 'TERMINATED'
   | 'FAILED'
 export type TaskReadScope = 'FULL' | 'RANGES'
+export type TaskLineageType =
+  | 'ORIGINAL'
+  | 'RERUN'
+  | 'REVIEW_REWORK'
+  | 'REPLAY'
+  | 'EXPERIMENT'
+  | 'LEGACY_UNKNOWN'
+export type TaskExecutionMode = 'LIVE' | 'ISOLATED'
 
 export interface TaskFocusRegion {
   start: number
@@ -23,6 +31,10 @@ export interface TaskFocusRegion {
 
 export interface TaskListItem {
   id: EntityId
+  parentTaskId: EntityId | null
+  rootTaskId: EntityId
+  lineageType: TaskLineageType
+  executionMode: TaskExecutionMode
   taskNo: string
   spaceId: EntityId
   name: string
@@ -82,6 +94,10 @@ export interface CreatedTask {
 
 export interface TaskDetail {
   id: EntityId
+  parentTaskId: EntityId | null
+  rootTaskId: EntityId
+  lineageType: TaskLineageType
+  executionMode: TaskExecutionMode
   taskNo: string
   spaceId: EntityId
   agentId: EntityId
@@ -119,6 +135,7 @@ export interface AgentExecutionAudit {
   cancelRequested: boolean
   promptHash: string | null
   executionSnapshotHash: string | null
+  executionSnapshotSchemaVersion: number | null
   model: {
     id: EntityId | null
     modelKey: string | null
@@ -191,11 +208,11 @@ export interface AgentExecutionAudit {
     startedAt: string
     finishedAt: string | null
   }>
-  inputTokens: number
+  inputTokens: number | null
   inputTokensEstimated: boolean
   cachedInputTokens: number | null
   cachedInputTokensEstimated: boolean
-  outputTokens: number
+  outputTokens: number | null
   outputTokensEstimated: boolean
   startedAt: string | null
   finishedAt: string | null

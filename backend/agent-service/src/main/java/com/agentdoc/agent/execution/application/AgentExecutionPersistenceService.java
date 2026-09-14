@@ -4,9 +4,12 @@ import com.agentdoc.agent.convertor.AgentExecutionConvertor;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.execution.model.TokenUsage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import static com.agentdoc.agent.constant.AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION;
 
 /**
  * Agent执行实例持久化服务
@@ -35,9 +38,13 @@ public class AgentExecutionPersistenceService {
 
     @Transactional(rollbackFor = Exception.class)
     public void updateToolDefinitionSnapshot(Long executionId, String snapshotJson) {
-        AgentExecutionEntity execution = new AgentExecutionEntity();
-        execution.setId(executionId);
+        AgentExecutionEntity execution = executionMapper.selectById(executionId);
+        if (execution == null) {
+            throw new IllegalStateException("持久化工具定义时 Agent 执行记录不存在: " + executionId);
+        }
         execution.setToolDefinitionSnapshotJson(snapshotJson);
+        execution.setExecutionSnapshotSchemaVersion(EXECUTION_SNAPSHOT_SCHEMA_VERSION);
+        execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
         if (executionMapper.updateById(execution) != 1) {
             throw new IllegalStateException("持久化工具定义时 Agent 执行记录不存在: " + executionId);
         }
@@ -76,6 +83,12 @@ public class AgentExecutionPersistenceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void markCanceled(AgentExecutionEntity execution) {
+        markCanceled(execution, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void markCanceled(AgentExecutionEntity execution, TokenUsage tokenUsage) {
+        AgentExecutionConvertor.applyTokenUsage(execution, tokenUsage);
         AgentExecutionConvertor.cancel(execution);
         executionMapper.updateById(execution);
     }
@@ -89,6 +102,12 @@ public class AgentExecutionPersistenceService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void markFailed(AgentExecutionEntity execution, String errorMessage) {
+        markFailed(execution, errorMessage, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void markFailed(AgentExecutionEntity execution, String errorMessage, TokenUsage tokenUsage) {
+        AgentExecutionConvertor.applyTokenUsage(execution, tokenUsage);
         AgentExecutionConvertor.fail(execution, errorMessage);
         executionMapper.updateById(execution);
     }

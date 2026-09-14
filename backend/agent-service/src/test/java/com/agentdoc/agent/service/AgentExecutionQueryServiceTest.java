@@ -8,6 +8,7 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
+import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.utils.JsonUtils;
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +83,31 @@ class AgentExecutionQueryServiceTest {
         assertThat(result.skill().boundSkills().getFirst().getClass().getRecordComponents())
                 .extracting(component -> component.getName())
                 .doesNotContain("storageKey", "instructionText");
+    }
+
+    @Test
+    void returnsTokenLedgerIdentityFromFrozenModelSnapshot() {
+        AgentExecutionEntity execution = execution();
+        LocalDateTime capturedAt = LocalDateTime.of(2026, 9, 14, 20, 0);
+        execution.setCreatedAt(capturedAt);
+        execution.setModelSnapshot("""
+                {"id":5,"modelKey":"gpt-test","inputPricePerMillion":2.000000,
+                 "outputPricePerMillion":8.000000}
+                """);
+        execution.setInputTokens(1000L);
+        execution.setOutputTokens(500L);
+        when(executionMapper.selectOne(any())).thenReturn(execution);
+
+        AgentExecutionTokenUsageVO result = service.getTokenUsageByWorkbenchTask(11L);
+
+        assertThat(result.executionId()).isEqualTo(3L);
+        assertThat(result.modelId()).isEqualTo(5L);
+        assertThat(result.modelConfigVersion()).isEqualTo(6L);
+        assertThat(result.inputPricePerMillion()).isEqualByComparingTo("2.000000");
+        assertThat(result.outputPricePerMillion()).isEqualByComparingTo("8.000000");
+        assertThat(result.currency()).isEqualTo("CNY");
+        assertThat(result.pricingSchemaVersion()).isEqualTo(1);
+        assertThat(result.pricingCapturedAt()).isEqualTo(capturedAt);
     }
 
     private AgentExecutionEntity execution() {

@@ -72,6 +72,21 @@ public class TaskExecutionService {
             return;
         }
 
+        try {
+            TaskExecutionPolicy.requireSupported(task);
+        } catch (RuntimeException exception) {
+            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+                    .eq(TaskEntity::getId, taskId)
+                    .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
+                    .set(TaskEntity::getStatus, TaskStatus.FAILED.getCode())
+                    .set(TaskEntity::getErrorMessage, "任务执行类型或模式不受支持")
+                    .set(TaskEntity::getEndTime, LocalDateTime.now()));
+            log.error("拒绝调度非法任务执行语义，taskId={}, lineageType={}, executionMode={}",
+                    taskId, task.getLineageType(), task.getExecutionMode());
+            channel.basicReject(tag, false);
+            return;
+        }
+
         // 空间维度分布式锁：只约束“取任务 → A2A 投递 → 回填远端标识”的短暂投递阶段；
         // A2A 返回后立即释放，不约束 Agent 实际执行，文档并发写仍由 baseVersion 乐观锁处理。
         // 锁值使用本次消费唯一的持有者标识：TTL 过期后锁可能已被其他实例获取，

@@ -1,12 +1,12 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
-import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
 import com.agentdoc.task.a2a.A2aTokenUsage;
 import com.agentdoc.task.constant.TaskConstant;
@@ -33,6 +33,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -85,16 +86,30 @@ public class TokenUsageService {
      * </ol>
      * </p>
      * @param task 当前执行的任务实体
-     * @param agent 执行任务的Agent实体
      * @param result 大模型返回执行结果，包含inputTokens、cachedInputTokens、outputTokens
      * @return true：未超预算，任务允许继续执行；false：已超出Token预算，任务已被自动终止
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean recordRemote(TaskEntity task, AgentExecutionProfileVO agent, A2aTokenUsage result) {
+    public boolean recordRemote(TaskEntity task, A2aTokenUsage result) {
+        if (result.executionId() == null || result.modelId() == null || result.modelConfigVersion() == null
+                || result.inputPricePerMillion() == null || result.outputPricePerMillion() == null
+                || result.currency() == null || result.pricingSchemaVersion() == null
+                || result.pricingCapturedAt() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "AgentExecution Token 账本快照不完整");
+        }
+        TokenUsageDetailEntity existing = detailMapper.selectOne(
+                new LambdaQueryWrapper<TokenUsageDetailEntity>()
+                        .eq(TokenUsageDetailEntity::getExecutionId, result.executionId()));
+        if (existing != null) {
+            return true;
+        }
         // 获取模型返回的输入token、缓存输入token、输出token
         Long input = result.inputTokens();
-        Long cachedInput = result.cachedInputTokens();
         Long output = result.outputTokens();
+
+        if (input == null && result.cachedInputTokens() == null && output == null) {
+            return true;
+        }
 
         // 计算本次总消耗token：输入+输出；任一为null则总消耗为null，不强行填充0
         Long used = input == null || output == null ? null : input + output;
@@ -102,17 +117,18 @@ public class TokenUsageService {
         // 估算本次调用成本，输入输出任意为空则成本为null
         BigDecimal cost = input == null || output == null
                 ? null
-                : estimateCost(agent.inputPricePerMillion(), agent.outputPricePerMillion(), input, output);
+                : estimateCost(result.inputPricePerMillion(), result.outputPricePerMillion(), input, output);
 
         // 是否为估算token（模型返回的是预估数值，不是真实精确token）
         boolean estimated = result.inputTokensEstimated() || result.outputTokensEstimated();
 
         // 构建Token明细实体，插入明细记录表
-        TokenUsageDetailEntity detail = TokenUsageConvertor.toDetail(
-                task, agent.agentId(), agent.modelId(), input, cachedInput, output,
-                result.inputTokensEstimated(), result.cachedInputTokensEstimated(),
-                result.outputTokensEstimated(), cost);
-        detailMapper.insert(detail);
+        TokenUsageDetailEntity detail = TokenUsageConvertor.toDetail(task, result, cost, TraceContext.get());
+        try {
+            detailMapper.insert(detail);
+        } catch (DuplicateKeyException exception) {
+            return true;
+        }
 
         // 更新任务的已消耗token、是否预估标记；输入输出缺失时保持null，不伪装成0
         taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()

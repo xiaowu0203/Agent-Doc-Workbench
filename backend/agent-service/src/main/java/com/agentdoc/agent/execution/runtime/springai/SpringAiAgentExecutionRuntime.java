@@ -8,8 +8,10 @@ import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.model.ModelCapabilities;
 import com.agentdoc.agent.execution.model.ModelSamplingOptions;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
+import com.agentdoc.agent.execution.runtime.AgentExecutionTerminatedException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
+import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeType;
 import com.agentdoc.agent.execution.runtime.ConditionalOnAgentRuntime;
 import com.agentdoc.agent.execution.tool.ExecutionToolSession;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 基于Spring‑AI实现的Agent运行时 {@link AgentExecutionRuntime}
@@ -131,15 +134,23 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
             int maxIterations = context.agent().getMaxIterations() == null
                     ? AgentConstant.DEFAULT_MAX_ITERATIONS : context.agent().getMaxIterations();
 
+            AtomicReference<TokenUsage> lastUsage = new AtomicReference<>();
+            try {
             if (streaming) {
                 // 流式
-                return toolLoop.execute(adapter, adapterContext,
+                    return toolLoop.executeTrackingUsage(adapter, adapterContext,
                         context.systemPrompt(), context.instruction(),
-                        tokenBudget, maxIterations, cancelRequested, onTextDelta);
+                        tokenBudget, maxIterations, cancelRequested, onTextDelta, lastUsage::set);
             }
-            return toolLoop.execute(adapter, adapterContext,
+                return toolLoop.executeTrackingUsage(adapter, adapterContext,
                     context.systemPrompt(), context.instruction(),
-                    tokenBudget, maxIterations, cancelRequested);
+                    tokenBudget, maxIterations, cancelRequested, lastUsage::set);
+            } catch (RuntimeException exception) {
+                if (lastUsage.get() != null && !(exception instanceof AgentExecutionTerminatedException)) {
+                    throw new AgentExecutionTerminatedException(exception, lastUsage.get());
+                }
+                throw exception;
+            }
         }
     }
 

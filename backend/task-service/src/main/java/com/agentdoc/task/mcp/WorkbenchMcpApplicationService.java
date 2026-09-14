@@ -7,9 +7,9 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
-import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
+import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.enums.ChangeRequestStatus;
 import com.agentdoc.task.enums.AuditAction;
@@ -53,8 +53,9 @@ public class WorkbenchMcpApplicationService {
     public TaskDocumentContextVO getTaskContext() {
         //  获取当前任务的范围，需要验证ACTION_READ_FRAGMENT权限
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_READ_FRAGMENT);
-        // 远程调用查询【Agent任务执行上下文】，并包装返回结果
-        DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(scope.documentId()));
+        TaskEntity task = taskService.require(scope.taskId());
+        DocumentVersionExecutionContextVO document = requireData(documentFeign.getVersionExecutionContext(
+                scope.documentId(), task.getDocumentVersionSnapshot(), task.getDocumentContentSha256()));
         return taskService.getTaskDocumentContext(scope.taskId(), document);
     }
 
@@ -76,8 +77,9 @@ public class WorkbenchMcpApplicationService {
         //  获取当前任务的范围，需要验证ACTION_READ_FRAGMENT权限
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_READ_FRAGMENT);
         taskService.requireReadableRange(scope.taskId(), start, length);
-        // 远程调用获取【文档片段】并封装结果
-        return requireData(documentFeign.readFragment(scope.documentId(), start, length));
+        TaskEntity task = taskService.require(scope.taskId());
+        return requireData(documentFeign.readVersionFragment(scope.documentId(), task.getDocumentVersionSnapshot(),
+                task.getDocumentContentSha256(), start, length));
     }
 
     /**

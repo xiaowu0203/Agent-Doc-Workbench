@@ -3,16 +3,21 @@ package com.agentdoc.task.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.DocType;
+import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.enums.TaskReadScope;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
@@ -31,7 +36,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +46,7 @@ import static org.mockito.Mockito.when;
 class TaskServiceRerunTest {
 
     private static final long SOURCE_TASK_ID = 101L;
+    private static final long ROOT_TASK_ID = 91L;
     private static final long SPACE_ID = 201L;
     private static final long AGENT_ID = 301L;
     private static final long DOCUMENT_ID = 401L;
@@ -81,7 +89,12 @@ class TaskServiceRerunTest {
         when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(source);
         when(documentFeign.checkSpacePermission(SPACE_ID, "task:create")).thenReturn(Result.ok());
         when(documentFeign.getExecutionContext(DOCUMENT_ID)).thenReturn(Result.ok(
-                new DocumentExecutionContextVO(DOCUMENT_ID, SPACE_ID, DocType.DRAFT.getCode(), 1, 7L, 50L)));
+                new DocumentExecutionContextVO(DOCUMENT_ID, SPACE_ID, DocType.DRAFT.getCode(), 1, 7L,
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 50L)));
+        when(documentFeign.getVersionExecutionContext(DOCUMENT_ID, 7L,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(Result.ok(new DocumentVersionExecutionContextVO(DOCUMENT_ID, 7L,
+                        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 50L)));
         when(agentFeign.getExecutionProfile(AGENT_ID)).thenReturn(Result.ok(
                 new AgentExecutionProfileVO(AGENT_ID, SPACE_ID, 1L, 8_000L,
                         null, 9L, true, null, null)));
@@ -95,10 +108,37 @@ class TaskServiceRerunTest {
         TaskEntity rerun = inserted.getValue();
         assertThat(rerun.getId()).isNotEqualTo(SOURCE_TASK_ID);
         assertThat(rerun.getParentTaskId()).isEqualTo(SOURCE_TASK_ID);
+        assertThat(rerun.getRootTaskId()).isEqualTo(ROOT_TASK_ID);
+        assertThat(rerun.getLineageType()).isEqualTo(TaskLineageType.RERUN.name());
+        assertThat(rerun.getExecutionMode()).isEqualTo(TaskExecutionMode.LIVE.name());
+        assertThat(rerun.getDocumentVersionSnapshot()).isEqualTo(7L);
+        assertThat(rerun.getInputSnapshotSchemaVersion()).isEqualTo(1);
+        assertThat(rerun.getInputSnapshotHash()).hasSize(64);
         assertThat(rerun.getAgentConfigVersion()).isEqualTo(9L);
         assertThat(rerun.getStatus()).isEqualTo(TaskStatus.PENDING.getCode());
         assertThat(result.id()).isEqualTo(rerun.getId());
         verify(messagePublisher).publish(rerun.getId());
+    }
+
+    @Test
+    void rejectsLegacyTaskWithoutFrozenInput() {
+        TaskEntity source = failedTask();
+        source.setDocumentVersionSnapshot(null);
+        source.setDocumentContentSha256(null);
+        source.setInputSnapshotSchemaVersion(null);
+        source.setInputSnapshotHash(null);
+        when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(source);
+        when(documentFeign.checkSpacePermission(SPACE_ID, "task:create")).thenReturn(Result.ok());
+        when(documentFeign.getExecutionContext(DOCUMENT_ID)).thenReturn(Result.ok(
+                new DocumentExecutionContextVO(DOCUMENT_ID, SPACE_ID, DocType.DRAFT.getCode(), 1, 9L,
+                        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", 50L)));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.rerun(SOURCE_TASK_ID));
+
+        assertThat(exception.getCode()).isEqualTo(ErrorCode.CONFLICT.getCode());
+        verify(taskMapper, never()).insert(any(TaskEntity.class));
+        verify(agentFeign, never()).getExecutionProfile(AGENT_ID);
     }
 
     private TaskEntity failedTask() {
@@ -110,6 +150,10 @@ class TaskServiceRerunTest {
         task.setAgentConfigVersion(3L);
         task.setDocumentId(DOCUMENT_ID);
         task.setDocumentType(DocType.DRAFT.getCode());
+        task.setDocumentVersionSnapshot(7L);
+        task.setDocumentContentSha256("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        task.setInputSnapshotSchemaVersion(1);
+        task.setInputSnapshotHash("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
         task.setName("失败任务");
         task.setInstruction("继续处理文档");
         task.setStatus(TaskStatus.FAILED.getCode());
@@ -117,6 +161,10 @@ class TaskServiceRerunTest {
         task.setReadScope(TaskReadScope.FULL.name());
         task.setFocusRegionsJson("[]");
         task.setRetryCount(3);
+        task.setParentTaskId(ROOT_TASK_ID);
+        task.setRootTaskId(ROOT_TASK_ID);
+        task.setLineageType(TaskLineageType.RERUN.name());
+        task.setExecutionMode(TaskExecutionMode.LIVE.name());
         return task;
     }
 }

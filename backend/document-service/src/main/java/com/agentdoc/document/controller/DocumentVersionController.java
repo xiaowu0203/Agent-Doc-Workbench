@@ -4,9 +4,12 @@ import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
+import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.document.pojo.vo.DocumentVersionDetailVO;
 import com.agentdoc.document.pojo.vo.DocumentVersionVO;
+import com.agentdoc.document.pojo.vo.DocumentFragmentVO;
 import com.agentdoc.document.pojo.vo.VersionCompareVO;
+import com.agentdoc.document.service.DocumentService;
 import com.agentdoc.document.service.DocumentVersionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DocumentVersionController {
 
     private final DocumentVersionService versionService;
+    private final DocumentService documentService;
 
     @Operation(summary = "版本列表（分页，按版本号倒序）")
     @GetMapping
@@ -38,6 +42,21 @@ public class DocumentVersionController {
     @GetMapping("/{versionNo}")
     public Result<DocumentVersionDetailVO> detail(@PathVariable Long id, @PathVariable Long versionNo) {
         return Result.ok(versionService.versionDetail(id, versionNo));
+    }
+
+    @Operation(summary = "查询冻结版本执行上下文（服务间调用）")
+    @GetMapping("/{versionNo}/execution-context")
+    public Result<DocumentVersionExecutionContextVO> executionContext(
+            @PathVariable Long id, @PathVariable Long versionNo, @RequestParam String contentSha256) {
+        return Result.ok(documentService.getVersionExecutionContext(id, versionNo, contentSha256));
+    }
+
+    @Operation(summary = "读取冻结版本文档片段（服务间调用）")
+    @GetMapping("/{versionNo}/fragments")
+    public Result<DocumentFragmentVO> readFragment(
+            @PathVariable Long id, @PathVariable Long versionNo, @RequestParam String contentSha256,
+            @RequestParam long start, @RequestParam int length) {
+        return Result.ok(documentService.readVersionFragment(id, versionNo, contentSha256, start, length));
     }
 
     @Operation(summary = "版本对比（简化文本级，返回两版本快照）")

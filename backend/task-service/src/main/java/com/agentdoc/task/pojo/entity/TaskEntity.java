@@ -47,6 +47,18 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "创建任务时的文档类型快照")
     private Integer documentType;
 
+    @Schema(description = "创建任务时冻结的正式文档版本")
+    private Long documentVersionSnapshot;
+
+    @Schema(description = "冻结文档正文 SHA-256")
+    private String documentContentSha256;
+
+    @Schema(description = "任务输入快照 schema 版本")
+    private Integer inputSnapshotSchemaVersion;
+
+    @Schema(description = "任务输入快照稳定 SHA-256")
+    private String inputSnapshotHash;
+
     @Schema(description = "任务名称")
     private String name;
 
@@ -91,6 +103,15 @@ public class TaskEntity extends BaseLogicDeleteEntity {
 
     @Schema(description = "直接来源任务 ID；当前用于重跑和审批重改血缘")
     private Long parentTaskId;
+
+    @Schema(description = "逻辑工作根任务 ID；根任务指向自身")
+    private Long rootTaskId;
+
+    @Schema(description = "执行血缘类型")
+    private String lineageType;
+
+    @Schema(description = "执行副作用模式")
+    private String executionMode;
 
     @Schema(description = "消息重试次数")
     private Integer retryCount;

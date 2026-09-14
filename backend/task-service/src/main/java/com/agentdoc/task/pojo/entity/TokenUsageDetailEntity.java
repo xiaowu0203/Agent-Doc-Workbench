@@ -25,11 +25,32 @@ public class TokenUsageDetailEntity extends BaseEntity {
     @Schema(description = "关联任务 ID")
     private Long taskId;
 
+    @Schema(description = "AgentExecution ID，权威幂等键")
+    private Long executionId;
+
     @Schema(description = "关联 Agent ID")
     private Long agentId;
 
     @Schema(description = "关联模型 ID")
     private Long modelId;
+
+    @Schema(description = "执行时模型配置版本")
+    private Long modelConfigVersion;
+
+    @Schema(description = "冻结输入单价，元/百万 Token")
+    private BigDecimal inputPricePerMillion;
+
+    @Schema(description = "冻结输出单价，元/百万 Token")
+    private BigDecimal outputPricePerMillion;
+
+    @Schema(description = "计价币种")
+    private String currency;
+
+    @Schema(description = "计价公式 schema 版本")
+    private Integer pricingSchemaVersion;
+
+    @Schema(description = "价格快照捕获时间")
+    private LocalDateTime pricingCapturedAt;
 
     @Schema(description = "输入总 token")
     private Long inputTokens;
