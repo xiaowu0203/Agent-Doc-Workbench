@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Token 消耗原始调用明细实体【真相源，每次 MCP 调用无条件落一条】。
+ * 单次 AgentExecution 的 Token 聚合用量实体【业务真相源】。
  * 流水表：无 deleted / updated_at，继承 {@link BaseEntity}。
  */
 @Data
@@ -49,7 +49,7 @@ public class TokenUsageDetailEntity extends BaseEntity {
     @Schema(description = "输出 Token 是否为本地估算值")
     private Boolean outputTokensEstimated;
 
-    @Schema(description = "MCP 调用发生时间")
+    @Schema(description = "执行用量记账时间")
     private LocalDateTime callTime;
 
     @Schema(description = "预估人民币费用，仅展示，可重新核算")
