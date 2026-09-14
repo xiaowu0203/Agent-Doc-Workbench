@@ -22,7 +22,7 @@ public final class RedisKeyConstants {
     /** 请求限流计数器键前缀：agent-doc-workbench:rate */
     public static final String RATE_KEY_PREFIX = RedisKeyConstants.PROJECT_PREFIX + ":rate:";
 
-    /** 同一空间 Agent 任务串行执行锁 */
+    /** 同一空间 Agent 任务的 A2A 短时投递锁；不覆盖 Agent 实际执行阶段 */
     public static final String TASK_SPACE_LOCK_PREFIX = PROJECT_PREFIX + ":task:space:lock:";
 
     /** A2A 任务状态对账锁 */

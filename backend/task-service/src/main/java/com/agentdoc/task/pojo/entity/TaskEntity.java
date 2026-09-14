@@ -89,7 +89,7 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "任务结果摘要")
     private String resultSummary;
 
-    @Schema(description = "预留父任务 ID，Phase 3 不参与业务逻辑")
+    @Schema(description = "直接来源任务 ID；当前用于重跑和审批重改血缘")
     private Long parentTaskId;
 
     @Schema(description = "消息重试次数")

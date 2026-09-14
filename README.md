@@ -425,6 +425,7 @@ Goal / Plan / Workflow v1
 | [技术栈](docs/tech/README.md) | Backend / Frontend / Auth 技术选型 |
 | [Common Modules](docs/common-modules.md) | Common 模块与基础设施 |
 | [Database Design](docs/database-design.md) | 数据库设计与迁移约束 |
+| [架构决策记录](docs/adr/README.md) | v0.2.0 起的重要架构决策与取舍 |
 | [A2A / MCP Design](docs/agent-server-a2a-mcp-design.md) | Agent Server、A2A 与 MCP 架构 |
 | [Agent Task Execution](docs/agent-task-execution-guide.md) | Agent Task 完整执行链路 |
 | [External MCP](docs/external-mcp-architecture-design.md) | 多 MCP、权限与安全模型 |

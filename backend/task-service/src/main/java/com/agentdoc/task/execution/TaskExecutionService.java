@@ -53,7 +53,8 @@ public class TaskExecutionService {
      * RabbitMQ任务队列消费入口
      * <p>
      * 消息模式：手动ACK；处理任务执行全流程；
-     * Redis分布式锁控制空间任务串行（锁值携带持有者标识，释放时校验归属）；数据库乐观锁防止重复消费。
+     * Redis分布式锁只让同一空间的 A2A 投递阶段串行（锁值携带持有者标识，释放时校验归属）；
+     * Agent 实际执行不持有该锁，数据库条件更新用于防止重复消费。
      * </p>
      * @param taskId 待执行任务ID
      * @param message Rabbit原始消息对象
@@ -71,7 +72,8 @@ public class TaskExecutionService {
             return;
         }
 
-        // 空间维度分布式锁：同一个空间同一时间只允许一个任务执行，避免文档并发写冲突
+        // 空间维度分布式锁：只约束“取任务 → A2A 投递 → 回填远端标识”的短暂投递阶段；
+        // A2A 返回后立即释放，不约束 Agent 实际执行，文档并发写仍由 baseVersion 乐观锁处理。
         // 锁值使用本次消费唯一的持有者标识：TTL 过期后锁可能已被其他实例获取，
         // 释放时必须校验持有者，否则会误删他人的锁让空间任务并发执行
         String lockKey = RedisKeyConstants.TASK_SPACE_LOCK_PREFIX + task.getSpaceId();

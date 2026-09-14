@@ -25,7 +25,7 @@
 | `model` | 模型 | 模型配置（厂商 / model_key / 预估价格 / 加密 API Key） |
 | `agent` | Agent | Agent 实例；系统提示词、执行限制与 `model_id` 关联模型 |
 | `task` / `task_draft` | 任务 | 任务主表及用户私有的任务表单草稿；任务固化可读编号、文档类型与读取边界 |
-| `token_usage_detail` | 统计 | Token 调用明细【真相源】，无条件落库 |
+| `token_usage_detail` | 统计 | 每个 AgentExecution 的 Token 聚合用量【业务真相源】；v0.2.0 将补执行关联与幂等约束 |
 | `token_usage` | 统计 | 历史日聚合表（折线图，截止昨日） |
 | `token_daily_snapshot` | 统计 | 当日空间累计用量的定时采样表；当前今日用量接口直接查询明细，不读取该表 |
 | `audit_log` | 审计 | 全链路审计，只 INSERT 不可篡改；V6 增加 `task_id` 关联 |
@@ -48,7 +48,7 @@
 6. **model**：Agent Service 的模型配置，维护厂商、model_key、展示名、窗口大小、计价单价和加密 API Key（**仅预估，不作为结算依据**）。
 7. **agent**：Agent Service 中的 Agent 实例；保存系统提示词、执行限制和配置版本，`model_id` 关联 model 表（逻辑外键）。
 8. **task / task_draft**：Agent 任务主表及当前用户的表单草稿。正式任务使用唯一 `task_no` 对外展示，创建时固化目标文档类型以及 `FULL / RANGES` 读取模式；多个关注区域以 JSON 保存，包含字符范围、文本预览和独立处理要求，`RANGES` 模式下同时构成读取白名单。草稿允许除空间外的表单字段暂时为空，启动成功后逻辑删除。三层 Token 预算（任务 / Agent / 空间）全部基于**Token 数量**做熔断；**熔断逻辑完全不依赖任何统计报表表**（计数来源见「开放问题」）。
-9. **token_usage_detail【真相源】**：每次 MCP 调用插入一条原始明细，保存 input/output/cached token、调用时间、model_id、预估费用；所有统计、重算全部以此表为准。
+9. **token_usage_detail【真相源】**：当前在任务完成同步时按 AgentExecution 写入一条 input/output/cached Token 聚合用量，保存调用时间、model_id 和预估费用；不是 MCP 或 ModelCall 级明细。v0.2.0 按 [ADR-0003](adr/0003-telemetry-audit-ledger-boundaries.md) 补齐所有有用量终态、执行唯一关联和价格快照。
 10. **token_usage【历史日聚合表】**：每日凌晨定时聚合**昨日以及更早完整自然日**；用于前端 7/30 天消耗折线图；**不包含今日数据**；联合唯一索引 `dimension+obj_id+usage_date`。
 11. **token_daily_snapshot【当日快照表】**：由系统定时任务按空间写入当日累计输入、输出和费用采样；当前没有用户手动触发入口，今日用量接口直接聚合 `token_usage_detail`，该表也不参与业务熔断。
 12. **audit_log**：全链路审计记录，不可篡改；任务执行、重试、熔断和失败均可关联任务。
@@ -82,9 +82,9 @@
 
 ## 熔断与 Token 计数策略（已定稿）
 
-- **任务级熔断**：任务执行中**本地累计** Token 用量，实时更新 `task.tokens_used` 做熔断判断；任务结束 / 异常时用 `token_usage_detail` 明细 `SUM` **对账补偿修正** `task.tokens_used`。
+- **任务级熔断**：agent-service Runtime 在模型调用循环中按本次执行累计 Token 与冻结预算判断；task-service 在 A2A 终态同步时回填 `task.tokens_used` 并写业务账本。
 - **空间级 / Agent 级熔断**：v0.1 直接实时 `SUM(token_usage_detail)` 判断；v0.2 引入 Redis 计数器优化性能。
-- **明细落库**：`token_usage_detail` **无条件落库**（每次 MCP 调用一条），作为唯一真相源，聚合 / 对账 / 重跑全部以它为准。
+- **明细落库**：v0.1.0 当前仅在完成状态同步时按执行写一条聚合用量；v0.2.0 改为所有已产生用量的终态执行幂等落库，并以 `execution_id` 唯一。
 - 熔断只使用 Token 数量，不使用预估金额（见「关键业务约束」）。
 
 ## 定时 & 异步任务说明（已定稿）
@@ -95,7 +95,7 @@
 
 ## 数据流
 
-- **任务执行 / 明细流**：任务经 A2A 下发 → agent-service 调用模型并通过 MCP 访问 Workbench → 每次模型调用**无条件插入** `token_usage_detail` → 任务级 `task.tokens_used` 本地累计熔断，任务结束 / 异常用明细 SUM 对账补偿 → 空间 / Agent 级熔断实时 SUM 明细。
+- **任务执行 / 明细流**：任务经 A2A 下发 → agent-service 在模型循环中累计用量并执行预算判断 → A2A 终态同步 → task-service 回填 `task.tokens_used` 并按 AgentExecution 幂等写入 `token_usage_detail` → 空间 / Agent 聚合从账本计算。
 - **统计展示流**：`token_usage_detail` → 每日凌晨聚合 → `token_usage`（历史趋势，昨日及以前）；今日用量与审计看板直接按查询区间汇总明细。`token_daily_snapshot` 由独立定时任务保留当日空间采样，不是当前页面查询的数据源。
 
 ## 页面表现
