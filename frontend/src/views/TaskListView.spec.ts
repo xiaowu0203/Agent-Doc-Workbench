@@ -32,6 +32,10 @@ vi.mock('@/features/task/api/task-api', () => ({
 function task(id: number, status: TaskListItem['status']): TaskListItem {
   return {
     id,
+    parentTaskId: null,
+    rootTaskId: id,
+    lineageType: 'ORIGINAL',
+    executionMode: 'LIVE',
     taskNo: `T-${id}`,
     spaceId: 7,
     name: `${status} 任务`,

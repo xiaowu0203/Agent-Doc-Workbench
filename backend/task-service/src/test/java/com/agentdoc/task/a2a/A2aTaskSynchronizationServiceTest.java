@@ -5,7 +5,7 @@ import com.agentdoc.common.constant.A2aMetadataConstant;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
-import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeAll;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -55,17 +56,16 @@ class A2aTaskSynchronizationServiceTest {
 
         when(taskMapper.update(any(), any())).thenReturn(0);
         assertThat(service.synchronize(task, remoteTask)).isFalse();
-        verify(tokenUsageService, never()).recordRemote(any(), any(), any());
+        verify(tokenUsageService, never()).recordRemote(any(), any());
 
         task.setStatus(TaskStatus.RUNNING.getCode());
-        AgentExecutionProfileVO profile = new AgentExecutionProfileVO(
-                task.getAgentId(), 20L, 30L, 1_000L, null, 1L, true,
-                BigDecimal.ZERO, BigDecimal.ZERO);
         when(taskMapper.update(any(), any())).thenReturn(1);
-        when(agentFeign.getExecutionProfile(task.getAgentId())).thenReturn(Result.ok(profile));
+        when(agentFeign.getExecutionTokenUsage(task.getId())).thenReturn(Result.ok(
+                new AgentExecutionTokenUsageVO(12L, 30L, 1L, BigDecimal.ZERO, BigDecimal.ZERO,
+                        "CNY", 1, LocalDateTime.now(), 3L, false, null, false, 2L, false)));
 
         assertThat(service.synchronize(task, remoteTask)).isTrue();
-        verify(tokenUsageService).recordRemote(any(), any(), any());
+        verify(tokenUsageService).recordRemote(any(), any());
         verify(documentFeign, never()).finalizeDraftAgentChanges(any(), any());
         verify(documentFeign, never()).discardDraftAgentChanges(any(), any());
     }

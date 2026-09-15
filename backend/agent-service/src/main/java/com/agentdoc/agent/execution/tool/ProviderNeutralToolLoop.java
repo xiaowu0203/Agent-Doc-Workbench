@@ -60,8 +60,7 @@ public class ProviderNeutralToolLoop {
     }
 
     /**
-     * 执行Agent会话（同步非流式）
-     *
+     * 执行Agent会话（同步非流式-同时跟踪Token用量）
      * @param adapter 模型调用适配器
      * @param context 模型执行上下文，携带工具列表、模型参数
      * @param systemPrompt 系统提示词
@@ -74,17 +73,17 @@ public class ProviderNeutralToolLoop {
      * @throws AgentExecutionLimitExceededException 超过最大工具迭代轮次抛出
      * @throws IllegalStateException Token预算耗尽、无法获取token用量时抛出
      */
-    public AgentRuntimeResult execute(ModelAdapter adapter, ModelAdapterContext context,
-                                       String systemPrompt, String instruction,
-                                       Long tokenBudget, int maxIterations,
-                                       BooleanSupplier cancelRequested) {
+    public AgentRuntimeResult executeTrackingUsage(ModelAdapter adapter, ModelAdapterContext context,
+                                                   String systemPrompt, String instruction,
+                                                   Long tokenBudget, int maxIterations,
+                                                   BooleanSupplier cancelRequested,
+                                                   Consumer<TokenUsage> onUsage) {
         return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
-                cancelRequested, ignored -> { }, false);
+                cancelRequested, ignored -> { }, onUsage, false);
     }
 
     /**
-     * 执行Agent会话（流式输出）
-     *
+     * 执行Agent会话（流式输出，同时跟踪Token用量）
      * @param adapter 模型调用适配器
      * @param context 模型执行上下文，携带工具列表、模型参数
      * @param systemPrompt 系统提示词
@@ -98,13 +97,14 @@ public class ProviderNeutralToolLoop {
      * @throws AgentExecutionLimitExceededException 超过最大工具迭代轮次抛出
      * @throws IllegalStateException Token预算耗尽、无法获取token用量时抛出
      */
-    public AgentRuntimeResult execute(ModelAdapter adapter, ModelAdapterContext context,
-                                       String systemPrompt, String instruction,
-                                       Long tokenBudget, int maxIterations,
-                                       BooleanSupplier cancelRequested,
-                                       Consumer<String> onTextDelta) {
+    public AgentRuntimeResult executeTrackingUsage(ModelAdapter adapter, ModelAdapterContext context,
+                                                   String systemPrompt, String instruction,
+                                                   Long tokenBudget, int maxIterations,
+                                                   BooleanSupplier cancelRequested,
+                                                   Consumer<String> onTextDelta,
+                                                   Consumer<TokenUsage> onUsage) {
         return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
-                cancelRequested, onTextDelta, true);
+                cancelRequested, onTextDelta, onUsage, true);
     }
 
     /**
@@ -125,6 +125,7 @@ public class ProviderNeutralToolLoop {
                                                 Long tokenBudget, int maxIterations,
                                                 BooleanSupplier cancelRequested,
                                                 Consumer<String> onTextDelta,
+                                                Consumer<TokenUsage> onUsage,
                                                 boolean streaming) {
         // 构建工具调用管理器，注入已经包装好取消校验的ToolCallback列表
         ToolCallingManager toolCallingManager = DefaultToolCallingManager.builder()
@@ -174,6 +175,7 @@ public class ProviderNeutralToolLoop {
             TokenUsage turnUsage = tokenUsageEstimator.complete(turn.tokenUsage(), prompt.getInstructions(),
                     context.toolCallbacks(), turn.response());
             totalUsage = totalUsage == null ? turnUsage : totalUsage.add(turnUsage);
+            onUsage.accept(totalUsage);
 
             // LLM返回后再次校验取消与预算
             requireNotCanceled(cancelRequested);

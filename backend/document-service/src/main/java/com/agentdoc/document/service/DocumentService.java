@@ -15,6 +15,7 @@ import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
+import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
@@ -23,6 +24,7 @@ import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.PageUtils;
+import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.document.constant.DocumentConstant;
 import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.document.mapper.DocumentMapper;
@@ -927,10 +929,70 @@ public class DocumentService {
         if (AuthUtils.isAgent() && doc.getAgentStagedTaskId() != null
                 && Objects.equals(doc.getAgentStagedTaskId(), AuthUtils.getTaskId())) {
             return new DocumentExecutionContextVO(doc.getId(), doc.getSpaceId(), doc.getDocType(), doc.getStatus(),
-                    doc.getAgentStagedRevision(), doc.getAgentStagedContent() == null
+                    doc.getAgentStagedRevision(), StableSnapshotUtils.sha256Utf8(doc.getAgentStagedContent()),
+                    doc.getAgentStagedContent() == null
                     ? 0L : (long) doc.getAgentStagedContent().length());
         }
         return doc.toExecutionContextVO();
+    }
+
+    /**
+     * 按任务冻结版本和摘要读取文档执行上下文。
+     * @param documentId 文档ID
+     * @param version 版本号
+     * @param expectedSha256 期望的SHA256摘要
+     * @return 文档执行上下文
+     */
+    public DocumentVersionExecutionContextVO getVersionExecutionContext(Long documentId, Long version,
+                                                                         String expectedSha256) {
+        DocumentVersionEntity snapshot = requireFrozenVersion(documentId, version, expectedSha256);
+        String content = snapshot.getContent();
+        return new DocumentVersionExecutionContextVO(documentId, version, expectedSha256,
+                content == null ? 0L : (long) content.length());
+    }
+
+    /**
+     * 按任务冻结版本和摘要读取文档片段。
+     * @param documentId 文档ID
+     * @param version 版本号
+     * @param expectedSha256 期望的SHA256摘要
+     * @param start 起始字符偏移
+     * @param length 读取长度
+     * @return 文档片段
+     */
+    public DocumentFragmentVO readVersionFragment(Long documentId, Long version, String expectedSha256,
+                                                  long start, int length) {
+        DocumentVersionEntity snapshot = requireFrozenVersion(documentId, version, expectedSha256);
+        String content = snapshot.getContent() == null ? "" : snapshot.getContent();
+        long total = content.length();
+        long safeStart = Math.min(Math.max(start, 0), total);
+        int safeLength = (int) Math.min(Math.max(length, 0), total - safeStart);
+        String fragment = safeLength == 0 ? "" : content.substring((int) safeStart, (int) safeStart + safeLength);
+        return new DocumentFragmentVO(documentId, fragment, safeStart, safeLength, total);
+    }
+
+    /**
+     * 校验文档版本，要求版本存在且内容哈希一致，否则抛异常
+     * @param documentId 文档ID
+     * @param version 版本号
+     * @param expectedSha256 期望的SHA256摘要
+     * @return 文档版本
+     */
+    private DocumentVersionEntity requireFrozenVersion(Long documentId, Long version, String expectedSha256) {
+        DocumentEntity document = requireDoc(documentId);
+        if (AuthUtils.isAgent()) {
+            permissionService.requireAgentCapability(document.getSpaceId(), documentId,
+                    JwtConstant.ACTION_READ_FRAGMENT);
+        } else {
+            permissionService.requirePermission(document.getSpaceId(), DOCUMENT_READ);
+        }
+        DocumentVersionEntity snapshot = versionService.requireVersion(documentId, version);
+        String actualSha256 = StableSnapshotUtils.sha256Utf8(snapshot.getContent());
+        if (expectedSha256 == null || !expectedSha256.equals(snapshot.getContentSha256())
+                || !expectedSha256.equals(actualSha256)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "冻结文档版本内容哈希不一致");
+        }
+        return snapshot;
     }
 
     /**

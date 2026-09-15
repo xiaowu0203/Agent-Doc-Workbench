@@ -6,6 +6,7 @@ import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.entity.TokenDailySnapshotEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageEntity;
+import com.agentdoc.task.a2a.A2aTokenUsage;
 import com.agentdoc.task.pojo.vo.TokenUsageAggregateRow;
 
 import java.math.BigDecimal;
@@ -20,24 +21,29 @@ public final class TokenUsageConvertor {
     private TokenUsageConvertor() {
     }
 
-    public static TokenUsageDetailEntity toDetail(TaskEntity task, Long agentId, Long modelId,
-                                                   Long input, Long cachedInput, Long output,
-                                                   boolean inputEstimated, boolean cachedInputEstimated,
-                                                   boolean outputEstimated,
-                                                   BigDecimal estimatedCost) {
+    public static TokenUsageDetailEntity toDetail(TaskEntity task, A2aTokenUsage usage,
+                                                   BigDecimal estimatedCost, String traceId) {
         TokenUsageDetailEntity entity = new TokenUsageDetailEntity();
         entity.setSpaceId(task.getSpaceId());
         entity.setTaskId(task.getId());
-        entity.setAgentId(agentId);
-        entity.setModelId(modelId);
-        entity.setInputTokens(input);
-        entity.setInputTokensEstimated(inputEstimated);
-        entity.setCachedInputTokens(cachedInput);
-        entity.setCachedInputTokensEstimated(cachedInputEstimated);
-        entity.setOutputTokens(output);
-        entity.setOutputTokensEstimated(outputEstimated);
+        entity.setExecutionId(usage.executionId());
+        entity.setAgentId(task.getAgentId());
+        entity.setModelId(usage.modelId());
+        entity.setModelConfigVersion(usage.modelConfigVersion());
+        entity.setInputPricePerMillion(usage.inputPricePerMillion());
+        entity.setOutputPricePerMillion(usage.outputPricePerMillion());
+        entity.setCurrency(usage.currency());
+        entity.setPricingSchemaVersion(usage.pricingSchemaVersion());
+        entity.setPricingCapturedAt(usage.pricingCapturedAt());
+        entity.setInputTokens(usage.inputTokens());
+        entity.setInputTokensEstimated(usage.inputTokensEstimated());
+        entity.setCachedInputTokens(usage.cachedInputTokens());
+        entity.setCachedInputTokensEstimated(usage.cachedInputTokensEstimated());
+        entity.setOutputTokens(usage.outputTokens());
+        entity.setOutputTokensEstimated(usage.outputTokensEstimated());
         entity.setCallTime(LocalDateTime.now());
         entity.setEstimatedCost(estimatedCost);
+        entity.setTraceId(traceId);
         return entity;
     }
 

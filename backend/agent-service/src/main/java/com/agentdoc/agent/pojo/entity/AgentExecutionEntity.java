@@ -66,6 +66,8 @@ public class AgentExecutionEntity extends BaseEntity {
     private String promptHash;
     @Schema(description = "执行上下文快照哈希")
     private String executionSnapshotHash;
+    @Schema(description = "执行配置快照 schema 版本")
+    private Integer executionSnapshotSchemaVersion;
     @Schema(description = "执行状态")
     private String status;
     @Schema(description = "是否请求取消")

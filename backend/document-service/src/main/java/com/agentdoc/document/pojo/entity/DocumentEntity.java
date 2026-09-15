@@ -9,6 +9,7 @@ import com.agentdoc.common.enums.DocType;
 import com.agentdoc.document.pojo.vo.DocumentDetailVO;
 import com.agentdoc.document.pojo.vo.DocumentTreeNodeVO;
 import com.agentdoc.document.pojo.vo.DocumentVO;
+import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.baomidou.mybatisplus.annotation.TableName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -110,7 +111,7 @@ public class DocumentEntity extends BaseLogicDeleteEntity {
      */
     public DocumentExecutionContextVO toExecutionContextVO() {
         return new DocumentExecutionContextVO(getId(), spaceId, docType, status, version,
-                content == null ? 0L : (long) content.length());
+                StableSnapshotUtils.sha256Utf8(content), content == null ? 0L : (long) content.length());
     }
 
     /**

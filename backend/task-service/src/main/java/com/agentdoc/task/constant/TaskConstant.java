@@ -115,6 +115,8 @@ public final class TaskConstant {
      * 日期偏移量，用于日期计算偏移修正
      */
     public static final long DAY_OFFSET = 1L;
+    /** Phase 1 任务输入快照 schema 版本。 */
+    public static final int INPUT_SNAPSHOT_SCHEMA_VERSION = 1;
     /**
      * 快照生成默认延迟时间，单位：毫秒，字符串用于配置解析
      */

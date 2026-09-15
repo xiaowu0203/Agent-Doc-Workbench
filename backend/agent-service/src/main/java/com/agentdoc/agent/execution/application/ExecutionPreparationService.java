@@ -2,6 +2,7 @@ package com.agentdoc.agent.execution.application;
 
 import com.agentdoc.agent.config.SkillPackageProperties;
 import com.agentdoc.agent.constant.SkillConstant;
+import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.convertor.AgentExecutionConvertor;
 import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.execution.context.ExternalMcpConnection;
@@ -119,6 +120,7 @@ public class ExecutionPreparationService {
         execution.setSkillRouterSnapshotJson(snapshot.routerSnapshotJson());
         execution.setToolWhitelistSnapshot(JsonUtils.toJson(snapshot.allowedMcpTools()));
         execution.setExternalMcpSnapshotJson(externalMcpSnapshot(captured.externalMcpConnections()));
+        execution.setExecutionSnapshotSchemaVersion(AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION);
         execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
         // 写入数据库，状态为已提交(submitted)，代表前置准备完成，等待Runtime调度执行
         executionPersistenceService.insertSubmitted(execution);

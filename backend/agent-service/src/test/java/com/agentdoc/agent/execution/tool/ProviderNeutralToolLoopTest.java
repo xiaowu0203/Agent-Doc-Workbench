@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -72,8 +73,8 @@ class ProviderNeutralToolLoopTest {
         });
         ModelAdapter adapter = sequenceAdapter();
 
-        AgentRuntimeResult result = toolLoop().execute(adapter,
-                context(tool), "system", "question", 100L, 3, () -> false);
+        AgentRuntimeResult result = toolLoop().executeTrackingUsage(adapter,
+                context(tool), "system", "question", 100L, 3, () -> false, ignored -> { });
 
         assertEquals("done", result.summary());
         assertEquals(1, toolCalls.get());
@@ -110,9 +111,9 @@ class ProviderNeutralToolLoopTest {
             }
         };
 
-        AgentRuntimeResult result = toolLoop().execute(adapter,
+        AgentRuntimeResult result = toolLoop().executeTrackingUsage(adapter,
                 new ModelAdapterContext(null, null, "key", 20, List.of()),
-                "system", "question", 100L, 3, () -> false, deltas::add);
+                "system", "question", 100L, 3, () -> false, deltas::add, ignored -> { });
 
         assertEquals(List.of("hel", "lo"), deltas);
         assertEquals("hello", result.summary());
@@ -122,8 +123,9 @@ class ProviderNeutralToolLoopTest {
     void stopsBeforeExecutingToolWhenIterationLimitReached() {
         ToolCallback tool = tool("lookup", input -> "tool-result");
 
-        assertThrows(IllegalStateException.class, () -> toolLoop().execute(
-                toolOnlyAdapter(), context(tool), "system", "question", 100L, 0, () -> false));
+        assertThrows(IllegalStateException.class, () -> toolLoop().executeTrackingUsage(
+                toolOnlyAdapter(), context(tool), "system", "question", 100L, 0, () -> false,
+                ignored -> { }));
     }
 
     @Test
@@ -131,8 +133,71 @@ class ProviderNeutralToolLoopTest {
         ToolCallback tool = tool("lookup", input -> "tool-result");
         ToolCallback guardedTool = new CancellationAwareToolCallback(tool, () -> true);
 
-        assertThrows(AgentExecutionCanceledException.class, () -> toolLoop().execute(
-                toolOnlyAdapter(), context(guardedTool), "system", "question", 100L, 3, () -> false));
+        assertThrows(AgentExecutionCanceledException.class, () -> toolLoop().executeTrackingUsage(
+                toolOnlyAdapter(), context(guardedTool), "system", "question", 100L, 3, () -> false,
+                ignored -> { }));
+    }
+
+    @Test
+    void reportsAccumulatedUsageWhenLaterModelCallFails() {
+        AtomicReference<TokenUsage> latestUsage = new AtomicReference<>();
+        ModelAdapter adapter = new ModelAdapter() {
+            private int calls;
+
+            @Override
+            public Set<ModelAdapterType> supportedTypes() {
+                return Set.of(ModelAdapterType.OPENAI_CHAT);
+            }
+
+            @Override
+            public ModelCapabilities capabilities() {
+                return new ModelCapabilities(true, false);
+            }
+
+            @Override
+            public ModelTurnResult callOnce(ModelAdapterContext context, List<Message> messages) {
+                if (calls++ == 0) {
+                    AssistantMessage toolCall = AssistantMessage.builder()
+                            .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function",
+                                    "lookup", "{}")))
+                            .build();
+                    return turn(new ChatResponse(List.of(new Generation(toolCall))), null, 2L, 3L);
+                }
+                throw new IllegalStateException("second call failed");
+            }
+        };
+
+        assertThrows(IllegalStateException.class, () -> toolLoop().executeTrackingUsage(
+                adapter, context(tool("lookup", input -> "tool-result")), "system", "question",
+                100L, 3, () -> false, latestUsage::set));
+
+        assertEquals(2L, latestUsage.get().input().value());
+        assertEquals(3L, latestUsage.get().output().value());
+    }
+
+    @Test
+    void reportsUsageBeforeCancellationAfterModelTurn() {
+        AtomicReference<TokenUsage> latestUsage = new AtomicReference<>();
+        AtomicInteger cancellationChecks = new AtomicInteger();
+
+        assertThrows(AgentExecutionCanceledException.class, () -> toolLoop().executeTrackingUsage(
+                toolOnlyAdapter(), context(tool("lookup", input -> "tool-result")), "system", "question",
+                100L, 3, () -> cancellationChecks.incrementAndGet() >= 2, latestUsage::set));
+
+        assertEquals(1L, latestUsage.get().input().value());
+        assertEquals(1L, latestUsage.get().output().value());
+    }
+
+    @Test
+    void reportsUsageBeforeRejectingExceededBudget() {
+        AtomicReference<TokenUsage> latestUsage = new AtomicReference<>();
+
+        assertThrows(IllegalStateException.class, () -> toolLoop().executeTrackingUsage(
+                toolOnlyAdapter(), context(tool("lookup", input -> "tool-result")), "system", "question",
+                1L, 3, () -> false, latestUsage::set));
+
+        assertEquals(1L, latestUsage.get().input().value());
+        assertEquals(1L, latestUsage.get().output().value());
     }
 
     private ModelAdapter sequenceAdapter() {

@@ -82,8 +82,8 @@ class RuntimeContextPropagationTest {
         when(provider.getIfAvailable()).thenReturn(factory);
         when(factory.open(eq(context), any())).thenReturn(session);
         when(adapterRegistry.require(eq(model), any())).thenReturn(adapter);
-        when(toolLoop.execute(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
-                eq(100L), eq(2), any())).thenReturn(expected);
+        when(toolLoop.executeTrackingUsage(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
+                eq(100L), eq(2), any(), any())).thenReturn(expected);
 
         SpringAiAgentExecutionRuntime runtime = new SpringAiAgentExecutionRuntime(
                 cryptoService, adapterRegistry, toolLoop, provider);
@@ -91,7 +91,7 @@ class RuntimeContextPropagationTest {
         AgentRuntimeResult actual = runtime.execute(context, () -> false);
 
         assertThat(actual).isSameAs(expected);
-        verify(toolLoop).execute(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
-                eq(100L), eq(2), any());
+        verify(toolLoop).executeTrackingUsage(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
+                eq(100L), eq(2), any(), any());
     }
 }

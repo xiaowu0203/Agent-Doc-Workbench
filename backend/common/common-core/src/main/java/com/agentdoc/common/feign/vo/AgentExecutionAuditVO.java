@@ -18,6 +18,7 @@ import java.util.List;
  * @param cancelRequested 是否已请求取消
  * @param promptHash Prompt 哈希
  * @param executionSnapshotHash 执行上下文快照哈希
+ * @param executionSnapshotSchemaVersion 执行上下文快照 schema 版本
  * @param model 模型快照
  * @param skill Skill 选择快照
  * @param toolDefinitions 最终暴露给模型的工具定义摘要
@@ -47,6 +48,7 @@ public record AgentExecutionAuditVO(
         Boolean cancelRequested,
         String promptHash,
         String executionSnapshotHash,
+        Integer executionSnapshotSchemaVersion,
         ModelSnapshot model,
         SkillSnapshot skill,
         List<ToolDefinitionSnapshot> toolDefinitions,

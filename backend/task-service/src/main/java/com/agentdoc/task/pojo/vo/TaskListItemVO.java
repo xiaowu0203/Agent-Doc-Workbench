@@ -2,6 +2,8 @@ package com.agentdoc.task.pojo.vo;
 
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.task.enums.TaskLineageType;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
@@ -11,6 +13,10 @@ import java.time.LocalDateTime;
  */
 @Schema(description = "任务列表展示摘要")
 public record TaskListItemVO(
+        @Schema(description = "父任务 ID") Long parentTaskId,
+        @Schema(description = "逻辑工作根任务 ID") Long rootTaskId,
+        @Schema(description = "执行血缘类型") TaskLineageType lineageType,
+        @Schema(description = "执行模式") TaskExecutionMode executionMode,
         @Schema(description = "任务 ID") Long id,
         @Schema(description = "可读任务编号") String taskNo,
         @Schema(description = "所属空间 ID") Long spaceId,
