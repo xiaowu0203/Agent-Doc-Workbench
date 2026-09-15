@@ -73,6 +73,7 @@ public class TaskExecutionService {
         }
 
         try {
+            // 检查任务执行类型和模式是否受支持
             TaskExecutionPolicy.requireSupported(task);
         } catch (RuntimeException exception) {
             taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()

@@ -172,100 +172,100 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             throw new IllegalStateException("Skill 工具会话工厂未配置");
         }
         try {
-        try (ExecutionToolSession tools = toolSessionFactory.open(context, executionCanceled)) {
-            ModelSamplingOptions samplingOptions = ModelSamplingOptions.from(context.model());
+            try (ExecutionToolSession tools = toolSessionFactory.open(context, executionCanceled)) {
+                ModelSamplingOptions samplingOptions = ModelSamplingOptions.from(context.model());
 
-            // 组装模型适配器上下文：解密api‑key、最大输出token、MCP工具回调列表
-            ModelAdapterContext adapterContext = new ModelAdapterContext(
-                    context.agent(), context.model(),
-                    cryptoService.decrypt(context.model().getEncryptedApiKey()),
-                    modelMaxOutputTokens(context.model()), samplingOptions.temperature(),
-                    samplingOptions.topP(), tools.callbacks())
-                    .withExecutionId(context.executionId());
+                // 组装模型适配器上下文：解密api‑key、最大输出token、MCP工具回调列表
+                ModelAdapterContext adapterContext = new ModelAdapterContext(
+                        context.agent(), context.model(),
+                        cryptoService.decrypt(context.model().getEncryptedApiKey()),
+                        modelMaxOutputTokens(context.model()), samplingOptions.temperature(),
+                        samplingOptions.topP(), tools.callbacks())
+                        .withExecutionId(context.executionId());
 
-            // 获取缓存好的ChatModel实例（由ModelAdapter做封装）
-            ChatModel chatModel = adapter.cachedChatModel(adapterContext);
-            // 用量收集器：接收ChatResponse，提取+估算token用量，回传给control做统计
-            AlibabaRuntimeUsageCollector usage = new AlibabaRuntimeUsageCollector(control, adapter);
+                // 获取缓存好的ChatModel实例（由ModelAdapter做封装）
+                ChatModel chatModel = adapter.cachedChatModel(adapterContext);
+                // 用量收集器：接收ChatResponse，提取+估算token用量，回传给control做统计
+                AlibabaRuntimeUsageCollector usage = new AlibabaRuntimeUsageCollector(control, adapter);
 
-            // 【装饰器】包装原生ChatModel，植入横切逻辑：模型调用前后拦截、用量采集、流式回调、取消校验
-            ObservingChatModel observingModel = new ObservingChatModel(chatModel, adapterContext, tools.callbacks(),
-                    control, usage, streaming ? onTextDelta : ignored -> { }, modelCallAuditService,
-                    new AtomicInteger());
+                // 【装饰器】包装原生ChatModel，植入横切逻辑：模型调用前后拦截、用量采集、流式回调、取消校验
+                ObservingChatModel observingModel = new ObservingChatModel(chatModel, adapterContext, tools.callbacks(),
+                        control, usage, streaming ? onTextDelta : ignored -> { }, modelCallAuditService,
+                        new AtomicInteger());
 
-            // 构建Spring‑AI Alibaba原生ReactAgent
-            ReactAgent reactAgent = ReactAgent.builder()
-                    // 给agent实例一个标识名称，便于日志排查，id为null使用unknown占位
-                    .name("agent-" + safe(context.agent().getId()) + "-execution-"
-                            + safe(context.taskInput().workbenchTaskId()))
-                    // 使用我们装饰之后的ChatModel，而不是原生model
-                    .model(observingModel)
-                    // 构建chatOptions，临时剥离工具回调，options只携带模型参数
-                    .chatOptions(adapter.chatOptions(adapterContext.withToolCallbacks(List.of())))
-                    .systemPrompt(context.systemPrompt())
-                    // 注入MCP工具回调集合给ReactAgent
-                    .tools(tools.callbacks())
-                    // 挂载模型调用次数限制钩子，防止无限循环调用模型
-                    .hooks(ModelCallLimitHook.builder()
-                            .runLimit(modelCallLimit(control.maxIterations()))
-                            .exitBehavior(ModelCallLimitHook.ExitBehavior.ERROR)
-                            .build())
-                    .build();
-            try {
-                // 使用Mono包装执行逻辑，调度到boundedElastic线程池；设置整体执行超时时间
-                AssistantMessage result = Mono.fromCallable(() -> streaming
-                                // 流式模式：调用自定义streamReactAgent消费ReactAgent图流
-                                ? streamReactAgent(reactAgent, observingModel, context.instruction(),
-                                control, context.taskInput())
-                                // 同步模式：直接调用reactAgent.call执行
-                                : reactAgent.call(context.instruction()))
+                // 构建Spring‑AI Alibaba原生ReactAgent
+                ReactAgent reactAgent = ReactAgent.builder()
+                        // 给agent实例一个标识名称，便于日志排查，id为null使用unknown占位
+                        .name("agent-" + safe(context.agent().getId()) + "-execution-"
+                                + safe(context.taskInput().workbenchTaskId()))
+                        // 使用我们装饰之后的ChatModel，而不是原生model
+                        .model(observingModel)
+                        // 构建chatOptions，临时剥离工具回调，options只携带模型参数
+                        .chatOptions(adapter.chatOptions(adapterContext.withToolCallbacks(List.of())))
+                        .systemPrompt(context.systemPrompt())
+                        // 注入MCP工具回调集合给ReactAgent
+                        .tools(tools.callbacks())
+                        // 挂载模型调用次数限制钩子，防止无限循环调用模型
+                        .hooks(ModelCallLimitHook.builder()
+                                .runLimit(modelCallLimit(control.maxIterations()))
+                                .exitBehavior(ModelCallLimitHook.ExitBehavior.ERROR)
+                                .build())
+                        .build();
+                try {
+                    // 使用Mono包装执行逻辑，调度到boundedElastic线程池；设置整体执行超时时间
+                    AssistantMessage result = Mono.fromCallable(() -> streaming
+                                    // 流式模式：调用自定义streamReactAgent消费ReactAgent图流
+                                    ? streamReactAgent(reactAgent, observingModel, context.instruction(),
+                                    control, context.taskInput())
+                                    // 同步模式：直接调用reactAgent.call执行
+                                    : reactAgent.call(context.instruction()))
 
-                        // 切换到boundedElastic，避免阻塞http/webflux主线程
-                        .subscribeOn(Schedulers.boundedElastic())
-                        // 设置agent整体执行超时，超时后Mono抛出TimeoutException
-                        .timeout(Duration.ofSeconds(timeoutSeconds(context.agent())))
-                        // 捕获超时异常，标记timedOut为true，上层会识别该标记为任务取消
-                        .doOnError(TimeoutException.class, ignored -> timedOut.set(true))
-                        // 阻塞等待执行完成，这里是同步等待Reactor执行结果
-                        .block();
+                            // 切换到boundedElastic，避免阻塞http/webflux主线程
+                            .subscribeOn(Schedulers.boundedElastic())
+                            // 设置agent整体执行超时，超时后Mono抛出TimeoutException
+                            .timeout(Duration.ofSeconds(timeoutSeconds(context.agent())))
+                            // 捕获超时异常，标记timedOut为true，上层会识别该标记为任务取消
+                            .doOnError(TimeoutException.class, ignored -> timedOut.set(true))
+                            // 阻塞等待执行完成，这里是同步等待Reactor执行结果
+                            .block();
 
-                // 执行完毕再做一次取消校验，防止执行完成瞬间收到取消信号
-                control.checkCanceled();
+                    // 执行完毕再做一次取消校验，防止执行完成瞬间收到取消信号
+                    control.checkCanceled();
 
-                // 将SDK返回结果，封装成我方统一返回DTO向上返回
-                return new AgentRuntimeResult(result.getText(), usage.total());
-            } catch (RuntimeException exception) {
-                // 1. 处理超时场景：真实TimeoutException 或者 timedOut标记被置位
-                TimeoutException timeout = findCause(exception, TimeoutException.class);
-                if (timeout != null || timedOut.get()) {
-                    // 包装为桥接层内部异常，交给adapter翻译后向外抛出
-                    throw adapter.translateForRuntime(adapterContext,
-                            new ModelInvocationException(timeout == null
-                                    ? new TimeoutException("Agent 执行超时") : timeout));
+                    // 将SDK返回结果，封装成我方统一返回DTO向上返回
+                    return new AgentRuntimeResult(result.getText(), usage.total());
+                } catch (RuntimeException exception) {
+                    // 1. 处理超时场景：真实TimeoutException 或者 timedOut标记被置位
+                    TimeoutException timeout = findCause(exception, TimeoutException.class);
+                    if (timeout != null || timedOut.get()) {
+                        // 包装为桥接层内部异常，交给adapter翻译后向外抛出
+                        throw adapter.translateForRuntime(adapterContext,
+                                new ModelInvocationException(timeout == null
+                                        ? new TimeoutException("Agent 执行超时") : timeout));
+                    }
+
+                    // 2. 识别任务被取消异常，直接原样向上抛出
+                    AgentExecutionCanceledException cancellation = findCause(exception,
+                            AgentExecutionCanceledException.class);
+                    if (cancellation != null)
+                        throw cancellation;
+
+                    // 3. 识别SDK的模型调用次数超限，转换为我方业务异常AgentExecutionLimitExceededException
+                    ModelCallLimitExceededException limitException = findCause(exception,
+                            ModelCallLimitExceededException.class);
+                    if (limitException != null) {
+                        throw new AgentExecutionLimitExceededException(control.maxIterations());
+                    }
+
+                    // 4. 桥接层内部模型调用异常，交由ModelAdapter做错误翻译
+                    ModelInvocationException modelException = findCause(exception, ModelInvocationException.class);
+                    if (modelException != null)
+                        throw adapter.translateForRuntime(adapterContext, modelException);
+
+                    // 其余未知异常直接透传
+                    throw exception;
                 }
-
-                // 2. 识别任务被取消异常，直接原样向上抛出
-                AgentExecutionCanceledException cancellation = findCause(exception,
-                        AgentExecutionCanceledException.class);
-                if (cancellation != null)
-                    throw cancellation;
-
-                // 3. 识别SDK的模型调用次数超限，转换为我方业务异常AgentExecutionLimitExceededException
-                ModelCallLimitExceededException limitException = findCause(exception,
-                        ModelCallLimitExceededException.class);
-                if (limitException != null) {
-                    throw new AgentExecutionLimitExceededException(control.maxIterations());
-                }
-
-                // 4. 桥接层内部模型调用异常，交由ModelAdapter做错误翻译
-                ModelInvocationException modelException = findCause(exception, ModelInvocationException.class);
-                if (modelException != null)
-                    throw adapter.translateForRuntime(adapterContext, modelException);
-
-                // 其余未知异常直接透传
-                throw exception;
             }
-        }
         } catch (RuntimeException exception) {
             if (exception instanceof AgentExecutionTerminatedException) {
                 throw exception;

@@ -152,7 +152,9 @@ public class AgentExecutionQueryService {
         if (execution == null) {
             return null;
         }
+        // 将模型快照信息转为Map
         Map<String, Object> model = map(execution.getModelSnapshot());
+        // 组装Token用量VO返回
         return new AgentExecutionTokenUsageVO(execution.getId(), longValue(model.get("id")),
                 execution.getModelConfigVersion(), decimalValue(model.get("inputPricePerMillion")),
                 decimalValue(model.get("outputPricePerMillion")), TOKEN_PRICING_CURRENCY,

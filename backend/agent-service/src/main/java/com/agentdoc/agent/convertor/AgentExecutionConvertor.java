@@ -1,6 +1,7 @@
 package com.agentdoc.agent.convertor;
 
 import com.agentdoc.agent.enums.AgentExecutionStatus;
+import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
@@ -12,6 +13,7 @@ import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import static com.agentdoc.agent.constant.AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION;
@@ -130,8 +132,13 @@ public final class AgentExecutionConvertor {
         entity.setFinishedAt(LocalDateTime.now());
     }
 
+    /**
+     * 回填Token用量信息
+     * @param entity Agent执行记录实体
+     * @param usage Token用量对象
+     */
     public static void applyTokenUsage(AgentExecutionEntity entity,
-                                       com.agentdoc.agent.execution.model.TokenUsage usage) {
+                                       TokenUsage usage) {
         if (usage == null) {
             return;
         }
@@ -143,6 +150,11 @@ public final class AgentExecutionConvertor {
         entity.setOutputTokensEstimated(isEstimated(usage.output()));
     }
 
+    /**
+     * 判断Token值是否为估算值
+     * @param value Token值对象
+     * @return true：估算值，false：实际值
+     */
     private static boolean isEstimated(TokenValue value) {
         return value.source() == TokenValueSource.ESTIMATED;
     }
@@ -175,7 +187,6 @@ public final class AgentExecutionConvertor {
      * <p>保存本次执行使用的模型信息，后续模型配置变更不影响历史执行记录。</p>
      *
      * @param model        模型配置实体
-     * @param objectMapper JSON序列化工具
      * @return JSON格式模型快照字符串
      * @throws IllegalStateException 序列化异常时抛出
      */
@@ -197,7 +208,7 @@ public final class AgentExecutionConvertor {
      * @param maxOutputTokens 最大输出token
      */
     private record ModelSnapshot(Long id, String provider, String adapterType, String modelKey, String displayName,
-                                 String baseUrl, Long maxOutputTokens, java.math.BigDecimal inputPricePerMillion,
+                                 String baseUrl, Long maxOutputTokens, BigDecimal inputPricePerMillion,
                                  java.math.BigDecimal outputPricePerMillion) {
     }
 

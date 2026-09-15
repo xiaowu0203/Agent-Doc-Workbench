@@ -136,12 +136,12 @@ public class SpringAiAgentExecutionRuntime implements AgentExecutionRuntime {
 
             AtomicReference<TokenUsage> lastUsage = new AtomicReference<>();
             try {
-            if (streaming) {
-                // 流式
+                if (streaming) {
+                    // 流式
                     return toolLoop.executeTrackingUsage(adapter, adapterContext,
-                        context.systemPrompt(), context.instruction(),
-                        tokenBudget, maxIterations, cancelRequested, onTextDelta, lastUsage::set);
-            }
+                            context.systemPrompt(), context.instruction(),
+                            tokenBudget, maxIterations, cancelRequested, onTextDelta, lastUsage::set);
+                }
                 return toolLoop.executeTrackingUsage(adapter, adapterContext,
                     context.systemPrompt(), context.instruction(),
                     tokenBudget, maxIterations, cancelRequested, lastUsage::set);

@@ -938,6 +938,10 @@ public class DocumentService {
 
     /**
      * 按任务冻结版本和摘要读取文档执行上下文。
+     * @param documentId 文档ID
+     * @param version 版本号
+     * @param expectedSha256 期望的SHA256摘要
+     * @return 文档执行上下文
      */
     public DocumentVersionExecutionContextVO getVersionExecutionContext(Long documentId, Long version,
                                                                          String expectedSha256) {
@@ -949,6 +953,12 @@ public class DocumentService {
 
     /**
      * 按任务冻结版本和摘要读取文档片段。
+     * @param documentId 文档ID
+     * @param version 版本号
+     * @param expectedSha256 期望的SHA256摘要
+     * @param start 起始字符偏移
+     * @param length 读取长度
+     * @return 文档片段
      */
     public DocumentFragmentVO readVersionFragment(Long documentId, Long version, String expectedSha256,
                                                   long start, int length) {
@@ -961,6 +971,13 @@ public class DocumentService {
         return new DocumentFragmentVO(documentId, fragment, safeStart, safeLength, total);
     }
 
+    /**
+     * 校验文档版本，要求版本存在且内容哈希一致，否则抛异常
+     * @param documentId 文档ID
+     * @param version 版本号
+     * @param expectedSha256 期望的SHA256摘要
+     * @return 文档版本
+     */
     private DocumentVersionEntity requireFrozenVersion(Long documentId, Long version, String expectedSha256) {
         DocumentEntity document = requireDoc(documentId);
         if (AuthUtils.isAgent()) {

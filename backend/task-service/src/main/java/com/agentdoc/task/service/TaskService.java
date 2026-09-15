@@ -828,7 +828,10 @@ public class TaskService {
     }
 
     /**
-     * 设置并校验 Phase 1 执行语义，所有新任务统一从这里进入。
+     * 设置并校验执行语义，所有新任务统一从这里进入。
+     * @param task 任务实体
+     * @param rootTaskId 根任务ID
+     * @param lineageType 血缘类型
      */
     private void initializeExecutionSemantics(TaskEntity task, Long rootTaskId, TaskLineageType lineageType) {
         if (rootTaskId == null) {
@@ -837,11 +840,15 @@ public class TaskService {
         task.setRootTaskId(rootTaskId);
         task.setLineageType(lineageType.name());
         task.setExecutionMode(TaskExecutionMode.LIVE.name());
+        // 检查任务执行类型和模式是否受支持
         TaskExecutionPolicy.requireSupported(task);
     }
 
     /**
      * 冻结文档输入并刷新 input snapshot v1 身份。
+     * @param task 任务实体
+     * @param documentVersion 文档版本
+     * @param documentContentSha256 文档内容哈希
      */
     private void freezeInputSnapshot(TaskEntity task, Long documentVersion, String documentContentSha256) {
         if (documentVersion == null || documentContentSha256 == null || documentContentSha256.length() != 64) {
@@ -849,9 +856,14 @@ public class TaskService {
         }
         task.setDocumentVersionSnapshot(documentVersion);
         task.setDocumentContentSha256(documentContentSha256);
+        // 刷新 input snapshot
         refreshInputSnapshot(task);
     }
 
+    /**
+     * 刷新 input snapshot
+     * @param task 任务实体
+     */
     private void refreshInputSnapshot(TaskEntity task) {
         if (task.getDocumentVersionSnapshot() == null || task.getDocumentContentSha256() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "任务缺少冻结文档输入");
