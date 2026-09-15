@@ -60,8 +60,7 @@ public class ProviderNeutralToolLoop {
     }
 
     /**
-     * 执行Agent会话（同步非流式）
-     *
+     * 执行Agent会话（同步非流式-同时跟踪Token用量）
      * @param adapter 模型调用适配器
      * @param context 模型执行上下文，携带工具列表、模型参数
      * @param systemPrompt 系统提示词
@@ -74,14 +73,6 @@ public class ProviderNeutralToolLoop {
      * @throws AgentExecutionLimitExceededException 超过最大工具迭代轮次抛出
      * @throws IllegalStateException Token预算耗尽、无法获取token用量时抛出
      */
-    public AgentRuntimeResult execute(ModelAdapter adapter, ModelAdapterContext context,
-                                       String systemPrompt, String instruction,
-                                       Long tokenBudget, int maxIterations,
-                                       BooleanSupplier cancelRequested) {
-        return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
-                cancelRequested, ignored -> { }, ignored -> { }, false);
-    }
-
     public AgentRuntimeResult executeTrackingUsage(ModelAdapter adapter, ModelAdapterContext context,
                                                    String systemPrompt, String instruction,
                                                    Long tokenBudget, int maxIterations,
@@ -92,8 +83,7 @@ public class ProviderNeutralToolLoop {
     }
 
     /**
-     * 执行Agent会话（流式输出）
-     *
+     * 执行Agent会话（流式输出，同时跟踪Token用量）
      * @param adapter 模型调用适配器
      * @param context 模型执行上下文，携带工具列表、模型参数
      * @param systemPrompt 系统提示词
@@ -107,15 +97,6 @@ public class ProviderNeutralToolLoop {
      * @throws AgentExecutionLimitExceededException 超过最大工具迭代轮次抛出
      * @throws IllegalStateException Token预算耗尽、无法获取token用量时抛出
      */
-    public AgentRuntimeResult execute(ModelAdapter adapter, ModelAdapterContext context,
-                                       String systemPrompt, String instruction,
-                                       Long tokenBudget, int maxIterations,
-                                       BooleanSupplier cancelRequested,
-                                       Consumer<String> onTextDelta) {
-        return executeInternal(adapter, context, systemPrompt, instruction, tokenBudget, maxIterations,
-                cancelRequested, onTextDelta, ignored -> { }, true);
-    }
-
     public AgentRuntimeResult executeTrackingUsage(ModelAdapter adapter, ModelAdapterContext context,
                                                    String systemPrompt, String instruction,
                                                    Long tokenBudget, int maxIterations,

@@ -73,8 +73,8 @@ class ProviderNeutralToolLoopTest {
         });
         ModelAdapter adapter = sequenceAdapter();
 
-        AgentRuntimeResult result = toolLoop().execute(adapter,
-                context(tool), "system", "question", 100L, 3, () -> false);
+        AgentRuntimeResult result = toolLoop().executeTrackingUsage(adapter,
+                context(tool), "system", "question", 100L, 3, () -> false, ignored -> { });
 
         assertEquals("done", result.summary());
         assertEquals(1, toolCalls.get());
@@ -111,9 +111,9 @@ class ProviderNeutralToolLoopTest {
             }
         };
 
-        AgentRuntimeResult result = toolLoop().execute(adapter,
+        AgentRuntimeResult result = toolLoop().executeTrackingUsage(adapter,
                 new ModelAdapterContext(null, null, "key", 20, List.of()),
-                "system", "question", 100L, 3, () -> false, deltas::add);
+                "system", "question", 100L, 3, () -> false, deltas::add, ignored -> { });
 
         assertEquals(List.of("hel", "lo"), deltas);
         assertEquals("hello", result.summary());
@@ -123,8 +123,9 @@ class ProviderNeutralToolLoopTest {
     void stopsBeforeExecutingToolWhenIterationLimitReached() {
         ToolCallback tool = tool("lookup", input -> "tool-result");
 
-        assertThrows(IllegalStateException.class, () -> toolLoop().execute(
-                toolOnlyAdapter(), context(tool), "system", "question", 100L, 0, () -> false));
+        assertThrows(IllegalStateException.class, () -> toolLoop().executeTrackingUsage(
+                toolOnlyAdapter(), context(tool), "system", "question", 100L, 0, () -> false,
+                ignored -> { }));
     }
 
     @Test
@@ -132,8 +133,9 @@ class ProviderNeutralToolLoopTest {
         ToolCallback tool = tool("lookup", input -> "tool-result");
         ToolCallback guardedTool = new CancellationAwareToolCallback(tool, () -> true);
 
-        assertThrows(AgentExecutionCanceledException.class, () -> toolLoop().execute(
-                toolOnlyAdapter(), context(guardedTool), "system", "question", 100L, 3, () -> false));
+        assertThrows(AgentExecutionCanceledException.class, () -> toolLoop().executeTrackingUsage(
+                toolOnlyAdapter(), context(guardedTool), "system", "question", 100L, 3, () -> false,
+                ignored -> { }));
     }
 
     @Test
