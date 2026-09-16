@@ -76,7 +76,7 @@ beforeEach(() => {
     records: [skill],
     total: 1,
     pageNum: 1,
-    pageSize: 12,
+    pageSize: 8,
   })
 })
 
@@ -106,7 +106,7 @@ describe('SkillManagementView', () => {
       ],
       total: 1,
       pageNum: 1,
-      pageSize: 12,
+      pageSize: 8,
     })
 
     const wrapper = await mountView([SPACE_PERMISSIONS.SKILL_READ, SPACE_PERMISSIONS.SKILL_MANAGE])

@@ -52,7 +52,7 @@ export function searchAgents(
       modelId: options.modelId,
       sourceType: options.sourceType,
       pageNum: options.pageNum ?? 1,
-      pageSize: options.pageSize ?? 9,
+      pageSize: options.pageSize ?? 8,
     },
     signal: options.signal,
   }).then(
@@ -61,7 +61,7 @@ export function searchAgents(
         records: [],
         total: 0,
         pageNum: options.pageNum ?? 1,
-        pageSize: options.pageSize ?? 9,
+        pageSize: options.pageSize ?? 8,
       },
   )
 }

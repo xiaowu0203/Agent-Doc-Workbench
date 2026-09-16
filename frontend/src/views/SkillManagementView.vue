@@ -117,7 +117,7 @@
         v-model:page-size="page.pageSize"
         background
         layout="sizes, prev, pager, next, jumper"
-        :page-sizes="[8, 12, 24, 48]"
+        :page-sizes="[8, 16, 32, 64]"
         :total="page.total"
         @current-change="loadSkills"
         @size-change="handlePageSizeChange"
@@ -251,7 +251,7 @@ const loading = ref(false)
 const importing = ref(false)
 const errorMessage = ref('')
 const skills = ref<Skill[]>([])
-const page = reactive<SkillPage>({ records: [], total: 0, pageNum: 1, pageSize: 12 })
+const page = reactive<SkillPage>({ records: [], total: 0, pageNum: 1, pageSize: 8 })
 const metadataDialogOpen = ref(false)
 const savingMetadata = ref(false)
 const editingSkill = ref<Skill | null>(null)

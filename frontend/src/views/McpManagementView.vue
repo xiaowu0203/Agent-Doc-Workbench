@@ -108,7 +108,7 @@
         v-model:page-size="page.pageSize"
         background
         layout="sizes, prev, pager, next, jumper"
-        :page-sizes="[6, 12, 24, 48]"
+        :page-sizes="[8, 16, 32, 64]"
         :total="page.total"
         @current-change="loadServers"
         @size-change="handlePageSizeChange"
@@ -335,7 +335,7 @@ const layout = ref<'grid' | 'list'>('grid')
 const loading = ref(false)
 const errorMessage = ref('')
 const servers = ref<McpServer[]>([])
-const page = reactive<McpServerPage>({ records: [], total: 0, pageNum: 1, pageSize: 12 })
+const page = reactive<McpServerPage>({ records: [], total: 0, pageNum: 1, pageSize: 8 })
 const drawerOpen = ref(false)
 const installDrawerOpen = ref(false)
 const drawerMode = ref<DrawerMode>('create')

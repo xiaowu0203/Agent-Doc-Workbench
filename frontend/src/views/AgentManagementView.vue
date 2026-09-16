@@ -116,7 +116,7 @@
         v-model:page-size="page.pageSize"
         background
         layout="sizes, prev, pager, next, jumper"
-        :page-sizes="[9, 18, 36, 72]"
+        :page-sizes="[8, 16, 32, 64]"
         :total="page.total"
         @current-change="loadAgents"
         @size-change="handlePageSizeChange"
@@ -195,7 +195,7 @@ const errorMessage = ref('')
 const agents = ref<AgentCardData[]>([])
 const models = ref<ModelOption[]>([])
 const activeAgentCount = ref<number | null>(null)
-const page = reactive<AgentPage>({ records: [], total: 0, pageNum: 1, pageSize: 9 })
+const page = reactive<AgentPage>({ records: [], total: 0, pageNum: 1, pageSize: 8 })
 const drawerOpen = ref(false)
 const selectedAgentId = ref<EntityId | null>(null)
 const installDrawerOpen = ref(false)

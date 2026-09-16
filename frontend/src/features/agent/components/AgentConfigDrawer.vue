@@ -442,6 +442,7 @@ import {
 import {
   createAgentTemplateVersion,
   listCapabilityVersions,
+  listSystemSkillVersions,
   searchSystemCapabilities,
   updateAgentTemplateVersion,
 } from '@/features/system-capability/api/system-capability-api'
@@ -475,6 +476,8 @@ type ToolLimitMode = 'ALL' | 'CUSTOM' | 'NONE'
 
 interface SkillRow {
   skillId: EntityId
+  scopeType: Skill['scopeType']
+  installedVersionId: EntityId | null
   skillName: string
   skillDisplayName: string
   skillVersionId: EntityId
@@ -955,6 +958,8 @@ function toSkillRow(binding: AgentSkillBinding): SkillRow {
   const skill = skills.value.find((item) => String(item.id) === String(binding.skillId))
   return {
     skillId: binding.skillId,
+    scopeType: skill?.scopeType || 'SPACE',
+    installedVersionId: skill?.latestVersion?.id || null,
     skillName: binding.skillName,
     skillDisplayName: skill?.displayName || binding.skillName,
     skillVersionId: binding.skillVersionId,
@@ -1005,8 +1010,10 @@ async function loadVersions(row: SkillRow): Promise<void> {
   if (row.loadingVersions || row.versions.length > 1) return
   row.loadingVersions = true
   try {
-    const versions = (await listSkillVersions(row.skillId)).filter(
-      (version) => version.status === 'PUBLISHED',
+    const versions = await listSpaceAgentSkillVersions(
+      row.scopeType,
+      row.skillId,
+      row.installedVersionId,
     )
     row.versions = versions.some((version) => String(version.id) === String(row.skillVersionId))
       ? versions
@@ -1023,8 +1030,10 @@ async function addSkill(): Promise<void> {
   if (!skill) return
   addingSkill.value = true
   try {
-    const versions = (await listSkillVersions(skill.id)).filter(
-      (version) => version.status === 'PUBLISHED',
+    const versions = await listSpaceAgentSkillVersions(
+      skill.scopeType,
+      skill.id,
+      skill.latestVersion?.id || null,
     )
     if (!versions.length) {
       ElMessage.warning('该 Skill 尚无已发布版本，无法绑定')
@@ -1033,6 +1042,8 @@ async function addSkill(): Promise<void> {
     const latest = versions[0]
     skillRows.value.push({
       skillId: skill.id,
+      scopeType: skill.scopeType,
+      installedVersionId: skill.latestVersion?.id || null,
       skillName: skill.name,
       skillDisplayName: skill.displayName,
       skillVersionId: latest.id,
@@ -1046,6 +1057,22 @@ async function addSkill(): Promise<void> {
   } finally {
     addingSkill.value = false
   }
+}
+
+async function listSpaceAgentSkillVersions(
+  scopeType: Skill['scopeType'],
+  skillId: EntityId,
+  installedVersionId: EntityId | null,
+): Promise<SkillVersion[]> {
+  const versions = (
+    scopeType === 'SYSTEM'
+      ? await listSystemSkillVersions(skillId)
+      : await listSkillVersions(skillId)
+  ).filter((version) => version.status === 'PUBLISHED')
+  if (scopeType !== 'SYSTEM') return versions
+  return installedVersionId
+    ? versions.filter((version) => String(version.id) === String(installedVersionId))
+    : []
 }
 
 function removeSkill(skillId: EntityId): void {
