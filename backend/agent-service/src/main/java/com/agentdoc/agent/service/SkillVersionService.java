@@ -14,6 +14,7 @@ import com.agentdoc.agent.skill.archive.SkillPackageValidator;
 import com.agentdoc.agent.skill.storage.SkillPackageStorage;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -176,8 +177,9 @@ public class SkillVersionService {
                     storage.delete(storageKey);
                 } catch (RuntimeException cleanupException) {
                     // 清理对象存储失败仅告警，不覆盖原始异常；孤儿对象由后台补偿清理任务处理
-                    log.warn("Skill 上传失败后的对象清理失败: storageKey={}",
-                            storageKey, cleanupException);
+                    log.warn("Skill 上传失败后的对象清理失败: storageKey={}, stack={}",
+                            LogSanitizer.sanitizeText(storageKey),
+                            LogSanitizer.sanitizeThrowable(cleanupException));
                 }
             }
             throw exception;
@@ -211,11 +213,11 @@ public class SkillVersionService {
                             "errorType", exception.getClass().getSimpleName()));
         } catch (RuntimeException auditException) {
             // 审计日志记录本身失败，仅打警告，不影响主异常抛出
-            log.warn("记录 Skill 版本号预留失败日志失败: skillId={}, versionNo={}",
-                    skill.getId(), versionNo, auditException);
+            log.warn("记录 Skill 版本号预留失败日志失败: skillId={}, versionNo={}, stack={}",
+                    skill.getId(), versionNo, LogSanitizer.sanitizeThrowable(auditException));
         }
-        log.warn("Skill 上传失败后版本号已消耗: skillId={}, versionNo={}, phase={}",
-                skill.getId(), versionNo, phase, exception);
+        log.warn("Skill 上传失败后版本号已消耗: skillId={}, versionNo={}, phase={}, stack={}",
+                skill.getId(), versionNo, phase, LogSanitizer.sanitizeThrowable(exception));
     }
 
     /**
@@ -483,11 +485,15 @@ public class SkillVersionService {
                 try {
                     Files.deleteIfExists(item);
                 } catch (IOException | RuntimeException exception) {
-                    log.warn("Skill 上传临时路径删除失败: {}", item, exception);
+                    log.warn("Skill 上传临时路径删除失败: path={}, stack={}",
+                            LogSanitizer.sanitizeText(String.valueOf(item)),
+                            LogSanitizer.sanitizeThrowable(exception));
                 }
             });
         } catch (IOException | RuntimeException exception) {
-            log.warn("Skill 上传临时目录清理失败: {}", path, exception);
+            log.warn("Skill 上传临时目录清理失败: path={}, stack={}",
+                    LogSanitizer.sanitizeText(String.valueOf(path)),
+                    LogSanitizer.sanitizeThrowable(exception));
         }
     }
 }

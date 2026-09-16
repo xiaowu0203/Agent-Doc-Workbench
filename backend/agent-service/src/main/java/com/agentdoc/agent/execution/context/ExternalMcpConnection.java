@@ -31,10 +31,8 @@ public record ExternalMcpConnection(
 
     @Override
     public String toString() {
-        return "ExternalMcpConnection[serverId=" + serverId + ", serverKey=" + serverKey
-                + ", displayName=" + displayName + ", endpointUrl=" + endpointUrl
-                + ", authType=" + authType + ", authParamName=" + authParamName
-                + ", encryptedAuthToken=<redacted>, configVersion="
-                + configVersion + ", bindingToolWhitelist=" + bindingToolWhitelist + "]";
+        return "ExternalMcpConnection[serverId=" + serverId + ", configVersion=" + configVersion
+                + ", bindingToolCount=" + (bindingToolWhitelist == null ? null : bindingToolWhitelist.size())
+                + ", sensitiveConfiguration=[REDACTED]]";
     }
 }

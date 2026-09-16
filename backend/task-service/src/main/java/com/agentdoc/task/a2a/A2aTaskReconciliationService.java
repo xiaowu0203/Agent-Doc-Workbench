@@ -2,6 +2,7 @@ package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.constant.RedisKeyConstants;
 import com.agentdoc.common.utils.RedisUtils;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.mapper.TaskMapper;
@@ -87,7 +88,8 @@ public class A2aTaskReconciliationService {
             }
         } catch (RuntimeException exception) {
             // 单个任务对账异常只记录warn日志，不中断其他任务对账
-            log.warn("A2A 任务状态对账失败，taskId={}", task.getId(), exception);
+            log.warn("A2A 任务状态对账失败，taskId={}，stack={}", task.getId(),
+                    LogSanitizer.sanitizeThrowable(exception));
         } finally {
             // 无论成功失败，释放分布式锁
             redisUtils.delete(lockKey);

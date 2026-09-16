@@ -4,7 +4,9 @@ import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.enums.ToolSource;
 import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.agent.execution.audit.AgentExecutionToolAuditService;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ToolContext;
@@ -73,6 +75,7 @@ public class AuditingToolCallback implements ToolCallback {
      * Agent工具调用审计服务，负责审计记录的开始、成功、失败数据库持久化
      */
     private final AgentExecutionToolAuditService auditService;
+    private final AgentTelemetry telemetry;
 
     /**
      * 构造审计包装回调
@@ -86,7 +89,8 @@ public class AuditingToolCallback implements ToolCallback {
      */
     public AuditingToolCallback(ToolCallback delegate, Long executionId, String source,
                                 String sourceKey, Long mcpServerId,
-                                AtomicInteger sequence, AgentExecutionToolAuditService auditService) {
+                                AtomicInteger sequence, AgentExecutionToolAuditService auditService,
+                                AgentTelemetry telemetry) {
         this.delegate = delegate;
         this.executionId = executionId;
         this.source = source;
@@ -94,6 +98,7 @@ public class AuditingToolCallback implements ToolCallback {
         this.mcpServerId = mcpServerId;
         this.sequence = sequence;
         this.auditService = auditService;
+        this.telemetry = telemetry;
     }
 
     /**
@@ -155,14 +160,20 @@ public class AuditingToolCallback implements ToolCallback {
         byte[] arguments = bytes(input);
 
         // 创建审计记录：sequence自增拿到本次调用序号，记录入参hash、入参字节大小
+        Long skillVersionId = skillVersionId(input);
         AgentExecutionToolCallEntity audit = auditService.start(executionId, sequence.incrementAndGet(),
                 getToolDefinition().name(), source, sourceKey, mcpServerId,
-                skillVersionId(input),
+                skillVersionId,
                 sha256(arguments), arguments.length);
+        // 链路追踪：工具调用Span创建
+        AgentTelemetry.ToolCallSpan toolSpan = telemetry.startToolCall(executionId,
+                getToolDefinition().name(), source, mcpServerId, skillVersionId);
 
-        try {
+        try (var ignored = toolSpan.makeCurrent()) {
             if (!validRemoteArguments(input)) {
                 finishInvalidArguments(audit);
+                // 链路追踪：工具调用Span异常
+                toolSpan.fail(INVALID_ARGUMENTS_ERROR_TYPE);
                 return INVALID_ARGUMENTS_RESULT;
             }
             // 执行真实工具调用逻辑
@@ -173,18 +184,24 @@ public class AuditingToolCallback implements ToolCallback {
                 auditService.succeed(audit, sha256(resultBytes), resultBytes.length);
             } catch (RuntimeException exception) {
                 // 审计落库失败属于次要故障，只打印错误日志，不阻断工具正常返回
-                log.error("工具调用已成功但结束审计失败: executionId={}, auditId={}, tool={}",
-                        executionId, audit.getId(), getToolDefinition().name(), exception);
+                log.error("工具调用已成功但结束审计失败: executionId={}, auditId={}, tool={}, stack={}",
+                        executionId, audit.getId(), getToolDefinition().name(),
+                        LogSanitizer.sanitizeThrowable(exception));
             }
+            // 链路追踪：工具调用Span成功
+            toolSpan.succeed(resultBytes.length);
             return result;
         } catch (RuntimeException exception) {
+            // 链路追踪：工具调用Span异常
+            toolSpan.fail(exception);
             try {
                 // 工具执行业务抛出异常，标记审计记录为失败，记录异常简单类名
                 auditService.fail(audit, exception.getClass().getSimpleName());
             } catch (RuntimeException auditException) {
                 // 审计fail自身异常，打印日志；原始工具异常继续上抛，不能吞掉业务错误
-                log.error("工具调用失败且结束审计失败: executionId={}, auditId={}, tool={}",
-                        executionId, audit.getId(), getToolDefinition().name(), auditException);
+                log.error("工具调用失败且结束审计失败: executionId={}, auditId={}, tool={}, stack={}",
+                        executionId, audit.getId(), getToolDefinition().name(),
+                        LogSanitizer.sanitizeThrowable(auditException));
             }
             throw exception;
         }
@@ -203,8 +220,9 @@ public class AuditingToolCallback implements ToolCallback {
         try {
             auditService.fail(audit, INVALID_ARGUMENTS_ERROR_TYPE);
         } catch (RuntimeException auditException) {
-            log.error("工具参数 JSON 不完整且结束审计失败: executionId={}, auditId={}, tool={}",
-                    executionId, audit.getId(), getToolDefinition().name(), auditException);
+            log.error("工具参数 JSON 不完整且结束审计失败: executionId={}, auditId={}, tool={}, stack={}",
+                    executionId, audit.getId(), getToolDefinition().name(),
+                    LogSanitizer.sanitizeThrowable(auditException));
         }
     }
 

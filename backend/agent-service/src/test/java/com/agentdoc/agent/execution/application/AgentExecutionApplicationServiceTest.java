@@ -3,6 +3,7 @@ package com.agentdoc.agent.execution.application;
 import com.agentdoc.agent.enums.AgentExecutionStatus;
 import com.agentdoc.agent.execution.runtime.AgentExecutionRuntime;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -28,6 +29,7 @@ class AgentExecutionApplicationServiceTest {
         ExecutionPreparationService preparationService = mock(ExecutionPreparationService.class);
         AgentExecutionPersistenceService persistenceService = mock(AgentExecutionPersistenceService.class);
         AgentExecutionRuntime runtime = mock(AgentExecutionRuntime.class);
+        AgentTelemetry telemetry = new AgentTelemetry();
         RequestContext context = mock(RequestContext.class);
         AgentEmitter emitter = mock(AgentEmitter.class);
         AgentExecutionEntity concurrent = new AgentExecutionEntity();
@@ -47,7 +49,7 @@ class AgentExecutionApplicationServiceTest {
         when(preparationService.prepare(anyString(), anyString(), any(), anyString()))
                 .thenThrow(new DuplicateKeyException("duplicate workbench task"));
         AgentExecutionApplicationService service = new AgentExecutionApplicationService(
-                mapper, preparationService, persistenceService, runtime, new ObjectMapper());
+                mapper, preparationService, persistenceService, telemetry, runtime, new ObjectMapper());
 
         service.execute(context, emitter);
 

@@ -4,6 +4,8 @@ import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.constant.McpConstant;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.logging.LogSanitizer;
+import com.agentdoc.common.logging.SensitiveFieldPolicy;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.WebClientStreamableHttpTransport;
@@ -73,10 +75,14 @@ public final class TaskScopedMcpTools implements AutoCloseable {
      * 经过多层装饰包装后的MCP工具回调列表；直接对外供给Agent执行链路使用；内部为不可变集合
      */
     private final List<ToolCallback> callbacks;
+    /** 当前会话专属敏感字段策略，不包含任何秘密值。 */
+    private final SensitiveFieldPolicy sensitiveFieldPolicy;
 
-    private TaskScopedMcpTools(McpSyncClient client, List<ToolCallback> callbacks) {
+    private TaskScopedMcpTools(McpSyncClient client, List<ToolCallback> callbacks,
+                               SensitiveFieldPolicy sensitiveFieldPolicy) {
         this.client = client;
         this.callbacks = List.copyOf(callbacks);
+        this.sensitiveFieldPolicy = sensitiveFieldPolicy;
     }
 
     /**
@@ -123,10 +129,12 @@ public final class TaskScopedMcpTools implements AutoCloseable {
                                                   Consumer<SocketAddress> resolvedAddressValidator) {
         Map<String, String> headers = bearerToken == null || bearerToken.isBlank() ? Map.of()
                 : Map.of(HttpHeaders.AUTHORIZATION, JwtConstant.TOKEN_TYPE_BEARER + " " + bearerToken);
+        // 将MCP连接的url参数、值动态敏感key集合
+        SensitiveFieldPolicy sensitiveFieldPolicy = externalSensitiveFieldPolicy(queryParamName, queryParamValue);
         String transportUrl = appendQueryCredential(serverUrl, queryParamName, queryParamValue);
         try {
             return open(transportUrl, headers, serverKey, timeoutSeconds, cancelRequested, allowedToolNames,
-                    resolvedAddressValidator);
+                    resolvedAddressValidator, sensitiveFieldPolicy);
         } catch (RuntimeException exception) {
             if (exception instanceof AgentExecutionCanceledException) {
                 throw exception;
@@ -147,6 +155,30 @@ public final class TaskScopedMcpTools implements AutoCloseable {
     }
 
     /**
+     * 构造外部MCP敏感字段策略：将传入的密钥参数名加入动态敏感key集合。
+     * <p>
+     * 场景：MCP服务连接时携带API Key等凭证，把该参数名注册到脱敏策略，日志输出时自动掩码。
+     * 校验规则：
+     * 1. value为空/空白，直接返回默认策略，无需新增敏感key
+     * 2. 参数name为空则抛出非法参数异常
+     * 3. 将name标准化后追加到动态敏感key，生成新不可变策略实例
+     * </p>
+     * @param name MCP凭证参数名称（例如apiKey、x-api-key）
+     * @param value MCP凭证密钥值
+     * @return 追加了该敏感key的脱敏策略；value为空返回默认策略
+     * @throws IllegalArgumentException 当参数name为null或空白字符串时抛出
+     */
+    static SensitiveFieldPolicy externalSensitiveFieldPolicy(String name, String value) {
+        if (value == null || value.isBlank())
+            return SensitiveFieldPolicy.defaults();
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("MCP Query API Key 参数名不能为空");
+        }
+        // 将MCP凭证参数加入动态敏感key，返回新策略实例
+        return SensitiveFieldPolicy.defaults().withSensitiveKeys(List.of(name));
+    }
+
+    /**
      * open内部重载；无地址解析校验器版本
      * @param serverUrl MCP服务绝对URL
      * @param headers 自定义HTTP请求头集合
@@ -159,7 +191,8 @@ public final class TaskScopedMcpTools implements AutoCloseable {
     private static TaskScopedMcpTools open(String serverUrl, Map<String, String> headers, String namespace,
                                            int timeoutSeconds, BooleanSupplier cancelRequested,
                                            Collection<String> allowedToolNames) {
-        return open(serverUrl, headers, namespace, timeoutSeconds, cancelRequested, allowedToolNames, null);
+        return open(serverUrl, headers, namespace, timeoutSeconds, cancelRequested, allowedToolNames, null,
+                SensitiveFieldPolicy.defaults());
     }
 
     /**
@@ -190,7 +223,8 @@ public final class TaskScopedMcpTools implements AutoCloseable {
     private static TaskScopedMcpTools open(String serverUrl, Map<String, String> headers, String namespace,
                                            int timeoutSeconds, BooleanSupplier cancelRequested,
                                            Collection<String> allowedToolNames,
-                                           Consumer<SocketAddress> resolvedAddressValidator) {
+                                           Consumer<SocketAddress> resolvedAddressValidator,
+                                           SensitiveFieldPolicy sensitiveFieldPolicy) {
         // 校验是否任务取消
         requireNotCanceled(cancelRequested);
 
@@ -246,14 +280,15 @@ public final class TaskScopedMcpTools implements AutoCloseable {
                     // 包装工具返回结果大小限制：防止工具返回超大报文压垮Agent上下文
                     .map(callback -> new ToolResultSizeLimitCallback(callback, McpConstant.MAX_TOOL_RESULT_BYTES))
                     .map(ToolCallback.class::cast).toList();
-            return new TaskScopedMcpTools(client, callbacks);
+            return new TaskScopedMcpTools(client, callbacks, sensitiveFieldPolicy);
         } catch (RuntimeException exception) {
             // 初始化流程出现任何运行时异常，主动关闭客户端，避免残留HTTP‑Stream连接泄漏
             if (client != null) {
                 try {
                     client.close();
                 } catch (RuntimeException closeException) {
-                    log.warn("MCP 初始化失败后关闭客户端失败", closeException);
+                    log.warn("MCP 初始化失败后关闭客户端失败 type={} stack={}",
+                            closeException.getClass().getName(), LogSanitizer.sanitizeThrowable(closeException));
                 }
             }
             throw exception;
@@ -285,6 +320,10 @@ public final class TaskScopedMcpTools implements AutoCloseable {
      */
     public List<ToolCallback> callbacks() {
         return callbacks;
+    }
+
+    SensitiveFieldPolicy sensitiveFieldPolicy() {
+        return sensitiveFieldPolicy;
     }
 
     /**

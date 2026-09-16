@@ -8,6 +8,7 @@ import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.common.enums.TokenValueSource;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.pojo.TokenValue;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
@@ -54,6 +55,8 @@ public final class AgentExecutionConvertor {
         entity.setA2aTaskId(a2aTaskId);
         entity.setA2aContextId(a2aContextId);
         entity.setWorkbenchTaskId(input.workbenchTaskId());
+        entity.setTraceId(TraceContext.getTelemetryTraceId());
+        entity.setSpanId(TraceContext.getTelemetrySpanId());
         entity.setSpaceId(input.spaceId());
         entity.setAgentId(agent.getId());
         entity.setAgentNameSnapshot(agent.getName());

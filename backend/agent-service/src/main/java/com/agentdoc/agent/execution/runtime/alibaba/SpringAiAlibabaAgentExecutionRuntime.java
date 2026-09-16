@@ -12,6 +12,7 @@ import com.agentdoc.agent.execution.model.ModelAdapterContext;
 import com.agentdoc.agent.execution.model.ModelCapabilities;
 import com.agentdoc.agent.execution.model.ModelAdapterRegistry;
 import com.agentdoc.agent.execution.model.ModelSamplingOptions;
+import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionTerminatedException;
 import com.agentdoc.agent.execution.runtime.AgentExecutionLimitExceededException;
@@ -22,9 +23,11 @@ import com.agentdoc.agent.execution.runtime.ConditionalOnAgentRuntime;
 import com.agentdoc.agent.execution.tool.ExecutionToolSession;
 import com.agentdoc.agent.execution.tool.ExecutionToolSessionFactory;
 import com.agentdoc.agent.execution.tool.TokenUsageEstimator;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionModelCallEntity;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import org.springframework.beans.factory.ObjectProvider;
@@ -88,6 +91,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
     // Token 本地估算器
     private final TokenUsageEstimator tokenUsageEstimator;
     private final AgentExecutionModelCallAuditService modelCallAuditService;
+    private final AgentTelemetry telemetry;
     /** Skill资源与过滤后MCP工具的统一会话工厂；ObjectProvider做延迟获取，避免循环依赖 */
     private final ObjectProvider<ExecutionToolSessionFactory> toolSessionFactoryProvider;
 
@@ -95,12 +99,14 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                                                 ModelAdapterRegistry adapterRegistry,
                                                 TokenUsageEstimator tokenUsageEstimator,
                                                 AgentExecutionModelCallAuditService modelCallAuditService,
+                                                AgentTelemetry telemetry,
                                                 ObjectProvider<ExecutionToolSessionFactory>
                                                         toolSessionFactoryProvider) {
         this.cryptoService = cryptoService;
         this.adapterRegistry = adapterRegistry;
         this.tokenUsageEstimator = tokenUsageEstimator;
         this.modelCallAuditService = modelCallAuditService;
+        this.telemetry = telemetry;
         this.toolSessionFactoryProvider = toolSessionFactoryProvider;
     }
 
@@ -191,7 +197,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                 // 【装饰器】包装原生ChatModel，植入横切逻辑：模型调用前后拦截、用量采集、流式回调、取消校验
                 ObservingChatModel observingModel = new ObservingChatModel(chatModel, adapterContext, tools.callbacks(),
                         control, usage, streaming ? onTextDelta : ignored -> { }, modelCallAuditService,
-                        new AtomicInteger());
+                        new AtomicInteger(), telemetry);
 
                 // 构建Spring‑AI Alibaba原生ReactAgent
                 ReactAgent reactAgent = ReactAgent.builder()
@@ -360,6 +366,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
         private final Consumer<String> onTextDelta;
         private final AgentExecutionModelCallAuditService modelCallAuditService;
         private final AtomicInteger modelCallSequence;
+        private final AgentTelemetry telemetry;
         /** 原子引用保存最后一轮模型返回的AssistantMessage，流式模式需要靠它拿完整结果 */
         private final AtomicReference<AssistantMessage> lastAssistant = new AtomicReference<>();
 
@@ -367,7 +374,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                                    AlibabaRuntimeControl control, AlibabaRuntimeUsageCollector usage,
                                    Consumer<String> onTextDelta,
                                    AgentExecutionModelCallAuditService modelCallAuditService,
-                                   AtomicInteger modelCallSequence) {
+                                   AtomicInteger modelCallSequence, AgentTelemetry telemetry) {
             this.delegate = delegate;
             this.context = context;
             this.tools = tools;
@@ -376,6 +383,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             this.onTextDelta = onTextDelta;
             this.modelCallAuditService = modelCallAuditService;
             this.modelCallSequence = modelCallSequence;
+            this.telemetry = telemetry;
         }
 
         /**
@@ -386,21 +394,27 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             // 模型调用前：校验取消、预算、迭代次数
             control.beforeModel();
             AgentExecutionModelCallEntity modelCall;
+            // 给同一个 Agent 任务内部的多轮 LLM 调用生成递增序号（先自增 +1，然后返回自增之后的新值）
+            int currentModelSequence = modelCallSequence.incrementAndGet();
             try {
-                modelCall = modelCallAuditService.start(context, modelCallSequence.incrementAndGet(),
+                modelCall = modelCallAuditService.start(context, currentModelSequence,
                         prompt.getInstructions(), false);
             } catch (RuntimeException exception) {
                 control.afterModelFailure();
                 throw exception;
             }
+            // 建立一次真实模型请求的领域 Span（相当于埋点记录模型调用）
+            AgentTelemetry.ModelCallSpan modelSpan = telemetry.startModelCall(context, currentModelSequence,
+                    false, AgentRuntimeType.SPRING_AI_ALIBABA.name());
             ChatResponse response;
-            try {
+            try (var ignored = modelSpan.makeCurrent()) {
                 // 委托给底层真实ChatModel执行调用
                 response = delegate.call(prompt);
             } catch (RuntimeException exception) {
                 // 模型调用发生异常，清理inFlight标记
                 control.afterModelFailure();
                 finishFailed(modelCall, exception);
+                modelSpan.fail(exception);
                 // 如果是任务取消异常直接向上抛，不需要包装
                 if (exception instanceof AgentExecutionCanceledException)
                     throw exception;
@@ -408,13 +422,16 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                 throw new ModelInvocationException(exception);
             }
             // 正常返回，处理用量采集、推送文本delta
+            TokenUsage turnUsage;
             try {
-                accept(prompt, response);
+                turnUsage = accept(prompt, response);
             } catch (RuntimeException exception) {
                 finishFailed(modelCall, exception);
+                modelSpan.fail(exception);
                 throw exception;
             }
             finishSucceeded(modelCall, response);
+            modelSpan.succeed(turnUsage);
             return response;
         }
 
@@ -427,20 +444,29 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             // 流式请求发起前，执行前置校验
             control.beforeModel();
             AgentExecutionModelCallEntity modelCall;
+            // 给同一个 Agent 任务内部的多轮 LLM 调用生成递增序号（先自增 +1，然后返回自增之后的新值）
+            int currentModelSequence = modelCallSequence.incrementAndGet();
             try {
-                modelCall = modelCallAuditService.start(context, modelCallSequence.incrementAndGet(),
+                modelCall = modelCallAuditService.start(context, currentModelSequence,
                         prompt.getInstructions(), true);
             } catch (RuntimeException exception) {
                 control.afterModelFailure();
                 throw exception;
             }
+            // 建立一次真实模型请求的领域 Span（相当于埋点记录模型调用）
+            AgentTelemetry.ModelCallSpan modelSpan = telemetry.startModelCall(context, currentModelSequence,
+                    true, AgentRuntimeType.SPRING_AI_ALIBABA.name());
             // 流式chunk累加器，用于流结束后拼装完整ChatResponse，用于token用量统计
             StreamResponseAccumulator accumulator = new StreamResponseAccumulator();
             // 保证completeStream只执行一次，防止complete/error/cancel多次触发重复统计用量
             AtomicBoolean finalized = new AtomicBoolean();
             AtomicBoolean auditFinalized = new AtomicBoolean();
             try {
-                Flux<ChatResponse> source = delegate.stream(prompt).onErrorMap(exception ->
+                Flux<ChatResponse> source;
+                try (var ignored = modelSpan.makeCurrent()) {
+                    source = delegate.stream(prompt);
+                }
+                source = source.onErrorMap(exception ->
                         // 把非桥接异常统一包装为ModelInvocationException，保留特定异常透传
                         exception instanceof AgentExecutionCanceledException
                                 || exception instanceof ModelInvocationException
@@ -454,27 +480,33 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
                     emitTextDelta(response);
                 }).doOnComplete(() -> {
                     // 流正常完成：拼装完整response，交给用量收集器
-                    completeStream(prompt, accumulator, false, finalized);
+                    TokenUsage turnUsage = completeStream(prompt, accumulator, false, finalized);
                     if (auditFinalized.compareAndSet(false, true)) {
                         if (accumulator.hasResponse()) {
                             finishSucceeded(modelCall, accumulator.response());
+                            modelSpan.succeed(turnUsage);
                         } else {
-                            finishFailed(modelCall, new IllegalStateException("模型流式调用未返回执行结果"));
+                            IllegalStateException exception = new IllegalStateException("模型流式调用未返回执行结果");
+                            finishFailed(modelCall, exception);
+                            modelSpan.fail(exception);
                         }
                     }
                 }).doOnError(exception -> {
                     // 流异常：如果异常根因是任务取消，按取消分支处理用量统计
                     if (findCause(exception, AgentExecutionCanceledException.class) != null) {
-                        completeStream(prompt, accumulator, true, finalized);
+                        TokenUsage turnUsage = completeStream(prompt, accumulator, true, finalized);
+                        modelSpan.cancel(turnUsage);
                     }
                     if (auditFinalized.compareAndSet(false, true)) {
                         finishFailed(modelCall, exception);
+                        modelSpan.fail(exception);
                     }
                 })
                 // 无论成功、失败、取消，最终都执行；CANCEL信号代表上游主动取消订阅
                 .doFinally(signal -> {
                     if (signal == SignalType.CANCEL) {
-                        completeStream(prompt, accumulator, true, finalized);
+                        TokenUsage turnUsage = completeStream(prompt, accumulator, true, finalized);
+                        modelSpan.cancel(turnUsage);
                         if (auditFinalized.compareAndSet(false, true)) {
                             finishFailed(modelCall, new AgentExecutionCanceledException());
                         }
@@ -485,6 +517,7 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             } catch (RuntimeException exception) {
                 control.afterModelFailure();
                 finishFailed(modelCall, exception);
+                modelSpan.fail(exception);
                 throw new ModelInvocationException(exception);
             }
         }
@@ -493,8 +526,9 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             try {
                 modelCallAuditService.succeed(modelCall, response);
             } catch (RuntimeException exception) {
-                log.error("模型调用已成功但结束审计失败: executionId={}, auditId={}, sequence={}",
-                        context.executionId(), modelCall.getId(), modelCall.getSequenceNo(), exception);
+                log.error("模型调用已成功但结束审计失败: executionId={}, auditId={}, sequence={}, stack={}",
+                        context.executionId(), modelCall.getId(), modelCall.getSequenceNo(),
+                        LogSanitizer.sanitizeThrowable(exception));
             }
         }
 
@@ -502,8 +536,9 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
             try {
                 modelCallAuditService.fail(modelCall, exception.getClass().getSimpleName());
             } catch (RuntimeException auditException) {
-                log.error("模型调用失败且结束审计失败: executionId={}, auditId={}, sequence={}",
-                        context.executionId(), modelCall.getId(), modelCall.getSequenceNo(), auditException);
+                log.error("模型调用失败且结束审计失败: executionId={}, auditId={}, sequence={}, stack={}",
+                        context.executionId(), modelCall.getId(), modelCall.getSequenceNo(),
+                        LogSanitizer.sanitizeThrowable(auditException));
             }
         }
 
@@ -522,28 +557,32 @@ public class SpringAiAlibabaAgentExecutionRuntime implements AgentExecutionRunti
          * 流式流结束统一处理：拼装完整response，调用用量收集器；finalized保证只执行一次
          * @param canceled true=任务被取消；false=正常结束
          */
-        private void completeStream(Prompt prompt, StreamResponseAccumulator accumulator, boolean canceled,
-                                     AtomicBoolean finalized) {
+        private TokenUsage completeStream(Prompt prompt, StreamResponseAccumulator accumulator, boolean canceled,
+                                          AtomicBoolean finalized) {
             // 没有收到任何chunk 或者 已经执行过本方法，直接跳过
-            if (!accumulator.hasResponse() || !finalized.compareAndSet(false, true)) return;
+            if (!accumulator.hasResponse() || !finalized.compareAndSet(false, true))
+                return null;
             ChatResponse response = accumulator.response();
+            TokenUsage turnUsage;
             if (canceled)
                 // 取消场景：调用afterModelCanceled，记录用量，但跳过部分业务校验
-                usage.acceptAfterCancellation(response, prompt.getInstructions(), tools);
+                turnUsage = usage.acceptAfterCancellation(response, prompt.getInstructions(), tools);
             else
                 // 正常完成：正常记录用量并触发预算、取消校验
-                usage.accept(response, prompt.getInstructions(), tools);
+                turnUsage = usage.accept(response, prompt.getInstructions(), tools);
 
             // 缓存完整assistant消息
             lastAssistant.set(response.getResult().getOutput());
+            return turnUsage;
         }
 
         /**
          * 同步模式调用成功后：采集用量、缓存消息、推送文本delta
          */
-        private void accept(Prompt prompt, ChatResponse response) {
-            usage.accept(response, prompt.getInstructions(), tools);
+        private TokenUsage accept(Prompt prompt, ChatResponse response) {
+            TokenUsage turnUsage = usage.accept(response, prompt.getInstructions(), tools);
             emitTextDelta(response);
+            return turnUsage;
         }
 
         /**

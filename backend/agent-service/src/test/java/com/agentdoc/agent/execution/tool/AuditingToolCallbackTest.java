@@ -1,6 +1,7 @@
 package com.agentdoc.agent.execution.tool;
 
 import com.agentdoc.agent.execution.audit.AgentExecutionToolAuditService;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
@@ -41,7 +42,7 @@ class AuditingToolCallbackTest {
         };
         AuditingToolCallback callback = new AuditingToolCallback(delegate, 7L, "SKILL_LOCAL",
                 "skill-local", null,
-                new AtomicInteger(), auditService);
+                new AtomicInteger(), auditService, new AgentTelemetry());
 
         assertThat(callback.call("secret input")).isEqualTo("secret result");
 
@@ -66,7 +67,7 @@ class AuditingToolCallbackTest {
             }
         };
         AuditingToolCallback callback = new AuditingToolCallback(delegate, 7L, "SKILL_LOCAL",
-                "skill-local", null, new AtomicInteger(), auditService);
+                "skill-local", null, new AtomicInteger(), auditService, new AgentTelemetry());
 
         assertThatThrownBy(() -> callback.call("input"))
                 .isInstanceOf(IllegalStateException.class)
@@ -88,7 +89,7 @@ class AuditingToolCallbackTest {
             @Override public String call(String input) { return "instructions"; }
         };
         AuditingToolCallback callback = new AuditingToolCallback(delegate, 7L, "SKILL_LOCAL",
-                "skill-local", null, new AtomicInteger(), auditService);
+                "skill-local", null, new AtomicInteger(), auditService, new AgentTelemetry());
 
         assertThat(callback.call("{\"skillVersionId\":42}")).isEqualTo("instructions");
     }
@@ -113,7 +114,7 @@ class AuditingToolCallbackTest {
             }
         };
         AuditingToolCallback callback = new AuditingToolCallback(delegate, 7L, "MCP_REMOTE",
-                "workbench", 3L, new AtomicInteger(), auditService);
+                "workbench", 3L, new AtomicInteger(), auditService, new AgentTelemetry());
 
         String result = callback.call("{\"baseVersion\":0,\"changes\":[");
 

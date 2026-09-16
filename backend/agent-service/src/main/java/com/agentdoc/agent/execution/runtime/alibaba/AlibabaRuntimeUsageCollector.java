@@ -39,8 +39,8 @@ public final class AlibabaRuntimeUsageCollector {
      * @param messages 当前轮次上下文消息列表
      * @param tools 本次使用的工具回调集合
      */
-    public void accept(ChatResponse response, List<Message> messages, List<ToolCallback> tools) {
-        accept(response, messages, tools, false);
+    public TokenUsage accept(ChatResponse response, List<Message> messages, List<ToolCallback> tools) {
+        return accept(response, messages, tools, false);
     }
 
     /**
@@ -49,8 +49,9 @@ public final class AlibabaRuntimeUsageCollector {
      * @param messages 当前轮次上下文消息列表
      * @param tools 本次使用的工具回调集合
      */
-    public void acceptAfterCancellation(ChatResponse response, List<Message> messages, List<ToolCallback> tools) {
-        accept(response, messages, tools, true);
+    public TokenUsage acceptAfterCancellation(ChatResponse response, List<Message> messages,
+                                              List<ToolCallback> tools) {
+        return accept(response, messages, tools, true);
     }
 
     /**
@@ -60,8 +61,8 @@ public final class AlibabaRuntimeUsageCollector {
      * @param tools 工具回调列表
      * @param canceled 是否为取消场景
      */
-    private void accept(ChatResponse response, List<Message> messages, List<ToolCallback> tools,
-                        boolean canceled) {
+    private TokenUsage accept(ChatResponse response, List<Message> messages, List<ToolCallback> tools,
+                              boolean canceled) {
         // 通过ModelAdapter从原始ChatResponse提取厂商返回的原始token用量
         TokenUsage raw = adapter.tokenUsage(response);
         // 使用估算器补齐未返回的token字段
@@ -70,6 +71,7 @@ public final class AlibabaRuntimeUsageCollector {
             control.afterModelCanceled(completed);
         else
             control.afterModel(completed);
+        return completed;
     }
 
     /**

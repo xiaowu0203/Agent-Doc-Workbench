@@ -3,6 +3,7 @@ package com.agentdoc.task.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.WorkbenchSearchConstant;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -840,6 +841,9 @@ public class TaskService {
         task.setRootTaskId(rootTaskId);
         task.setLineageType(lineageType.name());
         task.setExecutionMode(TaskExecutionMode.LIVE.name());
+        if (task.getTraceId() == null) {
+            task.setTraceId(TraceContext.getTelemetryTraceId());
+        }
         // 检查任务执行类型和模式是否受支持
         TaskExecutionPolicy.requireSupported(task);
     }
