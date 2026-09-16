@@ -1,0 +1,6 @@
+services:
+  opensearch:
+    volumes:
+      - type: bind
+        source: ${OPENSEARCH_DATA_DIR:?Set OPENSEARCH_DATA_DIR to an existing absolute directory}
+        target: /usr/share/opensearch/data
