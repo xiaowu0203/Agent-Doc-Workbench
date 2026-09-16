@@ -20,6 +20,10 @@ public class AgentExecutionEntity extends BaseEntity {
     private String a2aContextId;
     @Schema(description = "工作台任务 ID")
     private Long workbenchTaskId;
+    @Schema(description = "执行主 Span 的 OpenTelemetry Trace ID")
+    private String traceId;
+    @Schema(description = "执行主 Span 的 OpenTelemetry Span ID")
+    private String spanId;
     @Schema(description = "执行所属空间 ID 快照")
     private Long spaceId;
     @Schema(description = "Agent ID")

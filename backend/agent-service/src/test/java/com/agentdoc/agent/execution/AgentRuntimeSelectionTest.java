@@ -7,6 +7,7 @@ import com.agentdoc.agent.execution.runtime.alibaba.SpringAiAlibabaAgentExecutio
 import com.agentdoc.agent.execution.runtime.springai.SpringAiAgentExecutionRuntime;
 import com.agentdoc.agent.execution.tool.ProviderNeutralToolLoop;
 import com.agentdoc.agent.execution.tool.TokenUsageEstimator;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -66,5 +67,6 @@ class AgentRuntimeSelectionTest {
         @Bean AgentExecutionModelCallAuditService modelCallAuditService() {
             return mock(AgentExecutionModelCallAuditService.class);
         }
+        @Bean AgentTelemetry agentTelemetry() { return new AgentTelemetry(); }
     }
 }

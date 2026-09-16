@@ -4,6 +4,7 @@ import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.mapper.SkillVersionMapper;
 import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.common.minio.service.ObjectStorageService;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -103,10 +104,11 @@ public class SkillStorageReconcileJob {
         // 判定为孤儿文件，执行删除
         try {
             storage.delete(object.key());
-            log.info("已删除孤儿 Skill 对象: {}", object.key());
+            log.info("已删除孤儿 Skill 对象: {}", LogSanitizer.sanitizeText(object.key()));
         } catch (RuntimeException exception) {
             // 删除异常只打警告，不抛出，不打断整个扫描流程，等待下一轮定时重试
-            log.warn("孤儿 Skill 对象删除失败: {}", object.key(), exception);
+            log.warn("孤儿 Skill 对象删除失败: objectKey={}, stack={}",
+                    LogSanitizer.sanitizeText(object.key()), LogSanitizer.sanitizeThrowable(exception));
         }
     }
 }

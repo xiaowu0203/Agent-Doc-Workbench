@@ -112,7 +112,7 @@
           v-model:page-size="page.pageSize"
           background
           layout="sizes, prev, pager, next"
-          :page-sizes="[6, 12, 24, 48]"
+          :page-sizes="[8, 16, 32, 64]"
           :total="page.total"
           @current-change="loadCapabilities"
           @size-change="handlePageSizeChange"
@@ -573,7 +573,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const capabilities = ref<SystemCapability[]>([])
 const statistics = ref<SystemCapabilityStatistics | null>(null)
-const page = reactive<SystemCapabilityPage>({ records: [], total: 0, pageNum: 1, pageSize: 6 })
+const page = reactive<SystemCapabilityPage>({ records: [], total: 0, pageNum: 1, pageSize: 8 })
 const detailDialogOpen = ref(false)
 const versionsDialogOpen = ref(false)
 const skillDetailOpen = ref(false)

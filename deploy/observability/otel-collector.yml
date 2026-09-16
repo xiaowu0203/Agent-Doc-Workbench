@@ -1,0 +1,164 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  resource/environment:
+    attributes:
+      - key: deployment.environment.name
+        value: ${env:ADWB_DEPLOYMENT_ENV}
+        action: upsert
+
+  transform/resource_allowlist:
+    error_mode: propagate
+    trace_statements:
+      - context: resource
+        statements:
+          - keep_keys(attributes, ["service.name", "service.version", "service.instance.id", "deployment.environment.name", "telemetry.sdk.name", "telemetry.sdk.language", "telemetry.sdk.version", "process.runtime.name", "process.runtime.version", "os.type", "host.arch"])
+      - context: spanevent
+        statements:
+          - keep_keys(attributes, ["exception.type", "agentdoc.retry.count", "agentdoc.retry.reason", "agentdoc.budget.limit", "agentdoc.budget.used", "agentdoc.operation.status"])
+          - set(name, "agentdoc.event.redacted") where name != "exception" and name != "agentdoc.retry" and name != "agentdoc.budget.warning" and name != "agentdoc.budget.exhausted" and name != "agentdoc.execution.cancelled" and name != "agentdoc.stream.interrupted" and name != "agentdoc.fallback.applied"
+
+  redaction/span_allowlist:
+    allow_all_keys: false
+    allowed_keys:
+      - service.name
+      - service.version
+      - service.instance.id
+      - deployment.environment.name
+      - telemetry.sdk.name
+      - telemetry.sdk.language
+      - telemetry.sdk.version
+      - process.runtime.name
+      - process.runtime.version
+      - os.type
+      - host.arch
+      - server.address
+      - server.port
+      - network.protocol.name
+      - network.protocol.version
+      - http.request.method
+      - http.route
+      - http.response.status_code
+      - rpc.system
+      - rpc.service
+      - rpc.method
+      - messaging.system
+      - messaging.destination.name
+      - messaging.operation.name
+      - db.system.name
+      - db.namespace
+      - db.operation.name
+      - error.type
+      - run.id
+      - execution.id
+      - agentdoc.space.id
+      - agentdoc.agent.id
+      - agentdoc.agent.config_version
+      - agentdoc.execution.mode
+      - agentdoc.lineage.type
+      - agentdoc.runtime.type
+      - agentdoc.operation.status
+      - agentdoc.retry.count
+      - agentdoc.input.schema_version
+      - agentdoc.execution.snapshot_schema_version
+      - agentdoc.skill.selection_mode
+      - agentdoc.skill.id
+      - agentdoc.skill.version_id
+      - agentdoc.skill.technical_name
+      - agentdoc.skill.candidate_count
+      - agentdoc.skill.selected_count
+      - gen_ai.operation.name
+      - gen_ai.provider.name
+      - gen_ai.request.model
+      - gen_ai.response.model
+      - gen_ai.response.finish_reasons
+      - gen_ai.usage.input_tokens
+      - gen_ai.usage.output_tokens
+      - agentdoc.model.call.sequence
+      - agentdoc.model.usage.source
+      - agentdoc.model.stream
+      - agentdoc.tool.source
+      - agentdoc.tool.technical_name
+      - agentdoc.mcp.server_id
+      - agentdoc.mcp.transport
+      - agentdoc.mcp.external
+      - agentdoc.tool.result_type
+      - agentdoc.tool.result_size_bytes
+      - agentdoc.document.id
+      - agentdoc.document.version
+      - agentdoc.change_request.id
+      - agentdoc.change_request.action
+      - agentdoc.approval.result
+    blocked_values:
+      - '(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+\/=:-]+'
+      - '\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'
+      - '-----BEGIN(?: [A-Z]+)? PRIVATE KEY-----'
+    summary: silent
+    url_sanitizer:
+      enabled: true
+      attributes: [url.full, http.url]
+      sanitize_span_name: true
+    db_sanitizer:
+      sanitize_span_name: true
+      sql:
+        enabled: true
+        attributes: [db.statement, db.query.text]
+      redis:
+        enabled: true
+        attributes: [db.statement, db.query.text]
+
+  batch:
+    send_batch_size: 1024
+    timeout: 1s
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      queue_size: 2048
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+      max_elapsed_time: 30s
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/environment, transform/resource_allowlist, redaction/span_allowlist, batch]
+      exporters: [otlp/jaeger]
+  telemetry:
+    resource:
+      attributes:
+        - name: service.name
+          value: adwb-otel-collector
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+    logs:
+      level: info

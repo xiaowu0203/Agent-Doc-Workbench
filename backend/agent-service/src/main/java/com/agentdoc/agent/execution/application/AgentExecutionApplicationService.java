@@ -9,6 +9,7 @@ import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.agent.execution.runtime.AgentExecutionTerminatedException;
 import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
@@ -50,6 +51,7 @@ public class AgentExecutionApplicationService {
     private final AgentExecutionMapper executionMapper;
     private final ExecutionPreparationService preparationService;
     private final AgentExecutionPersistenceService executionPersistenceService;
+    private final AgentTelemetry agentTelemetry;
 
     /** Agent实际运行时，封装LLM调用、MCP工具调用、文档协作业务逻辑 */
     private final AgentExecutionRuntime runtime;
@@ -64,11 +66,23 @@ public class AgentExecutionApplicationService {
     public void execute(RequestContext context, AgentEmitter emitter) {
         // 从A2A消息的DataPart解析出业务DTO，携带workbenchTaskId、agentId等业务参数
         AgentTaskInputDTO input = extractInput(context.getMessage());
+        // 创建并管理一条埋点 Span，用于链路追踪
+        agentTelemetry.execute(input, () -> executeObserved(context, emitter, input));
+    }
+
+    /**
+     * 执行观察到的任务，处理任务执行流程、状态更新和回调通知
+     * @param context 请求上下文，包含用户输入和任务相关信息
+     * @param emitter 用于发送回调消息的发射器
+     * @param input 任务输入数据传输对象
+     */
+    private void executeObserved(RequestContext context, AgentEmitter emitter, AgentTaskInputDTO input) {
         // 幂等：按workbench业务任务id查询是否已有执行记录
         AgentExecutionEntity existing = findByWorkbenchTaskId(input.workbenchTaskId());
         if (existing != null) {
             // 任务已存在，触发回调task-service 进行任务状态同步
             emitExisting(existing, emitter);
+            markExistingTelemetry(existing);
             return;
         }
 
@@ -84,6 +98,7 @@ public class AgentExecutionApplicationService {
                 throw exception;
             }
             emitExisting(concurrent, emitter);
+            markExistingTelemetry(concurrent);
             return;
         }
         AgentEntity agent = prepared.agent();
@@ -91,6 +106,8 @@ public class AgentExecutionApplicationService {
         SkillExecutionSnapshot skillSnapshot = prepared.skillSnapshot();
         String systemPrompt = prepared.systemPrompt();
         AgentExecutionEntity execution = prepared.execution();
+        // 绑定执行记录与Agent，用于埋点
+        agentTelemetry.bindExecution(execution);
 
         // 触发回调task-service，任务开始执行
         emitter.startWork();
@@ -112,6 +129,8 @@ public class AgentExecutionApplicationService {
             }
             // 执行成功，回填结果，更新数据库状态为COMPLETED
             executionPersistenceService.markCompleted(execution, result);
+            // 记录埋点成功终态
+            agentTelemetry.markCompleted();
             // 触发回调task-service，保存正式结果和元数据（无关状态），跟下面的complete区分开，一个处理数据，一个处理状态
             emitter.addArtifact(
                     // 内容
@@ -127,20 +146,24 @@ public class AgentExecutionApplicationService {
         } catch (AgentExecutionTerminatedException exception) {
             RuntimeException cause = exception.originalCause();
             if (cause instanceof AgentExecutionCanceledException) {
+                agentTelemetry.markCanceled();
                 executionPersistenceService.markCanceled(execution, exception.tokenUsage());
                 emitter.cancel(agentMessage(cause.getMessage()));
             } else {
+                agentTelemetry.markFailed(cause);
                 String errorMessage = safeMessage(cause);
                 executionPersistenceService.markFailed(execution, errorMessage, exception.tokenUsage());
                 emitter.fail(agentMessage(errorMessage));
             }
         } catch (AgentExecutionCanceledException exception) {
             // 捕获主动取消异常，状态置为CANCELED
+            agentTelemetry.markCanceled();
             executionPersistenceService.markCanceled(execution);
             // 触发回调task-service，任务取消了
             emitter.cancel(agentMessage(exception.getMessage()));
         } catch (RuntimeException exception) {
             // 运行时异常：模型报错、工具异常等，状态置为FAILED
+            agentTelemetry.markFailed(exception);
             String errorMessage = safeMessage(exception);
             executionPersistenceService.markFailed(execution, errorMessage);
             // 触发回调task-service，任务失败了
@@ -221,6 +244,27 @@ public class AgentExecutionApplicationService {
             case FAILED -> emitter.fail(agentMessage(execution.getErrorMessage()));
             case CANCELED -> emitter.cancel(agentMessage("任务已取消"));
             default -> emitter.startWork(agentMessage("任务已在执行"));
+        }
+    }
+
+    /**
+     * 对已存在的执行记录回填遥测终态标记。
+     * <p>
+     * 场景：任务非本次实时执行（历史执行记录恢复/后台重刷状态），在当前活跃Span上补充状态属性。
+     * 根据数据库中 AgentExecution 的状态，分别标记 completed / canceled / failed。
+     * 失败场景使用固定错误类型字符串：agentdoc.existing_execution_failed，不携带原始异常信息。
+     * 仅修改Span状态属性，不新建Span。
+     * </p>
+     * @param execution Agent执行数据库实体，读取status字段用于状态回填
+     */
+    private void markExistingTelemetry(AgentExecutionEntity execution) {
+        AgentExecutionStatus status = AgentExecutionStatus.valueOf(execution.getStatus());
+        if (status == AgentExecutionStatus.COMPLETED) {
+            agentTelemetry.markCompleted();
+        } else if (status == AgentExecutionStatus.CANCELED) {
+            agentTelemetry.markCanceled();
+        } else if (status == AgentExecutionStatus.FAILED) {
+            agentTelemetry.markFailed("agentdoc.existing_execution_failed");
         }
     }
 

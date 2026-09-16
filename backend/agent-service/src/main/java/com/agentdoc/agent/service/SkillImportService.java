@@ -10,6 +10,7 @@ import com.agentdoc.agent.skill.archive.SkillPackageValidationException;
 import com.agentdoc.agent.skill.archive.SkillPackageValidator;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.logging.LogSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -158,11 +159,15 @@ public class SkillImportService {
                 try {
                     Files.deleteIfExists(path);
                 } catch (IOException exception) {
-                    log.warn("清理 Skill 导入临时文件失败: path={}", path, exception);
+                    log.warn("清理 Skill 导入临时文件失败: path={}, stack={}",
+                            LogSanitizer.sanitizeText(String.valueOf(path)),
+                            LogSanitizer.sanitizeThrowable(exception));
                 }
             });
         } catch (IOException exception) {
-            log.warn("遍历 Skill 导入临时目录失败: path={}", root, exception);
+            log.warn("遍历 Skill 导入临时目录失败: path={}, stack={}",
+                    LogSanitizer.sanitizeText(String.valueOf(root)),
+                    LogSanitizer.sanitizeThrowable(exception));
         }
     }
 }

@@ -8,6 +8,7 @@ import com.agentdoc.agent.execution.model.TokenUsage;
 import com.agentdoc.agent.execution.runtime.AgentExecutionCanceledException;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.agent.enums.ModelAdapterType;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentExecutionModelCallEntity;
 import com.agentdoc.agent.execution.audit.AgentExecutionModelCallAuditService;
 import com.agentdoc.common.pojo.TokenValue;
@@ -236,7 +237,7 @@ class ProviderNeutralToolLoopTest {
             entity.setSequenceNo(invocation.getArgument(1));
             return entity;
         });
-        return new ProviderNeutralToolLoop(new TokenUsageEstimator(), auditService);
+        return new ProviderNeutralToolLoop(new TokenUsageEstimator(), auditService, new AgentTelemetry());
     }
 
     private ModelAdapter toolOnlyAdapter() {

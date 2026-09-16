@@ -3,6 +3,7 @@ package com.agentdoc.common.handler;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.logging.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -71,7 +72,7 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Result<Void>> handleAccessDenied(AccessDeniedException ex) {
-        log.warn("鉴权失败: {}", ex.getMessage());
+        log.warn("鉴权失败: {}", LogSanitizer.sanitizeText(ex.getMessage()));
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Result.fail(ErrorCode.FORBIDDEN));
     }
 
@@ -90,7 +91,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Result<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         String message = "参数 " + ex.getName() + " 类型不合法";
-        log.warn("参数类型不匹配: {} = {}", ex.getName(), ex.getValue());
+        log.warn("参数类型不匹配: {} = {}", ex.getName(),
+                LogSanitizer.sanitizeField(ex.getName(), ex.getValue()));
         return ResponseEntity.badRequest().body(Result.fail(ErrorCode.BAD_REQUEST, message));
     }
 
@@ -118,10 +120,11 @@ public class GlobalExceptionHandler {
                 case TOO_MANY_REQUESTS -> ErrorCode.TOO_MANY_REQUESTS;
                 case null, default -> ErrorCode.INTERNAL_ERROR;
             };
-            log.warn("HTTP 异常: {} - {}", status, ex.getMessage());
+            log.warn("HTTP 异常: {} - {}", status, LogSanitizer.sanitizeText(ex.getMessage()));
             return ResponseEntity.status(errorResponse.getStatusCode()).body(Result.fail(code));
         }
-        log.error("未处理异常", ex);
+        log.error("未处理异常 type={} stack={}", ex.getClass().getName(),
+                LogSanitizer.sanitizeThrowable(ex));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Result.fail(ErrorCode.INTERNAL_ERROR));
     }

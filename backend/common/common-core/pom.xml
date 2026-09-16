@@ -62,6 +62,11 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <!-- OTel API：读取 Java Agent 注入的当前 Trace/Span，不在应用内创建第二套 SDK。 -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+        </dependency>
         <!-- Feign 客户端注解：DocumentFeign 契约接口直接标注 @FeignClient / HTTP 注解（统一入口）；
              optional 不传递——gateway / auth 依赖 common-core 不会引入 openfeign，
              使用方（task-service）经 common-feign-spring-boot-starter 获得完整 openfeign 依赖 -->

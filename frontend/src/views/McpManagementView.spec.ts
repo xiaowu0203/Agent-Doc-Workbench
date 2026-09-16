@@ -66,7 +66,7 @@ beforeEach(() => {
     records: [server],
     total: 1,
     pageNum: 1,
-    pageSize: 12,
+    pageSize: 8,
   })
   vi.mocked(mcpApi.getMcpServer).mockResolvedValue(server)
 })

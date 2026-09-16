@@ -1,7 +1,6 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
-import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
@@ -123,7 +122,7 @@ public class TokenUsageService {
         boolean estimated = result.inputTokensEstimated() || result.outputTokensEstimated();
 
         // 构建Token明细实体，插入明细记录表
-        TokenUsageDetailEntity detail = TokenUsageConvertor.toDetail(task, result, cost, TraceContext.get());
+        TokenUsageDetailEntity detail = TokenUsageConvertor.toDetail(task, result, cost, task.getTraceId());
         try {
             detailMapper.insert(detail);
         } catch (DuplicateKeyException exception) {

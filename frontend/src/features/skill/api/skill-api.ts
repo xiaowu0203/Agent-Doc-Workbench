@@ -31,7 +31,7 @@ export function searchSkills(
       status,
       sourceType: options.sourceType,
       pageNum: options.pageNum ?? 1,
-      pageSize: options.pageSize ?? 12,
+      pageSize: options.pageSize ?? 8,
     },
     signal: options.signal,
   }).then(
@@ -40,7 +40,7 @@ export function searchSkills(
         records: [],
         total: 0,
         pageNum: options.pageNum ?? 1,
-        pageSize: options.pageSize ?? 12,
+        pageSize: options.pageSize ?? 8,
       },
   )
 }

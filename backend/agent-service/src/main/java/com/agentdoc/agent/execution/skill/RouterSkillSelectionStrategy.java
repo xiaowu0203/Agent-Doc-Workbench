@@ -12,6 +12,7 @@ import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.agent.service.ModelService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.common.utils.JsonUtils;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -197,8 +198,9 @@ public class RouterSkillSelectionStrategy implements SkillSelectionStrategy {
             }
             // 可降级场景：更新micrometer监控指标计数，用于大盘统计路由降级发生频次
             meterRegistry.counter("agent.skill.router.fallback", "reason", fallbackReason).increment();
-            log.warn("Skill Router 降级: agentId={}, modelId={}, reason={}",
-                    context.agent().getId(), routerModel.getId(), fallbackReason, exception);
+            log.warn("Skill Router 降级: agentId={}, modelId={}, reason={}, stack={}",
+                    context.agent().getId(), routerModel.getId(), fallbackReason,
+                    LogSanitizer.sanitizeThrowable(exception));
             /**
              * 降级行为：策略模式标记为 ROUTER_FALLBACK，放弃模型筛选，直接使用Agent全部绑定技能；
              * snapshot记录降级原因，保留现场便于事后审计排查问题

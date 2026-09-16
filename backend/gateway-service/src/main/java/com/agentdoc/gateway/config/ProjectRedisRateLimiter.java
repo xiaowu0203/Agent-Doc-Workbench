@@ -1,6 +1,7 @@
 package com.agentdoc.gateway.config;
 
 import com.agentdoc.common.constant.RedisKeyConstants;
+import com.agentdoc.common.logging.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.ratelimit.AbstractRateLimiter;
 import org.springframework.cloud.gateway.filter.ratelimit.RateLimiter;
@@ -109,14 +110,15 @@ public class ProjectRedisRateLimiter extends AbstractRateLimiter<RedisRateLimite
         @SuppressWarnings("unchecked")
         Flux<List<Long>> flux = (Flux<List<Long>>) (Flux<?>) this.redisTemplate.execute(this.script, keys, scriptArgs);
         return flux.onErrorResume(throwable -> {
-            log.error("Error calling rate limiter lua", throwable);
+            log.error("Error calling rate limiter lua type={} stack={}", throwable.getClass().getName(),
+                    LogSanitizer.sanitizeThrowable(throwable));
             return Flux.just(Arrays.asList(SCRIPT_ALLOWED_VALUE, UNKNOWN_TOKENS_LEFT));
         }).next().map(results -> {
             boolean allowed = results.get(SCRIPT_ALLOWED_INDEX) == SCRIPT_ALLOWED_VALUE;
             Long tokensLeft = results.get(SCRIPT_TOKENS_LEFT_INDEX);
             Response response = new Response(allowed, getHeaders(routeConfig, tokensLeft));
             if (log.isDebugEnabled()) {
-                log.debug("response: " + response);
+                log.debug("response={}", LogSanitizer.sanitizeText(String.valueOf(response)));
             }
             return response;
         });

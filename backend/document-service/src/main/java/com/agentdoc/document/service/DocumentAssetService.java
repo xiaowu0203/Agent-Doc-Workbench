@@ -2,6 +2,7 @@ package com.agentdoc.document.service;
 
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.document.constant.DocumentAssetConstant;
 import com.agentdoc.document.enums.DocStatus;
 import com.agentdoc.document.mapper.DocumentAssetMapper;
@@ -93,7 +94,8 @@ public class DocumentAssetService {
             try {
                 assetStorage.delete(objectKey);
             } catch (RuntimeException cleanupException) {
-                log.warn("文档图片对象清理失败，objectKey={}", objectKey, cleanupException);
+                log.warn("文档图片对象清理失败，objectKey={}，stack={}",
+                        LogSanitizer.sanitizeText(objectKey), LogSanitizer.sanitizeThrowable(cleanupException));
             }
             throw exception;
         } finally {
@@ -103,7 +105,9 @@ public class DocumentAssetService {
                     Files.deleteIfExists(tempFile);
                 } catch (IOException cleanupException) {
                     // 临时文件清理失败不影响已完成的业务结果，但保留可追踪日志。
-                    log.warn("文档图片临时文件清理失败，path={}", tempFile, cleanupException);
+                    log.warn("文档图片临时文件清理失败，path={}，stack={}",
+                            LogSanitizer.sanitizeText(String.valueOf(tempFile)),
+                            LogSanitizer.sanitizeThrowable(cleanupException));
                 }
             }
         }

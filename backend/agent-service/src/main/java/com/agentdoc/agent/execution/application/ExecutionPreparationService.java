@@ -11,6 +11,7 @@ import com.agentdoc.agent.execution.skill.SkillSelectionContext;
 import com.agentdoc.agent.execution.skill.SkillSelectionResult;
 import com.agentdoc.agent.execution.skill.SkillSelectionStrategyRegistry;
 import com.agentdoc.agent.execution.prompt.PromptService;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
@@ -53,6 +54,7 @@ public class ExecutionPreparationService {
     private final SkillSelectionStrategyRegistry skillSelectionStrategyRegistry;
     private final PromptService promptService;
     private final SkillPackageProperties skillPackageProperties;
+    private final AgentTelemetry telemetry;
 
     /**
      * 执行Agent任务前置准备全流程
@@ -78,9 +80,12 @@ public class ExecutionPreparationService {
         ModelEntity model = captured.model();
 
         // 根据Agent配置的【Skill加载模式】获取到对应的【执行器】
-        SkillSelectionResult selection = skillSelectionStrategyRegistry.require(agent.getSkillSelectionMode())
-                // 构建最终要传给大模型的【Skill】结果
-                .select(new SkillSelectionContext(instruction, agent, model, captured.boundSkills()));
+        SkillSelectionResult selection = telemetry.selectSkills(agent.getSkillSelectionMode(),
+                captured.boundSkills().size(), () ->
+                        skillSelectionStrategyRegistry.require(agent.getSkillSelectionMode())
+                                // 构建最终要传给大模型的【Skill】结果
+                                .select(new SkillSelectionContext(
+                                        instruction, agent, model, captured.boundSkills())));
 
         // 生成本次任务隔离的技能执行快照，固化本次要使用的技能集合、MCP工具白名单等，后续Agent配置变更不影响本次任务
         SkillExecutionSnapshot snapshot = skillSnapshotService.snapshot(

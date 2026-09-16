@@ -1,6 +1,8 @@
 package com.agentdoc.gateway.filter;
 
 import com.agentdoc.common.constant.HeaderConstants;
+import com.agentdoc.common.context.TraceContext;
+import com.agentdoc.common.logging.LogSanitizer;
 import io.micrometer.common.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -17,7 +19,7 @@ import java.util.UUID;
 /**
  * Gateway全局访问日志过滤器
  * 功能：
- * 1. 生成/透传链路追踪ID X‑TRACE_ID，传递到下游请求头以及响应头返回给调用方
+ * 1. 读取 OTel Trace ID，作为 X-Trace-Id 响应头与日志兼容值；下游传播由 W3C traceparent 负责
  * 2. 记录网关入口请求日志：请求方法、路径、traceId
  * 3. 请求异常时打印错误日志，携带堆栈信息
  * 4. 请求结束后打印完成日志，记录响应状态码、耗时、traceId
@@ -43,17 +45,15 @@ public class GatewayAccessLogFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
 
-        // 从请求头获取上游传递过来的traceId
-        String inboundTraceId = request.getHeaders().getFirst(HeaderConstants.X_TRACE_ID);
-
-        // 如果上游没有传入traceId，则本地生成无横线UUID作为追踪ID；有则复用上游透传值
-        String traceId = StringUtils.isBlank(inboundTraceId)
+        // Java Agent 已在 WebFlux Filter 前建立服务端 Span；禁用 OTel 时使用本地兼容 ID。
+        String telemetryTraceId = TraceContext.getTelemetryTraceId();
+        String traceId = StringUtils.isBlank(telemetryTraceId)
                 ? UUID.randomUUID().toString().replace("-", "")
-                : inboundTraceId;
+                : telemetryTraceId;
 
-        // 构建新的Request对象，把traceId写入请求头，传递给下游微服务
+        // X-Trace-Id 只作为响应/日志兼容字段，不再向下游传播。
         ServerHttpRequest enrichedRequest = request.mutate()
-                .headers(headers -> headers.set(HeaderConstants.X_TRACE_ID, traceId))
+                .headers(headers -> headers.remove(HeaderConstants.X_TRACE_ID))
                 .build();
 
         // 使用新request构建新的exchange上下文对象
@@ -64,7 +64,8 @@ public class GatewayAccessLogFilter implements GlobalFilter, Ordered {
 
         // 获取请求方法、请求路径，记录入参日志
         String method = request.getMethod().name();
-        String path = request.getURI().getPath();
+        // 防止路径中包含敏感信息，如用户信息、密码等
+        String path = LogSanitizer.sanitizeText(request.getURI().getPath());
 
         // 记录请求开始时间，使用纳秒保证耗时计算精度
         long startedNanos = System.nanoTime();
@@ -75,8 +76,9 @@ public class GatewayAccessLogFilter implements GlobalFilter, Ordered {
         return chain.filter(enrichedExchange)
                 // 捕获链路中的异常，打印错误日志，携带异常堆栈
                 .doOnError(error -> log.error(
-                        "请求异常 method={} path={} durationMs={} traceId={}",
-                        method, path, elapsedMillis(startedNanos), traceId, error))
+                        "请求异常 method={} path={} durationMs={} traceId={} stack={}",
+                        method, path, elapsedMillis(startedNanos), traceId,
+                        LogSanitizer.sanitizeThrowable(error)))
                 // doFinally：无论正常结束、异常、取消，都会执行，打印请求完成日志统计耗时与状态码
                 .doFinally(signalType -> {
                     HttpStatusCode status = enrichedExchange.getResponse().getStatusCode();

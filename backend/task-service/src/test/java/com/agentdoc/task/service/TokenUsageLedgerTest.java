@@ -67,6 +67,7 @@ class TokenUsageLedgerTest {
         assertThat(detail.getCurrency()).isEqualTo("CNY");
         assertThat(detail.getPricingCapturedAt()).isEqualTo(capturedAt);
         assertThat(detail.getEstimatedCost()).isEqualByComparingTo("0.006000");
+        assertThat(detail.getTraceId()).isEqualTo("0123456789abcdef0123456789abcdef");
         assertThat(task.getTokensUsed()).isEqualTo(1_500L);
         assertThat(task.getTokensEstimated()).isTrue();
     }
@@ -83,11 +84,24 @@ class TokenUsageLedgerTest {
         verify(taskMapper, never()).update(any(), any());
     }
 
+    @Test
+    void recordsBusinessUsageWithNullTraceWhenTaskHasNoTelemetryTrace() {
+        TaskEntity task = task();
+        task.setTraceId(null);
+
+        assertThat(service.recordRemote(task, usage())).isTrue();
+
+        ArgumentCaptor<TokenUsageDetailEntity> captor = ArgumentCaptor.forClass(TokenUsageDetailEntity.class);
+        verify(detailMapper).insert(captor.capture());
+        assertThat(captor.getValue().getTraceId()).isNull();
+    }
+
     private TaskEntity task() {
         TaskEntity task = new TaskEntity();
         task.setId(11L);
         task.setSpaceId(1L);
         task.setAgentId(2L);
+        task.setTraceId("0123456789abcdef0123456789abcdef");
         task.setTokenBudget(10_000L);
         return task;
     }

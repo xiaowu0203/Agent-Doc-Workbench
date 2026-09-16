@@ -76,7 +76,7 @@ beforeEach(() => {
     records: [agent],
     total: 6,
     pageNum: 1,
-    pageSize: 9,
+    pageSize: 8,
   })
   vi.mocked(agentApi.getAgentOverviewStats).mockResolvedValue({
     activeAgentCount: 5,

@@ -1,0 +1,70 @@
+name: agent-doc-workbench-observability
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:3.8.0
+    container_name: adwb-opensearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
+    networks:
+      - observability
+
+  jaeger:
+    image: jaegertracing/jaeger:2.20.0
+    container_name: adwb-jaeger
+    restart: unless-stopped
+    command: ["--config", "/etc/jaeger/jaeger.yml"]
+    volumes:
+      - ./jaeger.yml:/etc/jaeger/jaeger.yml:ro
+    ports:
+      - "127.0.0.1:${JAEGER_UI_PORT:-16686}:16686"
+      - "127.0.0.1:${JAEGER_HEALTH_PORT:-13134}:13133"
+      - "127.0.0.1:${JAEGER_METRICS_PORT:-8889}:8888"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - observability
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.160.0
+    container_name: adwb-otel-collector
+    restart: unless-stopped
+    command: ["--config", "/etc/otelcol-contrib/otel-collector.yml"]
+    environment:
+      ADWB_DEPLOYMENT_ENV: ${ADWB_DEPLOYMENT_ENV:-local}
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol-contrib/otel-collector.yml:ro
+    ports:
+      - "127.0.0.1:${OTEL_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${OTEL_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${OTEL_HEALTH_PORT:-13133}:13133"
+      - "127.0.0.1:${OTEL_METRICS_PORT:-8888}:8888"
+    depends_on:
+      - jaeger
+    networks:
+      - observability
+
+networks:
+  observability:
+    name: adwb-observability

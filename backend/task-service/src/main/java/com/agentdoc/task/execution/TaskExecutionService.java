@@ -1,6 +1,7 @@
 package com.agentdoc.task.execution;
 
 import com.agentdoc.common.constant.RedisKeyConstants;
+import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.utils.RedisUtils;
 import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.config.RabbitTaskConfiguration;
@@ -103,7 +104,7 @@ public class TaskExecutionService {
 
         try {
             // 数据库乐观锁：将任务状态由 PENDING 更新为 DISPATCHED，并记录开始时间
-            if (!markDispatched(taskId)) {
+            if (!markDispatched(task)) {
                 channel.basicAck(tag, false);
                 return;
             }
@@ -156,15 +157,20 @@ public class TaskExecutionService {
 
     /**
      * 乐观锁将任务状态由 PENDING 更新为 DISPATCHED，并记录开始时间。
-     * @param taskId 任务ID
+     * @param task 待派发任务
      * @return true 更新成功；false 状态已经不是PENDING，任务被外部变更过
      */
-    private boolean markDispatched(Long taskId) {
-        return taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
-                .eq(TaskEntity::getId, taskId)
+    private boolean markDispatched(TaskEntity task) {
+        LambdaUpdateWrapper<TaskEntity> update = new LambdaUpdateWrapper<TaskEntity>()
+                .eq(TaskEntity::getId, task.getId())
                 .eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
                 .set(TaskEntity::getStatus, TaskStatus.DISPATCHED.getCode())
-                .set(TaskEntity::getStartTime, LocalDateTime.now())) > 0;
+                .set(TaskEntity::getStartTime, LocalDateTime.now());
+        String traceId = task.getTraceId() == null ? TraceContext.getTelemetryTraceId() : null;
+        if (traceId != null) {
+            update.set(TaskEntity::getTraceId, traceId);
+        }
+        return taskMapper.update(null, update) > 0;
     }
 
     /**

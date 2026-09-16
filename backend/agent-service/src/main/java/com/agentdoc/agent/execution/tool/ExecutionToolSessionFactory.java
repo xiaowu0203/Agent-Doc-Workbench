@@ -5,18 +5,20 @@ import com.agentdoc.agent.constant.McpConstant;
 import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.agent.enums.ToolSource;
-import com.agentdoc.agent.execution.tool.CancellationAwareToolCallback;
-import com.agentdoc.agent.execution.tool.AuditingToolCallback;
 import com.agentdoc.agent.execution.skill.SkillCandidate;
 import com.agentdoc.agent.execution.application.AgentExecutionPersistenceService;
 import com.agentdoc.agent.execution.audit.AgentExecutionToolAuditService;
+import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.execution.context.AgentRuntimeContext;
 import com.agentdoc.agent.execution.context.ExternalMcpConnection;
 import com.agentdoc.agent.security.McpEndpointSecurityValidator;
 import com.agentdoc.agent.skill.storage.SkillResourceLoader;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.fasterxml.jackson.core.type.TypeReference;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -78,17 +80,20 @@ public class ExecutionToolSessionFactory {
     private final AgentExecutionToolAuditService toolAuditService;
     private final AgentConfigCryptoService cryptoService;
     private final McpEndpointSecurityValidator endpointValidator;
+    private final AgentTelemetry telemetry;
 
     public ExecutionToolSessionFactory(SkillResourceLoader resourceLoader,
                                        AgentExecutionPersistenceService executionPersistenceService,
                                        AgentExecutionToolAuditService toolAuditService,
                                        AgentConfigCryptoService cryptoService,
-                                       McpEndpointSecurityValidator endpointValidator) {
+                                       McpEndpointSecurityValidator endpointValidator,
+                                       AgentTelemetry telemetry) {
         this.resourceLoader = resourceLoader;
         this.executionPersistenceService = executionPersistenceService;
         this.toolAuditService = toolAuditService;
         this.cryptoService = cryptoService;
         this.endpointValidator = endpointValidator;
+        this.telemetry = telemetry;
     }
 
     /**
@@ -106,13 +111,15 @@ public class ExecutionToolSessionFactory {
         List<TaskScopedMcpTools> sessions = new ArrayList<>();
         try {
             // 打开任务隔离MCP会话，传入MCP服务地址、任务能力、超时、取消信号、允许MCP工具白名单
-            TaskScopedMcpTools workbench = TaskScopedMcpTools.open(
+            // 内部包含：链路追踪-创建MCP连接Span（生命周期管理）
+            TaskScopedMcpTools workbench = telemetry.connectMcp(context.executionId(), null,
+                    () -> TaskScopedMcpTools.open(
                     context.taskInput().mcpServerUrl(),
                     context.taskInput().taskCapability(),
                     timeoutSeconds(context),
                     cancelRequested,
                     context.allowedMcpTools()
-            );
+            ));
             sessions.add(workbench);
             if (workbench.callbacks().isEmpty()) {
                 throw new IllegalStateException(
@@ -124,13 +131,19 @@ public class ExecutionToolSessionFactory {
                             McpConstant.WORKBENCH_SOURCE_KEY, null)));
 
             List<CompletableFuture<OpenedExternal>> futures = new ArrayList<>();
+            Context parentContext = Context.current();
             try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                 for (ExternalMcpConnection connection : context.externalMcpConnections()) {
                     List<String> allowed = allowedExternalTools(connection, context.allowedMcpTools());
                     if (allowed != null && allowed.isEmpty()) continue;
                     endpointValidator.validateExternal(connection.endpointUrl());
-                    futures.add(CompletableFuture.supplyAsync(() -> openExternal(
-                            connection, allowed, timeoutSeconds(context), cancelRequested), executor));
+                    futures.add(CompletableFuture.supplyAsync(() -> {
+                        try (Scope ignored = parentContext.makeCurrent()) {
+                            return telemetry.connectMcp(context.executionId(), connection.serverId(),
+                                    () -> openExternal(connection, allowed,
+                                            timeoutSeconds(context), cancelRequested));
+                        }
+                    }, executor));
                 }
                 CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
             } catch (CompletionException exception) {
@@ -201,7 +214,7 @@ public class ExecutionToolSessionFactory {
             List<ToolCallback> auditedCallbacks = tools.stream()
                     .map(tool -> new AuditingToolCallback(tool.callback(), context.executionId(),
                             tool.source(), tool.sourceKey(), tool.mcpServerId(),
-                            sequence, toolAuditService))
+                            sequence, toolAuditService, telemetry))
                     .map(ToolCallback.class::cast)
                     .toList();
             return new ExecutionToolSession(sessions, auditedCallbacks);
@@ -247,7 +260,8 @@ public class ExecutionToolSessionFactory {
         try {
             session.close();
         } catch (RuntimeException exception) {
-            log.warn("关闭任务级 MCP 会话失败", exception);
+            log.warn("关闭任务级 MCP 会话失败 type={} stack={}", exception.getClass().getName(),
+                    LogSanitizer.sanitizeThrowable(exception));
         }
     }
 

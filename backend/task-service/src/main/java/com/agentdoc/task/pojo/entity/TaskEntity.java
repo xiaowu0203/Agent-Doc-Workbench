@@ -32,6 +32,9 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "Agent 执行 ID")
     private Long agentExecutionId;
 
+    @Schema(description = "任务创建或首次派发时的 OpenTelemetry Trace ID")
+    private String traceId;
+
     @Schema(description = "A2A 任务 ID")
     private String a2aTaskId;
 
