@@ -1,6 +1,7 @@
 package com.agentdoc.common.web;
 
 import com.agentdoc.common.context.TraceContext;
+import com.agentdoc.common.logging.LogSanitizer;
 import io.micrometer.common.util.StringUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -16,12 +17,12 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * TraceId 链路追踪过滤器：生成/复用上游传递的链路ID，设置到 {@link TraceContext} 与日志MDC，写入HTTP响应头返回。
+ * TraceId 兼容过滤器：读取当前 OTel Trace ID，设置到 {@link TraceContext} 与日志MDC，并写入HTTP响应头。
  * <p>执行顺序最高优先级 {@link Ordered#HIGHEST_PRECEDENCE}，请求最先进入、最后退出，保证全链路日志可带上traceId。</p>
  * <p>逻辑：
  * <ul>
- * <li>优先读取请求头 {@link #TRACE_HEADER} 继承上游链路ID；</li>
- * <li>上游未传递则本地生成无横线UUID作为traceId；</li>
+ * <li>优先读取 Java Agent 建立的当前 OTel Trace ID；</li>
+ * <li>OTel 未启用时本地生成无横线 UUID 作为兼容值；</li>
  * <li>存入自定义TraceContext、日志MDC，同时写入响应头返回给调用方；</li>
  * <li>finally块强制清理上下文，避免线程池线程复用导致上下文污染。</li>
  * </ul>
@@ -31,7 +32,7 @@ import java.util.UUID;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @Slf4j
 public class TraceIdFilter extends OncePerRequestFilter {
-    /** HTTP 请求/响应头名称，透传链路TraceId */
+    /** HTTP 响应头兼容名称，不用于内部父子传播。 */
     public static final String TRACE_HEADER = "X-Trace-Id";
 
     /**
@@ -45,9 +46,11 @@ public class TraceIdFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        // 优先从请求头继承上游传递的traceId
-        String traceId = request.getHeader(TRACE_HEADER);
-        // 无上游链路ID，则本地生成，去除UUID横线
+        // Java Agent 已在 Filter 前建立服务端 Span；禁用 OTel 时使用本地兼容 ID。
+        // X-Trace-Id 不再作为父子传播协议，避免与 W3C traceparent 形成两套真相源。
+
+        // 读取当前 OpenTelemetry Trace ID
+        String traceId = TraceContext.getTelemetryTraceId();
         if (StringUtils.isBlank(traceId)) {
             traceId = UUID.randomUUID().toString().replace("-", "");
         }
@@ -57,13 +60,15 @@ public class TraceIdFilter extends OncePerRequestFilter {
         // 响应头回写traceId，方便调用方拿到链路标识排查问题
         response.setHeader(TRACE_HEADER, traceId);
         long startedNanos = System.nanoTime();
-        log.info("收到请求 method={} path={} traceId={}", request.getMethod(), request.getRequestURI(), traceId);
+        // URL路径参数过滤，避免日志打印敏感信息
+        String sanitizedPath = LogSanitizer.sanitizeText(request.getRequestURI());
+        log.info("收到请求 method={} path={} traceId={}", request.getMethod(), sanitizedPath, traceId);
         try {
             filterChain.doFilter(request, response);
         } finally {
             long durationMs = (System.nanoTime() - startedNanos) / 1_000_000L;
             log.info("请求完成 method={} path={} status={} durationMs={} traceId={}",
-                    request.getMethod(), request.getRequestURI(), response.getStatus(), durationMs, traceId);
+                    request.getMethod(), sanitizedPath, response.getStatus(), durationMs, traceId);
             // 清理上下文，防止Tomcat线程池复用线程，上下文残留污染下一次请求
             TraceContext.clear();
             MDC.remove("traceId");

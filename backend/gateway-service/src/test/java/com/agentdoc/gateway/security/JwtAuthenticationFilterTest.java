@@ -1,6 +1,5 @@
 package com.agentdoc.gateway.security;
 
-import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.gateway.config.GatewayAuthProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,9 +40,9 @@ class JwtAuthenticationFilterTest {
         return MockServerWebExchange.from(MockServerHttpRequest.get(path).build());
     }
 
-    /** 白名单路径放行，并注入 X-Trace-Id */
+    /** 白名单路径放行；链路兼容头由 AccessLogFilter 统一处理。 */
     @Test
-    void whitelistPassesThroughWithTraceId() {
+    void whitelistPassesThroughWithoutTraceMutation() {
         MockServerWebExchange exchange = exchange("/api/auth/login");
 
         ServerWebExchange[] captured = new ServerWebExchange[1];
@@ -55,8 +54,8 @@ class JwtAuthenticationFilterTest {
         filter.filter(exchange, chain).block();
 
         assertNull(captured[0].getResponse().getStatusCode(), "白名单不应返回 401");
-        assertTrue(captured[0].getRequest().getHeaders().containsKey(HeaderConstants.X_TRACE_ID),
-                "应注入 X-Trace-Id");
+        assertNull(captured[0].getRequest().getHeaders().getFirst("X-Trace-Id"),
+                "JWT Filter 不应参与链路头传播");
     }
 
     /** 无 Authorization 头 → 401 + Result JSON */

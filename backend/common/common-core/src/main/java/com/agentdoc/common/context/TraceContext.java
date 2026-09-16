@@ -1,8 +1,10 @@
 package com.agentdoc.common.context;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+
 /**
- * TraceId 上下文：贯穿请求链路的链路追踪 ID。
- * 网关/入口生成，业务服务透传与复用。
+ * TraceId 兼容上下文。优先读取 OpenTelemetry 当前 Context；ThreadLocal 只服务于 OTel 关闭时的日志兼容。
  */
 public final class TraceContext {
 
@@ -16,7 +18,28 @@ public final class TraceContext {
     }
 
     public static String get() {
-        return HOLDER.get();
+        String telemetryTraceId = getTelemetryTraceId();
+        return telemetryTraceId == null ? HOLDER.get() : telemetryTraceId;
+    }
+
+    /**
+     * 读取当前 OpenTelemetry Trace ID。
+     *
+     * @return 32 位小写十六进制 Trace ID；未启用 SDK 或当前无有效 Span 时返回 {@code null}
+     */
+    public static String getTelemetryTraceId() {
+        SpanContext spanContext = Span.current().getSpanContext();
+        return spanContext.isValid() ? spanContext.getTraceId() : null;
+    }
+
+    /**
+     * 读取当前 OpenTelemetry Span ID。
+     *
+     * @return 16 位小写十六进制 Span ID；未启用 SDK 或当前无有效 Span 时返回 {@code null}
+     */
+    public static String getTelemetrySpanId() {
+        SpanContext spanContext = Span.current().getSpanContext();
+        return spanContext.isValid() ? spanContext.getSpanId() : null;
     }
 
     public static void clear() {

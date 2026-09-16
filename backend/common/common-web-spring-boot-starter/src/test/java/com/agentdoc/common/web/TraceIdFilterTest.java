@@ -8,6 +8,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 @ExtendWith(OutputCaptureExtension.class)
 class TraceIdFilterTest {
@@ -21,8 +22,8 @@ class TraceIdFilterTest {
 
         filter.doFilter(request, response, (req, resp) -> response.setStatus(200));
 
-        assertTrue(output.getOut().contains(
-                "收到请求 method=POST path=/api/auth/login traceId=trace-123"));
+        assertNotEquals("trace-123", response.getHeader(TraceIdFilter.TRACE_HEADER));
+        assertTrue(output.getOut().contains("收到请求 method=POST path=/api/auth/login traceId="));
         assertTrue(output.getOut().contains(
                 "请求完成 method=POST path=/api/auth/login status=200"));
     }

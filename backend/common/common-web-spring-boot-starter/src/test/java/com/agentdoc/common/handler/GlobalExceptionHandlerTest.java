@@ -4,6 +4,9 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +21,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ExtendWith(OutputCaptureExtension.class)
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
@@ -57,6 +63,15 @@ class GlobalExceptionHandlerTest {
         ResponseEntity<Result<Void>> resp = handler.handleGeneric(new IllegalStateException("boom"));
         assertEquals(500, resp.getStatusCode().value());
         assertEquals(ErrorCode.INTERNAL_ERROR.getCode(), resp.getBody().code());
+    }
+
+    @Test
+    void genericExceptionLogRedactsCredentialMessage(CapturedOutput output) {
+        handler.handleGeneric(new IllegalStateException("Authorization: Bearer log-test-secret"));
+
+        assertTrue(output.getOut().contains("[REDACTED]"));
+        assertTrue(output.getOut().contains(IllegalStateException.class.getName()));
+        assertFalse(output.getOut().contains("log-test-secret"));
     }
 
     @Test

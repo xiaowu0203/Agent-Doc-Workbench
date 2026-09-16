@@ -1,13 +1,12 @@
 package com.agentdoc.gateway.security;
 
 import com.agentdoc.common.api.Result;
-import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.gateway.config.GatewayAuthProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.micrometer.common.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -26,17 +25,15 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.UUID;
 
 /**
  * Gateway全局JWT鉴权过滤器，WebFlux响应式全局过滤器 GlobalFilter。
  * <p>
  * 核心职责：
  * <ul>
- * <li>1. 链路追踪：生成/透传 X‑Trace‑Id 追踪ID，向下游服务传递；</li>
- * <li>2. 白名单放行：OPTIONS预检请求、配置白名单接口直接跳过JWT校验；</li>
- * <li>3. JWT验签：使用JwtDecoder(JWKS公钥)校验Bearer Token合法性（外部门禁，提前 401 无效流量）；</li>
- * <li>4. 鉴权失败：直接返回401 JSON错误响应，不再转发到后端服务。</li>
+ * <li>1. 白名单放行：OPTIONS预检请求、配置白名单接口直接跳过JWT校验；</li>
+ * <li>2. JWT验签：使用JwtDecoder(JWKS公钥)校验Bearer Token合法性（外部门禁，提前 401 无效流量）；</li>
+ * <li>3. 鉴权失败：直接返回401 JSON错误响应，不再转发到后端服务。</li>
  * </ul>
  * <p><strong>不再注入 X-User-* 身份头</strong>：身份由业务服务自行从 Authorization 解析
  * （Spring Security Resource Server），网关只透传原始 Authorization 头。</p>
@@ -73,44 +70,33 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         // 获取请求路径
         String path = request.getURI().getPath();
-        // 获取客户端传入的traceId
-        String inboundTraceId = request.getHeaders().getFirst(HeaderConstants.X_TRACE_ID);
-        // 客户端没传则生成全新traceId，否则复用传入值
-        String traceId = StringUtils.isBlank(inboundTraceId)
-                ? UUID.randomUUID().toString().replace("-", "")
-                : inboundTraceId;
-
-        // -------- 步骤1：注入链路追踪ID --------
-        ServerHttpRequest enriched = request.mutate().headers(headers ->
-                headers.set(HeaderConstants.X_TRACE_ID, traceId)).build();
-        ServerWebExchange cleaned = exchange.mutate().request(enriched).build();
-
-        // -------- 步骤2：OPTIONS跨域预检请求、白名单接口直接放行，跳过鉴权 --------
+        // -------- 步骤1：OPTIONS跨域预检请求、白名单接口直接放行，跳过鉴权 --------
         if (request.getMethod() == HttpMethod.OPTIONS || isWhitelisted(path)) {
-            return chain.filter(cleaned);
+            return chain.filter(exchange);
         }
 
-        // -------- 步骤3：解析并校验Bearer JWT Token --------
+        // -------- 步骤2：解析并校验Bearer JWT Token --------
         String authorization = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
-            return unauthorized(cleaned.getResponse(), "缺少或非法的 Authorization 头");
+            return unauthorized(exchange.getResponse(), "缺少或非法的 Authorization 头");
         }
         // 截取Bearer后面的token字符串
         String token = authorization.substring(BEARER_PREFIX.length()).trim();
         if (token.isEmpty()) {
-            return unauthorized(cleaned.getResponse(), "缺少或非法的 Authorization 头");
+            return unauthorized(exchange.getResponse(), "缺少或非法的 Authorization 头");
         }
 
         try {
             // 使用JWKS公钥解码器验签、解析JWT（无效 token 直接 401，不转发）
             jwtDecoder.decode(token);
         } catch (JwtException e) {
-            log.debug("JWT 校验失败, path={}, reason={}", path, e.getMessage());
-            return unauthorized(cleaned.getResponse(), "无效的访问令牌");
+            log.debug("JWT 校验失败, path={}, reason={}", LogSanitizer.sanitizeText(path),
+                    LogSanitizer.sanitizeText(e.getMessage()));
+            return unauthorized(exchange.getResponse(), "无效的访问令牌");
         }
 
-        // -------- 步骤4：转发（保留原始 Authorization 头，业务服务自行解析身份） --------
-        return chain.filter(cleaned);
+        // -------- 步骤3：转发（保留原始 Authorization 头，业务服务自行解析身份） --------
+        return chain.filter(exchange);
     }
 
     /**
