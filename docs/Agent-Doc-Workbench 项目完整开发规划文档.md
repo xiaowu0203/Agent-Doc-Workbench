@@ -238,7 +238,7 @@ Agent‑Doc‑Workbench：面向个人 / 小团队的 Agent 活文档协作开�
 
 ### 5.4 v0.2+ 后续产品版本
 
-系统能力目录已经作为 v0.1.0 扩展能力完成，不再占用 Phase 7 编号。v0.2.0 正在进行范围准备；Agent Engineering Foundation、工作流、多 Agent 编排、对外 MCP Server、Excalidraw、大文档性能和第三方生态等后续能力，仍需依据独立设计与真实需求排期，不因早期规划自动进入版本范围。
+系统能力目录已经作为 v0.1.0 扩展能力完成，不再占用 Phase 7 编号。v0.2.0 已进入实施阶段，当前已完成 Phase 1–3，覆盖 Run-compatible Execution、OpenTelemetry、Evaluation 与 Safe Replay 基础能力；后续推进离线 Experiment 与 Engineering UX。Memory、Skill Sandbox、OAuth2 / OIDC、工作流、多 Agent 编排、对外 MCP Server、Excalidraw、大文档性能和第三方生态等能力，仍需依据独立设计与真实需求评估，不因早期规划自动进入版本范围。
 
 ## 六、核心业务完整闭环（v0.1 可演示）
 
