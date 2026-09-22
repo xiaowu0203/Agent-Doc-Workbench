@@ -55,9 +55,8 @@ class TokenUsageAggregationServiceTest {
     @Test
     void snapshotsTodayWithOneSpaceSummaryQuery() {
         var service = new TokenUsageAggregationService(detailMapper, usageMapper, snapshotMapper);
-        LocalDate date = LocalDate.of(2026, 9, 23);
-        LocalDate end = date.plusDays(1);
-        when(detailMapper.summarizeBySpaceByDate(date, end)).thenReturn(List.of(
+        when(detailMapper.summarizeBySpaceByDate(
+                any(LocalDate.class), any(LocalDate.class))).thenReturn(List.of(
                 new TokenUsageSnapshotRow(9L, 40L, 60L, new BigDecimal("0.20"), false),
                 new TokenUsageSnapshotRow(10L, 5L, 5L, new BigDecimal("0.10"), true)));
 
@@ -66,8 +65,14 @@ class TokenUsageAggregationServiceTest {
         ArgumentCaptor<List<TokenDailySnapshotEntity>> snapshots =
                 ArgumentCaptor.forClass(List.class);
         verify(snapshotMapper).insertBatch(snapshots.capture());
+        ArgumentCaptor<LocalDate> start = ArgumentCaptor.forClass(LocalDate.class);
+        ArgumentCaptor<LocalDate> end = ArgumentCaptor.forClass(LocalDate.class);
+        verify(detailMapper).summarizeBySpaceByDate(start.capture(), end.capture());
         var first = snapshots.getValue().getFirst();
         var second = snapshots.getValue().getLast();
+        assertThat(end.getValue()).isEqualTo(start.getValue().plusDays(1));
+        assertThat(first.getSnapshotDate()).isEqualTo(start.getValue());
+        assertThat(second.getSnapshotDate()).isEqualTo(start.getValue());
         assertThat(first.getSpaceId()).isEqualTo(9L);
         assertThat(first.getTotalInput()).isEqualTo(40L);
         assertThat(first.getTotalOutput()).isEqualTo(60L);
