@@ -68,9 +68,17 @@ import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_S
 /**
  * Evaluation 目录服务
  * <p>
- * 负责评估数据集、测试用例、评估器的生命周期管理：创建、版本新增、绑定关系修改、版本发布；
+ * 职责：评估数据集、测试用例、评估器的生命周期管理：创建、版本新增、绑定关系修改、版本发布；
  * 统一权限校验、数据合法性校验、版本号自增、内容快照哈希生成；
  * 所有写操作事务化，发布时固化内容Hash，保证版本不可篡改。
+ * </p>
+ * <p>
+ * 领域约束：
+ * 1. 主资源（Dataset/TestCase/Evaluator）支持归档；归档后主资源不能新建版本
+ * 2. 版本分 DRAFT(草稿) / PUBLISHED(已发布) / ARCHIVED(版本归档)
+ * 3. 只有 DRAFT 版本允许修改绑定关系；发布后不可变更，生成稳定 contentHash
+ * 4. 跨资源引用强校验：必须同空间、已发布、父资源未归档
+ * 5. 发布动作是“冻结快照”的唯一入口，hash 基于业务语义快照而非数据库 row md5
  * </p>
  */
 @Service
@@ -91,11 +99,21 @@ public class EvaluationCatalogService {
 
     /**
      * 支持的任务溯源类型：原始任务、重跑任务、评审返工任务
+     * 只有这三类任务可以作为测试用例基线来源，保证来源是人工核验过的有效样本
      */
     private static final Set<String> SUPPORTED_LIVE_LINEAGES = Set.of("ORIGINAL", "RERUN", "REVIEW_REWORK");
 
+    // ===================== 数据集查询 =====================
+
+    /**
+     * 分页查询数据集主资源
+     * @param param 查询参数（空间、关键词、归档过滤、分页）
+     * @return 分页VO
+     */
     public PageVO<EvaluationDatasetVO> searchDatasets(EvaluationResourceSearchParam param) {
+        // 参数自校验（pageNum/pageSize、keyword长度）
         param.validate();
+        // 空间维度读权限校验
         spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
         Page<EvaluationDatasetEntity> result = datasetMapper.selectPage(page(param),
                 new LambdaQueryWrapper<EvaluationDatasetEntity>()
@@ -107,6 +125,9 @@ public class EvaluationCatalogService {
                 result.getTotal(), param);
     }
 
+    /**
+     * 分页查询测试用例主资源
+     */
     public PageVO<EvaluationTestCaseVO> searchTestCases(EvaluationResourceSearchParam param) {
         param.validate();
         spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
@@ -120,6 +141,9 @@ public class EvaluationCatalogService {
                 result.getTotal(), param);
     }
 
+    /**
+     * 分页查询评估器主资源；支持按名称或 evaluatorKey 模糊搜索
+     */
     public PageVO<EvaluatorVO> searchEvaluators(EvaluationResourceSearchParam param) {
         param.validate();
         spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
@@ -135,6 +159,12 @@ public class EvaluationCatalogService {
                 result.getTotal(), param);
     }
 
+    // ===================== 版本查询 =====================
+
+    /**
+     * 分页查询数据集版本
+     * parentId = datasetId，用于查某个数据集下所有版本
+     */
     public PageVO<DatasetVersionVO> searchDatasetVersions(EvaluationVersionSearchParam param) {
         param.validate();
         spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
@@ -150,6 +180,10 @@ public class EvaluationCatalogService {
                 result.getTotal(), param);
     }
 
+    /**
+     * 分页查询测试用例版本
+     * parentId = testCaseId
+     */
     public PageVO<TestCaseVersionVO> searchTestCaseVersions(EvaluationVersionSearchParam param) {
         param.validate();
         spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
@@ -165,6 +199,10 @@ public class EvaluationCatalogService {
                 result.getTotal(), param);
     }
 
+    /**
+     * 分页查询评估器版本
+     * parentId = evaluatorId
+     */
     public PageVO<EvaluatorVersionVO> searchEvaluatorVersions(EvaluationVersionSearchParam param) {
         param.validate();
         spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
@@ -179,6 +217,8 @@ public class EvaluationCatalogService {
         return PageVO.of(result.getRecords().stream().map(EvaluatorVersionVO::from).toList(),
                 result.getTotal(), param);
     }
+
+    // ===================== 单条详情查询 =====================
 
     public EvaluationDatasetVO getDataset(Long id) {
         EvaluationDatasetEntity entity = datasetMapper.selectById(id);
@@ -216,6 +256,12 @@ public class EvaluationCatalogService {
         return EvaluatorVersionVO.from(entity);
     }
 
+    // ===================== 归档（主资源/版本） =====================
+
+    /**
+     * 归档数据集主资源（软删除语义，标记 archived=true）
+     * 归档后不能新建版本，但历史已发布版本仍然可以被评估运行引用
+     */
     @Transactional
     public EvaluationDatasetVO archiveDataset(Long id) {
         EvaluationDatasetEntity entity = datasetMapper.selectById(id);
@@ -243,6 +289,10 @@ public class EvaluationCatalogService {
         return EvaluatorVO.from(entity);
     }
 
+    /**
+     * 归档【版本】：版本级别的归档，仅 PUBLISHED 版本可归档
+     * 和主资源归档是两套独立开关
+     */
     @Transactional
     public DatasetVersionVO archiveDatasetVersion(Long id) {
         EvaluationDatasetVersionEntity entity = datasetVersionMapper.selectById(id);
@@ -273,6 +323,8 @@ public class EvaluationCatalogService {
         return EvaluatorVersionVO.from(entity);
     }
 
+    // ===================== 创建主资源 =====================
+
     /**
      * 创建评估数据集
      *
@@ -299,7 +351,7 @@ public class EvaluationCatalogService {
      *
      * @param dto 数据集版本创建入参
      * @return 数据集版本VO
-     * @apiNote 版本初始状态为草稿DRAFT；自动递增版本号
+     * @apiNote 版本初始状态为草稿DRAFT；自动递增版本号；刚创建无绑定用例，后续通过 replaceDatasetCases 添加
      */
     @Transactional
     public DatasetVersionVO createDatasetVersion(DatasetVersionCreateDTO dto) {
@@ -323,21 +375,25 @@ public class EvaluationCatalogService {
      * @param versionId 数据集版本ID
      * @param dto 用例绑定DTO
      * @return 数据集版本VO
-     * @apiNote 约束：不可重复绑定同一个测试用例版本；只能绑定同空间已发布的测试用例版本
+     * @apiNote 约束：不可重复绑定同一个测试用例版本；只能绑定同空间已发布的测试用例版本；
+     *          发布前这里只是草稿内存状态，contentHash 在 publish 时才计算
      */
     @Transactional
     public DatasetVersionVO replaceDatasetCases(Long versionId, DatasetCaseBindingsDTO dto) {
         EvaluationDatasetVersionEntity version = requireDraftDatasetVersion(versionId);
         spaceAccessService.requirePermission(version.getSpaceId(), EVALUATION_MANAGE);
+        // 校验入参无重复用例版本
         if (dto.cases().stream().map(DatasetCaseBindingDTO::testCaseVersionId).distinct().count() != dto.cases().size()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "测试用例版本不能重复绑定");
         }
         List<EvaluationTestCaseVersionEntity> cases = testCaseVersionMapper.selectBatchIds(
                 dto.cases().stream().map(DatasetCaseBindingDTO::testCaseVersionId).toList());
+        // 取出所有父用例主资源，校验主资源未归档
         Set<Long> activeTestCaseIds = testCaseMapper.selectBatchIds(cases.stream()
                         .map(EvaluationTestCaseVersionEntity::getTestCaseId).collect(Collectors.toSet())).stream()
                 .filter(value -> !Boolean.TRUE.equals(value.getArchived()))
                 .map(EvaluationTestCaseEntity::getId).collect(Collectors.toSet());
+        // 校验：全部存在、同空间、版本已发布、父用例未归档
         if (cases.size() != dto.cases().size() || cases.stream().anyMatch(value ->
                 !version.getSpaceId().equals(value.getSpaceId())
                         || !EvaluationVersionStatus.PUBLISHED.name().equals(value.getStatus())
@@ -347,6 +403,7 @@ public class EvaluationCatalogService {
         // 清空旧绑定
         datasetCaseMapper.delete(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
                 .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, versionId));
+        // 批量插入新绑定
         for (DatasetCaseBindingDTO binding : dto.cases()) {
             EvaluationDatasetCaseEntity entity = new EvaluationDatasetCaseEntity();
             entity.setId(IdWorker.getId());
@@ -365,7 +422,8 @@ public class EvaluationCatalogService {
      *
      * @param id 数据集版本ID
      * @return 数据集版本VO
-     * @apiNote 校验：至少存在一条启用状态的绑定用例；基于绑定用例快照生成内容Hash
+     * @apiNote 校验：至少存在一条启用状态的绑定用例；基于绑定用例快照生成内容Hash；
+     *          发布是不可逆操作；contentHash 是评估运行时用来判断基线是否变更的唯一凭证
      */
     @Transactional
     public DatasetVersionVO publishDatasetVersion(Long id) {
@@ -375,6 +433,7 @@ public class EvaluationCatalogService {
         if (!version.getSpaceId().equals(dataset.getSpaceId())) {
             throw new BusinessException(ErrorCode.CONFLICT, "DatasetVersion 空间归属不一致");
         }
+        // 按 sortOrder 有序取出绑定关系（顺序参与hash计算，顺序不同hash不同）
         List<EvaluationDatasetCaseEntity> bindings = datasetCaseMapper.selectList(
                 new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
                         .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, id)
@@ -388,12 +447,14 @@ public class EvaluationCatalogService {
                         .map(EvaluationTestCaseVersionEntity::getTestCaseId).collect(Collectors.toSet())).stream()
                 .filter(value -> !Boolean.TRUE.equals(value.getArchived()))
                 .map(EvaluationTestCaseEntity::getId).collect(Collectors.toSet());
+        // 二次校验引用有效性（防止发布过程中别的事务归档了资源）
         if (caseVersions.size() != bindings.size() || caseVersions.stream().anyMatch(value ->
                 !version.getSpaceId().equals(value.getSpaceId())
                         || !EvaluationVersionStatus.PUBLISHED.name().equals(value.getStatus())
                         || !activeTestCaseIds.contains(value.getTestCaseId()))) {
             throw new BusinessException(ErrorCode.CONFLICT, "DatasetVersion 引用了已归档或不可用的 TestCaseVersion");
         }
+        // 生成稳定快照哈希，顺序敏感
         version.setContentHash(StableSnapshotUtils.snapshotHash(CONTENT_HASH_SCHEMA_VERSION,
                 bindings.stream().map(value -> new DatasetCaseHash(value.getTestCaseVersionId(),
                         value.getSortOrder(), value.getEnabled())).toList()));
@@ -404,10 +465,7 @@ public class EvaluationCatalogService {
     }
 
     /**
-     * 创建测试用例
-     *
-     * @param dto 测试用例创建入参
-     * @return 测试用例VO
+     * 创建测试用例主资源
      */
     @Transactional
     public EvaluationTestCaseVO createTestCase(EvaluationTestCaseCreateDTO dto) {
@@ -429,7 +487,8 @@ public class EvaluationCatalogService {
      *
      * @param dto 测试用例版本创建入参
      * @return 测试用例版本VO
-     * @apiNote 预期JSON提前做语法校验；保存任务输入/执行快照、文档版本与内容哈希
+     * @apiNote 预期JSON提前做语法校验；保存任务输入/执行快照、文档版本与内容哈希；
+     *          刚创建为 DRAFT，评估器绑定后续通过 replaceTestCaseEvaluators 设置
      */
     @Transactional
     public TestCaseVersionVO createTestCaseVersion(TestCaseVersionCreateDTO dto) {
@@ -438,6 +497,7 @@ public class EvaluationCatalogService {
         if (!TaskExecutionMode.LIVE.name().equals(dto.sourceType())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "首版测试用例仅支持 LIVE 来源");
         }
+        // 远程调用任务服务，拉取回放基线元数据
         ReplaySourceVO source = requireData(taskFeign.getReplaySource(dto.sourceTaskId(), testCase.getSpaceId()));
         if (!source.replayable()) {
             throw new BusinessException(ErrorCode.CONFLICT, "来源任务不可 Replay：" + source.reasonCode());
@@ -448,7 +508,7 @@ public class EvaluationCatalogService {
         if (source.documentVersionSnapshot() == null || source.documentContentSha256() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "来源任务缺少冻结文档版本或内容 hash");
         }
-        // 校验预期JSON语法合法
+        // 预校验预期输出 JSON 语法合法
         JsonUtils.parse(dto.expectedJson(), Object.class);
         EvaluationTestCaseVersionEntity entity = new EvaluationTestCaseVersionEntity();
         entity.setId(IdWorker.getId());
@@ -502,12 +562,13 @@ public class EvaluationCatalogService {
                         || !activeEvaluatorIds.contains(value.getEvaluatorId()))) {
             throw new BusinessException(ErrorCode.CONFLICT, "测试用例只能绑定同空间已发布评估器版本");
         }
-        // 校验绑定上预期JSON语法
+        // 校验绑定行上自定义预期JSON语法
         dto.evaluators().stream().map(TestCaseEvaluatorBindingDTO::expectedJson)
                 .filter(value -> value != null && !value.isBlank()).forEach(value -> JsonUtils.parse(value, Object.class));
         // 清空旧绑定
         testCaseEvaluatorMapper.delete(new LambdaQueryWrapper<TestCaseEvaluatorEntity>()
                 .eq(TestCaseEvaluatorEntity::getTestCaseVersionId, versionId));
+        // 插入新绑定
         for (TestCaseEvaluatorBindingDTO binding : dto.evaluators()) {
             TestCaseEvaluatorEntity entity = new TestCaseEvaluatorEntity();
             entity.setId(IdWorker.getId());
@@ -526,7 +587,8 @@ public class EvaluationCatalogService {
      *
      * @param id 测试用例版本ID
      * @return 测试用例版本VO
-     * @apiNote 至少绑定一个评估器；逐个调用评估器契约校验器验证预期输出结构；合并所有绑定信息生成快照Hash
+     * @apiNote 至少绑定一个评估器；逐个调用评估器契约校验器验证预期输出结构；合并所有绑定信息生成快照Hash；
+     *          发布后基线固定，后续评估运行都复用这套输入+预期+评估器集合
      */
     @Transactional
     public TestCaseVersionVO publishTestCaseVersion(Long id) {
@@ -550,7 +612,7 @@ public class EvaluationCatalogService {
                         .map(EvaluatorVersionEntity::getEvaluatorId).collect(Collectors.toSet())).stream()
                 .filter(value -> !Boolean.TRUE.equals(value.getArchived()))
                 .map(EvaluatorEntity::getId).collect(Collectors.toSet());
-        // 逐个校验评估器版本存在性、空间归属、状态与预期契约
+        // 逐个校验评估器契约：评估器存在、状态合法、预期输出符合评估器定义 schema
         for (TestCaseEvaluatorEntity binding : bindings) {
             EvaluatorVersionEntity evaluatorVersion = evaluatorVersions.get(binding.getEvaluatorVersionId());
             if (evaluatorVersion == null || !version.getSpaceId().equals(evaluatorVersion.getSpaceId())
@@ -559,6 +621,7 @@ public class EvaluationCatalogService {
                 throw new BusinessException(ErrorCode.CONFLICT,
                         "TestCaseVersion 引用了不可用的 EvaluatorVersion");
             }
+            // 优先取绑定行上的预期；为空则回退到用例版本全局 expectedJson
             String expectedJson = binding.getExpectedJson() == null || binding.getExpectedJson().isBlank()
                     ? version.getExpectedJson() : binding.getExpectedJson();
             evaluatorContractValidator.validateExpected(evaluatorVersion.getEvaluatorKey(), expectedJson);
@@ -566,6 +629,7 @@ public class EvaluationCatalogService {
         Object expected = JsonUtils.parse(version.getExpectedJson(), Object.class);
         List<TestCaseEvaluatorHash> evaluatorHashes = bindings.stream().map(value -> new TestCaseEvaluatorHash(
                 value.getEvaluatorVersionId(), parseOptionalJson(value.getExpectedJson()), value.getSortOrder())).toList();
+        // 构建完整基线快照，计算全局 contentHash
         version.setContentHash(StableSnapshotUtils.snapshotHash(CONTENT_HASH_SCHEMA_VERSION,
                 new TestCaseHash(version.getSourceTaskId(), version.getSourceExecutionId(),
                         version.getSourceInputSchemaVersion(), version.getSourceInputHash(),
@@ -584,7 +648,8 @@ public class EvaluationCatalogService {
      *
      * @param dto 评估器创建入参
      * @return 评估器VO
-     * @apiNote 仅允许创建内置评估器，key必须在 EvaluationConstant.BUILT_IN_EVALUATORS 内
+     * @apiNote 仅允许创建内置评估器，key必须在 EvaluationConstant.BUILT_IN_EVALUATORS 内；
+     *          内置评估器是系统预置实现，用户只能配置版本参数，不能自定义代码实现
      */
     @Transactional
     public EvaluatorVO createEvaluator(EvaluatorCreateDTO dto) {
@@ -609,7 +674,8 @@ public class EvaluationCatalogService {
      *
      * @param dto 评估器版本创建入参
      * @return 评估器版本VO
-     * @apiNote 配置JSON语法校验；版本初始状态DRAFT；固化实现版本标识
+     * @apiNote 配置JSON语法校验；版本初始状态DRAFT；固化实现版本标识；
+     *          implementationVersion 标记评估器运行时代码版本，用于灰度与兼容性排查
      */
     @Transactional
     public EvaluatorVersionVO createEvaluatorVersion(EvaluatorVersionCreateDTO dto) {
@@ -651,6 +717,7 @@ public class EvaluationCatalogService {
         if (!EvaluationVersionStatus.DRAFT.name().equals(version.getStatus())) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有 DRAFT 评估器版本可以发布");
         }
+        // 契约校验：configJson、resultSchemaVersion 符合该 evaluatorKey 的规范
         evaluatorContractValidator.validateVersion(version.getEvaluatorKey(), version.getConfigSchemaVersion(),
                 version.getConfigJson(), version.getResultSchemaVersion());
         version.setContentHash(StableSnapshotUtils.snapshotHash(CONTENT_HASH_SCHEMA_VERSION,
@@ -748,18 +815,30 @@ public class EvaluationCatalogService {
         }
         return value;
     }
+
+    /**
+     * 读权限校验：资源存在且有 EVALUATION_READ
+     */
     private void requireReadable(Long spaceId, String resource) {
         if (spaceId == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, resource + " 不存在");
         }
         spaceAccessService.requirePermission(spaceId, EVALUATION_READ);
     }
+
+    /**
+     * 管理权限校验：资源存在且有 EVALUATION_MANAGE
+     */
     private void requireManage(Long spaceId, String resource) {
         if (spaceId == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, resource + " 不存在");
         }
         spaceAccessService.requirePermission(spaceId, EVALUATION_MANAGE);
     }
+
+    /**
+     * 版本归档前置校验：只有 PUBLISHED 版本允许归档
+     */
     private void requireArchivable(Long spaceId, String status, String resource) {
         requireManage(spaceId, resource);
         if (EvaluationVersionStatus.ARCHIVED.name().equals(status)) {
@@ -835,16 +914,19 @@ public class EvaluationCatalogService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    // ========== 快照Hash辅助Record，用于构建稳定签名 ==========
-    /** 数据集绑定用例快照结构体 */
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
 
+    /**
+     * 转换为MyBatis-Plus分页对象
+     */
     private <T> Page<T> page(com.agentdoc.common.pojo.dto.PageParam param) {
         return new Page<>(param.getPageNum(), param.getPageSize());
     }
 
+    // ========== 快照Hash辅助Record，用于构建稳定签名 ==========
+    /** 数据集绑定用例快照结构体 */
     private record DatasetCaseHash(Long testCaseVersionId, Integer sortOrder, Boolean enabled) { }
 
     /** 评估器版本快照结构体 */

@@ -32,9 +32,6 @@ import org.springframework.http.HttpHeaders;
 
 import java.util.List;
 
-/**
- * Task 服务内部能力校验契约。
- */
 @FeignClient(name = "task-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface TaskFeign {
 

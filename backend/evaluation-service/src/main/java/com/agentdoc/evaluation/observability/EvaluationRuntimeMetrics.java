@@ -11,8 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 
 /**
- * Evaluation Worker 的运行健康指标。这里的 Micrometer 指标不属于领域 Metric，
- * 不写入 {@code evaluation_metric}，也不参与 Phase 4 实验比较。
+ * Evaluation Worker 的运行健康指标。此处的 Micrometer 指标不属于领域 Metric，
  */
 @Component
 public class EvaluationRuntimeMetrics {

@@ -7,8 +7,6 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 /**
  * Evaluation Worker 能力令牌校验器
  * 用于校验JWT令牌是否为合法的Evaluation Worker能力凭证，校验演员类型、作用域、服务标识、受众等声明
- *
- * @author xxx
  */
 public class EvaluationWorkerCapabilityVerifier {
     /**
@@ -42,7 +40,7 @@ public class EvaluationWorkerCapabilityVerifier {
     public Jwt verify(String token) {
         // 解码token，获取JWT载荷信息
         Jwt jwt = decoder.decode(token);
-        // 校验各项声明：演员类型、作用域、服务标识、受众
+        // 校验各项声明：类型、作用域、服务标识、受众
         if (!JwtConstant.ACTOR_SERVICE.equals(jwt.getClaimAsString(JwtConstant.CLAIM_ACTOR_TYPE))
                 || !JwtConstant.SCOPE_SERVICE.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SCOPE))
                 || !JwtConstant.EVALUATION_SERVICE.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SERVICE))

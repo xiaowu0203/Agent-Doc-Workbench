@@ -62,18 +62,27 @@ public class A2aRequestAuthorizationService {
         }
         Jwt jwt = currentCapabilityJwt();
 
-        // 逐项比对JWT声明与消息携带的业务ID
-        if (!matches(jwt, JwtConstant.CLAIM_TASK_ID, input.workbenchTaskId())
+        /**
+         * 校验：
+         *    - JWT中绑定的工作台任务ID与入参任务ID一致
+         *    - JWT中绑定的Agent实例ID与入参AgentID一致
+         *    - JWT中绑定的空间ID与入参空间ID一致
+         *    - JWT中绑定的文档ID与入参文档ID一致
+         *    - JWT中绑定的执行模式与入参执行模式一致
+         *    - JWT中绑定的文档版本快照标识与入参一致
+         *    - JWT中绑定的文档内容SHA256哈希与入参一致，防文档篡改
+         *    - JWT中绑定的请求快照Schema版本与入参一致
+         *    - JWT中绑定的入参快照哈希，防止请求参数被篡改
+         */
+        if (
+            !matches(jwt, JwtConstant.CLAIM_TASK_ID, input.workbenchTaskId())
                 || !matches(jwt, JwtConstant.CLAIM_AGENT_ID, input.agentId())
                 || !matches(jwt, JwtConstant.CLAIM_SPACE_ID, input.spaceId())
                 || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_ID, input.documentId())
                 || !matches(jwt, JwtConstant.CLAIM_EXECUTION_MODE, input.executionMode())
-                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT,
-                input.documentVersionSnapshot())
-                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256,
-                input.documentContentSha256())
-                || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION,
-                input.inputSnapshotSchemaVersion())
+                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, input.documentVersionSnapshot())
+                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, input.documentContentSha256())
+                || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, input.inputSnapshotSchemaVersion())
                 || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, input.inputSnapshotHash())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "A2A 请求能力令牌范围不匹配");
         }

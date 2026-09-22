@@ -3,7 +3,7 @@ package com.agentdoc.common.feign.dto;
 import java.util.List;
 
 /**
- * Phase 4 获取标准 Metric 对比输入的查询契约。
+ * 获取标准 Metric 对比输入的查询契约。
  *
  * @param spaceId 所属空间 ID
  * @param runIds 需要比较的 EvaluationRun ID

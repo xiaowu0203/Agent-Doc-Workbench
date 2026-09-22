@@ -13,9 +13,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-/**
- * Auth 服务内部认证契约。
- */
 @FeignClient(name = "auth-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface AuthFeign {
     /**

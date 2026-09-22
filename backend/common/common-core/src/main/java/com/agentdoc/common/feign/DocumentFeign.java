@@ -20,14 +20,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-/**
- * 文档服务 Feign 客户端契约（统一入口：服务间调用一律经本接口，禁止业务服务自建 FeignClient 或直连他域 Mapper）。
- * <p>实现由 document-service 的受保护接口承担；调用方（如 task-service）直接注入本接口，经网关调用，
- * 当前请求 JWT 由 common-feign 默认装配的拦截器透传，身份在链路上连续、不可伪造。</p>
- * <p>契约统一 {@link Result} 封装：成功 code=0 + data；业务失败 code=业务错误码 + message（HTTP 200），
- * 调用方按 {@code Result.code} 判断，网络层异常仍抛 {@code FeignException}。</p>
- * <p>Phase 2 首个跨服务调用（审批合并 + 文档引用查询）；Phase 3 追加权限校验等契约。</p>
- */
 @FeignClient(name = "document-service",
         url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface DocumentFeign {

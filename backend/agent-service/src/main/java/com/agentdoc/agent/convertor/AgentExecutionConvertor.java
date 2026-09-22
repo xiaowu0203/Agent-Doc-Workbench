@@ -97,7 +97,16 @@ public final class AgentExecutionConvertor {
         return SnapshotCanonicalV3Utils.hashEnvelope(canonicalJson);
     }
 
-    /** 生成可恢复、非秘密的 execution snapshot v3 canonical envelope。 */
+    /**
+     * 生成可恢复、非机密的执行快照 v3 标准报文。
+     * <p>
+     * 将 Agent 执行实体的关键上下文快照字段组装为 {@link ExecutionSnapshot}，
+     * 再通过 V3 规范化工具输出稳定序的规范 JSON 信封，用于后续哈希校验、JWT claim 绑定与执行恢复。
+     * 注：快照仅保存配置快照/哈希，不包含会话密钥、用户凭证等敏感机密数据。
+     *
+     * @param execution Agent 执行记录实体
+     * @return v3 规范化后的执行快照标准字符串（canonical envelope）
+     */
     public static String snapshotJson(AgentExecutionEntity execution) {
         ExecutionSnapshot snapshot = new ExecutionSnapshot(
                 execution.getAgentId(), execution.getAgentNameSnapshot(), execution.getAgentConfigVersion(),

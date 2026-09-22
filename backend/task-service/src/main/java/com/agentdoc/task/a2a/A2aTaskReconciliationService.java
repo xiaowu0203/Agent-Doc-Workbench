@@ -85,9 +85,10 @@ public class A2aTaskReconciliationService {
             // HTTP调用Agent‑Server拉取远端最新任务信息
             Task remoteTask = a2aTaskClient.get(task.getA2aTaskId(), capability);
             if (remoteTask != null) {
-                // HTTP调用Agent‑Server拉取远端最新任务信息
+                // token设置到上下文中
                 AuthorizationContext.set("Bearer " + capability);
                 TaskCapabilityContext.set(capability);
+                // HTTP调用Agent‑Server拉取远端最新任务信息
                 synchronizationService.synchronize(task, remoteTask);
             }
         } catch (RuntimeException exception) {
@@ -95,6 +96,7 @@ public class A2aTaskReconciliationService {
             log.warn("A2A 任务状态对账失败，taskId={}，stack={}", task.getId(),
                     LogSanitizer.sanitizeThrowable(exception));
         } finally {
+            // 清理上下文token
             AuthorizationContext.clear();
             TaskCapabilityContext.clear();
             // 无论成功失败，释放分布式锁
