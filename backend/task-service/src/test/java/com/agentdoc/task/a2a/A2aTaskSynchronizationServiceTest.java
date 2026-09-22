@@ -7,9 +7,11 @@ import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.service.TokenUsageService;
+import com.agentdoc.task.service.ExecutionArtifactService;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
@@ -49,8 +51,10 @@ class A2aTaskSynchronizationServiceTest {
         DocumentFeign documentFeign = mock(DocumentFeign.class);
         TokenUsageService tokenUsageService = mock(TokenUsageService.class);
         TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
+        ExecutionArtifactService executionArtifactService = mock(ExecutionArtifactService.class);
         A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
-                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService);
+                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService,
+                executionArtifactService);
         TaskEntity task = activeTask();
         Task remoteTask = completedTask();
 
@@ -68,6 +72,65 @@ class A2aTaskSynchronizationServiceTest {
         verify(tokenUsageService).recordRemote(any(), any());
         verify(documentFeign, never()).finalizeDraftAgentChanges(any(), any());
         verify(documentFeign, never()).discardDraftAgentChanges(any(), any());
+    }
+
+    @Test
+    void isolatedCompletionCapturesSummaryAndNeverFinalizesDraft() {
+        TaskMapper taskMapper = mock(TaskMapper.class);
+        AgentFeign agentFeign = mock(AgentFeign.class);
+        DocumentFeign documentFeign = mock(DocumentFeign.class);
+        TokenUsageService tokenUsageService = mock(TokenUsageService.class);
+        TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
+        ExecutionArtifactService executionArtifactService = mock(ExecutionArtifactService.class);
+        A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
+                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService,
+                executionArtifactService);
+        TaskEntity task = activeTask();
+        task.setDocumentType(DocType.DRAFT.getCode());
+        task.setExecutionMode(TaskExecutionMode.ISOLATED.name());
+        when(taskMapper.update(any(), any())).thenReturn(1);
+        when(agentFeign.getExecutionTokenUsage(task.getId())).thenReturn(Result.ok(
+                new AgentExecutionTokenUsageVO(12L, 30L, 1L, BigDecimal.ZERO, BigDecimal.ZERO,
+                        "CNY", 1, LocalDateTime.now(), 3L, false, null, false, 2L, false)));
+
+        assertThat(service.synchronize(task, completedTask())).isTrue();
+
+        verify(executionArtifactService).appendResultSummary(task);
+        verify(documentFeign, never()).finalizeDraftAgentChanges(any(), any());
+        verify(documentFeign, never()).discardDraftAgentChanges(any(), any());
+    }
+
+    @Test
+    void isolatedCompletionBackfillsExecutionIdFromAuthoritativeUsageProjection() {
+        TaskMapper taskMapper = mock(TaskMapper.class);
+        AgentFeign agentFeign = mock(AgentFeign.class);
+        DocumentFeign documentFeign = mock(DocumentFeign.class);
+        TokenUsageService tokenUsageService = mock(TokenUsageService.class);
+        TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
+        ExecutionArtifactService executionArtifactService = mock(ExecutionArtifactService.class);
+        A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
+                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService,
+                executionArtifactService);
+        TaskEntity task = activeTask();
+        task.setExecutionMode(TaskExecutionMode.ISOLATED.name());
+        when(taskMapper.update(any(), any())).thenReturn(1);
+        when(agentFeign.getExecutionTokenUsage(task.getId())).thenReturn(Result.ok(
+                new AgentExecutionTokenUsageVO(12L, 30L, 1L, BigDecimal.ZERO, BigDecimal.ZERO,
+                        "CNY", 1, LocalDateTime.now(), 3L, false, null, false, 2L, false)));
+
+        Task remoteTask = Task.builder(completedTask())
+                .artifacts(List.of(Artifact.builder()
+                        .artifactId("summary")
+                        .name(A2aMetadataConstant.EXECUTION_SUMMARY_ARTIFACT)
+                        .parts(List.of(new TextPart("done")))
+                        .metadata(Map.of(A2aMetadataConstant.INPUT_TOKENS, 3L,
+                                A2aMetadataConstant.OUTPUT_TOKENS, 2L))
+                        .build()))
+                .build();
+
+        assertThat(service.synchronize(task, remoteTask)).isTrue();
+        assertThat(task.getAgentExecutionId()).isEqualTo(12L);
+        verify(executionArtifactService).appendResultSummary(task);
     }
 
     private TaskEntity activeTask() {

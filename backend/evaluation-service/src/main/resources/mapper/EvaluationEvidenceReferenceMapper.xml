@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.evaluation.mapper.EvaluationEvidenceReferenceMapper">
+    <insert id="insertBatch">
+        INSERT INTO evaluation_evidence_reference
+            (id, case_attempt_id, result_id, space_id, evidence_type, business_id,
+             content_hash, summary, locator_json, created_at)
+        VALUES
+        <foreach collection="entities" item="entity" separator=",">
+            (#{entity.id}, #{entity.caseAttemptId}, #{entity.resultId}, #{entity.spaceId},
+             #{entity.evidenceType}, #{entity.businessId}, #{entity.contentHash},
+             #{entity.summary}, #{entity.locatorJson}, CURRENT_TIMESTAMP)
+        </foreach>
+    </insert>
+</mapper>

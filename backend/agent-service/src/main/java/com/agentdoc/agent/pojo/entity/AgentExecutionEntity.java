@@ -72,6 +72,8 @@ public class AgentExecutionEntity extends BaseEntity {
     private String executionSnapshotHash;
     @Schema(description = "执行配置快照 schema 版本")
     private Integer executionSnapshotSchemaVersion;
+    @Schema(description = "schema v3 完整非秘密执行快照 JSON")
+    private String executionSnapshotJson;
     @Schema(description = "执行状态")
     private String status;
     @Schema(description = "是否请求取消")

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import com.agentdoc.common.enums.TaskExecutionMode;
 
 import java.security.interfaces.RSAPublicKey;
 import java.time.Duration;
@@ -52,11 +53,32 @@ class JwtServiceTest {
         JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
 
         Jwt jwt = decoder.decode(jwtService.createTaskCapabilityToken(
-                10L, 20L, 30L, 40L, List.of("READ_FRAGMENT")));
+                10L, 20L, 30L, 40L, TaskExecutionMode.ISOLATED.name(), 5L, "a".repeat(64),
+                1, "b".repeat(64), List.of("READ_FRAGMENT")));
 
         assertEquals("10", jwt.getSubject());
         assertEquals("AGENT", jwt.getClaimAsString("actorType"));
         assertEquals("agent", jwt.getClaimAsString("scope"));
         assertEquals(List.of("READ_FRAGMENT"), jwt.getClaimAsStringList("agentActions"));
+        assertEquals(List.of("workbench-task-capability"), jwt.getAudience());
+        assertEquals(TaskExecutionMode.ISOLATED.name(), jwt.getClaimAsString("executionMode"));
+        assertEquals("a".repeat(64), jwt.getClaimAsString("documentContentSha256"));
+    }
+
+    @Test
+    void createsEvaluationWorkerCapabilityBoundToRunAndTaskSet() {
+        JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
+
+        Jwt jwt = decoder.decode(jwtService.createEvaluationWorkerCapabilityToken(
+                11L, 22L, "d".repeat(64), 600L, List.of("BATCH_READ_TASK_STATUS")));
+
+        assertEquals("evaluation-service", jwt.getSubject());
+        assertEquals("SERVICE", jwt.getClaimAsString("actorType"));
+        assertEquals("service", jwt.getClaimAsString("scope"));
+        assertEquals(11L, ((Number) jwt.getClaim("runId")).longValue());
+        assertEquals(22L, ((Number) jwt.getClaim("spaceId")).longValue());
+        assertEquals("d".repeat(64), jwt.getClaimAsString("taskIdsHash"));
+        assertEquals(List.of("BATCH_READ_TASK_STATUS"), jwt.getClaimAsStringList("workerActions"));
+        assertEquals(List.of("task-service-internal"), jwt.getAudience());
     }
 }

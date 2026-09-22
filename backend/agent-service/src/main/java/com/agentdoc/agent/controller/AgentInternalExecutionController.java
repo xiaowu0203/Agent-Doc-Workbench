@@ -3,8 +3,11 @@ package com.agentdoc.agent.controller;
 import com.agentdoc.agent.service.AgentExecutionQueryService;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentEvaluationEvidenceQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
+import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
+import com.agentdoc.common.feign.vo.AgentEvaluationEvidenceVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -31,10 +34,23 @@ public class AgentInternalExecutionController {
         return Result.ok(queryService.getTokenUsageByWorkbenchTask(taskId));
     }
 
+    @Operation(summary = "查询 Replay 执行身份")
+    @GetMapping("/by-task/{taskId}/replay-identity")
+    public Result<AgentExecutionReplayIdentityVO> replayIdentity(@PathVariable Long taskId) {
+        return Result.ok(queryService.getReplayIdentity(taskId));
+    }
+
     @Operation(summary = "批量查询执行 Token 用量")
     @PostMapping("/by-task/token-usage/query")
     public Result<List<AgentExecutionTokenUsageBatchVO>> tokenUsages(
             @RequestBody AgentExecutionTokenUsageBatchQueryDTO request) {
         return Result.ok(queryService.getTokenUsagesByWorkbenchTasks(request));
+    }
+
+    @Operation(summary = "批量查询确定性评估执行事实")
+    @PostMapping("/evaluation-evidence/query")
+    public Result<List<AgentEvaluationEvidenceVO>> evaluationEvidence(
+            @RequestBody AgentEvaluationEvidenceQueryDTO request) {
+        return Result.ok(queryService.getEvaluationEvidence(request));
     }
 }

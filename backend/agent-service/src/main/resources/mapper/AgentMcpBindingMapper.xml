@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.agent.mapper.AgentMcpBindingMapper">
+
+    <update id="updateBatch">
+        UPDATE agent_mcp_binding
+        SET tool_whitelist_json = CASE id
+            <foreach collection="bindings" item="binding">
+                WHEN #{binding.id} THEN #{binding.toolWhitelistJson}
+            </foreach>
+            END,
+            enabled = CASE id
+            <foreach collection="bindings" item="binding">
+                WHEN #{binding.id} THEN #{binding.enabled}
+            </foreach>
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE deleted = 0
+          AND id IN
+        <foreach collection="bindings" item="binding" open="(" separator="," close=")">
+            #{binding.id}
+        </foreach>
+    </update>
+
+    <insert id="insertBatch">
+        INSERT INTO agent_mcp_binding
+            (id, agent_id, mcp_server_id, tool_whitelist_json, enabled, created_at, updated_at, deleted)
+        VALUES
+        <foreach collection="bindings" item="binding" separator=",">
+            (#{binding.id}, #{binding.agentId}, #{binding.mcpServerId}, #{binding.toolWhitelistJson},
+             #{binding.enabled}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 0)
+        </foreach>
+    </insert>
+</mapper>

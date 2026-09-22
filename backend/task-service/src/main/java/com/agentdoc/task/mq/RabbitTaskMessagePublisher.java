@@ -1,5 +1,6 @@
 package com.agentdoc.task.mq;
 
+import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.task.service.TaskMessagePublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -35,5 +36,14 @@ public class RabbitTaskMessagePublisher implements TaskMessagePublisher {
     @Override
     public void publish(Long taskId) {
         rabbitTemplate.convertAndSend(EXCHANGE, ROUTING_KEY, taskId);
+    }
+
+    @Override
+    public void publish(Long taskId, String dispatchAuthorization) {
+        rabbitTemplate.convertAndSend(EXCHANGE, ROUTING_KEY, taskId, message -> {
+            message.getMessageProperties().setHeader(
+                    HeaderConstants.X_EVALUATION_WORKER_CAPABILITY, dispatchAuthorization);
+            return message;
+        });
     }
 }

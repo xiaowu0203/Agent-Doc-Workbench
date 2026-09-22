@@ -44,6 +44,7 @@ public class AgentExecutionPersistenceService {
         }
         execution.setToolDefinitionSnapshotJson(snapshotJson);
         execution.setExecutionSnapshotSchemaVersion(EXECUTION_SNAPSHOT_SCHEMA_VERSION);
+        execution.setExecutionSnapshotJson(AgentExecutionConvertor.snapshotJson(execution));
         execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
         if (executionMapper.updateById(execution) != 1) {
             throw new IllegalStateException("持久化工具定义时 Agent 执行记录不存在: " + executionId);

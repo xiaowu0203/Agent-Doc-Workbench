@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -176,7 +177,7 @@ class SkillSnapshotServiceTest {
         when(versionMapper.selectBatchIds(anyCollection())).thenReturn(List.of(version));
 
         assertThat(service.loadBoundSkills(agent)).hasSize(1);
-        verify(installationService).requireEnabledInstallation(9L, 10L, 100L);
+        verify(installationService).requireEnabledInstallations(9L, Map.of(10L, 100L));
     }
 
     private AgentSkillEntity binding(long skillId, long versionId) {

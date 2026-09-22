@@ -397,20 +397,15 @@ v0.1 当前采用：
 
 项目不会为了展示效果提前加入自由 Multi-Agent 编排。
 
-### 下一步：v0.2 --- Agent Engineering Foundation
+### v0.2 开发进度
 
-后续重点方向包括：
+v0.2.0 已完成 Phase 1–3，涵盖 Run-compatible Execution、OpenTelemetry、Evaluation 与 Safe Replay 基础能力。接下来将推进离线 Experiment 与 Engineering UX；Memory、Skill Sandbox、OAuth2 / OIDC、Workflow 等能力仍需按独立设计和真实需求评估，不因长期路线图自动进入版本范围。
+
+后续方向包括：
 
 ``` text
-Execution Model / Run
-OpenTelemetry
-Evaluation
-Dataset / Replay
 Experiment / A-B
-Evidence / Context / Memory
-Skill Sandbox
-OAuth2 / OIDC
-Goal / Plan / Workflow v1
+Engineering UX
 ```
 
 更长期再探索 Multi-Agent Orchestration。

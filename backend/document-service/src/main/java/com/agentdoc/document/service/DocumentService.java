@@ -10,10 +10,12 @@ import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.dto.EvaluationDocumentChangePreviewDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
+import com.agentdoc.common.feign.vo.EvaluationDocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
@@ -695,6 +697,49 @@ public class DocumentService {
     }
 
     /**
+     * 使用 Replay Task 的只读能力在冻结版本上执行结构化变更预览。
+     * 仅返回冲突状态与提案内容摘要，正文不会跨服务返回。
+     *
+     * @param request 变更预览请求DTO，携带文档ID、基线版本、基线哈希、变更项列表
+     * @return 预览结果VO，含文档ID、基线版本、变更后内容哈希、冲突标记
+     * @throws BusinessException 参数非法、权限不足、文档非正式文档、基线哈希校验失败时抛出
+     */
+    public EvaluationDocumentChangePreviewVO previewEvaluationChanges(
+            EvaluationDocumentChangePreviewDTO request) {
+        // 参数合法性校验：非空、必填字段存在、SHA256固定64位长度
+        if (request == null || request.documentId() == null || request.baseVersion() == null
+                || request.baseContentSha256() == null || request.baseContentSha256().length() != 64) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluation 变更预览参数不完整");
+        }
+
+        // 根据文档ID加载文档实体，不存在时抛出异常
+        DocumentEntity doc = requireDoc(request.documentId());
+
+        // 校验当前Agent任务能力令牌具备文档片段读权限（WorkerCapability窄权限校验）
+        permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
+                JwtConstant.ACTION_READ_FRAGMENT);
+
+        // 校验文档为正式文档，草稿/临时文档不支持评估变更预览
+        requireFormalDocument(doc);
+
+        // 校验变更项列表合法性，检查结构、范围、格式合规性
+        validateChanges(request.changes());
+
+        // 解析基线快照：基于文档+指定基线版本+变更集合加载基线原文
+        BaseSnapshot base = resolveBaseContent(doc, request.baseVersion(), request.changes());
+        // 防篡改校验：客户端传入的基线哈希与服务端实际基线原文哈希必须一致
+        if (!request.baseContentSha256().equals(StableSnapshotUtils.sha256Utf8(base.content()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Evaluation 冻结文档内容摘要不匹配");
+        }
+        // 将结构化变更应用到基线文本，生成变更后的提案全文
+        String proposedContent = applyChanges(base.content(), request.changes());
+        // 返回轻量VO，**不返回任何文档明文**，只返回哈希与状态
+        return new EvaluationDocumentChangePreviewVO(doc.getId(), request.baseVersion(),
+                StableSnapshotUtils.sha256Utf8(proposedContent),
+                !Objects.equals(request.baseVersion(), doc.getVersion()));
+    }
+
+    /**
      * 变更预览内部实现：计算基准内容、应用变更得到提案内容，检测版本冲突
      * @param request 请求参数
      * @param permissionCode 需要校验的权限码
@@ -1202,11 +1247,9 @@ public class DocumentService {
             return List.of();
         }
         List<DocumentEntity> documents = documentMapper.selectBatchIds(ids);
-        // 对每个空间校验读权限
-        documents.stream()
+        permissionService.requirePermissions(documents.stream()
                 .map(DocumentEntity::getSpaceId)
-                .distinct()
-                .forEach(spaceId -> permissionService.requirePermission(spaceId, DOCUMENT_READ));
+                .collect(Collectors.toSet()), DOCUMENT_READ);
         return documents.stream()
                 .map(DocumentEntity::toRefVO)
                 .toList();

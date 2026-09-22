@@ -278,13 +278,20 @@ public class DepartmentService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "部门不能作为自己的上级部门");
         }
         Set<Long> visited = new HashSet<>();
+        Map<Long, Long> parentByDepartmentId = departmentMapper.selectHierarchy().stream()
+                .collect(Collectors.toMap(DepartmentEntity::getId,
+                        department -> normalizeParentId(department.getParentId())));
         Long cursor = parentId;
         while (!(ROOT_DEPARTMENT_ID == cursor)) {
             // 出现重复节点代表循环；或者追溯到自身，代表循环
             if (!visited.add(cursor) || departmentId.equals(cursor)) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "部门层级不能形成循环");
             }
-            cursor = normalizeParentId(requireDepartment(cursor).getParentId());
+            Long next = parentByDepartmentId.get(cursor);
+            if (next == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "部门不存在");
+            }
+            cursor = next;
         }
     }
 

@@ -1,7 +1,7 @@
 package com.agentdoc.task.execution;
 
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import org.junit.jupiter.api.Test;
@@ -12,19 +12,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TaskExecutionPolicyTest {
 
     @Test
-    void acceptsOnlyPhaseOneLiveLineages() {
+    void acceptsCurrentLiveLineagesAndIsolatedReplay() {
         for (TaskLineageType type : new TaskLineageType[]{
                 TaskLineageType.ORIGINAL, TaskLineageType.RERUN, TaskLineageType.REVIEW_REWORK}) {
             assertThatCode(() -> TaskExecutionPolicy.requireSupported(task(type, TaskExecutionMode.LIVE)))
                     .doesNotThrowAnyException();
         }
+        assertThatCode(() -> TaskExecutionPolicy.requireSupported(
+                task(TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED)))
+                .doesNotThrowAnyException();
     }
 
     @Test
-    void rejectsIsolatedAndFutureOrMigrationOnlyLineages() {
-        assertThatThrownBy(() -> TaskExecutionPolicy.requireSupported(
-                task(TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED)))
-                .isInstanceOf(BusinessException.class);
+    void rejectsFutureOrMigrationOnlyLineages() {
         assertThatThrownBy(() -> TaskExecutionPolicy.requireSupported(
                 task(TaskLineageType.EXPERIMENT, TaskExecutionMode.LIVE)))
                 .isInstanceOf(BusinessException.class);

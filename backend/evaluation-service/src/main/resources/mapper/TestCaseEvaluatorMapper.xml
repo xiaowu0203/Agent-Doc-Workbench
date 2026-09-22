@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.evaluation.mapper.TestCaseEvaluatorMapper">
+    <insert id="insertBatch">
+        INSERT INTO test_case_evaluator
+            (id, test_case_version_id, evaluator_version_id, expected_json, sort_order, created_at)
+        VALUES
+        <foreach collection="entities" item="entity" separator=",">
+            (#{entity.id}, #{entity.testCaseVersionId}, #{entity.evaluatorVersionId},
+             #{entity.expectedJson}, #{entity.sortOrder}, CURRENT_TIMESTAMP)
+        </foreach>
+    </insert>
+</mapper>

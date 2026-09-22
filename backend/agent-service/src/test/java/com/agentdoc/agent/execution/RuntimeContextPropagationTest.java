@@ -14,6 +14,7 @@ import com.agentdoc.agent.security.AgentConfigCryptoService;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
+import com.agentdoc.common.enums.TaskExecutionMode;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -32,7 +33,7 @@ class RuntimeContextPropagationTest {
     @Test
     void runtimeContextKeepsNullAsUnrestrictedTools() {
         AgentRuntimeContext context = new AgentRuntimeContext(99L, new AgentEntity(), new ModelEntity(),
-                new AgentTaskInputDTO(1L, 2L, 3L, null, null, null, null),
+                taskInput(),
                 "instruction", "prompt", null, null, List.of());
 
         assertThat(context.allowedMcpTools()).isNull();
@@ -46,7 +47,7 @@ class RuntimeContextPropagationTest {
         model.setModelKey("snapshot-model");
         List<String> tools = new ArrayList<>(List.of("tool-a"));
         AgentRuntimeContext context = new AgentRuntimeContext(99L, agent, model,
-                new AgentTaskInputDTO(1L, 2L, 3L, null, null, null, null),
+                taskInput(),
                 "instruction", "prompt", null, tools, List.of());
 
         agent.setName("changed");
@@ -75,7 +76,7 @@ class RuntimeContextPropagationTest {
         agent.setTokenBudget(100L);
         agent.setMaxIterations(2);
         ModelEntity model = new ModelEntity();
-        AgentTaskInputDTO input = new AgentTaskInputDTO(1L, 2L, 3L, null, null, null, null);
+        AgentTaskInputDTO input = taskInput();
         AgentRuntimeContext context = new AgentRuntimeContext(99L, agent, model, input,
                 "instruction", "fixed snapshot prompt", null, List.of(), List.of());
 
@@ -93,5 +94,11 @@ class RuntimeContextPropagationTest {
         assertThat(actual).isSameAs(expected);
         verify(toolLoop).executeTrackingUsage(eq(adapter), any(), eq("fixed snapshot prompt"), eq("instruction"),
                 eq(100L), eq(2), any(), any());
+    }
+
+    private AgentTaskInputDTO taskInput() {
+        return new AgentTaskInputDTO(1L, 2L, 3L, null, null,
+                TaskExecutionMode.LIVE.name(), 1L, "a".repeat(64), 1, "b".repeat(64),
+                null, null, null, null, null, null);
     }
 }

@@ -1,6 +1,8 @@
 package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.constant.RedisKeyConstants;
+import com.agentdoc.common.context.TaskCapabilityContext;
+import com.agentdoc.common.feign.context.AuthorizationContext;
 import com.agentdoc.common.utils.RedisUtils;
 import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.task.constant.TaskConstant;
@@ -83,6 +85,9 @@ public class A2aTaskReconciliationService {
             // HTTP调用Agent‑Server拉取远端最新任务信息
             Task remoteTask = a2aTaskClient.get(task.getA2aTaskId(), capability);
             if (remoteTask != null) {
+                // token设置到上下文中
+                AuthorizationContext.set("Bearer " + capability);
+                TaskCapabilityContext.set(capability);
                 // HTTP调用Agent‑Server拉取远端最新任务信息
                 synchronizationService.synchronize(task, remoteTask);
             }
@@ -91,6 +96,9 @@ public class A2aTaskReconciliationService {
             log.warn("A2A 任务状态对账失败，taskId={}，stack={}", task.getId(),
                     LogSanitizer.sanitizeThrowable(exception));
         } finally {
+            // 清理上下文token
+            AuthorizationContext.clear();
+            TaskCapabilityContext.clear();
             // 无论成功失败，释放分布式锁
             redisUtils.delete(lockKey);
         }

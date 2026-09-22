@@ -2,6 +2,7 @@ package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityIssueDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.UserRefVO;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -12,9 +13,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-/**
- * Auth 服务内部认证契约。
- */
 @FeignClient(name = "auth-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface AuthFeign {
     /**
@@ -24,6 +22,10 @@ public interface AuthFeign {
      */
     @PostMapping("/api/auth/internal/task-capabilities")
     Result<String> issueTaskCapability(@RequestBody TaskCapabilityIssueDTO request);
+
+    /** 签发仅绑定一个 EvaluationRun 和确切 Task 集合的后台能力令牌。 */
+    @PostMapping("/api/auth/internal/evaluation-worker-capabilities")
+    Result<String> issueEvaluationWorkerCapability(@RequestBody EvaluationWorkerCapabilityIssueDTO request);
 
     /**
      * 校验当前用户是否拥有roleKey角色

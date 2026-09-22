@@ -277,9 +277,14 @@ public class DocumentDirectoryService {
     private int parentDepth(Long spaceId, Long parentId) {
         int depth = 0;
         Set<Long> visited = new HashSet<>();
+        Map<Long, DocumentDirectoryEntity> directoryById = directoryMapper.selectNormalHierarchy(spaceId).stream()
+                .collect(Collectors.toMap(DocumentDirectoryEntity::getId, directory -> directory));
         Long current = parentId;
         while (current != null && visited.add(current)) {
-            DocumentDirectoryEntity directory = requireNormal(spaceId, current);
+            DocumentDirectoryEntity directory = directoryById.get(current);
+            if (directory == null) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "目标目录不存在");
+            }
             depth++;
             current = directory.getParentId();
         }

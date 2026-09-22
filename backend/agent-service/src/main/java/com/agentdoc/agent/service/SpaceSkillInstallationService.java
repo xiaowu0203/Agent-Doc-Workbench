@@ -213,6 +213,23 @@ public class SpaceSkillInstallationService {
         }
     }
 
+    /** 批量校验空间内已启用的系统 Skill 安装及其固定版本。 */
+    public void requireEnabledInstallations(Long spaceId, Map<Long, Long> versionBySkillId) {
+        if (versionBySkillId == null || versionBySkillId.isEmpty()) {
+            return;
+        }
+        Map<Long, Long> installedVersions = installationMapper.selectList(
+                        new LambdaQueryWrapper<SpaceSkillInstallationEntity>()
+                                .eq(SpaceSkillInstallationEntity::getSpaceId, spaceId)
+                                .eq(SpaceSkillInstallationEntity::getEnabled, true)
+                                .in(SpaceSkillInstallationEntity::getSkillId, versionBySkillId.keySet()))
+                .stream().collect(Collectors.toMap(SpaceSkillInstallationEntity::getSkillId,
+                        SpaceSkillInstallationEntity::getSkillVersionId));
+        if (!installedVersions.equals(versionBySkillId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "系统 Skill 未安装、已停用或版本不匹配");
+        }
+    }
+
     /**
      * 带行锁查询安装记录，校验归属空间，用于更新/卸载事务内锁定资源，防止并发修改。
      *

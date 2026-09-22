@@ -38,6 +38,9 @@ spring:
 
 # 自定义openapi配置
 agent-doc:
+  replay:
+    # 紧急回滚时关闭，仅阻止新Replay创建
+    creation-enabled: ${REPLAY_CREATION_ENABLED:true}
   security:
     # Base64 编码的 16/24/32 字节 AES 密钥，生产环境必须通过环境变量注入
     task-capability-key: ${TASK_CAPABILITY_KEY:}

@@ -12,6 +12,7 @@ import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.task.constant.TaskConstant;
 import com.agentdoc.task.enums.ChangeRequestStatus;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.AuditAction;
 import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
@@ -97,6 +98,7 @@ public class WorkbenchMcpApplicationService {
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_CREATE_CHANGE_REQUEST);
         // 获取任务信息
         TaskEntity task = taskService.require(scope.taskId());
+        requireLiveWrite(task);
         if (DocType.fromCode(task.getDocumentType()) != DocType.FORMAL) {
             throw new BusinessException(ErrorCode.CONFLICT, "草稿文档不应提交正式变更请求");
         }
@@ -123,6 +125,7 @@ public class WorkbenchMcpApplicationService {
         McpTaskScope scope = scopeService.require(JwtConstant.ACTION_WRITE_DRAFT);
         // 获取当前任务实体，校验任务存在
         TaskEntity task = taskService.require(scope.taskId());
+        requireLiveWrite(task);
         // 禁止Agent直接修改正式文档，仅允许操作草稿文档
         if (DocType.fromCode(task.getDocumentType()) != DocType.DRAFT) {
             throw new BusinessException(ErrorCode.CONFLICT, "正式文档不能由 Agent 直接修改");
@@ -154,6 +157,13 @@ public class WorkbenchMcpApplicationService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "变更项操作和新内容不能为空");
             }
         });
+    }
+
+    /** 持久化任务模式是生产写入口的最终防线，不能只信任 capability action。 */
+    private void requireLiveWrite(TaskEntity task) {
+        if (!TaskExecutionMode.LIVE.name().equals(task.getExecutionMode())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "隔离执行禁止写入生产文档资源");
+        }
     }
 
     /**

@@ -29,6 +29,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -106,6 +107,7 @@ public class SkillSnapshotService {
 
 
         List<SkillCandidate> skills = new ArrayList<>();
+        Map<Long, Long> systemVersionBySkillId = new HashMap<>();
         for (AgentSkillEntity binding : bindings) {
             SkillEntity skill = skillById.get(binding.getSkillId());
             SkillVersionEntity version = versionById.get(binding.getSkillVersionId());
@@ -131,8 +133,7 @@ public class SkillSnapshotService {
                     throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
                 }
                 // 运行时和绑定服务共同使用的空间授权校验
-                installationService.requireEnabledInstallation(
-                        agent.getSpaceId(), skill.getId(), version.getId());
+                systemVersionBySkillId.put(skill.getId(), version.getId());
             }
             // 绑定的版本必须是已发布版本
             if (!SkillVersionStatus.PUBLISHED.matches(version.getStatus())) {
@@ -149,6 +150,7 @@ public class SkillSnapshotService {
                     skill.getName(), version.getActivationDescription(), version.getSha256(), version.getStorageKey(),
                     version.getInstructionText(), tools, readable));
         }
+        installationService.requireEnabledInstallations(agent.getSpaceId(), systemVersionBySkillId);
 
         // 校验全部Skill指令文本总大小，超过配置阈值直接拒绝
         if (skills.stream().mapToInt(value ->

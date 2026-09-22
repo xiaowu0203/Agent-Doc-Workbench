@@ -14,9 +14,10 @@ import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.task.a2a.A2aTaskClient;
+import com.agentdoc.task.config.ReplayProperties;
 import com.agentdoc.task.enums.TaskReadScope;
 import com.agentdoc.task.enums.TaskStatus;
-import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
@@ -69,7 +70,7 @@ class TaskServiceRerunTest {
     void setUp() {
         service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService, authFeign, auditLogService,
-                new ObjectMapper(), taskCapabilityVerifier);
+                new ObjectMapper(), taskCapabilityVerifier, new ReplayProperties());
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")
                 .subject(String.valueOf(USER_ID))

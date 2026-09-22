@@ -14,6 +14,7 @@ import com.agentdoc.agent.pojo.vo.AgentMcpBindingVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -142,14 +143,19 @@ public class AgentMcpBindingService {
         for (AgentMcpBindingEntity relation : current) {
             AgentMcpBindingItemDTO item = requestedByServer.get(relation.getMcpServerId());
             AgentMcpBindingConvertor.apply(relation, item);
-            bindingMapper.updateById(relation);
+        }
+        if (!current.isEmpty()) {
+            bindingMapper.updateBatch(current);
         }
 
         // 新增绑定：请求中有、数据库不存在的绑定记录执行insert
-        for (AgentMcpBindingItemDTO item : requested) {
-            if (!byServer.containsKey(item.mcpServerId())) {
-                bindingMapper.insert(AgentMcpBindingConvertor.toEntity(agentId, item));
-            }
+        List<AgentMcpBindingEntity> additions = requested.stream()
+                .filter(item -> !byServer.containsKey(item.mcpServerId()))
+                .map(item -> AgentMcpBindingConvertor.toEntity(agentId, item))
+                .peek(binding -> binding.setId(IdWorker.getId()))
+                .toList();
+        if (!additions.isEmpty()) {
+            bindingMapper.insertBatch(additions);
         }
 
         // 递增Agent配置版本号，用于运行时识别配置发生变更

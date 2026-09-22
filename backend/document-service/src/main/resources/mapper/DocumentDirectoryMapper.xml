@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.document.mapper.DocumentDirectoryMapper">
+
+    <select id="selectNormalHierarchy" resultType="com.agentdoc.document.pojo.entity.DocumentDirectoryEntity">
+        SELECT id, parent_id, space_id, status
+        FROM document_directory
+        WHERE space_id = #{spaceId}
+          AND status = 1
+          AND deleted = 0
+    </select>
+</mapper>

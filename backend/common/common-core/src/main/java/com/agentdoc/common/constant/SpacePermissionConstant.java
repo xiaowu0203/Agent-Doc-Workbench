@@ -70,6 +70,14 @@ public final class SpacePermissionConstant {
     /** 任务-终止权限：中断正在运行的任务 */
     public static final String TASK_TERMINATE = "task:terminate";
 
+    // ====================== 评估相关权限 ======================
+    /** 评估-读取权限。 */
+    public static final String EVALUATION_READ = "evaluation:read";
+    /** 评估-管理权限。 */
+    public static final String EVALUATION_MANAGE = "evaluation:manage";
+    /** 评估-运行权限。 */
+    public static final String EVALUATION_RUN = "evaluation:run";
+
     // ====================== 变更申请相关权限 ======================
     /** 变更申请-读取权限：查看变更申请记录、详情 */
     public static final String CHANGE_REQUEST_READ = "change_request:read";

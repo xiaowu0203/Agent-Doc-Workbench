@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.document.mapper.MemberMapper">
+
+    <select id="selectPermittedSpaceIds" resultType="java.lang.Long">
+        SELECT DISTINCT m.space_id
+        FROM member m
+        JOIN space_role_permission srp ON srp.role_id = m.role_id
+        WHERE m.deleted = 0
+          AND m.user_id = #{userId}
+          AND srp.permission_code = #{permissionCode}
+          AND m.space_id IN
+        <foreach collection="spaceIds" item="spaceId" open="(" separator="," close=")">
+            #{spaceId}
+        </foreach>
+    </select>
+</mapper>

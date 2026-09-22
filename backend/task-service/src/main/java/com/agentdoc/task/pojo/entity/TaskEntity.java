@@ -116,6 +116,12 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "执行副作用模式")
     private String executionMode;
 
+    @Schema(description = "派生任务全局幂等键")
+    private String derivationRequestKey;
+
+    @Schema(description = "派生请求稳定 SHA-256")
+    private String derivationRequestHash;
+
     @Schema(description = "消息重试次数")
     private Integer retryCount;
 

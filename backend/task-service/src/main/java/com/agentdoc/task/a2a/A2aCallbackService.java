@@ -1,6 +1,8 @@
 package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.context.TaskCapabilityContext;
+import com.agentdoc.common.feign.context.AuthorizationContext;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
@@ -61,13 +63,22 @@ public class A2aCallbackService {
         }
         // 从回调事件中解析远端A2A任务ID
         String a2aTaskId = taskId(event);
-        // 使用回调令牌调用Agent‑Server接口拉取远端最新任务数据
-        Task remoteTask = a2aTaskClient.get(a2aTaskId, notificationToken);
-        if (remoteTask == null) {
-            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Agent Server 未返回 A2A Task");
+        // token设置到上下文中
+        AuthorizationContext.set("Bearer " + notificationToken);
+        TaskCapabilityContext.set(notificationToken);
+        try {
+            // 使用回调令牌调用Agent‑Server接口拉取远端最新任务数据
+            Task remoteTask = a2aTaskClient.get(a2aTaskId, notificationToken);
+            if (remoteTask == null) {
+                throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Agent Server 未返回 A2A Task");
+            }
+            // 将远端任务状态、结果同步更新至本地工作台任务
+            synchronizationService.synchronize(task, remoteTask);
+        } finally {
+            // 清理token
+            AuthorizationContext.clear();
+            TaskCapabilityContext.clear();
         }
-        // 将远端任务状态、结果同步更新至本地工作台任务
-        synchronizationService.synchronize(task, remoteTask);
     }
 
     /**

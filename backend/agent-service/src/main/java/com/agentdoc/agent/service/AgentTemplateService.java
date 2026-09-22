@@ -39,6 +39,7 @@ import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.PageUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
@@ -235,25 +236,8 @@ public class AgentTemplateService {
                 ? AgentConstant.DEFAULT_EXECUTION_TIMEOUT_SECONDS : dto.executionTimeoutSeconds());
         version.setCreatedBy(AuthUtils.getUserIdOrException());
         versionMapper.insert(version);
-        // 持久化模板版本绑定的Skill引用
-        for (AgentTemplateSkillDTO skill : safeSkills(dto.skills())) {
-            AgentTemplateSkillEntity reference = new AgentTemplateSkillEntity();
-            reference.setTemplateVersionId(version.getId());
-            reference.setSkillId(skill.skillId());
-            reference.setSkillVersionId(skill.skillVersionId());
-            templateSkillMapper.insert(reference);
-        }
-        // 持久化模板版本绑定的MCP模板引用
-        for (AgentTemplateMcpDTO mcp : safeMcps(dto.mcps())) {
-            McpTemplateVersionEntity mcpVersion = mcpVersions.get(mcp.mcpTemplateVersionId());
-            AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
-            reference.setTemplateVersionId(version.getId());
-            reference.setMcpTemplateId(mcpVersion.getTemplateId());
-            reference.setMcpTemplateVersionId(mcpVersion.getId());
-            reference.setToolWhitelistJson(mcp.toolWhitelist() == null ? null
-                    : JsonUtils.toJson(mcp.toolWhitelist().stream().distinct().sorted().toList()));
-            templateMcpMapper.insert(reference);
-        }
+        insertSkillReferences(version.getId(), dto.skills());
+        insertMcpReferences(version.getId(), dto.mcps(), mcpVersions);
         // 模板版本号自增，供下一次创建版本使用
         template.setNextVersionNo(template.getNextVersionNo() + 1);
         templateMapper.updateById(template);
@@ -298,25 +282,10 @@ public class AgentTemplateService {
 
         templateSkillMapper.delete(new LambdaQueryWrapper<AgentTemplateSkillEntity>()
                 .eq(AgentTemplateSkillEntity::getTemplateVersionId, versionId));
-        for (AgentTemplateSkillDTO skill : safeSkills(dto.skills())) {
-            AgentTemplateSkillEntity reference = new AgentTemplateSkillEntity();
-            reference.setTemplateVersionId(versionId);
-            reference.setSkillId(skill.skillId());
-            reference.setSkillVersionId(skill.skillVersionId());
-            templateSkillMapper.insert(reference);
-        }
+        insertSkillReferences(versionId, dto.skills());
         templateMcpMapper.delete(new LambdaQueryWrapper<AgentTemplateMcpEntity>()
                 .eq(AgentTemplateMcpEntity::getTemplateVersionId, versionId));
-        for (AgentTemplateMcpDTO mcp : safeMcps(dto.mcps())) {
-            McpTemplateVersionEntity mcpVersion = mcpVersions.get(mcp.mcpTemplateVersionId());
-            AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
-            reference.setTemplateVersionId(versionId);
-            reference.setMcpTemplateId(mcpVersion.getTemplateId());
-            reference.setMcpTemplateVersionId(mcpVersion.getId());
-            reference.setToolWhitelistJson(mcp.toolWhitelist() == null ? null
-                    : JsonUtils.toJson(mcp.toolWhitelist().stream().distinct().sorted().toList()));
-            templateMcpMapper.insert(reference);
-        }
+        insertMcpReferences(versionId, dto.mcps(), mcpVersions);
         auditLogService.record(null, "AGENT_TEMPLATE_VERSION_UPDATED", "agent_template_version", versionId,
                 Map.of("templateId", version.getTemplateId(), "versionNo", version.getVersionNo()));
         return toVersionVO(version);
@@ -927,6 +896,38 @@ public class AgentTemplateService {
      */
     private List<String> parseTools(String json) {
         return json == null ? null : JsonUtils.parse(json, new TypeReference<List<String>>() { });
+    }
+
+    private void insertSkillReferences(Long templateVersionId, List<AgentTemplateSkillDTO> skills) {
+        List<AgentTemplateSkillEntity> references = safeSkills(skills).stream().map(skill -> {
+            AgentTemplateSkillEntity reference = new AgentTemplateSkillEntity();
+            reference.setId(IdWorker.getId());
+            reference.setTemplateVersionId(templateVersionId);
+            reference.setSkillId(skill.skillId());
+            reference.setSkillVersionId(skill.skillVersionId());
+            return reference;
+        }).toList();
+        if (!references.isEmpty()) {
+            templateSkillMapper.insertBatch(references);
+        }
+    }
+
+    private void insertMcpReferences(Long templateVersionId, List<AgentTemplateMcpDTO> mcps,
+                                     Map<Long, McpTemplateVersionEntity> versions) {
+        List<AgentTemplateMcpEntity> references = safeMcps(mcps).stream().map(mcp -> {
+            McpTemplateVersionEntity version = versions.get(mcp.mcpTemplateVersionId());
+            AgentTemplateMcpEntity reference = new AgentTemplateMcpEntity();
+            reference.setId(IdWorker.getId());
+            reference.setTemplateVersionId(templateVersionId);
+            reference.setMcpTemplateId(version.getTemplateId());
+            reference.setMcpTemplateVersionId(version.getId());
+            reference.setToolWhitelistJson(mcp.toolWhitelist() == null ? null
+                    : JsonUtils.toJson(mcp.toolWhitelist().stream().distinct().sorted().toList()));
+            return reference;
+        }).toList();
+        if (!references.isEmpty()) {
+            templateMcpMapper.insertBatch(references);
+        }
     }
 
     /**

@@ -9,10 +9,12 @@ import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.agentdoc.task.service.TokenUsageService;
+import com.agentdoc.task.service.ExecutionArtifactService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.a2aproject.sdk.spec.Task;
@@ -37,6 +39,7 @@ public class A2aTaskSynchronizationService {
     private final DocumentFeign documentFeign;
     private final TokenUsageService tokenUsageService;
     private final TaskCapabilityCryptoService cryptoService;
+    private final ExecutionArtifactService executionArtifactService;
 
     /**
      * 执行远端任务 → 本地任务实体状态同步并落库
@@ -56,6 +59,16 @@ public class A2aTaskSynchronizationService {
     public boolean synchronize(TaskEntity task, Task remoteTask) {
         // 将远端A2A任务数据转换、回填到本地task对象
         A2aTaskConvertor.apply(task, remoteTask);
+        TaskStatus status = TaskStatus.fromCode(task.getStatus());
+        // 任务完成，且执行模式为隔离模式，记录结果摘要
+        if (status == TaskStatus.COMPLETED
+                && TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode())) {
+            if (task.getAgentExecutionId() == null) {
+                AgentExecutionTokenUsageVO usage = requireTokenUsage(agentFeign.getExecutionTokenUsage(task.getId()));
+                task.setAgentExecutionId(usage.executionId());
+            }
+            executionArtifactService.appendResultSummary(task);
+        }
         // 条件更新：仅本地任务还处于远端活跃状态，才允许覆盖状态，保护已终态数据
         int updated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                 .eq(TaskEntity::getId, task.getId())
@@ -75,9 +88,9 @@ public class A2aTaskSynchronizationService {
         if (updated == 0) {
             return false;
         }
-        // 任务已完成，记录Token消耗统计，同时做任务Token预算管控
-        TaskStatus status = TaskStatus.fromCode(task.getStatus());
-        if (DocType.fromCode(task.getDocumentType()) == DocType.DRAFT
+        // 执行模式为实时LIVE、文档类型是草稿，且任务终态（完成/终止/失败）时，执行草稿文档收尾处理
+        if (TaskExecutionMode.LIVE.name().equals(task.getExecutionMode())
+                && DocType.fromCode(task.getDocumentType()) == DocType.DRAFT
                 && (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED
                 || status == TaskStatus.FAILED)) {
             finalizeDraft(task, status);
@@ -120,17 +133,20 @@ public class A2aTaskSynchronizationService {
      * @return A2A标准Token用量对象
      */
     private A2aTokenUsage resolveTokenUsage(TaskEntity task) {
-        Result<AgentExecutionTokenUsageVO> result = agentFeign.getExecutionTokenUsage(task.getId());
+        AgentExecutionTokenUsageVO usageProjection = requireTokenUsage(agentFeign.getExecutionTokenUsage(task.getId()));
+        return new A2aTokenUsage(usageProjection.inputTokens(), usageProjection.cachedInputTokens(),
+                usageProjection.outputTokens(), Boolean.TRUE.equals(usageProjection.inputTokensEstimated()),
+                Boolean.TRUE.equals(usageProjection.cachedInputTokensEstimated()),
+                Boolean.TRUE.equals(usageProjection.outputTokensEstimated()), usageProjection.executionId(),
+                usageProjection.modelId(), usageProjection.modelConfigVersion(),
+                usageProjection.inputPricePerMillion(), usageProjection.outputPricePerMillion(),
+                usageProjection.currency(), usageProjection.pricingSchemaVersion(),
+                usageProjection.pricingCapturedAt());
+    }
+
+    private AgentExecutionTokenUsageVO requireTokenUsage(Result<AgentExecutionTokenUsageVO> result) {
         if (result != null && result.code() == ErrorCode.SUCCESS.getCode() && result.data() != null) {
-            AgentExecutionTokenUsageVO usageProjection = result.data();
-            return new A2aTokenUsage(usageProjection.inputTokens(), usageProjection.cachedInputTokens(),
-                    usageProjection.outputTokens(), Boolean.TRUE.equals(usageProjection.inputTokensEstimated()),
-                    Boolean.TRUE.equals(usageProjection.cachedInputTokensEstimated()),
-                    Boolean.TRUE.equals(usageProjection.outputTokensEstimated()), usageProjection.executionId(),
-                    usageProjection.modelId(), usageProjection.modelConfigVersion(),
-                    usageProjection.inputPricePerMillion(), usageProjection.outputPricePerMillion(),
-                    usageProjection.currency(), usageProjection.pricingSchemaVersion(),
-                    usageProjection.pricingCapturedAt());
+            return result.data();
         }
         throw new BusinessException(ErrorCode.CONFLICT, "无法读取 AgentExecution Token 权威账本投影");
     }

@@ -47,6 +47,12 @@ public final class McpConstant {
     public static final String WORKBENCH_SOURCE_KEY = "workbench";
     /** Skill 本地只读工具来源标识。 */
     public static final String SKILL_LOCAL_SOURCE_KEY = "skill-local";
+    /** Workbench 正式文档变更工具名。 */
+    public static final String WORKBENCH_PROPOSE_CHANGES_TOOL = "workbench_propose_changes";
+    /** Workbench 草稿变更工具名。 */
+    public static final String WORKBENCH_APPLY_DRAFT_CHANGES_TOOL = "workbench_apply_draft_changes";
+    /** 为终态 RESULT_SUMMARY 保留序号 100，工具产物最多使用 1-99。 */
+    public static final int MAX_CAPTURE_ARTIFACT_COUNT = 99;
 
     private McpConstant() {
     }

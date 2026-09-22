@@ -13,6 +13,7 @@ import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DuplicateKeyException;
+import com.agentdoc.common.enums.TaskExecutionMode;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -35,6 +36,8 @@ class AgentExecutionApplicationServiceTest {
         AgentExecutionEntity concurrent = new AgentExecutionEntity();
         concurrent.setStatus(AgentExecutionStatus.SUBMITTED.name());
         AgentTaskInputDTO input = new AgentTaskInputDTO(11L, 22L, 33L, 44L, 100L,
+                TaskExecutionMode.LIVE.name(), 5L, "a".repeat(64), 1, "b".repeat(64),
+                null, null, null, null,
                 "http://task-service/mcp", "capability");
         Message message = Message.builder()
                 .role(Message.Role.ROLE_USER)

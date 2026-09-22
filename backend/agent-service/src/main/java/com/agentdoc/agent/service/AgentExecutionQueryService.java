@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.agent.enums.AgentExecutionStatus;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.mapper.AgentExecutionModelCallMapper;
 import com.agentdoc.agent.mapper.AgentExecutionToolCallMapper;
@@ -9,17 +10,22 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionToolCallEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentEvaluationEvidenceQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
+import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
+import com.agentdoc.common.feign.vo.AgentEvaluationEvidenceVO;
 import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.feign.vo.AgentToolSourceCountVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.JsonUtils;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.agentdoc.common.utils.SnapshotCanonicalV3Utils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,6 +36,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.HashMap;
 
 import static com.agentdoc.agent.constant.AgentConstant.TOKEN_PRICING_CURRENCY;
 import static com.agentdoc.agent.constant.AgentConstant.TOKEN_PRICING_SCHEMA_VERSION;
@@ -194,6 +201,69 @@ public class AgentExecutionQueryService {
                         execution.getCachedInputTokensEstimated(), execution.getOutputTokens(),
                         execution.getOutputTokensEstimated()))
                 .toList();
+    }
+
+    /**
+     * 批量查询评估证据数据
+     * <p>
+     * 批量返回确定性 Evaluator 所需的执行终态和工具调用计数，不暴露调用参数或结果正文。
+     * 用于 evaluation-service 做指标评估；仅返回统计元数据，不携带Prompt、工具入参/返回报文。
+     * 限制：单次查询任务ID数量范围1~100。
+     * </p>
+     * @param request 查询DTO，携带待查询的任务ID列表
+     * @return AgentEvaluationEvidenceVO 列表，每条对应一次Agent执行评估证据
+     * @throws BusinessException 任务ID为空或数量超出100上限时抛出BAD_REQUEST
+     */
+    public List<AgentEvaluationEvidenceVO> getEvaluationEvidence(AgentEvaluationEvidenceQueryDTO request) {
+        // 提取并清洗任务ID列表：过滤null、去重
+        List<Long> taskIds = request == null || request.taskIds() == null ? List.of()
+                : request.taskIds().stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        // 参数校验：任务ID必须1~100条
+        if (taskIds.isEmpty() || taskIds.size() > 100) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "任务 ID 集合必须包含 1~100 项");
+        }
+        // 根据TaskId批量查询Agent执行主记录
+        List<AgentExecutionEntity> executions = executionMapper.selectList(
+                new LambdaQueryWrapper<AgentExecutionEntity>()
+                        .in(AgentExecutionEntity::getWorkbenchTaskId, taskIds));
+        // 没有执行记录直接返回空集合
+        if (executions.isEmpty()) {
+            return List.of();
+        }
+        // 提取所有executionId，用于批量查询工具调用明细
+        List<Long> executionIds = executions.stream()
+                .map(AgentExecutionEntity::getId)
+                .toList();
+        // 批量查询所有关联的【工具调用】记录
+        List<AgentExecutionToolCallEntity> toolCalls = toolCallMapper.selectList(
+                new LambdaQueryWrapper<AgentExecutionToolCallEntity>()
+                        .in(AgentExecutionToolCallEntity::getExecutionId, executionIds));
+        // 按executionId聚合统计：总调用数、失败调用数、外部MCP调用数
+        Map<Long, ToolCounts> counts = new HashMap<>();
+        for (AgentExecutionToolCallEntity call : toolCalls) {
+            ToolCounts current = counts.computeIfAbsent(call.getExecutionId(), ignored -> new ToolCounts());
+            // 工具调用总数+1
+            current.total++;
+            if (AgentExecutionStatus.FAILED.name().equals(call.getStatus())) {
+                // 失败计数+1
+                current.failed++;
+            }
+            if (call.getMcpServerId() != null) {
+                // 外部MCP调用计数+1
+                current.externalMcp++;
+            }
+        }
+        // 将执行主记录与聚合统计结果映射为评估证据VO返回
+        return executions.stream().map(execution -> {
+            ToolCounts value = counts.getOrDefault(execution.getId(), new ToolCounts());
+            return new AgentEvaluationEvidenceVO(execution.getWorkbenchTaskId(), execution.getId(),
+                    execution.getStatus(), execution.getTraceId(), execution.getSpanId(),
+                    execution.getStartedAt(), execution.getFinishedAt(), value.total, value.failed,
+                    value.externalMcp);
+        }).toList();
     }
 
     /**
@@ -422,5 +492,55 @@ public class AgentExecutionQueryService {
      */
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    /**
+     * 获取任务对应的回放最小身份投影
+     * <p>
+     * 要求任务下仅有【单条执行】记录；若存在多条或无执行记录，直接返回标记数量的无效身份，不自动挑选任意一条。
+     * 校验快照版本、快照哈希完整性，同时识别是否存在外部MCP依赖，返回给上游做Replay准入判断。
+     * </p>
+     * @param taskId 工作台任务ID
+     * @return AgentExecutionReplayIdentityVO 回放身份投影，包含快照有效性与外部MCP标记
+     */
+    public AgentExecutionReplayIdentityVO getReplayIdentity(Long taskId) {
+        // 根据任务ID查询全部关联Agent执行记录
+        List<AgentExecutionEntity> executions = executionMapper.selectList(
+                new LambdaQueryWrapper<AgentExecutionEntity>()
+                        .eq(AgentExecutionEntity::getWorkbenchTaskId, taskId));
+        // 执行记录数量不等于1：返回无效身份，携带执行条数，上游直接拒绝回放
+        if (executions.size() != 1) {
+            return new AgentExecutionReplayIdentityVO(executions.size(), null, null, null, false, false);
+        }
+        // 仅有唯一一条执行记录，取出该执行实体
+        AgentExecutionEntity execution = executions.getFirst();
+        // 快照有效性校验：schema=V3、快照JSON、哈希存在，并且重新规范化哈希比对一致
+        boolean valid = execution.getExecutionSnapshotSchemaVersion() != null
+                && execution.getExecutionSnapshotSchemaVersion() == 3
+                && execution.getExecutionSnapshotJson() != null
+                && execution.getExecutionSnapshotHash() != null
+                && execution.getExecutionSnapshotHash().equals(
+                SnapshotCanonicalV3Utils.hashEnvelope(execution.getExecutionSnapshotJson()));
+        // 解析外部MCP快照节点
+        JsonNode externalMcp = JsonUtils.parse(execution.getExternalMcpSnapshotJson(), JsonNode.class);
+        // 判断快照是否包含外部MCP（非空数组）
+        boolean externalMcpPresent = externalMcp != null && (!externalMcp.isArray() || !externalMcp.isEmpty());
+        // 组装并返回回放身份VO
+        return new AgentExecutionReplayIdentityVO(1, execution.getId(),
+                execution.getExecutionSnapshotSchemaVersion(), execution.getExecutionSnapshotHash(), valid,
+                externalMcpPresent);
+    }
+
+    /**
+     * 工具调用计数临时内部类，用于聚合统计单次执行的工具调用指标
+     * <p>仅在getEvaluationEvidence内使用，存储总调用数、失败调用数、外部MCP调用数量。</p>
+     */
+    private static final class ToolCounts {
+        /** 工具调用总次数 */
+        private long total;
+        /** 工具调用失败次数 */
+        private long failed;
+        /** 外部MCP服务调用次数 */
+        private long externalMcp;
     }
 }

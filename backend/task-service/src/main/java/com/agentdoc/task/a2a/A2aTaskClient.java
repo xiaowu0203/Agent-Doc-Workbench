@@ -2,6 +2,7 @@ package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
+import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import org.a2aproject.sdk.spec.AuthenticationInfo;
 import org.a2aproject.sdk.spec.DataPart;
@@ -11,8 +12,8 @@ import org.a2aproject.sdk.spec.MessageSendParams;
 import org.a2aproject.sdk.spec.Task;
 import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
 import org.a2aproject.sdk.spec.TextPart;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -45,10 +46,10 @@ public class A2aTaskClient {
      * 当前使用A2A协议版本号
      */
     private static final String A2A_VERSION = "1.0";
+    private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
     /**
      * Bearer token鉴权前缀
      */
-    private static final String BEARER_PREFIX = JwtConstant.TOKEN_TYPE_BEARER + " ";
 
     /**
      * Spring RestClient HTTP客户端实例，指向远端Agent‑Service服务地址
@@ -70,18 +71,24 @@ public class A2aTaskClient {
     }
 
     /**
-     * 向远端Agent‑Server提交任务，创建A2A异步任务
-     * <p>组装任务输入、消息体、回调推送配置；设置立即返回模式，由远端通过callbackUrl推送状态回调。
-     * 内部携带Bearer能力令牌、A2A版本头、A2A协议MediaType。</p>
-     *
-     * @param task       本地工作台任务实体
-     * @param capability 任务能力令牌，用于鉴权与回调认证
-     * @return 远端A2A任务对象
+     * 向 Agent 下发完整冻结输入，发起A2A任务调用。
+     * <p>
+     * 普通执行场景 sourceExecution 传 null；Replay 回放场景必须传入唯一来源执行身份投影，用于回放校验。
+     * 组装任务元数据与冻结输入，封装A2A消息并携带异步回调配置，调用A2A send接口异步提交任务，不阻塞等待执行结果。
+     * @param task 工作台任务实体
+     * @param capability 任务能力JWT令牌，用于A2A接口鉴权与回调身份校验
+     * @param sourceExecution 回放来源执行身份投影；非回放场景传null，回放场景不可为空
+     * @return A2A协议返回的Task对象
      */
-    public Task send(TaskEntity task, String capability) {
+    public Task send(TaskEntity task, String capability, AgentExecutionReplayIdentityVO sourceExecution) {
         // 组装传给Agent的任务输入DTO，包含任务元信息、MCP服务地址
         AgentTaskInputDTO input = new AgentTaskInputDTO(
                 task.getId(), task.getAgentId(), task.getSpaceId(), task.getDocumentId(), task.getTokenBudget(),
+                task.getExecutionMode(), task.getDocumentVersionSnapshot(), task.getDocumentContentSha256(),
+                task.getInputSnapshotSchemaVersion(), task.getInputSnapshotHash(), task.getParentTaskId(),
+                sourceExecution == null ? null : sourceExecution.executionId(),
+                sourceExecution == null ? null : sourceExecution.executionSnapshotSchemaVersion(),
+                sourceExecution == null ? null : sourceExecution.executionSnapshotHash(),
                 properties.getMcpServerUrl(), capability);
         // 构建A2A消息：用户指令文本 + 结构化任务输入数据Part
         Message message = Message.builder()

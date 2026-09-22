@@ -27,6 +27,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -119,6 +121,25 @@ public class SpacePermissionService {
         // 校验当前上下文存在登录用户ID
         requireUserId();
         if (!hasPermission(spaceId, permissionCode)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "缺少空间权限：" + permissionCode);
+        }
+    }
+
+    /** 批量校验当前用户在一组空间中的同一权限。 */
+    public void requirePermissions(Collection<Long> spaceIds, String permissionCode) {
+        Long userId = requireUserId();
+        Set<Long> requiredSpaceIds = spaceIds == null ? Set.of() : new HashSet<>(spaceIds);
+        requiredSpaceIds.remove(null);
+        if (requiredSpaceIds.isEmpty()) {
+            return;
+        }
+        if (isPlatformSuperAdmin()
+                && PlatformRoleConstant.PLATFORM_CROSS_SPACE_READ_PERMISSIONS.contains(permissionCode)) {
+            return;
+        }
+        Set<Long> permittedSpaceIds = new HashSet<>(memberMapper.selectPermittedSpaceIds(
+                userId, requiredSpaceIds, permissionCode));
+        if (!permittedSpaceIds.containsAll(requiredSpaceIds)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "缺少空间权限：" + permissionCode);
         }
     }

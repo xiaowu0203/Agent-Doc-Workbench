@@ -5,6 +5,11 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
+import com.agentdoc.task.pojo.dto.ReplayCreateDTO;
+import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
+import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
+import com.agentdoc.common.feign.vo.EvaluationWorkerCapabilityVO;
 import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
 import com.agentdoc.task.pojo.param.TaskCreateOptionsParam;
 import com.agentdoc.task.pojo.param.TaskSearchParam;
@@ -16,6 +21,9 @@ import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.vo.TaskExecutionDetailVO;
 import com.agentdoc.task.pojo.vo.TaskToolCallVO;
+import com.agentdoc.task.pojo.vo.ReplayEligibilityVO;
+import com.agentdoc.task.pojo.vo.ExecutionArtifactVO;
+import com.agentdoc.task.service.ExecutionArtifactService;
 import com.agentdoc.task.service.TaskService;
 import com.agentdoc.task.service.TaskExecutionQueryService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,6 +53,7 @@ public class TaskController {
 
     private final TaskService taskService;
     private final TaskExecutionQueryService taskExecutionQueryService;
+    private final ExecutionArtifactService executionArtifactService;
 
     @Operation(summary = "创建 Agent 任务")
     @PostMapping
@@ -95,6 +104,38 @@ public class TaskController {
     @GetMapping("/{id}")
     public Result<TaskVO> detail(@PathVariable Long id) {
         return Result.ok(taskService.detail(id));
+    }
+
+    @Operation(summary = "查询任务 Replay 准入")
+    @GetMapping("/{id}/replay-eligibility")
+    public Result<ReplayEligibilityVO> replayEligibility(@PathVariable Long id) {
+        return Result.ok(taskService.replayEligibility(id));
+    }
+
+    @Operation(summary = "创建隔离 Replay")
+    @PostMapping("/{id}/replays")
+    public Result<TaskVO> createReplay(@PathVariable Long id,
+                                       @Valid @RequestBody ReplayCreateDTO request) {
+        return Result.ok(taskService.createReplay(id, request));
+    }
+
+    @Operation(summary = "批量创建隔离 Replay")
+    @PostMapping("/replays/batch")
+    public Result<ReplayBatchCreateVO> createReplayBatch(@RequestBody ReplayBatchCreateDTO request) {
+        return Result.ok(taskService.createReplayBatch(request));
+    }
+
+    @Operation(summary = "为既有 Evaluation Replay 续签 WorkerCapability")
+    @PostMapping("/evaluation-worker-capability")
+    public Result<EvaluationWorkerCapabilityVO> renewEvaluationWorkerCapability(
+            @RequestBody EvaluationWorkerCapabilityRenewDTO request) {
+        return Result.ok(taskService.renewEvaluationWorkerCapability(request));
+    }
+
+    @Operation(summary = "查询任务隔离执行产物")
+    @GetMapping("/{id}/execution-artifacts")
+    public Result<List<ExecutionArtifactVO>> executionArtifacts(@PathVariable Long id) {
+        return Result.ok(executionArtifactService.list(id));
     }
 
     @Operation(summary = "手动触发待运行任务")

@@ -16,8 +16,6 @@ class AgentExecutionSnapshotTest {
         second.setA2aContextId("another-context");
         second.setWorkbenchTaskId(888L);
         second.setSpaceId(777L);
-        second.setAgentId(666L);
-        second.setAgentNameSnapshot("renamed agent");
         second.setUserInstructionSnapshot("different business input");
         second.setStatus("FAILED");
         second.setInputTokens(100L);
@@ -32,6 +30,16 @@ class AgentExecutionSnapshotTest {
         AgentExecutionEntity first = execution();
         AgentExecutionEntity second = execution();
         second.setToolDefinitionSnapshotJson("[{\"name\":\"document_read\",\"description\":\"changed\"}]");
+
+        assertThat(AgentExecutionConvertor.snapshotHash(second))
+                .isNotEqualTo(AgentExecutionConvertor.snapshotHash(first));
+    }
+
+    @Test
+    void frozenAgentIdentityChangesSnapshotHash() {
+        AgentExecutionEntity first = execution();
+        AgentExecutionEntity second = execution();
+        second.setAgentId(666L);
 
         assertThat(AgentExecutionConvertor.snapshotHash(second))
                 .isNotEqualTo(AgentExecutionConvertor.snapshotHash(first));

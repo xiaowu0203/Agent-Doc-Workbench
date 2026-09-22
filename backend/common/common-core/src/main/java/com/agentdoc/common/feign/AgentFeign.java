@@ -3,6 +3,7 @@ package com.agentdoc.common.feign;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentEvaluationEvidenceQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
@@ -10,6 +11,8 @@ import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
+import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
+import com.agentdoc.common.feign.vo.AgentEvaluationEvidenceVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
@@ -69,10 +72,19 @@ public interface AgentFeign {
     @GetMapping("/api/agent/internal/executions/by-task/{taskId}/token-usage")
     Result<AgentExecutionTokenUsageVO> getExecutionTokenUsage(@PathVariable Long taskId);
 
+    /** 查询 Replay 准入所需的唯一执行与 v3 身份。 */
+    @GetMapping("/api/agent/internal/executions/by-task/{taskId}/replay-identity")
+    Result<AgentExecutionReplayIdentityVO> getReplayIdentity(@PathVariable Long taskId);
+
     /** 批量查询工作台任务对应的 Agent 执行 Token 用量。 */
     @PostMapping("/api/agent/internal/executions/by-task/token-usage/query")
     Result<List<AgentExecutionTokenUsageBatchVO>> queryExecutionTokenUsages(
             @RequestBody AgentExecutionTokenUsageBatchQueryDTO request);
+
+    /** 批量查询不含正文的确定性评估执行事实。 */
+    @PostMapping("/api/agent/internal/executions/evaluation-evidence/query")
+    Result<List<AgentEvaluationEvidenceVO>> queryEvaluationEvidence(
+            @RequestBody AgentEvaluationEvidenceQueryDTO request);
 
     /** 查询空间用量看板的工具调用聚合。 */
     @PostMapping("/api/agent/executions/tool-usage/stats")

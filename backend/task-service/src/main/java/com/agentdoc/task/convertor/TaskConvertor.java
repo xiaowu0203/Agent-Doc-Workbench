@@ -5,7 +5,7 @@ import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.task.enums.TaskStatus;
-import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;

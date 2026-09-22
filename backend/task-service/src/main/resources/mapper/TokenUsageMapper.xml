@@ -9,4 +9,14 @@
         WHERE usage_date = #{usageDate}
     </delete>
 
+    <insert id="insertBatch">
+        INSERT INTO token_usage
+            (id, space_id, dimension, obj_id, tokens, usage_date, created_at)
+        VALUES
+        <foreach collection="entities" item="entity" separator=",">
+            (#{entity.id}, #{entity.spaceId}, #{entity.dimension}, #{entity.objId},
+             #{entity.tokens}, #{entity.usageDate}, CURRENT_TIMESTAMP)
+        </foreach>
+    </insert>
+
 </mapper>

@@ -54,7 +54,7 @@ public final class AgentConstant {
      */
     public static final int MAX_ERROR_MESSAGE_LENGTH = 2000;
     /** 执行配置快照 schema 版本。 */
-    public static final int EXECUTION_SNAPSHOT_SCHEMA_VERSION = 2;
+    public static final int EXECUTION_SNAPSHOT_SCHEMA_VERSION = 3;
     /** Token 计价快照 schema 版本。 */
     public static final int TOKEN_PRICING_SCHEMA_VERSION = 1;
     /** Token 计价币种。 */

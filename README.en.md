@@ -418,20 +418,15 @@ v0.1 intentionally uses:
 The project does not add free-form Multi-Agent orchestration merely for
 demo value.
 
-### Next: v0.2 --- Agent Engineering Foundation
+### v0.2 Development Status
 
-Planned areas include:
+v0.2.0 has completed Phases 1–3, covering Run-compatible Execution, OpenTelemetry, Evaluation, and the Safe Replay foundation. Offline Experiments and Engineering UX are next. Memory, Skill Sandbox, OAuth2 / OIDC, and Workflow remain conditional candidates that require independent design and demonstrated need; their appearance on the long-term roadmap does not automatically put them in scope.
+
+Next areas include:
 
 ``` text
-Execution Model / Run
-OpenTelemetry
-Evaluation
-Dataset / Replay
 Experiment / A-B
-Evidence / Context / Memory
-Skill Sandbox
-OAuth2 / OIDC
-Goal / Plan / Workflow v1
+Engineering UX
 ```
 
 Multi-Agent orchestration is a later step, after the execution and

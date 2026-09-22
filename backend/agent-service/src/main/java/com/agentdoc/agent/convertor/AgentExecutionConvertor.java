@@ -11,7 +11,7 @@ import com.agentdoc.common.enums.TokenValueSource;
 import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.pojo.TokenValue;
 import com.agentdoc.common.utils.JsonUtils;
-import com.agentdoc.common.utils.StableSnapshotUtils;
+import com.agentdoc.common.utils.SnapshotCanonicalV3Utils;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
@@ -90,8 +90,27 @@ public final class AgentExecutionConvertor {
      * @return 小写 SHA-256
      */
     public static String snapshotHash(AgentExecutionEntity execution) {
+        String canonicalJson = execution.getExecutionSnapshotJson();
+        if (canonicalJson == null || canonicalJson.isBlank()) {
+            canonicalJson = snapshotJson(execution);
+        }
+        return SnapshotCanonicalV3Utils.hashEnvelope(canonicalJson);
+    }
+
+    /**
+     * 生成可恢复、非机密的执行快照 v3 标准报文。
+     * <p>
+     * 将 Agent 执行实体的关键上下文快照字段组装为 {@link ExecutionSnapshot}，
+     * 再通过 V3 规范化工具输出稳定序的规范 JSON 信封，用于后续哈希校验、JWT claim 绑定与执行恢复。
+     * 注：快照仅保存配置快照/哈希，不包含会话密钥、用户凭证等敏感机密数据。
+     *
+     * @param execution Agent 执行记录实体
+     * @return v3 规范化后的执行快照标准字符串（canonical envelope）
+     */
+    public static String snapshotJson(AgentExecutionEntity execution) {
         ExecutionSnapshot snapshot = new ExecutionSnapshot(
-                execution.getAgentConfigVersion(), execution.getMaxIterations(),
+                execution.getAgentId(), execution.getAgentNameSnapshot(), execution.getAgentConfigVersion(),
+                execution.getMaxIterations(),
                 execution.getExecutionTimeoutSeconds(), execution.getSystemPromptSnapshot(),
                 jsonValue(execution.getModelSnapshot()), execution.getModelConfigVersion(),
                 jsonValue(execution.getSkillSnapshotJson()), execution.getSkillInstructionHash(),
@@ -101,7 +120,7 @@ public final class AgentExecutionConvertor {
                 jsonValue(execution.getToolWhitelistSnapshot()),
                 jsonValue(execution.getToolDefinitionSnapshotJson()),
                 jsonValue(execution.getExternalMcpSnapshotJson()));
-        return StableSnapshotUtils.snapshotHash(EXECUTION_SNAPSHOT_SCHEMA_VERSION, snapshot);
+        return SnapshotCanonicalV3Utils.canonicalEnvelope(EXECUTION_SNAPSHOT_SCHEMA_VERSION, snapshot);
     }
 
     private static JsonNode jsonValue(String value) {
@@ -196,7 +215,8 @@ public final class AgentExecutionConvertor {
     private static String toModelSnapshot(ModelEntity model) {
         return JsonUtils.toJson(new ModelSnapshot(model.getId(), model.getProvider(),
                 model.getAdapterType(), model.getModelKey(), model.getDisplayName(), model.getBaseUrl(),
-                model.getMaxOutputTokens(), model.getInputPricePerMillion(), model.getOutputPricePerMillion()));
+                model.getOptionsJson(), model.getContextWindow(), model.getMaxOutputTokens(),
+                model.getInputPricePerMillion(), model.getOutputPricePerMillion()));
     }
 
     /**
@@ -211,12 +231,14 @@ public final class AgentExecutionConvertor {
      * @param maxOutputTokens 最大输出token
      */
     private record ModelSnapshot(Long id, String provider, String adapterType, String modelKey, String displayName,
-                                 String baseUrl, Long maxOutputTokens, BigDecimal inputPricePerMillion,
+                                 String baseUrl, String optionsJson, Long contextWindow,
+                                 Long maxOutputTokens, BigDecimal inputPricePerMillion,
                                  java.math.BigDecimal outputPricePerMillion) {
     }
 
     /** execution snapshot v2 固定字段集合，不包含任务输入、运行标识、状态、时间和 Token 结果。 */
-    private record ExecutionSnapshot(Long agentConfigVersion, Integer maxIterations,
+    private record ExecutionSnapshot(Long sourceAgentId, String agentNameSnapshot, Long agentConfigVersion,
+                                     Integer maxIterations,
                                      Integer executionTimeoutSeconds, String systemPrompt,
                                      JsonNode model, Long modelConfigVersion, JsonNode skillSnapshot,
                                      String skillInstructionHash, String skillSelectionMode,

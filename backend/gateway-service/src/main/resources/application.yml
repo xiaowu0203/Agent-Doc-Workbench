@@ -76,6 +76,14 @@ spring:
                 - RewritePath=/api/agent/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
               order: -30
 
+            - id: api-docs-evaluation
+              uri: http://localhost:${EVALUATION_SERVICE_PORT:8085}
+              predicates:
+                - Path=/api/evaluation/v3/api-docs/**
+              filters:
+                - RewritePath=/api/evaluation/v3/api-docs(?<segment>.*), /v3/api-docs$\{segment}
+              order: -30
+
             # -------- 登录接口单独限流（会叠加全局限流，双重令牌桶校验） --------
             - id: login-rate-limit
               uri: http://localhost:${AUTH_SERVICE_PORT:8081}
@@ -123,6 +131,12 @@ spring:
               uri: http://localhost:${AGENT_SERVICE_PORT:8084}
               predicates:
                 - Path=/api/agent/**,/.well-known/agent-card.json,/a2a/**
+              order: 0
+
+            - id: evaluation-service
+              uri: http://localhost:${EVALUATION_SERVICE_PORT:8085}
+              predicates:
+                - Path=/api/evaluation/**
               order: 0
 
             - id: workbench-mcp-server
@@ -176,6 +190,8 @@ springdoc:
         url: /api/task/v3/api-docs
       - name: agent-service
         url: /api/agent/v3/api-docs
+      - name: evaluation-service
+        url: /api/evaluation/v3/api-docs
 
 # 日志配置
 logging:
