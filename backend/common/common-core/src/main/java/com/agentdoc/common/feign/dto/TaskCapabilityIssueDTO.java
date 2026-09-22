@@ -10,5 +10,10 @@ public record TaskCapabilityIssueDTO(
         Long agentId,
         Long spaceId,
         Long documentId,
+        String executionMode,
+        Long documentVersionSnapshot,
+        String documentContentSha256,
+        Integer inputSnapshotSchemaVersion,
+        String inputSnapshotHash,
         List<String> actions) {
 }

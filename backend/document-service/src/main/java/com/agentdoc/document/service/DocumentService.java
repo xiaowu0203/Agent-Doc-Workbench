@@ -10,10 +10,12 @@ import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.dto.EvaluationDocumentChangePreviewDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
+import com.agentdoc.common.feign.vo.EvaluationDocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
@@ -692,6 +694,31 @@ public class DocumentService {
      */
     public DocumentChangePreviewVO previewSubmittedChanges(DocumentChangePreviewRequestDTO request) {
         return previewChanges(request, CHANGE_REQUEST_SUBMIT);
+    }
+
+    /**
+     * 使用 Replay Task 的只读能力在冻结版本上执行结构化变更预览。
+     * 仅返回冲突状态与提案内容摘要，正文不会跨服务返回。
+     */
+    public EvaluationDocumentChangePreviewVO previewEvaluationChanges(
+            EvaluationDocumentChangePreviewDTO request) {
+        if (request == null || request.documentId() == null || request.baseVersion() == null
+                || request.baseContentSha256() == null || request.baseContentSha256().length() != 64) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluation 变更预览参数不完整");
+        }
+        DocumentEntity doc = requireDoc(request.documentId());
+        permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(),
+                JwtConstant.ACTION_READ_FRAGMENT);
+        requireFormalDocument(doc);
+        validateChanges(request.changes());
+        BaseSnapshot base = resolveBaseContent(doc, request.baseVersion(), request.changes());
+        if (!request.baseContentSha256().equals(StableSnapshotUtils.sha256Utf8(base.content()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Evaluation 冻结文档内容摘要不匹配");
+        }
+        String proposedContent = applyChanges(base.content(), request.changes());
+        return new EvaluationDocumentChangePreviewVO(doc.getId(), request.baseVersion(),
+                StableSnapshotUtils.sha256Utf8(proposedContent),
+                !Objects.equals(request.baseVersion(), doc.getVersion()));
     }
 
     /**

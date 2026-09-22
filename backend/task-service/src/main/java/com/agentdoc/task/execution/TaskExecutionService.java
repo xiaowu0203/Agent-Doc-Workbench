@@ -1,7 +1,9 @@
 package com.agentdoc.task.execution;
 
+import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.constant.RedisKeyConstants;
 import com.agentdoc.common.context.TraceContext;
+import com.agentdoc.common.feign.context.AuthorizationContext;
 import com.agentdoc.common.utils.RedisUtils;
 import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.config.RabbitTaskConfiguration;
@@ -10,9 +12,10 @@ import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.AuditAction;
 import com.agentdoc.task.enums.AuditTargetType;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.task.enums.TaskLineageType;
+import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
-import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.agentdoc.task.service.AuditLogService;
 import com.agentdoc.task.service.TaskMessagePublisher;
 import com.agentdoc.task.service.TaskService;
@@ -26,6 +29,7 @@ import org.springframework.stereotype.Component;
 import org.a2aproject.sdk.spec.Task;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -47,7 +51,6 @@ public class TaskExecutionService {
     private final A2aTaskClient a2aTaskClient;
     private final TaskMessagePublisher messagePublisher;
     private final RedisUtils redisUtils;
-    private final TaskCapabilityCryptoService cryptoService;
     private final AuditLogService auditLogService;
 
     /**
@@ -65,6 +68,7 @@ public class TaskExecutionService {
     @RabbitListener(queues = RabbitTaskConfiguration.QUEUE)
     public void consume(Long taskId, Message message, Channel channel) throws IOException {
         long tag = message.getMessageProperties().getDeliveryTag();
+        String dispatchAuthorization = dispatchAuthorization(message);
         TaskEntity task = taskService.require(taskId);
 
         // 任务已经不是待执行状态，直接确认丢弃消息，不再处理
@@ -113,11 +117,11 @@ public class TaskExecutionService {
                     taskService.require(taskId).getAgentId(), AuditAction.TASK_STARTED,
                     AuditTargetType.TASK, taskId, null);
             // 执行Agent业务逻辑
-            execute(taskService.require(taskId));
+            execute(taskService.require(taskId), dispatchAuthorization);
             channel.basicAck(tag, false);
         } catch (Exception ex) {
             // 执行发生异常，进入失败&重试处理分支
-            handleFailure(taskId, ex, channel, tag);
+            handleFailure(taskId, dispatchAuthorization, ex, channel, tag);
         } finally {
             // 无论成功失败，释放空间分布式锁；锁已过期或已被他人持有时不删除，仅记录告警
             if (!redisUtils.deleteIfValueMatches(lockKey, lockOwner)) {
@@ -134,11 +138,22 @@ public class TaskExecutionService {
      * </p>
      * @param task 待执行任务实体
      */
-    private void execute(TaskEntity task) {
-        // 生成 A2A Task Capability，并加密存储到数据库
-        String capability = cryptoService.decrypt(task.getCapabilityToken());
+    private void execute(TaskEntity task, String dispatchAuthorization) {
+        String capability;
+        AgentExecutionReplayIdentityVO sourceExecution;
+        try {
+            if (dispatchAuthorization != null && !dispatchAuthorization.isBlank()) {
+                AuthorizationContext.set("Bearer " + dispatchAuthorization);
+            }
+            // 生成 A2A Task Capability，并加密存储到数据库
+            capability = taskService.resolveDispatchCapability(task);
+            sourceExecution = TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                    ? taskService.requireReplayDispatchIdentity(task) : null;
+        } finally {
+            AuthorizationContext.clear();
+        }
         // 调用 A2A Client，将任务提交到 Agent Server
-        Task remoteTask = a2aTaskClient.send(task, capability);
+        Task remoteTask = a2aTaskClient.send(task, capability, sourceExecution);
         if (remoteTask == null) {
             throw new IllegalStateException("Agent Server 未返回 A2A Task");
         }
@@ -186,7 +201,8 @@ public class TaskExecutionService {
      * @param tag deliveryTag
      * @throws IOException MQ IO异常
      */
-    private void handleFailure(Long taskId, Exception ex, Channel channel, long tag) throws IOException {
+    private void handleFailure(Long taskId, String dispatchAuthorization,
+                               Exception ex, Channel channel, long tag) throws IOException {
         TaskEntity task = taskService.require(taskId);
         // 任务已经被外部手动终止，不再重试，直接确认消息
         if (TaskStatus.fromCode(task.getStatus()) == TaskStatus.TERMINATED) {
@@ -205,7 +221,11 @@ public class TaskExecutionService {
                     .set(TaskEntity::getErrorMessage, safeMessage(ex)));
             try {
                 // 重新投递任务消息，ack当前旧消息
-                messagePublisher.publish(taskId);
+                if (dispatchAuthorization == null || dispatchAuthorization.isBlank()) {
+                    messagePublisher.publish(taskId);
+                } else {
+                    messagePublisher.publish(taskId, dispatchAuthorization);
+                }
                 channel.basicAck(tag, false);
                 // 审计日志
                 auditLogService.recordAgent(task.getSpaceId(), task.getId(), task.getAgentId(),
@@ -238,6 +258,16 @@ public class TaskExecutionService {
         String message = ex.getMessage();
         return message == null ? ex.getClass().getSimpleName()
                 : message.substring(0, Math.min(message.length(), TaskConstant.MAX_ERROR_MESSAGE_LENGTH));
+    }
+
+    /** RabbitMQ Header 可能按字节数组或客户端 LongString 返回，统一转换为授权令牌文本。 */
+    static String dispatchAuthorization(Message message) {
+        Object value = message.getMessageProperties()
+                .getHeader(HeaderConstants.X_EVALUATION_WORKER_CAPABILITY);
+        if (value instanceof byte[] bytes) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        return value == null ? null : value.toString();
     }
 
 }

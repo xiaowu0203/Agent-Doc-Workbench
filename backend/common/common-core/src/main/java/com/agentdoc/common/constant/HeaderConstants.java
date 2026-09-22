@@ -14,4 +14,7 @@ public final class HeaderConstants {
     /** task-service 生成的非对称签名任务能力令牌 */
     public static final String X_TASK_CAPABILITY = "X-Task-Capability";
 
+    /** evaluation-service 后台访问 Task 评估投影的窄权限令牌。 */
+    public static final String X_EVALUATION_WORKER_CAPABILITY = "X-Evaluation-Worker-Capability";
+
 }

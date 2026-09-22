@@ -6,7 +6,9 @@ import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.dto.EvaluationDocumentChangePreviewDTO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
+import com.agentdoc.common.feign.vo.EvaluationDocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.pojo.dto.PageParam;
@@ -83,6 +85,13 @@ public class DocumentController {
     public Result<DocumentChangePreviewVO> previewSubmittedChanges(
             @RequestBody DocumentChangePreviewRequestDTO request) {
         return Result.ok(documentService.previewSubmittedChanges(request));
+    }
+
+    @Operation(summary = "基于冻结版本校验 Evaluation 候选变更（服务间调用）")
+    @PostMapping("/evaluation-change-preview")
+    public Result<EvaluationDocumentChangePreviewVO> previewEvaluationChanges(
+            @RequestBody EvaluationDocumentChangePreviewDTO request) {
+        return Result.ok(documentService.previewEvaluationChanges(request));
     }
 
     @Operation(summary = "幂等合并已审批变更（服务间调用）")

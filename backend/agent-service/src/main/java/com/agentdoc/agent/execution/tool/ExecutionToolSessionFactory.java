@@ -14,9 +14,17 @@ import com.agentdoc.agent.execution.context.ExternalMcpConnection;
 import com.agentdoc.agent.security.McpEndpointSecurityValidator;
 import com.agentdoc.agent.skill.storage.SkillResourceLoader;
 import com.agentdoc.agent.security.AgentConfigCryptoService;
+import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.StableSnapshotUtils;
+import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.dto.ExecutionArtifactAppendDTO;
+import com.agentdoc.common.feign.vo.ExecutionArtifactAppendVO;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.logging.LogSanitizer;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +37,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -81,19 +90,22 @@ public class ExecutionToolSessionFactory {
     private final AgentConfigCryptoService cryptoService;
     private final McpEndpointSecurityValidator endpointValidator;
     private final AgentTelemetry telemetry;
+    private final TaskFeign taskFeign;
 
     public ExecutionToolSessionFactory(SkillResourceLoader resourceLoader,
                                        AgentExecutionPersistenceService executionPersistenceService,
                                        AgentExecutionToolAuditService toolAuditService,
                                        AgentConfigCryptoService cryptoService,
                                        McpEndpointSecurityValidator endpointValidator,
-                                       AgentTelemetry telemetry) {
+                                       AgentTelemetry telemetry,
+                                       TaskFeign taskFeign) {
         this.resourceLoader = resourceLoader;
         this.executionPersistenceService = executionPersistenceService;
         this.toolAuditService = toolAuditService;
         this.cryptoService = cryptoService;
         this.endpointValidator = endpointValidator;
         this.telemetry = telemetry;
+        this.taskFeign = taskFeign;
     }
 
     /**
@@ -106,6 +118,12 @@ public class ExecutionToolSessionFactory {
      * @throws RuntimeException      MCP会话打开、资源加载发生异常；内部会自动关闭已创建mcp会话防止泄露
      */
     public ExecutionToolSession open(AgentRuntimeContext context, BooleanSupplier cancelRequested) {
+        // 判断当前任务执行模式是否为【ISOLATED】
+        boolean isolated = TaskExecutionMode.ISOLATED.name().equals(context.taskInput().executionMode());
+        // 若为【ISOLATED】模式&外部MCP连接非空，则抛出【禁止初始化外部MCP连接】异常
+        if (isolated && !context.externalMcpConnections().isEmpty()) {
+            throw new IllegalStateException("隔离执行禁止初始化外部 MCP");
+        }
         // 根据技能执行快照，批量加载快照中所有绑定技能的可读资源
         SkillResourceLoader.LoadedSkillResources resources = resourceLoader.load(context.skillSnapshot());
         List<TaskScopedMcpTools> sessions = new ArrayList<>();
@@ -126,9 +144,13 @@ public class ExecutionToolSessionFactory {
                         "当前 Agent 未获得 Workbench 文档工具权限，请检查 Agent 工具白名单和 Skill allowed-tools 配置");
             }
             List<SourcedTool> tools = new ArrayList<>();
-            workbench.callbacks().forEach(callback ->
-                    tools.add(new SourcedTool(callback, ToolSource.MCP_REMOTE.name(),
-                            McpConstant.WORKBENCH_SOURCE_KEY, null)));
+            AtomicInteger artifactSequence = new AtomicInteger();
+            workbench.callbacks().forEach(callback -> {
+                ToolCallback effective = isolated
+                        ? captureOnlyCallback(callback, context, artifactSequence) : callback;
+                tools.add(new SourcedTool(effective, ToolSource.MCP_REMOTE.name(),
+                        McpConstant.WORKBENCH_SOURCE_KEY, null));
+            });
 
             List<CompletableFuture<OpenedExternal>> futures = new ArrayList<>();
             Context parentContext = Context.current();
@@ -277,6 +299,56 @@ public class ExecutionToolSessionFactory {
                             + "\n--- BEGIN SKILL INSTRUCTIONS ---\n" + skill.instructionText()
                             + "\n--- END SKILL INSTRUCTIONS ---";
                 });
+    }
+
+    ToolCallback captureOnlyCallback(ToolCallback original, AgentRuntimeContext context,
+                                     AtomicInteger artifactSequence) {
+        String toolName = original.getToolDefinition().name();
+        String artifactType = switch (toolName) {
+            case McpConstant.WORKBENCH_PROPOSE_CHANGES_TOOL -> "CHANGE_PROPOSAL";
+            case McpConstant.WORKBENCH_APPLY_DRAFT_CHANGES_TOOL -> "DRAFT_CHANGES";
+            default -> null;
+        };
+        if (artifactType == null) {
+            return original;
+        }
+        return new ToolCallback() {
+            @Override
+            public ToolDefinition getToolDefinition() {
+                return original.getToolDefinition();
+            }
+
+            @Override
+            public String call(String input) {
+                JsonNode payload = JsonUtils.parse(input, JsonNode.class);
+                if (payload == null || !payload.isObject()) {
+                    throw new IllegalArgumentException("Workbench 写工具参数不是合法 JSON 对象");
+                }
+                int schemaVersion = 1;
+                String payloadJson = JsonUtils.toJson(payload);
+                String payloadHash = StableSnapshotUtils.snapshotHash(schemaVersion, payload);
+                int sequenceNo = artifactSequence.incrementAndGet();
+                if (sequenceNo > McpConstant.MAX_CAPTURE_ARTIFACT_COUNT) {
+                    throw new IllegalStateException("单次执行候选产物数量超过限制");
+                }
+                var result = taskFeign.appendExecutionArtifact(context.taskInput().workbenchTaskId(),
+                        JwtConstant.TOKEN_TYPE_BEARER + " " + context.taskInput().taskCapability(),
+                        context.taskInput().taskCapability(),
+                        new ExecutionArtifactAppendDTO(context.executionId(), context.taskInput().sourceTaskId(),
+                                sequenceNo, null, artifactType, schemaVersion, payloadJson, payloadHash));
+                if (result == null || result.code() != ErrorCode.SUCCESS.getCode() || result.data() == null) {
+                    throw new IllegalStateException("隔离执行候选产物保存失败");
+                }
+                ExecutionArtifactAppendVO artifact = result.data();
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("captured", true);
+                response.put("artifactId", artifact.artifactId());
+                response.put("artifactType", artifact.artifactType());
+                response.put("payloadSha256", artifact.payloadSha256());
+                response.put("message", "候选变更已捕获，未写入正式文档或草稿");
+                return JsonUtils.toJson(response);
+            }
+        };
     }
 
     private void requireNoConflict(List<SourcedTool> callbacks, String localToolName) {

@@ -6,4 +6,12 @@ package com.agentdoc.task.service;
 public interface TaskMessagePublisher {
 
     void publish(Long taskId);
+
+    /**
+     * 发布需要后台授权上下文的任务消息。
+     *
+     * @param taskId 待执行任务ID
+     * @param dispatchAuthorization 仅用于实际派发前签发Task Capability的后台授权令牌
+     */
+    void publish(Long taskId, String dispatchAuthorization);
 }

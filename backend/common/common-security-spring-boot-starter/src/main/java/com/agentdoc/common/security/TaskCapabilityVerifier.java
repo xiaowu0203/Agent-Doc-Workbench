@@ -50,7 +50,9 @@ public class TaskCapabilityVerifier {
         Jwt jwt = decoder.decode(token);
         // 业务声明校验：限定主体类型为Agent，作用域为Agent任务令牌
         if (!JwtConstant.ACTOR_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_ACTOR_TYPE))
-                || !JwtConstant.SCOPE_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SCOPE))) {
+                || !JwtConstant.SCOPE_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SCOPE))
+                || jwt.getAudience() == null
+                || !jwt.getAudience().contains(JwtConstant.TASK_CAPABILITY_AUDIENCE)) {
             throw new IllegalStateException("不是有效的任务能力 JWT");
         }
         return jwt;

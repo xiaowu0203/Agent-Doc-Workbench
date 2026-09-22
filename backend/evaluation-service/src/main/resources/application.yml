@@ -1,0 +1,60 @@
+# Evaluation Service 应用配置
+server:
+  # 服务端口，可通过环境变量 EVALUATION_SERVICE_PORT 覆盖
+  port: ${EVALUATION_SERVICE_PORT:8085}
+
+spring:
+  application:
+    # Spring应用名称：评估服务
+    name: evaluation-service
+  datasource:
+    # MySQL连接地址，默认本地库 agent_doc_workbench
+    url: ${DB_URL:jdbc:mysql://localhost:3306/agent_doc_workbench?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    # 数据库账号
+    username: ${DB_USERNAME:root}
+    # 数据库密码
+    password: ${DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+agent-doc:
+  feign:
+    # Feign调用网关地址
+    gateway-url: ${GATEWAY_URL:http://localhost:9090}
+  evaluation:
+    # 评估能力标识版本，用于版本隔离
+    capability-key-version: ${EVALUATION_CAPABILITY_KEY_VERSION:v1}
+    # 评估能力标识
+    capability-key: ${EVALUATION_CAPABILITY_KEY:}
+    # 上一版能力标识版本，用于灰度/版本迁移
+    previous-capability-key-version: ${EVALUATION_PREVIOUS_CAPABILITY_KEY_VERSION:}
+    # 上一版能力标识
+    previous-capability-key: ${EVALUATION_PREVIOUS_CAPABILITY_KEY:}
+    runtime:
+      # 紧急回滚时关闭，仅阻止新EvaluationRun创建
+      run-creation-enabled: ${EVALUATION_RUN_CREATION_ENABLED:true}
+      # 紧急回滚时关闭后台状态推进
+      reconciliation-enabled: ${EVALUATION_RECONCILIATION_ENABLED:true}
+      # 评估任务工作线程并发数
+      worker-concurrency: ${EVALUATION_WORKER_CONCURRENCY:4}
+      # 任务队列容量
+      queue-capacity: ${EVALUATION_QUEUE_CAPACITY:100}
+      # 单个评估器执行超时时间(ms)
+      evaluator-timeout-millis: ${EVALUATION_EVALUATOR_TIMEOUT_MILLIS:5000}
+      # 状态对账轮询间隔(ms)
+      reconciliation-interval-ms: ${EVALUATION_RECONCILIATION_INTERVAL_MS:5000}
+      # 单次对账批量查询条数
+      reconciliation-batch-size: ${EVALUATION_RECONCILIATION_BATCH_SIZE:20}
+      # 连续对账基础设施错误达到该次数后暂停Run
+      max-consecutive-reconciliation-failures: ${EVALUATION_MAX_CONSECUTIVE_RECONCILIATION_FAILURES:3}
+      # 分发中状态超过该时长后转为可恢复暂停(秒)
+      dispatch-stale-seconds: ${EVALUATION_DISPATCH_STALE_SECONDS:60}
+      # 对账分布式锁持有时长(秒)
+      reconciliation-lock-seconds: ${EVALUATION_RECONCILIATION_LOCK_SECONDS:30}
+
+# SpringBoot Actuator 监控端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        # 暴露健康检查、基础信息端点
+        include: health,info

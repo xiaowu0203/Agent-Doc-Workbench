@@ -117,6 +117,22 @@ public final class TaskConstant {
     public static final long DAY_OFFSET = 1L;
     /** Phase 1 任务输入快照 schema 版本。 */
     public static final int INPUT_SNAPSHOT_SCHEMA_VERSION = 1;
+    /** 单条隔离执行产物 payload 的 UTF-8 最大字节数。 */
+    public static final int MAX_EXECUTION_ARTIFACT_PAYLOAD_BYTES = 262_144;
+    /** 单次 AgentExecution 最多追加的产物数。 */
+    public static final int MAX_EXECUTION_ARTIFACT_COUNT = 100;
+    /** 工具产生的候选产物最大序号，100 保留给终态摘要。 */
+    public static final int MAX_TOOL_EXECUTION_ARTIFACT_SEQUENCE = 99;
+    /** 隔离任务完成摘要的固定序号。 */
+    public static final int RESULT_SUMMARY_ARTIFACT_SEQUENCE = 100;
+    /** 单次 EvaluationRun 批量创建 Replay 的最大数量。 */
+    public static final int MAX_REPLAY_BATCH_SIZE = 100;
+    /** WorkerCapability 最短有效期，单位：秒。 */
+    public static final long MIN_WORKER_CAPABILITY_TTL_SECONDS = 300L;
+    /** WorkerCapability 最长有效期，单位：秒。 */
+    public static final long MAX_WORKER_CAPABILITY_TTL_SECONDS = 86_400L;
+    /** 批量 Replay 遭遇并发幂等写入时的最大事务重试次数。 */
+    public static final int REPLAY_BATCH_PERSIST_ATTEMPTS = 3;
     /**
      * 快照生成默认延迟时间，单位：毫秒，字符串用于配置解析
      */

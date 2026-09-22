@@ -74,6 +74,14 @@ public class ExecutionPreparationTransactionService {
     }
 
     /**
+     * Replay 只从当前模型记录解析可用凭证；其余运行参数由来源快照覆盖。
+     */
+    @Transactional(readOnly = true)
+    public ModelEntity resolveReplayModelCredential(Long modelId) {
+        return ExecutionSnapshotCopies.model(modelService.requireEnabled(modelId));
+    }
+
+    /**
      * 事务内捕获的执行原始配置快照记录
      * <p>
      * 全部为事务内读出来的原始绑定数据；record构造块与访问器做防御拷贝：

@@ -66,7 +66,15 @@ public class A2aRequestAuthorizationService {
         if (!matches(jwt, JwtConstant.CLAIM_TASK_ID, input.workbenchTaskId())
                 || !matches(jwt, JwtConstant.CLAIM_AGENT_ID, input.agentId())
                 || !matches(jwt, JwtConstant.CLAIM_SPACE_ID, input.spaceId())
-                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_ID, input.documentId())) {
+                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_ID, input.documentId())
+                || !matches(jwt, JwtConstant.CLAIM_EXECUTION_MODE, input.executionMode())
+                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT,
+                input.documentVersionSnapshot())
+                || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256,
+                input.documentContentSha256())
+                || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION,
+                input.inputSnapshotSchemaVersion())
+                || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, input.inputSnapshotHash())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "A2A 请求能力令牌范围不匹配");
         }
     }
@@ -129,7 +137,7 @@ public class A2aRequestAuthorizationService {
      * @param expected    预期Long类型业务ID
      * @return true：值相等；false：任意一方为null或值不相等
      */
-    private boolean matches(Jwt jwt, String claimName, Long expected) {
+    private boolean matches(Jwt jwt, String claimName, Object expected) {
         Object claim = jwt.getClaim(claimName);
         return expected != null && claim != null && String.valueOf(expected).equals(String.valueOf(claim));
     }

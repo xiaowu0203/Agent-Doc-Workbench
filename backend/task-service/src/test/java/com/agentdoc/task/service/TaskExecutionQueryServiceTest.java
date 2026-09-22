@@ -72,7 +72,7 @@ class TaskExecutionQueryServiceTest {
 
     private TaskVO task(DocType type, TaskStatus status, String resultSummary) {
         return new TaskVO(null, 11L, com.agentdoc.task.enums.TaskLineageType.ORIGINAL,
-                com.agentdoc.task.enums.TaskExecutionMode.LIVE,
+                com.agentdoc.common.enums.TaskExecutionMode.LIVE,
                 11L, "T-11", 7L, 9L, 13L, type, "审计任务", "检查文档", status,
                 5000L, TaskReadScope.FULL, List.of(), 120L, true,
                 LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(),

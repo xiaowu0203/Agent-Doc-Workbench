@@ -2,10 +2,14 @@ package com.agentdoc.task.mcp;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.enums.ChangeOp;
+import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.service.AuditLogService;
 import com.agentdoc.task.service.ChangeRequestService;
 import com.agentdoc.task.service.TaskService;
@@ -15,7 +19,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,6 +88,21 @@ class WorkbenchMcpApplicationServiceTest {
 
         verify(taskService).getTaskDocumentContext(TASK_ID, document);
         verify(documentFeign, never()).getExecutionContext(DOCUMENT_ID);
+    }
+
+    @Test
+    void rejectsProductionWriteForPersistedIsolatedTaskEvenWithOldWriteAction() {
+        TaskEntity task = frozenTask();
+        task.setExecutionMode(TaskExecutionMode.ISOLATED.name());
+        when(scopeService.require(JwtConstant.ACTION_WRITE_DRAFT))
+                .thenReturn(new McpTaskScope(TASK_ID, 33L, 44L, DOCUMENT_ID));
+        when(taskService.require(TASK_ID)).thenReturn(task);
+        McpChangeProposal proposal = new McpChangeProposal(VERSION,
+                List.of(new ChangeItemDTO(ChangeOp.REPLACE, null, "candidate")), "summary");
+
+        assertThrows(BusinessException.class, () -> service.applyDraftChanges(proposal));
+
+        verify(documentFeign, never()).applyDraftAgentChanges(any());
     }
 
     private TaskEntity frozenTask() {

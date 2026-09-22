@@ -9,6 +9,7 @@ import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.a2a.A2aTaskClient;
+import com.agentdoc.task.config.ReplayProperties;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.jwt.Jwt;
+import com.agentdoc.common.enums.TaskExecutionMode;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -66,7 +68,7 @@ class TaskServiceCapabilityTest {
     void setUp() {
         service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService,
-                authFeign, auditLogService, objectMapper, taskCapabilityVerifier);
+                authFeign, auditLogService, objectMapper, taskCapabilityVerifier, new ReplayProperties());
     }
 
     @Test
@@ -99,6 +101,29 @@ class TaskServiceCapabilityTest {
         verify(taskMapper, never()).selectById(TASK_ID);
     }
 
+    @Test
+    void rejectsCapabilityWhenFrozenInputClaimDiffersFromTask() {
+        Jwt capability = Jwt.withTokenValue(TOKEN)
+                .header("alg", "RS256")
+                .claim(JwtConstant.CLAIM_TASK_ID, String.valueOf(TASK_ID))
+                .claim(JwtConstant.CLAIM_AGENT_ID, String.valueOf(AGENT_ID))
+                .claim(JwtConstant.CLAIM_SPACE_ID, String.valueOf(SPACE_ID))
+                .claim(JwtConstant.CLAIM_DOCUMENT_ID, String.valueOf(DOCUMENT_ID))
+                .claim(JwtConstant.CLAIM_EXECUTION_MODE, TaskExecutionMode.ISOLATED.name())
+                .claim(JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, "5")
+                .claim(JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, "a".repeat(64))
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, "1")
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, "b".repeat(64))
+                .build();
+        when(taskCapabilityVerifier.verify(TOKEN)).thenReturn(capability);
+        when(taskMapper.selectById(TASK_ID)).thenReturn(task(TaskStatus.RUNNING));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.checkCapability(TASK_ID, TOKEN));
+
+        assertEquals(ErrorCode.FORBIDDEN.getCode(), exception.getCode());
+    }
+
     private Jwt capability(Long taskId) {
         return Jwt.withTokenValue(TOKEN)
                 .header("alg", "RS256")
@@ -106,6 +131,11 @@ class TaskServiceCapabilityTest {
                 .claim(JwtConstant.CLAIM_AGENT_ID, String.valueOf(AGENT_ID))
                 .claim(JwtConstant.CLAIM_SPACE_ID, String.valueOf(SPACE_ID))
                 .claim(JwtConstant.CLAIM_DOCUMENT_ID, String.valueOf(DOCUMENT_ID))
+                .claim(JwtConstant.CLAIM_EXECUTION_MODE, TaskExecutionMode.LIVE.name())
+                .claim(JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, "5")
+                .claim(JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, "a".repeat(64))
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, "1")
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, "b".repeat(64))
                 .build();
     }
 
@@ -115,6 +145,11 @@ class TaskServiceCapabilityTest {
         task.setAgentId(AGENT_ID);
         task.setSpaceId(SPACE_ID);
         task.setDocumentId(DOCUMENT_ID);
+        task.setExecutionMode(TaskExecutionMode.LIVE.name());
+        task.setDocumentVersionSnapshot(5L);
+        task.setDocumentContentSha256("a".repeat(64));
+        task.setInputSnapshotSchemaVersion(1);
+        task.setInputSnapshotHash("b".repeat(64));
         task.setStatus(status.getCode());
         return task;
     }

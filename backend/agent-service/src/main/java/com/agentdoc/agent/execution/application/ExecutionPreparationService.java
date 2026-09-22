@@ -8,6 +8,7 @@ import com.agentdoc.agent.enums.SkillSelectionMode;
 import com.agentdoc.agent.execution.context.ExternalMcpConnection;
 import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
 import com.agentdoc.agent.execution.skill.SkillSelectionContext;
+import com.agentdoc.agent.execution.skill.SkillCandidate;
 import com.agentdoc.agent.execution.skill.SkillSelectionResult;
 import com.agentdoc.agent.execution.skill.SkillSelectionStrategyRegistry;
 import com.agentdoc.agent.execution.prompt.PromptService;
@@ -15,21 +16,28 @@ import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.service.SkillSnapshotService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.SnapshotCanonicalV3Utils;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Agent任务执行前置准备服务
@@ -55,6 +63,7 @@ public class ExecutionPreparationService {
     private final PromptService promptService;
     private final SkillPackageProperties skillPackageProperties;
     private final AgentTelemetry telemetry;
+    private final AgentExecutionMapper executionMapper;
 
     /**
      * 执行Agent任务前置准备全流程
@@ -71,6 +80,10 @@ public class ExecutionPreparationService {
      */
     public PreparedExecution prepare(String a2aTaskId, String a2aContextId, AgentTaskInputDTO input,
                                      String instruction) {
+        // 若任务执行类型是【ISOLATED】类型，则走prepareReplay
+        if (TaskExecutionMode.ISOLATED.name().equals(input.executionMode())) {
+            return prepareReplay(a2aTaskId, a2aContextId, input, instruction);
+        }
         // 读取并捕获Agent、模型、绑定技能、MCP连接等配置快照
         ExecutionPreparationTransactionService.CapturedExecution captured =
                 transactionService.capture(input.agentId());
@@ -126,11 +139,298 @@ public class ExecutionPreparationService {
         execution.setToolWhitelistSnapshot(JsonUtils.toJson(snapshot.allowedMcpTools()));
         execution.setExternalMcpSnapshotJson(externalMcpSnapshot(captured.externalMcpConnections()));
         execution.setExecutionSnapshotSchemaVersion(AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION);
+        execution.setExecutionSnapshotJson(AgentExecutionConvertor.snapshotJson(execution));
         execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
         // 写入数据库，状态为已提交(submitted)，代表前置准备完成，等待Runtime调度执行
         executionPersistenceService.insertSubmitted(execution);
         return new PreparedExecution(agent, model, snapshot, systemPrompt, execution,
                 captured.externalMcpConnections());
+    }
+
+    /**
+     * 准备一次Agent任务回放（Replay）执行实例
+     * <p>
+     * 基于源执行记录的冻结快照，校验快照完整性、哈希一致性、指令一致性；
+     * 校验通过后从快照恢复Agent、模型、Skill快照信息，生成新的执行记录并持久化入库。
+     * 当前回放隔离策略：禁止包含外部MCP依赖的快照回放。
+     * </p>
+     * @param a2aTaskId A2A协议任务ID
+     * @param a2aContextId A2A上下文ID
+     * @param input 回放任务入参DTO，携带源执行身份信息
+     * @param instruction 用户指令，必须和源快照冻结指令完全一致
+     * @return PreparedExecution 已完成校验与恢复的回放执行上下文
+     * @throws BusinessException 快照身份、哈希、指令、外部MCP、快照解析等校验失败抛出CONFLICT冲突异常
+     */
+    private PreparedExecution prepareReplay(String a2aTaskId, String a2aContextId,
+                                            AgentTaskInputDTO input, String instruction) {
+        // 校验回放来源身份字段是否齐全
+        requireReplayIdentity(input);
+        // 查询原始源执行记录
+        AgentExecutionEntity source = executionMapper.selectById(input.sourceExecutionId());
+        // 多重一致性校验：源记录存在性、任务/空间匹配、快照版本、快照哈希校验
+        if (source == null || !input.sourceTaskId().equals(source.getWorkbenchTaskId())
+                || !input.spaceId().equals(source.getSpaceId())
+                || source.getExecutionSnapshotSchemaVersion() == null
+                || source.getExecutionSnapshotSchemaVersion() != AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION
+                || source.getExecutionSnapshotJson() == null
+                // 入参携带的快照哈希与数据库存储哈希比对
+                || !input.sourceExecutionSnapshotHash().equals(source.getExecutionSnapshotHash())
+                // 二次校验：数据库快照JSON重新规范化计算哈希，防篡改
+                || !input.sourceExecutionSnapshotHash().equals(
+                SnapshotCanonicalV3Utils.hashEnvelope(source.getExecutionSnapshotJson()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源执行快照身份无效");
+        }
+        // 校验用户指令：回放指令必须与源快照冻结指令完全一致，指令不可变更
+        if (!Objects.equals(source.getUserInstructionSnapshot(), instruction)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 指令与来源冻结输入不一致");
+        }
+        // 解析快照外层envelope包装节点
+        JsonNode envelope = JsonUtils.parse(source.getExecutionSnapshotJson(), JsonNode.class);
+        // 提取业务snapshot主体节点
+        JsonNode snapshot = envelope == null ? null : envelope.get("snapshot");
+        // 校验外层envelope结构、schema版本、snapshot节点合法性
+        if (envelope == null || envelope.path("schemaVersion").asInt(-1)
+                != AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION || snapshot == null || !snapshot.isObject()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源执行快照无法解析");
+        }
+        // 获取外部MCP快照节点
+        JsonNode externalMcp = snapshot.get("externalMcpSnapshot");
+        // 回放隔离策略：快照中存在非空外部MCP数组，拒绝回放
+        if (externalMcp != null && !externalMcp.isNull()
+                && (!externalMcp.isArray() || !externalMcp.isEmpty())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源包含外部 MCP，当前隔离策略拒绝执行");
+        }
+
+        // 从快照恢复Agent实体
+        AgentEntity agent = restoreAgent(snapshot, input);
+        // 从快照恢复模型实体
+        ModelEntity model = restoreModel(snapshot.path("model"));
+        // 回填模型配置版本
+        model.setConfigVersion(longValue(snapshot.get("modelConfigVersion")));
+        // 绑定Agent与模型ID
+        agent.setModelId(model.getId());
+        // 恢复Skill执行快照
+        SkillExecutionSnapshot skillSnapshot = restoreSkillSnapshot(snapshot);
+        // 读取冻结的系统提示词
+        String systemPrompt = text(snapshot, "systemPrompt");
+        if (systemPrompt == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源缺少冻结系统提示词");
+        }
+
+        // 将回放上下文转换为数据库执行实体
+        AgentExecutionEntity execution = AgentExecutionConvertor.toEntity(
+                a2aTaskId, a2aContextId, input, agent, model, systemPrompt, source.getPromptHash());
+        // 回填冻结用户指令快照
+        execution.setUserInstructionSnapshot(instruction);
+        // Skill绑定快照JSON
+        execution.setSkillSnapshotJson(JsonUtils.toJson(skillSnapshot.boundSkills()));
+        // Skill指令哈希
+        execution.setSkillInstructionHash(skillSnapshot.skillInstructionHash());
+        // 技能选择模式
+        execution.setSkillSelectionMode(text(snapshot, "skillSelectionMode"));
+        // 生效的技能选择模式
+        execution.setSkillSelectionEffectiveMode(skillSnapshot.selectionMode());
+        // 技能路由模型ID
+        execution.setSkillRouterModelId(longValue(snapshot.get("skillRouterModelId")));
+        // 选中的技能版本ID列表JSON
+        execution.setSelectedSkillVersionIdsJson(JsonUtils.toJson(skillSnapshot.selectedSkillVersionIds()));
+        // 技能路由快照
+        execution.setSkillRouterSnapshotJson(skillSnapshot.routerSnapshotJson());
+        // 工具白名单快照
+        execution.setToolWhitelistSnapshot(skillSnapshot.allowedMcpTools() == null
+                ? null : JsonUtils.toJson(skillSnapshot.allowedMcpTools()));
+        // 工具定义快照
+        JsonNode toolDefinitions = snapshot.get("toolDefinitions");
+        execution.setToolDefinitionSnapshotJson(toolDefinitions == null || toolDefinitions.isNull()
+                ? null : JsonUtils.toJson(toolDefinitions));
+        // 外部MCP快照JSON
+        execution.setExternalMcpSnapshotJson(externalMcp == null || externalMcp.isNull()
+                ? null : JsonUtils.toJson(externalMcp));
+        // 快照协议版本固定为V3
+        execution.setExecutionSnapshotSchemaVersion(AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION);
+        // 生成新的执行快照JSON
+        execution.setExecutionSnapshotJson(AgentExecutionConvertor.snapshotJson(execution));
+        // 计算新快照哈希
+        execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
+        // 最终校验：恢复生成的快照哈希必须与源快照哈希保持一致，保证回放状态完全等价
+        if (!input.sourceExecutionSnapshotHash().equals(execution.getExecutionSnapshotHash())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 恢复后的执行快照与来源不一致");
+        }
+        // 持久化提交状态的回放执行记录
+        executionPersistenceService.insertSubmitted(execution);
+        // 封装回放执行上下文返回
+        return new PreparedExecution(agent, model, skillSnapshot, systemPrompt, execution, List.of());
+    }
+
+    /**
+     * 校验回放来源身份信息完整性
+     * <p>
+     * 校验源任务ID、源执行ID、快照版本、快照哈希（固定64位SHA256）必填。
+     * </p>
+     * @param input 回放任务入参DTO
+     * @throws BusinessException 身份字段缺失或不合法抛出CONFLICT
+     */
+    private void requireReplayIdentity(AgentTaskInputDTO input) {
+        if (input.sourceTaskId() == null || input.sourceExecutionId() == null
+                || input.sourceExecutionSnapshotSchemaVersion() == null
+                || input.sourceExecutionSnapshotSchemaVersion() != AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION
+                || input.sourceExecutionSnapshotHash() == null
+                || input.sourceExecutionSnapshotHash().length() != 64) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源执行身份不完整");
+        }
+    }
+
+    /**
+     * 从快照JsonNode恢复Agent实体
+     * @param snapshot 执行快照根节点
+     * @param input 回放入参DTO
+     * @return 填充完成的AgentEntity
+     * @throws BusinessException 快照缺失Agent标识时抛出CONFLICT
+     */
+    private AgentEntity restoreAgent(JsonNode snapshot, AgentTaskInputDTO input) {
+        AgentEntity agent = new AgentEntity();
+        // 源AgentID
+        agent.setId(longValue(snapshot.get("sourceAgentId")));
+        // 空间ID取自入参
+        agent.setSpaceId(input.spaceId());
+        // Agent名称快照
+        agent.setName(text(snapshot, "agentNameSnapshot"));
+        // Agent配置版本
+        agent.setConfigVersion(longValue(snapshot.get("agentConfigVersion")));
+        // 最大迭代次数
+        agent.setMaxIterations(intValue(snapshot.get("maxIterations")));
+        // 执行超时秒数
+        agent.setExecutionTimeoutSeconds(intValue(snapshot.get("executionTimeoutSeconds")));
+        // 系统提示词
+        agent.setSystemPrompt(text(snapshot, "systemPrompt"));
+        // Token预算取自入参
+        agent.setTokenBudget(input.tokenBudget());
+        // 技能选择模式
+        agent.setSkillSelectionMode(text(snapshot, "skillSelectionMode"));
+        // 技能路由模型ID
+        agent.setSkillRouterModelId(longValue(snapshot.get("skillRouterModelId")));
+        // 回放强制关闭外部MCP
+        agent.setExternalMcpEnabled(Boolean.FALSE);
+        // 工具白名单
+        JsonNode whitelist = snapshot.get("toolWhitelist");
+        agent.setToolWhitelist(whitelist == null || whitelist.isNull() ? null : JsonUtils.toJson(whitelist));
+        // AgentID不能为空
+        if (agent.getId() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源缺少 Agent 快照");
+        }
+        return agent;
+    }
+
+    /**
+     * 从快照节点恢复模型实体，获取回放使用的模型凭证
+     * @param modelSnapshot 模型快照JsonNode
+     * @return 填充完成的ModelEntity
+     * @throws BusinessException 模型快照缺失或不合法抛出CONFLICT
+     */
+    private ModelEntity restoreModel(JsonNode modelSnapshot) {
+        if (modelSnapshot == null || !modelSnapshot.isObject()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源缺少模型快照");
+        }
+        Long modelId = longValue(modelSnapshot.get("id"));
+        if (modelId == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源缺少模型快照");
+        }
+        // 解析回放模型凭证（密钥等敏感信息）
+        ModelEntity model = transactionService.resolveReplayModelCredential(modelId);
+        model.setProvider(text(modelSnapshot, "provider"));
+        model.setAdapterType(text(modelSnapshot, "adapterType"));
+        model.setModelKey(text(modelSnapshot, "modelKey"));
+        model.setDisplayName(text(modelSnapshot, "displayName"));
+        model.setBaseUrl(text(modelSnapshot, "baseUrl"));
+        model.setOptionsJson(text(modelSnapshot, "optionsJson"));
+        model.setContextWindow(longValue(modelSnapshot.get("contextWindow")));
+        model.setMaxOutputTokens(longValue(modelSnapshot.get("maxOutputTokens")));
+        model.setInputPricePerMillion(decimalValue(modelSnapshot.get("inputPricePerMillion")));
+        model.setOutputPricePerMillion(decimalValue(modelSnapshot.get("outputPricePerMillion")));
+        return model;
+    }
+
+    /**
+     * 从快照恢复Skill执行快照对象，校验选中技能与候选技能的引用一致性
+     * @param snapshot 执行快照根节点
+     * @return SkillExecutionSnapshot 技能执行快照
+     * @throws BusinessException 技能快照引用关系不合法抛出CONFLICT
+     */
+    private SkillExecutionSnapshot restoreSkillSnapshot(JsonNode snapshot) {
+        // 解析候选Skill列表
+        JsonNode skillsNode = snapshot.get("skillSnapshot");
+        List<SkillCandidate> skills = skillsNode == null || skillsNode.isNull()
+                ? List.of() : JsonUtils.parse(skillsNode.toString(),
+                new TypeReference<List<SkillCandidate>>() { });
+        // 解析本次选中的技能版本ID
+        JsonNode selectedNode = snapshot.get("selectedSkillVersionIds");
+        List<Long> selected = selectedNode == null || selectedNode.isNull() ? List.of()
+                : JsonUtils.parse(selectedNode.toString(), new TypeReference<List<Long>>() { });
+        // 解析工具白名单
+        JsonNode whitelistNode = snapshot.get("toolWhitelist");
+        List<String> whitelist = whitelistNode == null || whitelistNode.isNull() ? null
+                : JsonUtils.parse(whitelistNode.toString(), new TypeReference<List<String>>() { });
+        // 校验：选中的每个技能版本ID，必须存在于候选Skill列表中，防止引用断裂
+        if (skills == null || selected == null || selected.stream().anyMatch(id -> skills.stream()
+                .noneMatch(skill -> skill.skillVersionId().equals(id)))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay Skill 快照无效");
+        }
+        // 提取选中技能对应的可读资源路径，去重并排序
+        List<String> readablePaths = skills.stream().filter(skill -> selected.contains(skill.skillVersionId()))
+                .flatMap(skill -> skill.readableResources().stream().map(value -> value.path()))
+                .distinct().sorted().toList();
+        // 技能路由快照
+        JsonNode routerNode = snapshot.get("skillRouterSnapshot");
+        return new SkillExecutionSnapshot(skills, selected, readablePaths, whitelist,
+                JsonUtils.toJson(skills), text(snapshot, "skillInstructionHash"), "",
+                text(snapshot, "skillSelectionEffectiveMode"),
+                routerNode == null || routerNode.isNull() ? null : JsonUtils.toJson(routerNode));
+    }
+
+    /**
+     * 读取JsonNode文本字段，null/空节点返回null
+     * @param node Json节点
+     * @param field 字段名
+     * @return 字段文本值
+     */
+    private String text(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || value.isNull() ? null : value.asText();
+    }
+
+    /**
+     * 读取JsonNode长整型，无法转为long返回null
+     * @param value Json节点
+     * @return Long值
+     */
+    private Long longValue(JsonNode value) {
+        return value == null || value.isNull() || !value.canConvertToLong() ? null : value.longValue();
+    }
+
+    /**
+     * 读取JsonNode整型，无法转为int返回null
+     * @param value Json节点
+     * @return Integer值
+     */
+    private Integer intValue(JsonNode value) {
+        return value == null || value.isNull() || !value.canConvertToInt() ? null : value.intValue();
+    }
+
+    /**
+     * 读取JsonNode并转为BigDecimal，用于价格数值；解析失败抛业务异常
+     * @param value Json节点
+     * @return BigDecimal数值
+     * @throws BusinessException 数字格式非法抛出CONFLICT
+     */
+    private BigDecimal decimalValue(JsonNode value) {
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.asText());
+        } catch (NumberFormatException exception) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 模型价格快照无效");
+        }
     }
 
     /**

@@ -33,6 +33,7 @@
         <module>document-service</module>
         <module>task-service</module>
         <module>agent-service</module>
+        <module>evaluation-service</module>
     </modules>
 
     <properties>

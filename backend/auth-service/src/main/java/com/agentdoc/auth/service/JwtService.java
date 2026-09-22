@@ -182,26 +182,122 @@ public class JwtService {
     }
 
     /**
-     * 签发任务能力 JWT。任务能力令牌与用户登录令牌共用 auth-service 的 RSA 密钥和 JWKS，
-     * 通过 actorType/scope 与普通登录令牌区分；任务权限由 task-service 在签发前完成裁决。
+     * 签发任务能力 JWT（Agent令牌）
+     * <p>
+     * 任务能力令牌与用户登录令牌复用 auth-service 的 RSA 密钥与 JWKS 端点；
+     * 通过 actorType、scope 业务声明和 audience 受众，与普通用户登录令牌做隔离区分。
+     * 任务业务权限裁决前置在 task-service，本方法仅负责按既定权限结果组装并签发JWT，不做权限判断。
+     * 该令牌放置于请求头 X-TASK-CAPABILITY，供Agent执行任务时调用下游服务使用。
+     * </p>
+     * @param taskId 任务唯一ID
+     * @param agentId Agent实例ID
+     * @param spaceId 工作空间ID
+     * @param documentId 文档ID
+     * @param executionMode 执行模式，标记任务执行策略
+     * @param documentVersionSnapshot 文档版本快照序号
+     * @param documentContentSha256 文档内容SHA256哈希值
+     * @param inputSnapshotSchemaVersion 输入快照协议版本号
+     * @param inputSnapshotHash 输入快照规范化哈希，用于校验任务输入不可篡改
+     * @param actions 当前任务允许执行的动作集合，下游服务校验动作权限
+     * @return 已签名的JWT令牌字符串
      */
     public String createTaskCapabilityToken(Long taskId, Long agentId, Long spaceId,
-                                             Long documentId, List<String> actions) {
+                                            Long documentId, String executionMode,
+                                            Long documentVersionSnapshot, String documentContentSha256,
+                                            Integer inputSnapshotSchemaVersion, String inputSnapshotHash,
+                                            List<String> actions) {
+        // 获取当前UTC时间，用于iat签发时间
         Instant now = Instant.now();
+        // 构建JWT声明集合
         JwtClaimsSet claims = JwtClaimsSet.builder()
+                // 令牌发行人，对应auth-service的issuer
                 .issuer(props.issuer())
+                // 签发时间 iat
                 .issuedAt(now)
+                // 令牌过期时间：基于配置常量设置任务能力令牌TTL
                 .expiresAt(now.plus(Duration.ofHours(AuthConstant.TASK_CAPABILITY_TTL_HOURS)))
+                // sub主体：使用taskId作为主体标识，代表该令牌归属本次任务
                 .subject(String.valueOf(taskId))
+                // aud受众：目标接收方，限定为任务能力校验器的受众标识
+                .audience(List.of(JwtConstant.TASK_CAPABILITY_AUDIENCE))
+                // 自定义声明：actor_type 角色类型 = AGENT，标识这是Agent任务令牌
                 .claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_AGENT)
+                // 自定义声明：agentId，关联执行任务的Agent
                 .claim(JwtConstant.CLAIM_AGENT_ID, agentId)
+                // 自定义声明：taskId，绑定当前任务
                 .claim(JwtConstant.CLAIM_TASK_ID, taskId)
+                // 自定义声明：spaceId，绑定所属工作空间
                 .claim(JwtConstant.CLAIM_SPACE_ID, spaceId)
+                // 自定义声明：documentId，绑定操作文档
                 .claim(JwtConstant.CLAIM_DOCUMENT_ID, documentId)
+                // 自定义声明：executionMode，任务执行模式
+                .claim(JwtConstant.CLAIM_EXECUTION_MODE, executionMode)
+                // 自定义声明：文档版本快照序号
+                .claim(JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, documentVersionSnapshot)
+                // 自定义声明：文档内容哈希，用于文档内容防篡改校验
+                .claim(JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, documentContentSha256)
+                // 自定义声明：输入快照协议版本
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, inputSnapshotSchemaVersion)
+                // 自定义声明：输入快照哈希，校验任务输入快照不可篡改
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, inputSnapshotHash)
+                // 自定义声明：允许动作列表；null转为空列表，避免下游空指针
                 .claim(JwtConstant.CLAIM_AGENT_ACTIONS, actions == null ? List.of() : actions)
+                // 自定义声明：scope作用域，标记为Agent任务作用域
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_AGENT)
+                // jti：全局唯一令牌ID，用于令牌撤销、审计日志
                 .id(UUID.randomUUID().toString())
                 .build();
+        // 使用JwtEncoder签名，返回JWT原始字符串
+        return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+    }
+
+    /**
+     * 签发 Evaluation Worker 后台能力M2M令牌
+     * <p>
+     * 仅供 evaluation-service 使用；用于后台读取数据、对账、精准取消Replay任务集合。
+     * 属于服务对服务令牌，actor_type=SERVICE，和Agent任务令牌、用户登录令牌做隔离。
+     * </p>
+     * @param runId 评估执行实例ID
+     * @param spaceId 目标工作空间ID
+     * @param taskIdsHash 待处理任务ID集合的哈希，用于标识一批Replay任务
+     * @param ttlSeconds 令牌有效时长（单位秒），动态指定，适配评估任务生命周期
+     * @param actions 该令牌允许执行的后台操作动作集合
+     * @return 已签名JWT令牌字符串
+     */
+    public String createEvaluationWorkerCapabilityToken(Long runId, Long spaceId, String taskIdsHash,
+                                                        long ttlSeconds, List<String> actions) {
+        // 获取当前UTC时间，作为iat签发时间
+        Instant now = Instant.now();
+        // 组装JWT声明载荷
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                // 令牌发行人，auth-service issuer
+                .issuer(props.issuer())
+                // iat：令牌签发时间
+                .issuedAt(now)
+                // exp：过期时间，使用传入的动态TTL（秒）
+                .expiresAt(now.plusSeconds(ttlSeconds))
+                // sub主体：固定为evaluation-service标识，代表该令牌归属评估服务
+                .subject(JwtConstant.EVALUATION_SERVICE)
+                // aud受众：限定为Evaluation Worker能力校验器的受众标识
+                .audience(List.of(JwtConstant.EVALUATION_WORKER_CAPABILITY_AUDIENCE))
+                // 自定义声明：actor_type = SERVICE，标记为服务身份M2M令牌
+                .claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_SERVICE)
+                // 自定义声明：service标识，绑定目标服务evaluation-service
+                .claim(JwtConstant.CLAIM_SERVICE, JwtConstant.EVALUATION_SERVICE)
+                // 自定义声明：runId，评估执行实例ID
+                .claim(JwtConstant.CLAIM_RUN_ID, runId)
+                // 自定义声明：spaceId，评估所属工作空间
+                .claim(JwtConstant.CLAIM_SPACE_ID, spaceId)
+                // 自定义声明：taskIdsHash，一批回放任务集合哈希，用于对账与取消Replay
+                .claim(JwtConstant.CLAIM_TASK_IDS_HASH, taskIdsHash)
+                // 自定义声明：worker允许执行的后台动作
+                .claim(JwtConstant.CLAIM_WORKER_ACTIONS, actions)
+                // 自定义声明：scope作用域，服务间调用作用域
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_SERVICE)
+                // jti：令牌唯一ID，用于审计、令牌失效
+                .id(UUID.randomUUID().toString())
+                .build();
+        // 编码并签名，返回JWT字符串
         return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 

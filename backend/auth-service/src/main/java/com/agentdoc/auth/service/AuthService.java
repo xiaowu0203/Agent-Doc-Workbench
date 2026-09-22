@@ -10,6 +10,7 @@ import com.agentdoc.auth.pojo.vo.UserVO;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityIssueDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.UserRefVO;
 import com.agentdoc.common.utils.AuthUtils;
@@ -28,6 +29,9 @@ import java.util.List;
 @Slf4j
 @Service
 public class AuthService {
+
+    private static final long MIN_WORKER_CAPABILITY_TTL_SECONDS = 300L;
+    private static final long MAX_WORKER_CAPABILITY_TTL_SECONDS = 86_400L;
 
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
@@ -196,12 +200,35 @@ public class AuthService {
                 || request.taskId() == null
                 || request.agentId() == null
                 || request.spaceId() == null
+                || request.executionMode() == null
+                || request.documentVersionSnapshot() == null
+                || request.documentContentSha256() == null
+                || request.inputSnapshotSchemaVersion() == null
+                || request.inputSnapshotHash() == null
                 || request.actions() == null
                 || request.actions().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "任务能力令牌参数无效");
         }
         return jwtService.createTaskCapabilityToken(request.taskId(), request.agentId(),
-                request.spaceId(), request.documentId(), request.actions());
+                request.spaceId(), request.documentId(), request.executionMode(), request.documentVersionSnapshot(),
+                request.documentContentSha256(), request.inputSnapshotSchemaVersion(), request.inputSnapshotHash(),
+                request.actions());
+    }
+
+    /**
+     * 校验并签发 Evaluation Worker 窄权限令牌。
+     */
+    public String issueEvaluationWorkerCapability(EvaluationWorkerCapabilityIssueDTO request) {
+        if (request == null || request.runId() == null || request.spaceId() == null
+                || request.taskIdsHash() == null || request.taskIdsHash().length() != 64
+                || request.ttlSeconds() == null
+                || request.ttlSeconds() < MIN_WORKER_CAPABILITY_TTL_SECONDS
+                || request.ttlSeconds() > MAX_WORKER_CAPABILITY_TTL_SECONDS
+                || request.actions() == null || request.actions().isEmpty()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluation Worker 能力令牌参数无效");
+        }
+        return jwtService.createEvaluationWorkerCapabilityToken(request.runId(), request.spaceId(),
+                request.taskIdsHash(), request.ttlSeconds(), List.copyOf(request.actions()));
     }
 
     /**

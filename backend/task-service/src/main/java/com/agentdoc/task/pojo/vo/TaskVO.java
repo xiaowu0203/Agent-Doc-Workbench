@@ -3,7 +3,7 @@ package com.agentdoc.task.pojo.vo;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.task.enums.TaskReadScope;
-import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.common.utils.JsonUtils;

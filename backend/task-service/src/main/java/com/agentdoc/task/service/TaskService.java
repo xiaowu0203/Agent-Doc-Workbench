@@ -13,9 +13,18 @@ import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityIssueDTO;
+import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
+import com.agentdoc.common.feign.dto.ReplayBatchItemDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
+import com.agentdoc.common.feign.vo.ReplaySourceVO;
+import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
+import com.agentdoc.common.feign.vo.ReplayBatchItemVO;
+import com.agentdoc.common.feign.vo.EvaluationWorkerCapabilityVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
@@ -33,8 +42,9 @@ import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.task.a2a.A2aTaskClient;
 import com.agentdoc.task.constant.TaskConstant;
+import com.agentdoc.task.config.ReplayProperties;
 import com.agentdoc.task.convertor.TaskConvertor;
-import com.agentdoc.task.enums.TaskExecutionMode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.TaskLineageType;
 import com.agentdoc.task.enums.AuditAction;
 import com.agentdoc.task.enums.AuditTargetType;
@@ -44,6 +54,7 @@ import com.agentdoc.task.execution.TaskExecutionPolicy;
 import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.pojo.dto.TaskCreateDTO;
+import com.agentdoc.task.pojo.dto.ReplayCreateDTO;
 import com.agentdoc.task.pojo.dto.TaskFocusRegionDTO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
@@ -56,6 +67,7 @@ import com.agentdoc.task.pojo.vo.TaskListItemVO;
 import com.agentdoc.task.pojo.vo.TaskFocusRegionVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
+import com.agentdoc.task.pojo.vo.ReplayEligibilityVO;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -67,12 +79,15 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -80,12 +95,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_RUN;
 import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_EXPORT;
 import static com.agentdoc.common.enums.WorkbenchSearchType.TASK;
 
@@ -110,6 +128,7 @@ public class TaskService {
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final TaskCapabilityVerifier taskCapabilityVerifier;
+    private final ReplayProperties replayProperties;
 
     /**
      * 创建Agent任务
@@ -170,7 +189,7 @@ public class TaskService {
                 focusRegions.scope(), focusRegions.json(), userId);
         entity.setId(IdWorker.getId());
         entity.setTaskNo(buildTaskNo(entity.getId()));
-        initializeExecutionSemantics(entity, entity.getId(), TaskLineageType.ORIGINAL);
+        initializeExecutionSemantics(entity, entity.getId(), TaskLineageType.ORIGINAL, TaskExecutionMode.LIVE);
         freezeInputSnapshot(entity, document.version(), document.contentSha256());
         taskMapper.insert(entity);
 
@@ -573,6 +592,453 @@ public class TaskService {
     }
 
     /**
+     * 查询并校验任务读取权限，供同领域只读资源复用。
+     * @param id 任务ID
+     * @return 任务实体
+     * @throws BusinessException 任务不存在、无空间读权限抛出异常
+     */
+    public TaskEntity requireReadable(Long id) {
+        TaskEntity entity = require(id);
+        requirePermission(entity.getSpaceId(), TASK_READ);
+        return entity;
+    }
+
+    /**
+     * 查询任务是否满足Replay回放准入条件；所有拒绝场景返回稳定原因码，不猜测来源执行。
+     * 校验清单：权限、源任务必须终态、血缘类型支持、根任务ID、输入快照完整且哈希合法、文档快照校验、Agent执行快照校验（版本、有效性、外部MCP禁止）。
+     * @param id 源任务ID
+     * @return Replay准入VO，包含是否可回放、失败原因码、快照信息、执行ID等
+     */
+    public ReplayEligibilityVO replayEligibility(Long id) {
+        TaskEntity source = require(id);
+        requirePermission(source.getSpaceId(), TASK_READ);
+        requirePermission(source.getSpaceId(), TASK_CREATE);
+        requirePermission(source.getSpaceId(), EVALUATION_RUN);
+        TaskLineageType lineage;
+        try {
+            lineage = TaskLineageType.valueOf(source.getLineageType());
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源任务血缘不合法");
+        }
+        if (!isTerminal(TaskStatus.fromCode(source.getStatus()))) {
+            return ineligible(source, lineage, "SOURCE_NOT_TERMINAL", null);
+        }
+        if (lineage == TaskLineageType.LEGACY_UNKNOWN || lineage == TaskLineageType.EXPERIMENT) {
+            return ineligible(source, lineage, "UNSUPPORTED_SOURCE_LINEAGE", null);
+        }
+        if (source.getRootTaskId() == null) {
+            return ineligible(source, lineage, "LINEAGE_ROOT_MISSING", null);
+        }
+        if (source.getInputSnapshotSchemaVersion() == null || source.getInputSnapshotHash() == null
+                || source.getDocumentVersionSnapshot() == null || source.getDocumentContentSha256() == null) {
+            return ineligible(source, lineage, "INPUT_SNAPSHOT_MISSING", null);
+        }
+        if (source.getInputSnapshotSchemaVersion() != TaskConstant.INPUT_SNAPSHOT_SCHEMA_VERSION) {
+            return ineligible(source, lineage, "INPUT_SNAPSHOT_UNSUPPORTED", null);
+        }
+        if (!source.getInputSnapshotHash().equals(calculateInputSnapshotHash(source))) {
+            return ineligible(source, lineage, "INPUT_SNAPSHOT_INVALID", null);
+        }
+        DocumentVersionExecutionContextVO frozenDocument = requireData(documentFeign.getVersionExecutionContext(
+                source.getDocumentId(), source.getDocumentVersionSnapshot(), source.getDocumentContentSha256()));
+        if (!source.getDocumentId().equals(frozenDocument.documentId())
+                || !source.getDocumentVersionSnapshot().equals(frozenDocument.version())
+                || !source.getDocumentContentSha256().equals(frozenDocument.contentSha256())) {
+            return ineligible(source, lineage, "DOCUMENT_SNAPSHOT_INVALID", null);
+        }
+        AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(id));
+        if (identity.executionCount() == 0) {
+            return ineligible(source, lineage, "AGENT_EXECUTION_MISSING", identity);
+        }
+        if (identity.executionCount() > 1) {
+            return ineligible(source, lineage, "MULTIPLE_AGENT_EXECUTION", identity);
+        }
+        if (identity.executionSnapshotSchemaVersion() == null || identity.executionSnapshotSchemaVersion() != 3) {
+            return ineligible(source, lineage, "EXECUTION_SNAPSHOT_UNSUPPORTED", identity);
+        }
+        if (!identity.snapshotValid()) {
+            return ineligible(source, lineage, "EXECUTION_SNAPSHOT_INVALID", identity);
+        }
+        if (identity.externalMcpPresent()) {
+            return ineligible(source, lineage, "EXTERNAL_MCP_UNSUPPORTED", identity);
+        }
+        return new ReplayEligibilityVO(true, null, source.getId(), identity.executionId(), source.getRootTaskId(),
+                lineage, replayDepth(source), source.getInputSnapshotSchemaVersion(), source.getInputSnapshotHash(),
+                identity.executionSnapshotSchemaVersion(), identity.executionSnapshotHash());
+    }
+
+    /**
+     * 按稳定幂等键创建隔离Replay任务，复用来源任务冻结输入快照与执行快照。
+     * 幂等约束：derivationRequestKey派生幂等键；重复提交且请求哈希一致直接返回已有任务，冲突则抛异常。
+     * 创建成功后发布消息驱动任务执行，同时写入审计日志。
+     * @param sourceTaskId 源任务ID
+     * @param request 回放创建DTO，携带派生幂等键
+     * @return 任务VO
+     * @throws BusinessException 源任务不可回放、幂等键冲突、消息发布失败抛出异常
+     */
+    public TaskVO createReplay(Long sourceTaskId, ReplayCreateDTO request) {
+        requireReplayCreationEnabled();
+        ReplayEligibilityVO eligibility = replayEligibility(sourceTaskId);
+        if (!eligibility.replayable()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源任务不可 Replay: " + eligibility.reasonCode());
+        }
+        TaskEntity source = require(sourceTaskId);
+        String requestHash = replayRequestHash(source, eligibility);
+        TaskEntity existing = findByDerivationRequestKey(request.derivationRequestKey());
+        if (existing != null) {
+            return requireSameReplayRequest(existing, requestHash);
+        }
+
+        TaskEntity replay = copyForDerived(source, source.getAgentConfigVersion(),
+                AuthUtils.getUserIdOrException(), TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED);
+        replay.setDerivationRequestKey(request.derivationRequestKey());
+        replay.setDerivationRequestHash(requestHash);
+        try {
+            taskMapper.insert(replay);
+        } catch (DuplicateKeyException exception) {
+            TaskEntity concurrent = findByDerivationRequestKey(request.derivationRequestKey());
+            if (concurrent == null) {
+                throw exception;
+            }
+            return requireSameReplayRequest(concurrent, requestHash);
+        }
+        try {
+            messagePublisher.publish(replay.getId());
+        } catch (RuntimeException exception) {
+            replay.setStatus(TaskStatus.FAILED.getCode());
+            replay.setErrorMessage("Replay 消息发布失败：" + exception.getMessage());
+            replay.setEndTime(LocalDateTime.now());
+            taskMapper.updateById(replay);
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "Replay 消息发布失败");
+        }
+        auditLogService.recordHuman(replay.getSpaceId(), AuditAction.TASK_CREATED,
+                AuditTargetType.TASK, replay.getId(), "基于任务 " + source.getTaskNo() + " 创建 Replay");
+        return TaskVO.from(replay);
+    }
+
+    /**
+     * 在一次用户授权上下文中全量校验并批量创建 Replay。
+     * 业务校验失败不会写入任何Task；本地写入使用单一事务，消息仅在事务提交成功后逐项发布。
+     * 批量创建完成后签发WorkerCapability JWT，供评估Worker批量查询状态、读取证据、取消任务。
+     * @param request 批量回放创建DTO
+     * @return 批量回放结果VO，包含子项列表、taskIds哈希、WorkerCapability令牌、过期时间
+     */
+    public ReplayBatchCreateVO createReplayBatch(ReplayBatchCreateDTO request) {
+        requireReplayCreationEnabled();
+        validateReplayBatchRequest(request);
+        Long userId = AuthUtils.getUserIdOrException();
+        List<ReplayBatchPlan> plans = request.items().stream()
+                .map(item -> prepareReplayBatchItem(request.spaceId(), item, userId))
+                .toList();
+
+        List<TaskEntity> created = persistReplayBatch(plans);
+        List<TaskEntity> resolved = plans.stream()
+                .map(plan -> requireReplayByRequestKey(plan.requestKey(), plan.requestHash()))
+                .toList();
+        List<Long> taskIds = resolved.stream().map(TaskEntity::getId).sorted().toList();
+        String taskIdsHash = StableSnapshotUtils.snapshotHash(1, taskIds);
+        String workerCapability = requireData(authFeign.issueEvaluationWorkerCapability(
+                new EvaluationWorkerCapabilityIssueDTO(request.runId(), request.spaceId(), taskIdsHash,
+                        request.workerCapabilityTtlSeconds(), evaluationWorkerActions())));
+        created.forEach(task -> publishReplayAndAudit(
+                task, require(task.getParentTaskId()), workerCapability));
+        List<ReplayBatchItemVO> items = new ArrayList<>(resolved.size());
+        for (int index = 0; index < resolved.size(); index++) {
+            TaskEntity replay = resolved.get(index);
+            ReplayBatchPlan plan = plans.get(index);
+            items.add(new ReplayBatchItemVO(plan.sourceTaskId(), plan.requestKey(), replay.getId(),
+                    TaskStatus.fromCode(replay.getStatus()).name()));
+        }
+        return new ReplayBatchCreateVO(request.runId(), request.spaceId(), List.copyOf(items), taskIdsHash,
+                workerCapability, Instant.now().plusSeconds(request.workerCapabilityTtlSeconds()));
+    }
+
+    /**
+     * 在当前用户权限上下文中，为已有的隔离 Replay Task 重新签发窄权限 WorkerCapability。
+     * 该操作不创建、不派发也不修改 Task。
+     */
+    public EvaluationWorkerCapabilityVO renewEvaluationWorkerCapability(
+            EvaluationWorkerCapabilityRenewDTO request) {
+        List<Long> taskIds = validateCapabilityRenewRequest(request);
+        requirePermission(request.spaceId(), TASK_READ);
+        requirePermission(request.spaceId(), EVALUATION_RUN);
+        List<TaskEntity> tasks = taskMapper.selectBatchIds(taskIds);
+        Map<Long, TaskEntity> byId = tasks.stream()
+                .collect(Collectors.toMap(TaskEntity::getId, Function.identity()));
+        if (tasks.size() != taskIds.size() || tasks.stream().anyMatch(task ->
+                !request.spaceId().equals(task.getSpaceId())
+                        || !TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                        || !TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode()))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能为同空间隔离 Replay Task 续签评估能力");
+        }
+        List<Long> orderedTaskIds = taskIds.stream().map(byId::get).map(TaskEntity::getId).toList();
+        String taskIdsHash = StableSnapshotUtils.snapshotHash(1, orderedTaskIds);
+        String workerCapability = requireData(authFeign.issueEvaluationWorkerCapability(
+                new EvaluationWorkerCapabilityIssueDTO(request.runId(), request.spaceId(), taskIdsHash,
+                        request.ttlSeconds(), evaluationWorkerActions())));
+        return new EvaluationWorkerCapabilityVO(request.runId(), request.spaceId(), taskIdsHash,
+                workerCapability, Instant.now().plusSeconds(request.ttlSeconds()));
+    }
+
+    private static List<Long> validateCapabilityRenewRequest(EvaluationWorkerCapabilityRenewDTO request) {
+        if (request == null || request.runId() == null || request.runId() <= 0
+                || request.spaceId() == null || request.spaceId() <= 0
+                || request.ttlSeconds() == null
+                || request.ttlSeconds() < TaskConstant.MIN_WORKER_CAPABILITY_TTL_SECONDS
+                || request.ttlSeconds() > TaskConstant.MAX_WORKER_CAPABILITY_TTL_SECONDS
+                || request.taskIds() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "WorkerCapability 续签参数无效");
+        }
+        List<Long> taskIds = request.taskIds().stream().filter(Objects::nonNull).distinct().sorted().toList();
+        if (taskIds.isEmpty() || taskIds.size() > TaskConstant.MAX_REPLAY_BATCH_SIZE
+                || taskIds.size() != request.taskIds().size() || taskIds.stream().anyMatch(id -> id <= 0)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "WorkerCapability 续签 Task 集合无效");
+        }
+        return taskIds;
+    }
+
+    private static List<String> evaluationWorkerActions() {
+        return List.of(JwtConstant.ACTION_BATCH_READ_TASK_STATUS,
+                JwtConstant.ACTION_READ_EVALUATION_EVIDENCE, JwtConstant.ACTION_VALIDATE_DOCUMENT_CHANGE,
+                JwtConstant.ACTION_CANCEL_RUN_TASKS);
+    }
+
+
+    /**
+     * 校验批量Replay请求入参，参数非法、幂等键重复/超长抛出异常。
+     * @param request 批量回放创建DTO
+     */
+    private void validateReplayBatchRequest(ReplayBatchCreateDTO request) {
+        if (request == null || request.runId() == null || request.spaceId() == null
+                || request.workerCapabilityTtlSeconds() == null
+                || request.workerCapabilityTtlSeconds() < TaskConstant.MIN_WORKER_CAPABILITY_TTL_SECONDS
+                || request.workerCapabilityTtlSeconds() > TaskConstant.MAX_WORKER_CAPABILITY_TTL_SECONDS
+                || request.items() == null || request.items().isEmpty()
+                || request.items().size() > TaskConstant.MAX_REPLAY_BATCH_SIZE) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "批量 Replay 请求参数无效");
+        }
+        Set<String> keys = new HashSet<>();
+        for (ReplayBatchItemDTO item : request.items()) {
+            if (item == null || item.sourceTaskId() == null || StringUtils.isBlank(item.derivationRequestKey())
+                    || item.derivationRequestKey().length() > 191 || !keys.add(item.derivationRequestKey())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "批量 Replay 项或幂等键无效");
+            }
+        }
+    }
+
+    /**
+     * 预处理单条批量回放项：校验源任务回放准入、同空间校验、计算请求哈希；
+     * 存在已有幂等记录则校验幂等一致性，不存在则构造待创建Replay实体，封装为ReplayBatchPlan。
+     * @param spaceId 空间ID
+     * @param item 批量回放子项DTO
+     * @param userId 当前操作用户ID
+     * @return 回放批量计划对象
+     */
+    private ReplayBatchPlan prepareReplayBatchItem(Long spaceId, ReplayBatchItemDTO item, Long userId) {
+        ReplayEligibilityVO eligibility = replayEligibility(item.sourceTaskId());
+        if (!eligibility.replayable()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源任务不可 Replay: " + eligibility.reasonCode());
+        }
+        TaskEntity source = require(item.sourceTaskId());
+        if (!spaceId.equals(source.getSpaceId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "批量 Replay 不允许跨 Space");
+        }
+        String requestHash = replayRequestHash(source, eligibility);
+        TaskEntity existing = findByDerivationRequestKey(item.derivationRequestKey());
+        if (existing != null) {
+            requireSameReplayRequest(existing, requestHash);
+            return new ReplayBatchPlan(source.getId(), item.derivationRequestKey(), requestHash, null);
+        }
+        TaskEntity replay = copyForDerived(source, source.getAgentConfigVersion(), userId,
+                TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED);
+        replay.setDerivationRequestKey(item.derivationRequestKey());
+        replay.setDerivationRequestHash(requestHash);
+        return new ReplayBatchPlan(source.getId(), item.derivationRequestKey(), requestHash, replay);
+    }
+
+    /**
+     * 批量持久化回放任务，支持多次重试应对并发DuplicateKey冲突；
+     * 每次只插入数据库不存在幂等键的记录；重试耗尽后强制校验所有幂等键必须存在。
+     * @param plans 回放批量计划列表
+     * @return 成功新建的任务实体列表
+     */
+    private List<TaskEntity> persistReplayBatch(List<ReplayBatchPlan> plans) {
+        List<TaskEntity> created = new ArrayList<>();
+        for (int attempt = 0; attempt < TaskConstant.REPLAY_BATCH_PERSIST_ATTEMPTS; attempt++) {
+            List<TaskEntity> missing = plans.stream()
+                    .filter(plan -> findByDerivationRequestKey(plan.requestKey()) == null)
+                    .map(ReplayBatchPlan::newTask)
+                    .filter(Objects::nonNull)
+                    .toList();
+            if (missing.isEmpty()) {
+                return created;
+            }
+            try {
+                taskMapper.insertBatch(missing);
+                created.addAll(missing);
+                return created;
+            } catch (DuplicateKeyException ignored) {
+                // 并发请求可能刚写入同一幂等键；事务已整体回滚，下一轮重新解析全部键。
+            }
+        }
+        plans.forEach(plan -> requireReplayByRequestKey(plan.requestKey(), plan.requestHash()));
+        return created;
+    }
+
+    /**
+     * 根据派生幂等键查询回放任务，并校验请求哈希幂等一致性；找不到任务抛出并发收敛失败异常。
+     * @param requestKey 派生幂等键
+     * @param requestHash 回放请求快照哈希
+     * @return 回放任务实体
+     */
+    private TaskEntity requireReplayByRequestKey(String requestKey, String requestHash) {
+        TaskEntity replay = findByDerivationRequestKey(requestKey);
+        if (replay == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "批量 Replay 并发创建未能收敛");
+        }
+        requireSameReplayRequest(replay, requestHash);
+        return replay;
+    }
+
+    /**
+     * 发布回放任务消息，写入审计日志；消息发布失败时将任务置为FAILED并记录错误信息。
+     * @param replay 回放任务实体
+     * @param source 源任务实体
+     */
+    private void publishReplayAndAudit(TaskEntity replay, TaskEntity source, String dispatchAuthorization) {
+        try {
+            messagePublisher.publish(replay.getId(), dispatchAuthorization);
+        } catch (RuntimeException exception) {
+            replay.setStatus(TaskStatus.FAILED.getCode());
+            replay.setErrorMessage("Replay 消息发布失败：" + exception.getMessage());
+            replay.setEndTime(LocalDateTime.now());
+            taskMapper.updateById(replay);
+        }
+        auditLogService.recordHuman(replay.getSpaceId(), AuditAction.TASK_CREATED,
+                AuditTargetType.TASK, replay.getId(), "基于任务 " + source.getTaskNo() + " 批量创建 Replay");
+    }
+
+    /**
+     * 调度Replay执行前再次校验回放来源身份，防止排队等待期间源任务执行快照失效。
+     * @param replay 回放任务实体
+     * @return Agent回放身份VO
+     * @throws BusinessException 非合法Replay、源执行快照不满足回放约束抛出异常
+     */
+    public AgentExecutionReplayIdentityVO requireReplayDispatchIdentity(TaskEntity replay) {
+        if (!TaskLineageType.REPLAY.name().equals(replay.getLineageType())
+                || !TaskExecutionMode.ISOLATED.name().equals(replay.getExecutionMode())
+                || replay.getParentTaskId() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "任务不是合法 Replay");
+        }
+        AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(replay.getParentTaskId()));
+        if (identity.executionCount() != 1 || !identity.snapshotValid()
+                || identity.executionSnapshotSchemaVersion() == null
+                || identity.executionSnapshotSchemaVersion() != 3 || identity.externalMcpPresent()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源执行在调度前已失效");
+        }
+        return identity;
+    }
+
+    /**
+     * 根据派生幂等键查询任务
+     * @param requestKey derivationRequestKey派生幂等键
+     * @return 任务实体，不存在返回null
+     */
+    private TaskEntity findByDerivationRequestKey(String requestKey) {
+        return taskMapper.selectOne(new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getDerivationRequestKey, requestKey));
+    }
+
+    /**
+     * 校验已有任务与本次回放请求哈希、血缘、执行模式完全一致，保证幂等复用；不一致则判定幂等键抢占冲突。
+     * @param existing 数据库已存在任务
+     * @param requestHash 当前回放请求哈希
+     * @return 任务VO
+     */
+    private TaskVO requireSameReplayRequest(TaskEntity existing, String requestHash) {
+        if (!requestHash.equals(existing.getDerivationRequestHash())
+                || !TaskLineageType.REPLAY.name().equals(existing.getLineageType())
+                || !TaskExecutionMode.ISOLATED.name().equals(existing.getExecutionMode())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "派生请求幂等键已被不同 Replay 请求占用");
+        }
+        return TaskVO.from(existing);
+    }
+
+    /**
+     * 构造回放派生快照，计算回放请求稳定哈希，用于幂等校验。
+     * @param source 源任务实体
+     * @param eligibility 回放准入VO
+     * @return 稳定快照SHA256哈希
+     */
+    private String replayRequestHash(TaskEntity source, ReplayEligibilityVO eligibility) {
+        ReplayDerivationSnapshot snapshot = new ReplayDerivationSnapshot(source.getId(), source.getRootTaskId(),
+                eligibility.sourceExecutionId(), source.getInputSnapshotSchemaVersion(),
+                source.getInputSnapshotHash(), eligibility.executionSnapshotSchemaVersion(),
+                eligibility.executionSnapshotHash(), TaskLineageType.REPLAY.name(), TaskExecutionMode.ISOLATED.name());
+        return StableSnapshotUtils.snapshotHash(1, snapshot);
+    }
+
+    /**
+     * 返回评估域冻结测试用例所需的最小来源投影，用于评估侧获取源任务快照与文档信息。
+     * @param id 源任务ID
+     * @param expectedSpaceId 预期所属空间ID，跨空间直接返回NOT_FOUND
+     * @return 回放源信息VO
+     */
+    public ReplaySourceVO replaySource(Long id, Long expectedSpaceId) {
+        TaskEntity source = require(id);
+        if (!source.getSpaceId().equals(expectedSpaceId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "来源任务不存在");
+        }
+        ReplayEligibilityVO eligibility = replayEligibility(id);
+        return new ReplaySourceVO(eligibility.replayable(), eligibility.reasonCode(), eligibility.sourceTaskId(),
+                eligibility.sourceExecutionId(), source.getSpaceId(), eligibility.rootTaskId(),
+                eligibility.sourceLineage().name(), eligibility.replayDepth(),
+                eligibility.inputSnapshotSchemaVersion(), eligibility.inputSnapshotHash(),
+                eligibility.executionSnapshotSchemaVersion(), eligibility.executionSnapshotHash(),
+                source.getDocumentVersionSnapshot(), source.getDocumentContentSha256());
+    }
+
+    /**
+     * 封装回放不可通过场景，统一返回ReplayEligibilityVO
+     * @param source 源任务实体
+     * @param lineage 任务血缘类型
+     * @param reason 稳定错误原因码
+     * @param identity Agent回放身份VO，可为null
+     * @return 回放准入VO（不可回放）
+     */
+    private ReplayEligibilityVO ineligible(TaskEntity source, TaskLineageType lineage, String reason,
+                                           AgentExecutionReplayIdentityVO identity) {
+        return new ReplayEligibilityVO(false, reason, source.getId(), identity == null ? null : identity.executionId(),
+                source.getRootTaskId(), lineage, replayDepth(source), source.getInputSnapshotSchemaVersion(),
+                source.getInputSnapshotHash(), identity == null ? null : identity.executionSnapshotSchemaVersion(),
+                identity == null ? null : identity.executionSnapshotHash());
+    }
+
+    /**
+     * 递归计算回放深度：统计连续REPLAY血缘层数，上限100防止死循环。
+     * @param task 任务实体
+     * @return 回放嵌套深度
+     */
+    private int replayDepth(TaskEntity task) {
+        int depth = 0;
+        TaskEntity current = task;
+        while (current != null && TaskLineageType.REPLAY.name().equals(current.getLineageType()) && depth < 100) {
+            depth++;
+            current = current.getParentTaskId() == null ? null : taskMapper.selectById(current.getParentTaskId());
+        }
+        return depth;
+    }
+
+    /**
+     * 判断任务状态是否为终态：已完成 / 失败 / 终止
+     * @param status 任务状态枚举
+     * @return true=终态
+     */
+    private boolean isTerminal(TaskStatus status) {
+        return status == TaskStatus.COMPLETED || status == TaskStatus.FAILED || status == TaskStatus.TERMINATED;
+    }
+
+    /**
      * 手动触发待运行任务，将任务消息重新投递到执行队列。
      *
      * @param id 任务 ID
@@ -803,6 +1269,11 @@ public class TaskService {
      */
     private TaskEntity copyForDerived(TaskEntity source, Long agentConfigVersion, Long userId,
                                       TaskLineageType lineageType) {
+        return copyForDerived(source, agentConfigVersion, userId, lineageType, TaskExecutionMode.LIVE);
+    }
+
+    private TaskEntity copyForDerived(TaskEntity source, Long agentConfigVersion, Long userId,
+                                      TaskLineageType lineageType, TaskExecutionMode executionMode) {
         TaskEntity target = new TaskEntity();
         target.setId(IdWorker.getId());
         target.setTaskNo(buildTaskNo(target.getId()));
@@ -821,7 +1292,7 @@ public class TaskService {
         target.setFocusRegionsJson(source.getFocusRegionsJson());
         target.setTokensEstimated(Boolean.FALSE);
         target.setParentTaskId(source.getId());
-        initializeExecutionSemantics(target, source.getRootTaskId(), lineageType);
+        initializeExecutionSemantics(target, source.getRootTaskId(), lineageType, executionMode);
         refreshInputSnapshot(target);
         target.setRetryCount(0);
         target.setCreatedBy(userId);
@@ -834,13 +1305,14 @@ public class TaskService {
      * @param rootTaskId 根任务ID
      * @param lineageType 血缘类型
      */
-    private void initializeExecutionSemantics(TaskEntity task, Long rootTaskId, TaskLineageType lineageType) {
+    private void initializeExecutionSemantics(TaskEntity task, Long rootTaskId, TaskLineageType lineageType,
+                                              TaskExecutionMode executionMode) {
         if (rootTaskId == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "来源任务缺少根任务血缘");
         }
         task.setRootTaskId(rootTaskId);
         task.setLineageType(lineageType.name());
-        task.setExecutionMode(TaskExecutionMode.LIVE.name());
+        task.setExecutionMode(executionMode.name());
         if (task.getTraceId() == null) {
             task.setTraceId(TraceContext.getTelemetryTraceId());
         }
@@ -873,12 +1345,18 @@ public class TaskService {
             throw new BusinessException(ErrorCode.CONFLICT, "任务缺少冻结文档输入");
         }
         int schemaVersion = TaskConstant.INPUT_SNAPSHOT_SCHEMA_VERSION;
+        task.setInputSnapshotSchemaVersion(schemaVersion);
+        task.setInputSnapshotHash(calculateInputSnapshotHash(task));
+    }
+
+    /** 根据任务当前冻结字段重算输入身份，不信任数据库中已有 hash。 */
+    private String calculateInputSnapshotHash(TaskEntity task) {
+        int schemaVersion = TaskConstant.INPUT_SNAPSHOT_SCHEMA_VERSION;
         TaskInputSnapshot snapshot = new TaskInputSnapshot(
                 task.getInstruction(), task.getSpaceId(), task.getDocumentId(), task.getDocumentType(),
                 task.getDocumentVersionSnapshot(), task.getDocumentContentSha256(), task.getReadScope(),
                 focusRegions(task), task.getTokenBudget(), task.getLineageType(), task.getExecutionMode());
-        task.setInputSnapshotSchemaVersion(schemaVersion);
-        task.setInputSnapshotHash(StableSnapshotUtils.snapshotHash(schemaVersion, snapshot));
+        return StableSnapshotUtils.snapshotHash(schemaVersion, snapshot);
     }
 
     /**
@@ -887,16 +1365,79 @@ public class TaskService {
      * @return 加密后的capabilityToken
      */
     private String issueEncryptedCapability(TaskEntity task) {
-        DocType documentType = requireDocumentType(task.getDocumentType());
-        // 根据文档类型区分允许执行的动作
-        List<String> actions = documentType == DocType.DRAFT
-                ? List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_WRITE_DRAFT)
-                : List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_CREATE_CHANGE_REQUEST);
-        String capability = requireData(authFeign.issueTaskCapability(
-                new TaskCapabilityIssueDTO(task.getId(), task.getAgentId(), task.getSpaceId(),
-                        task.getDocumentId(), actions)));
-        return cryptoService.encrypt(capability);
+        return cryptoService.encrypt(issueCapability(task));
     }
+
+    /** 紧急回滚门禁只阻止新建，不重新解释或删除既有 Replay。 */
+    private void requireReplayCreationEnabled() {
+        if (!replayProperties.isCreationEnabled()) {
+            throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE, "Replay 创建已由运维门禁暂停");
+        }
+    }
+
+    /**
+     * 签发任务运行能力令牌，根据任务执行模式、文档类型区分权限动作列表。
+     * 隔离模式(ISOLATED)仅开放只读片段与采集执行产物权限；
+     * 非隔离模式：草稿文档支持写草稿，正式文档支持创建变更请求。
+     * @param task 任务实体
+     * @return 明文JWT能力令牌
+     */
+    private String issueCapability(TaskEntity task) {
+        DocType documentType = requireDocumentType(task.getDocumentType());
+        List<String> actions;
+        if (TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode())) {
+            // 隔离Replay场景：仅允许读取文档片段、采集执行产物，禁止写文档
+            actions = List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_CAPTURE_EXECUTION_ARTIFACT);
+        } else {
+            // 实时任务，根据文档类型分配写权限
+            actions = documentType == DocType.DRAFT
+                    ? List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_WRITE_DRAFT)
+                    : List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_CREATE_CHANGE_REQUEST);
+        }
+        // 调用认证服务Feign接口签发任务能力令牌
+        return requireData(authFeign.issueTaskCapability(
+                new TaskCapabilityIssueDTO(task.getId(), task.getAgentId(), task.getSpaceId(),
+                        task.getDocumentId(), task.getExecutionMode(), task.getDocumentVersionSnapshot(),
+                        task.getDocumentContentSha256(), task.getInputSnapshotSchemaVersion(),
+                        task.getInputSnapshotHash(), actions)));
+    }
+
+    /**
+     * 获取本次投递使用的明文能力令牌。
+     * Replay隔离任务在真正投递执行时才签发窄权限令牌，令牌加密持久化到task表，避免重复签发。
+     * 并发场景使用条件更新防止重复写入；非隔离实时任务必须预先存在令牌，否则抛异常。
+     * @param task 任务实体
+     * @return 解密后的明文能力令牌
+     * @throws BusinessException 实时任务无令牌、令牌签发并发冲突时抛出
+     */
+    public String resolveDispatchCapability(TaskEntity task) {
+        // 数据库已存在加密令牌，直接解密返回
+        if (task.getCapabilityToken() != null && !task.getCapabilityToken().isBlank()) {
+            return cryptoService.decrypt(task.getCapabilityToken());
+        }
+        // 非隔离模式实时任务，要求预先已经存在能力令牌，不能现场签发
+        if (!TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "实时任务缺少能力令牌");
+        }
+        // 隔离Replay任务：现场签发令牌，加密写入数据库
+        String capability = issueCapability(task);
+        String encrypted = cryptoService.encrypt(capability);
+        // 条件更新：仅当capability_token为空时更新，防止并发重复签发
+        int updated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+                .eq(TaskEntity::getId, task.getId())
+                .isNull(TaskEntity::getCapabilityToken)
+                .set(TaskEntity::getCapabilityToken, encrypted));
+        if (updated > 0) {
+            return capability;
+        }
+        // 更新行数=0：说明其他线程已并发写入，重新查询并解密已有令牌
+        TaskEntity current = require(task.getId());
+        if (current.getCapabilityToken() == null || current.getCapabilityToken().isBlank()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "任务能力令牌签发冲突");
+        }
+        return cryptoService.decrypt(current.getCapabilityToken());
+    }
+
 
     /**
      * 组装 Agent 可见的任务文档上下文。
@@ -955,6 +1496,11 @@ public class TaskService {
      * @throws BusinessException 任意校验不通过抛出FORBIDDEN
      */
     public void checkCapability(Long taskId, String token) {
+        checkCapability(taskId, token, null);
+    }
+
+    /** 校验任务能力令牌及指定动作。 */
+    public void checkCapability(Long taskId, String token, String requiredAction) {
         // token不允许为空
         if (token == null || token.isBlank()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "缺少任务能力令牌");
@@ -973,12 +1519,39 @@ public class TaskService {
         }
         // 校验agentId、spaceId、documentId，和数据库任务记录完全匹配
         // 防止令牌被挪去访问其他agent、其他空间、其他文档
-        if (!String.valueOf(task.getAgentId()).equals(claims.getClaimAsString(JwtConstant.CLAIM_AGENT_ID))
-                || !String.valueOf(task.getSpaceId()).equals(claims.getClaimAsString(JwtConstant.CLAIM_SPACE_ID))
-                || !String.valueOf(task.getDocumentId()).equals(
-                claims.getClaimAsString(JwtConstant.CLAIM_DOCUMENT_ID))) {
+        if (!claimMatches(claims, JwtConstant.CLAIM_AGENT_ID, task.getAgentId())
+                || !claimMatches(claims, JwtConstant.CLAIM_SPACE_ID, task.getSpaceId())
+                || !claimMatches(claims, JwtConstant.CLAIM_DOCUMENT_ID, task.getDocumentId())
+                || !claimMatches(claims, JwtConstant.CLAIM_EXECUTION_MODE, task.getExecutionMode())
+                || !claimMatches(claims, JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT,
+                task.getDocumentVersionSnapshot())
+                || !claimMatches(claims, JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256,
+                task.getDocumentContentSha256())
+                || !claimMatches(claims, JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION,
+                task.getInputSnapshotSchemaVersion())
+                || !claimMatches(claims, JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, task.getInputSnapshotHash())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "任务能力范围不匹配");
         }
+        if (requiredAction != null) {
+            List<String> actions = claims.getClaimAsStringList(JwtConstant.CLAIM_AGENT_ACTIONS);
+            if (actions == null || !actions.contains(requiredAction)) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "任务能力令牌不允许执行该操作");
+            }
+        }
+    }
+
+    /**
+     * 校验JWT中指定Claim的值与预期值是否匹配。
+     * 将两边都转为字符串再比较，规避数字类型不一致（Integer/Long）导致的等值判断失败。
+     * 两边任意一方为null直接返回不匹配。
+     * @param claims JWT载荷对象
+     * @param claimName 待校验的claim名称
+     * @param expected 预期值
+     * @return true：值匹配；false：值不匹配或存在null
+     */
+    private boolean claimMatches(Jwt claims, String claimName, Object expected) {
+        Object actual = claims.getClaim(claimName);
+        return expected != null && actual != null && String.valueOf(expected).equals(String.valueOf(actual));
     }
 
     /**
@@ -1120,6 +1693,15 @@ public class TaskService {
                                      Long documentVersion, String documentContentSha256, String readScope,
                                      List<TaskFocusRegionDTO> focusRegions, Long tokenBudget,
                                      String lineageType, String executionMode) {
+    }
+
+    private record ReplayDerivationSnapshot(Long sourceTaskId, Long rootTaskId, Long sourceExecutionId,
+                                            Integer inputSnapshotSchemaVersion, String inputSnapshotHash,
+                                            Integer executionSnapshotSchemaVersion, String executionSnapshotHash,
+                                             String lineageType, String executionMode) {
+    }
+
+    private record ReplayBatchPlan(Long sourceTaskId, String requestKey, String requestHash, TaskEntity newTask) {
     }
 
     /**

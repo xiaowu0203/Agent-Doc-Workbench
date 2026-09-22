@@ -4,9 +4,11 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.dto.EvaluationDocumentChangePreviewDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentExecutionContextVO;
+import com.agentdoc.common.feign.vo.EvaluationDocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.DocumentFragmentVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
@@ -47,6 +49,11 @@ public interface DocumentFeign {
     @PostMapping("/api/document/documents/change-submission-preview")
     Result<DocumentChangePreviewVO> previewSubmittedDocumentChanges(
             @RequestBody DocumentChangePreviewRequestDTO request);
+
+    /** 使用 Task Capability 对冻结版本执行只读变更预览，不返回正文。 */
+    @PostMapping("/api/document/documents/evaluation-change-preview")
+    Result<EvaluationDocumentChangePreviewVO> previewEvaluationDocumentChanges(
+            @RequestBody EvaluationDocumentChangePreviewDTO request);
 
     /** 按变更请求幂等合并审批结果。 */
     @PostMapping("/api/document/documents/approval-merge")

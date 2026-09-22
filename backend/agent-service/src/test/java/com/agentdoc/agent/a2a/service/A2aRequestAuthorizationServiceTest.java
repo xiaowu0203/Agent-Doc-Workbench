@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import com.agentdoc.common.enums.TaskExecutionMode;
 
 import java.time.Instant;
 
@@ -65,6 +66,8 @@ class A2aRequestAuthorizationServiceTest {
 
     private AgentTaskInputDTO input(String capability, Long documentId) {
         return new AgentTaskInputDTO(TASK_ID, AGENT_ID, SPACE_ID, documentId, 1000L,
+                TaskExecutionMode.LIVE.name(), 5L, "a".repeat(64), 1, "b".repeat(64),
+                null, null, null, null,
                 "http://task-service/mcp", capability);
     }
 
@@ -88,6 +91,11 @@ class A2aRequestAuthorizationServiceTest {
                 .claim(JwtConstant.CLAIM_AGENT_ID, AGENT_ID)
                 .claim(JwtConstant.CLAIM_SPACE_ID, SPACE_ID)
                 .claim(JwtConstant.CLAIM_DOCUMENT_ID, DOCUMENT_ID)
+                .claim(JwtConstant.CLAIM_EXECUTION_MODE, TaskExecutionMode.LIVE.name())
+                .claim(JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, 5L)
+                .claim(JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, "a".repeat(64))
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, 1)
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, "b".repeat(64))
                 .build();
     }
 }

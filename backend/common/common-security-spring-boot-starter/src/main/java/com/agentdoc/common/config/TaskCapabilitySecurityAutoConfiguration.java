@@ -2,6 +2,7 @@ package com.agentdoc.common.config;
 
 import com.agentdoc.common.security.TaskCapabilityAuthenticationFilter;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
+import com.agentdoc.common.security.EvaluationWorkerCapabilityVerifier;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -53,6 +54,15 @@ public class TaskCapabilitySecurityAutoConfiguration {
     @ConditionalOnMissingBean
     public TaskCapabilityVerifier taskCapabilityVerifier(JwtDecoder decoder) {
         return new TaskCapabilityVerifier(decoder);
+    }
+
+    /** 构建 Evaluation 后台窄权限令牌验签器。 */
+    @Bean
+    @ConditionalOnBean(JwtDecoder.class)
+    @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
+    @ConditionalOnMissingBean
+    public EvaluationWorkerCapabilityVerifier evaluationWorkerCapabilityVerifier(JwtDecoder decoder) {
+        return new EvaluationWorkerCapabilityVerifier(decoder);
     }
 
     /**

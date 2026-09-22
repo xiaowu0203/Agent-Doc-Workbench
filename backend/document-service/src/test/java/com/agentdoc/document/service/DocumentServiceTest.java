@@ -8,6 +8,7 @@ import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
 import com.agentdoc.common.feign.dto.DocumentChangePreviewRequestDTO;
+import com.agentdoc.common.feign.dto.EvaluationDocumentChangePreviewDTO;
 import com.agentdoc.common.feign.vo.DocumentChangePreviewVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.utils.StableSnapshotUtils;
@@ -223,6 +224,39 @@ class DocumentServiceTest {
         assertEquals("旧内容", preview.baseContent());
         assertEquals("提案内容", preview.proposedContent());
         assertEquals(true, preview.conflicted());
+    }
+
+    @Test
+    void shouldPreviewEvaluationChangeWithoutReturningDocumentBody() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+        DocumentVersionEntity base = new DocumentVersionEntity();
+        base.setDocumentId(DOCUMENT_ID);
+        base.setVersionNo(1L);
+        base.setContent("旧内容");
+        when(versionService.requireVersion(DOCUMENT_ID, 1L)).thenReturn(base);
+
+        var preview = documentService.previewEvaluationChanges(new EvaluationDocumentChangePreviewDTO(
+                DOCUMENT_ID, 1L, StableSnapshotUtils.sha256Utf8("旧内容"),
+                List.of(new ChangeItemDTO(ChangeOp.REPLACE, "旧内容", "提案内容"))));
+
+        assertEquals(StableSnapshotUtils.sha256Utf8("提案内容"), preview.proposedContentSha256());
+        assertEquals(true, preview.conflicted());
+        verify(permissionService).requireAgentCapability(2001L, DOCUMENT_ID,
+                com.agentdoc.common.constant.JwtConstant.ACTION_READ_FRAGMENT);
+    }
+
+    @Test
+    void shouldRejectEvaluationChangeWhenFrozenContentHashDoesNotMatch() {
+        when(documentMapper.selectById(DOCUMENT_ID)).thenReturn(doc("当前内容"));
+        DocumentVersionEntity base = new DocumentVersionEntity();
+        base.setDocumentId(DOCUMENT_ID);
+        base.setVersionNo(1L);
+        base.setContent("旧内容");
+        when(versionService.requireVersion(DOCUMENT_ID, 1L)).thenReturn(base);
+
+        assertThrows(BusinessException.class, () -> documentService.previewEvaluationChanges(
+                new EvaluationDocumentChangePreviewDTO(DOCUMENT_ID, 1L, "a".repeat(64),
+                        List.of(new ChangeItemDTO(ChangeOp.REPLACE, "旧内容", "提案内容")))));
     }
 
     @Test
