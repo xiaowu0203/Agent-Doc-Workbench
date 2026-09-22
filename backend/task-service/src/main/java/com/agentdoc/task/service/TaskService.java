@@ -732,16 +732,18 @@ public class TaskService {
                 .toList();
 
         List<TaskEntity> created = persistReplayBatch(plans);
-        List<TaskEntity> resolved = plans.stream()
-                .map(plan -> requireReplayByRequestKey(plan.requestKey(), plan.requestHash()))
-                .toList();
+        List<TaskEntity> resolved = resolveReplayBatch(plans);
         List<Long> taskIds = resolved.stream().map(TaskEntity::getId).sorted().toList();
         String taskIdsHash = StableSnapshotUtils.snapshotHash(1, taskIds);
         String workerCapability = requireData(authFeign.issueEvaluationWorkerCapability(
                 new EvaluationWorkerCapabilityIssueDTO(request.runId(), request.spaceId(), taskIdsHash,
                         request.workerCapabilityTtlSeconds(), evaluationWorkerActions())));
-        created.forEach(task -> publishReplayAndAudit(
-                task, require(task.getParentTaskId()), workerCapability));
+        Map<String, ReplayBatchPlan> planByKey = plans.stream()
+                .collect(Collectors.toMap(ReplayBatchPlan::requestKey, Function.identity()));
+        created.forEach(task -> {
+            ReplayBatchPlan plan = planByKey.get(task.getDerivationRequestKey());
+            publishReplayAndAudit(task, plan.sourceTask(), workerCapability);
+        });
         List<ReplayBatchItemVO> items = new ArrayList<>(resolved.size());
         for (int index = 0; index < resolved.size(); index++) {
             TaskEntity replay = resolved.get(index);
@@ -847,13 +849,13 @@ public class TaskService {
         TaskEntity existing = findByDerivationRequestKey(item.derivationRequestKey());
         if (existing != null) {
             requireSameReplayRequest(existing, requestHash);
-            return new ReplayBatchPlan(source.getId(), item.derivationRequestKey(), requestHash, null);
+            return new ReplayBatchPlan(source.getId(), source, item.derivationRequestKey(), requestHash, null);
         }
         TaskEntity replay = copyForDerived(source, source.getAgentConfigVersion(), userId,
                 TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED);
         replay.setDerivationRequestKey(item.derivationRequestKey());
         replay.setDerivationRequestHash(requestHash);
-        return new ReplayBatchPlan(source.getId(), item.derivationRequestKey(), requestHash, replay);
+        return new ReplayBatchPlan(source.getId(), source, item.derivationRequestKey(), requestHash, replay);
     }
 
     /**
@@ -865,8 +867,10 @@ public class TaskService {
     private List<TaskEntity> persistReplayBatch(List<ReplayBatchPlan> plans) {
         List<TaskEntity> created = new ArrayList<>();
         for (int attempt = 0; attempt < TaskConstant.REPLAY_BATCH_PERSIST_ATTEMPTS; attempt++) {
+            Map<String, TaskEntity> existing = findByDerivationRequestKeys(
+                    plans.stream().map(ReplayBatchPlan::requestKey).toList());
             List<TaskEntity> missing = plans.stream()
-                    .filter(plan -> findByDerivationRequestKey(plan.requestKey()) == null)
+                    .filter(plan -> existing.get(plan.requestKey()) == null)
                     .map(ReplayBatchPlan::newTask)
                     .filter(Objects::nonNull)
                     .toList();
@@ -881,8 +885,26 @@ public class TaskService {
                 // 并发请求可能刚写入同一幂等键；事务已整体回滚，下一轮重新解析全部键。
             }
         }
-        plans.forEach(plan -> requireReplayByRequestKey(plan.requestKey(), plan.requestHash()));
+        resolveReplayBatch(plans);
         return created;
+    }
+
+    /**
+     * 一次加载全部幂等键对应的Replay任务，并按请求顺序校验哈希一致性。
+     */
+    private List<TaskEntity> resolveReplayBatch(List<ReplayBatchPlan> plans) {
+        Map<String, TaskEntity> byRequestKey = findByDerivationRequestKeys(
+                plans.stream().map(ReplayBatchPlan::requestKey).toList());
+        return plans.stream()
+                .map(plan -> {
+                    TaskEntity replay = byRequestKey.get(plan.requestKey());
+                    if (replay == null) {
+                        throw new BusinessException(ErrorCode.CONFLICT, "批量 Replay 并发创建未能收敛");
+                    }
+                    requireSameReplayRequest(replay, plan.requestHash());
+                    return replay;
+                })
+                .toList();
     }
 
     /**
@@ -947,6 +969,15 @@ public class TaskService {
     private TaskEntity findByDerivationRequestKey(String requestKey) {
         return taskMapper.selectOne(new LambdaQueryWrapper<TaskEntity>()
                 .eq(TaskEntity::getDerivationRequestKey, requestKey));
+    }
+
+    private Map<String, TaskEntity> findByDerivationRequestKeys(List<String> requestKeys) {
+        if (requestKeys.isEmpty()) {
+            return Map.of();
+        }
+        return taskMapper.selectList(new LambdaQueryWrapper<TaskEntity>()
+                        .in(TaskEntity::getDerivationRequestKey, requestKeys)).stream()
+                .collect(Collectors.toMap(TaskEntity::getDerivationRequestKey, Function.identity()));
     }
 
     /**
@@ -1701,7 +1732,8 @@ public class TaskService {
                                              String lineageType, String executionMode) {
     }
 
-    private record ReplayBatchPlan(Long sourceTaskId, String requestKey, String requestHash, TaskEntity newTask) {
+    private record ReplayBatchPlan(Long sourceTaskId, TaskEntity sourceTask, String requestKey,
+                                   String requestHash, TaskEntity newTask) {
     }
 
     /**

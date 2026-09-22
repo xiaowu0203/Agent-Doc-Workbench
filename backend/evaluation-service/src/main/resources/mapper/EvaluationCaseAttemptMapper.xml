@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.evaluation.mapper.EvaluationCaseAttemptMapper">
+    <insert id="insertBatch">
+        INSERT INTO evaluation_case_attempt
+            (id, case_run_id, run_id, space_id, attempt_no, status,
+             created_at, updated_at)
+        VALUES
+        <foreach collection="entities" item="entity" separator=",">
+            (#{entity.id}, #{entity.caseRunId}, #{entity.runId}, #{entity.spaceId},
+             #{entity.attemptNo}, #{entity.status}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        </foreach>
+    </insert>
+
+    <update id="updateBatch">
+        UPDATE evaluation_case_attempt
+        SET replay_task_id = CASE id
+            <foreach collection="entities" item="entity">
+                WHEN #{entity.id} THEN #{entity.replayTaskId}
+            </foreach>
+            END,
+            capability_segment_id = CASE id
+            <foreach collection="entities" item="entity">
+                WHEN #{entity.id} THEN #{entity.capabilitySegmentId}
+            </foreach>
+            END,
+            status = CASE id
+            <foreach collection="entities" item="entity">
+                WHEN #{entity.id} THEN #{entity.status}
+            </foreach>
+            END,
+            started_at = CASE id
+            <foreach collection="entities" item="entity">
+                WHEN #{entity.id} THEN #{entity.startedAt}
+            </foreach>
+            END,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id IN
+        <foreach collection="entities" item="entity" open="(" separator="," close=")">
+            #{entity.id}
+        </foreach>
+    </update>
+</mapper>

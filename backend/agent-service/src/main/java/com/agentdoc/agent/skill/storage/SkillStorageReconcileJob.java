@@ -2,11 +2,8 @@ package com.agentdoc.agent.skill.storage;
 
 import com.agentdoc.agent.constant.SkillConstant;
 import com.agentdoc.agent.mapper.SkillVersionMapper;
-import com.agentdoc.agent.pojo.entity.SkillVersionEntity;
 import com.agentdoc.common.minio.service.ObjectStorageService;
 import com.agentdoc.common.logging.LogSanitizer;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -14,9 +11,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.Duration;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
+import java.util.HashSet;
 
 /**
  * 清理对象写入成功、数据库落库失败后遗留的 Skill ZIP。
@@ -39,9 +35,6 @@ public class SkillStorageReconcileJob {
 
     /** 孤儿文件最小存活时长：超过24小时才允许被清理，给DB落库留出窗口期 */
     private static final long ORPHAN_AGE_HOURS = 24;
-    /** 数据库分页查询批次大小，分批拉取所有SkillVersion的storageKey，避免大结果集内存压力 */
-    private static final long DB_BATCH_SIZE = 500;
-
     private final ObjectStorageService storage;
     private final SkillVersionMapper versionMapper;
 
@@ -60,31 +53,12 @@ public class SkillStorageReconcileJob {
     }
 
     /**
-     * 分页查询数据库，收集所有SkillVersion版本实体使用过的storageKey
+     * 一次查询数据库，收集所有SkillVersion版本实体使用过的storageKey
      *
      * @return 数据库中有效的存储key集合；null/blank的key会被过滤掉
      */
     private Set<String> referencedStorageKeys() {
-        Set<String> keys = new HashSet<>();
-        long pageNo = 1;
-        while (true) {
-            // 不分页count，只滚动查询id有序的记录，提升全量扫描性能
-            List<SkillVersionEntity> records = versionMapper.selectPage(
-                    new Page<>(pageNo, DB_BATCH_SIZE, false),
-                    new LambdaQueryWrapper<SkillVersionEntity>().select(SkillVersionEntity::getStorageKey)
-                            .orderByAsc(SkillVersionEntity::getId))
-                    .getRecords();
-
-            // 提取非空storageKey放入集合
-            records.stream().map(SkillVersionEntity::getStorageKey)
-                    .filter(key -> key != null && !key.isBlank()).forEach(keys::add);
-
-            // 当前页记录数小于批次，代表已经读完所有数据，结束分页循环
-            if (records.size() < DB_BATCH_SIZE) {
-                return keys;
-            }
-            pageNo++;
-        }
+        return new HashSet<>(versionMapper.selectReferencedStorageKeys());
     }
 
     /**

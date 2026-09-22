@@ -145,8 +145,10 @@ public class EvaluationRunProcessor {
 
         try {
             // 按分片并行/串行推进（分片内批量拉取，减少feign调用）
+            Map<Long, String> capabilities = segmentService.requireActiveCapabilities(
+                    bySegment.keySet(), run.getId(), run.getSpaceId());
             for (List<EvaluationCaseAttemptEntity> attempts : bySegment.values()) {
-                processSegment(run, attempts, caseByAttempt);
+                processSegment(run, attempts, caseByAttempt, capabilities);
             }
             // 所有分片处理完毕，聚合Run顶层状态
             aggregate(run, attemptMapper.selectBatchIds(caseByAttempt.keySet()), caseRuns);
@@ -175,10 +177,10 @@ public class EvaluationRunProcessor {
      * @param caseByAttempt attemptId -> CaseRun 映射
      */
     private void processSegment(EvaluationRunEntity run, List<EvaluationCaseAttemptEntity> attempts,
-                                Map<Long, EvaluationCaseRunEntity> caseByAttempt) {
+                                Map<Long, EvaluationCaseRunEntity> caseByAttempt,
+                                Map<Long, String> capabilities) {
         // 校验分片能力有效，拿到对应capability用于下游task-feign鉴权
-        String capability = segmentService.requireActiveCapability(attempts.getFirst().getCapabilitySegmentId(),
-                run.getId(), run.getSpaceId());
+        String capability = capabilities.get(attempts.getFirst().getCapabilitySegmentId());
 
         // 批量查询回放任务状态
         List<Long> taskIds = attempts.stream().map(EvaluationCaseAttemptEntity::getReplayTaskId).sorted().toList();
@@ -381,6 +383,7 @@ public class EvaluationRunProcessor {
         Map<Long, EvaluatorVersionEntity> evaluators = evaluatorVersionMapper.selectBatchIds(bindings.stream()
                         .map(TestCaseEvaluatorEntity::getEvaluatorVersionId).toList()).stream()
                 .collect(Collectors.toMap(EvaluatorVersionEntity::getId, Function.identity()));
+        Map<Long, EvaluationResultEntity> existingResults = latestResults(attempt.getId());
 
         boolean error = false;
         for (TestCaseEvaluatorEntity binding : bindings) {
@@ -399,7 +402,7 @@ public class EvaluationRunProcessor {
             }
 
             // 非强制重跑且已存在结果，直接复用，不重复执行
-            EvaluationResultEntity existing = latestResult(attempt.getId(), evaluator.getId());
+            EvaluationResultEntity existing = existingResults.get(binding.getEvaluatorVersionId());
             if (existing != null && !force) {
                 error |= EvaluationResultStatus.ERROR.name().equals(existing.getStatus());
                 continue;
@@ -546,15 +549,19 @@ public class EvaluationRunProcessor {
     }
 
     /**
-     * 查询该Attempt下某评估器版本最新一条EvaluationResult；按evaluationAttemptNo降序，再按ID降序
+     * 一次加载该Attempt下每个评估器版本的最新EvaluationResult
      */
-    private EvaluationResultEntity latestResult(Long attemptId, Long evaluatorVersionId) {
+    private Map<Long, EvaluationResultEntity> latestResults(Long attemptId) {
         List<EvaluationResultEntity> results = resultMapper.selectList(
                 new LambdaQueryWrapper<EvaluationResultEntity>()
-                        .eq(EvaluationResultEntity::getCaseAttemptId, attemptId)
-                        .eq(EvaluationResultEntity::getEvaluatorVersionId, evaluatorVersionId));
-        return results.stream().max(Comparator.comparing(EvaluationResultEntity::getEvaluationAttemptNo)
-                .thenComparing(EvaluationResultEntity::getId)).orElse(null);
+                        .eq(EvaluationResultEntity::getCaseAttemptId, attemptId));
+        return results.stream().collect(Collectors.toMap(
+                EvaluationResultEntity::getEvaluatorVersionId,
+                Function.identity(),
+                (left, right) -> Comparator
+                        .comparing(EvaluationResultEntity::getEvaluationAttemptNo)
+                        .thenComparing(EvaluationResultEntity::getId)
+                        .compare(left, right) >= 0 ? left : right));
     }
 
     /**
@@ -585,12 +592,16 @@ public class EvaluationRunProcessor {
         // 同步CaseRun状态 = 当前Attempt状态
         Map<Long, EvaluationCaseAttemptEntity> byId = attempts.stream()
                 .collect(Collectors.toMap(EvaluationCaseAttemptEntity::getId, Function.identity()));
+        List<EvaluationCaseRunEntity> changedCaseRuns = new ArrayList<>();
         for (EvaluationCaseRunEntity caseRun : caseRuns) {
             EvaluationCaseAttemptEntity attempt = byId.get(caseRun.getCurrentAttemptId());
             if (attempt != null && !attempt.getStatus().equals(caseRun.getStatus())) {
                 caseRun.setStatus(attempt.getStatus());
-                caseRunMapper.updateById(caseRun);
+                changedCaseRuns.add(caseRun);
             }
+        }
+        if (!changedCaseRuns.isEmpty()) {
+            caseRunMapper.updateBatch(changedCaseRuns);
         }
     }
 

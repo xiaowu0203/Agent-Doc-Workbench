@@ -404,14 +404,17 @@ public class EvaluationCatalogService {
         datasetCaseMapper.delete(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
                 .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, versionId));
         // 批量插入新绑定
-        for (DatasetCaseBindingDTO binding : dto.cases()) {
+        List<EvaluationDatasetCaseEntity> datasetCases = dto.cases().stream().map(binding -> {
             EvaluationDatasetCaseEntity entity = new EvaluationDatasetCaseEntity();
             entity.setId(IdWorker.getId());
             entity.setDatasetVersionId(versionId);
             entity.setTestCaseVersionId(binding.testCaseVersionId());
             entity.setSortOrder(binding.sortOrder());
             entity.setEnabled(binding.enabled() == null || binding.enabled());
-            datasetCaseMapper.insert(entity);
+            return entity;
+        }).toList();
+        if (!datasetCases.isEmpty()) {
+            datasetCaseMapper.insertBatch(datasetCases);
         }
         return DatasetVersionVO.from(version);
     }
@@ -569,14 +572,17 @@ public class EvaluationCatalogService {
         testCaseEvaluatorMapper.delete(new LambdaQueryWrapper<TestCaseEvaluatorEntity>()
                 .eq(TestCaseEvaluatorEntity::getTestCaseVersionId, versionId));
         // 插入新绑定
-        for (TestCaseEvaluatorBindingDTO binding : dto.evaluators()) {
+        List<TestCaseEvaluatorEntity> evaluatorBindings = dto.evaluators().stream().map(binding -> {
             TestCaseEvaluatorEntity entity = new TestCaseEvaluatorEntity();
             entity.setId(IdWorker.getId());
             entity.setTestCaseVersionId(versionId);
             entity.setEvaluatorVersionId(binding.evaluatorVersionId());
             entity.setExpectedJson(trim(binding.expectedJson()));
             entity.setSortOrder(binding.sortOrder());
-            testCaseEvaluatorMapper.insert(entity);
+            return entity;
+        }).toList();
+        if (!evaluatorBindings.isEmpty()) {
+            testCaseEvaluatorMapper.insertBatch(evaluatorBindings);
         }
         return TestCaseVersionVO.from(version);
     }

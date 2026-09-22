@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.AGENT_BIND_SKILL;
 import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
@@ -112,9 +113,10 @@ class AgentSkillServiceTest {
         when(skillMapper.selectBatchIds(anyCollection())).thenReturn(List.of(skill));
         when(agentSkillMapper.selectList(any())).thenAnswer(invocation -> bindings);
         doAnswer(invocation -> {
-            bindings.add(invocation.getArgument(0));
-            return 1;
-        }).when(agentSkillMapper).insert(any(AgentSkillEntity.class));
+            List<AgentSkillEntity> additions = invocation.getArgument(0);
+            bindings.addAll(additions);
+            return additions.size();
+        }).when(agentSkillMapper).insertBatch(any());
         doNothing().when(spaceAccessService).requirePermission(20L, AGENT_BIND_SKILL);
 
         AgentSkillReplaceDTO request = new AgentSkillReplaceDTO(List.of(40L));
@@ -154,12 +156,13 @@ class AgentSkillServiceTest {
         when(skillMapper.selectBatchIds(anyCollection())).thenReturn(List.of(skill));
         when(agentSkillMapper.selectList(any())).thenAnswer(invocation -> bindings);
         doAnswer(invocation -> {
-            bindings.add(invocation.getArgument(0));
-            return 1;
-        }).when(agentSkillMapper).insert(any(AgentSkillEntity.class));
+            List<AgentSkillEntity> additions = invocation.getArgument(0);
+            bindings.addAll(additions);
+            return additions.size();
+        }).when(agentSkillMapper).insertBatch(any());
 
         service.replace(10L, new AgentSkillReplaceDTO(List.of(40L)));
 
-        verify(installationService).requireEnabledInstallation(20L, 30L, 40L);
+        verify(installationService).requireEnabledInstallations(20L, Map.of(30L, 40L));
     }
 }

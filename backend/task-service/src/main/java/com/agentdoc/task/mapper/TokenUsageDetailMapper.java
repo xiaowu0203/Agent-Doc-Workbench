@@ -2,6 +2,7 @@ package com.agentdoc.task.mapper;
 
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
 import com.agentdoc.task.pojo.vo.TokenUsageAggregateRow;
+import com.agentdoc.task.pojo.vo.TokenUsageSnapshotRow;
 import com.agentdoc.task.pojo.vo.TokenUsageDailyRow;
 import com.agentdoc.task.pojo.vo.TokenUsageStatisticsRow;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
@@ -55,6 +56,9 @@ public interface TokenUsageDetailMapper extends BaseMapper<TokenUsageDetailEntit
 
     List<Long> listSpacesByDate(@Param("start") LocalDate start,
                                 @Param("end") LocalDate end);
+
+    List<TokenUsageSnapshotRow> summarizeBySpaceByDate(@Param("start") LocalDate start,
+                                                       @Param("end") LocalDate end);
 
     List<TokenUsageAggregateRow> aggregateSpace(@Param("start") LocalDate start,
                                                 @Param("end") LocalDate end);

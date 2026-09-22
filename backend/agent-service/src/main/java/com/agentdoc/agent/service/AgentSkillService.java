@@ -22,6 +22,7 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -197,6 +198,7 @@ public class AgentSkillService {
         }
 
         Set<Long> boundSkillIds = new HashSet<>();
+        Map<Long, Long> systemVersionBySkillId = new HashMap<>();
         for (Long versionId : requestedIds) {
             SkillVersionEntity version = versions.get(versionId);
             // 只能绑定已发布状态的Skill版本
@@ -227,8 +229,7 @@ public class AgentSkillService {
                     throw new BusinessException(ErrorCode.CONFLICT, "系统 Skill 作用域数据无效");
                 }
                 // 运行时和绑定服务共同使用的空间授权校验
-                installationService.requireEnabledInstallation(
-                        agent.getSpaceId(), skill.getId(), version.getId());
+                systemVersionBySkillId.put(skill.getId(), version.getId());
             }
 
             // 校验同一个Skill不能绑定多个不同版本
@@ -237,6 +238,7 @@ public class AgentSkillService {
             }
             skills.put(skill.getId(), skill);
         }
+        installationService.requireEnabledInstallations(agent.getSpaceId(), systemVersionBySkillId);
 
         // 查询当前Agent已有的全部绑定关系
         List<AgentSkillEntity> current = agentSkillMapper.selectList(new LambdaQueryWrapper<AgentSkillEntity>()
@@ -249,48 +251,44 @@ public class AgentSkillService {
         versions.values().forEach(version -> requestedBySkill.put(version.getSkillId(), version.getId()));
 
         // 标记是否发生数据库变更，用于判断是否更新Agent配置版本号与审计日志
-        boolean changed = false;
+        boolean changed;
+        List<AgentSkillEntity> updates = new ArrayList<>();
 
         // 处理存量绑定记录：更新启用状态、切换版本
         for (AgentSkillEntity relation : current) {
             Long requestedVersion = requestedBySkill.get(relation.getSkillId());
-            // 判断当前这条绑定是否需要保持启用
-            boolean enabled = requestedVersion != null && requestedVersion.equals(relation.getSkillVersionId());
-            // 更新启用状态
-            if (relation.getEnabled() == null || relation.getEnabled() != enabled) {
+            boolean enabled = requestedVersion != null;
+            Long effectiveVersion = enabled ? requestedVersion : relation.getSkillVersionId();
+            if (!Objects.equals(relation.getSkillVersionId(), effectiveVersion)
+                    || !Objects.equals(relation.getEnabled(), enabled)) {
+                relation.setSkillVersionId(effectiveVersion);
                 relation.setEnabled(enabled);
-                agentSkillMapper.updateById(relation);
-                changed = true;
+                updates.add(relation);
             }
-            // Skill仍然在新绑定列表，但版本发生变更，更新版本并启用
-            if (enabled && requestedVersion != null && !requestedVersion.equals(relation.getSkillVersionId())) {
-                relation.setSkillVersionId(requestedVersion);
-                relation.setEnabled(true);
-                agentSkillMapper.updateById(relation);
-                changed = true;
-            }
+        }
+        if (!updates.isEmpty()) {
+            agentSkillMapper.updateBatch(updates);
         }
 
         // 处理新增绑定：Skill之前未绑定，本次需要新增绑定关系
+        List<AgentSkillEntity> additions = new ArrayList<>();
         for (Map.Entry<Long, Long> entry : requestedBySkill.entrySet()) {
             AgentSkillEntity relation = currentBySkill.get(entry.getKey());
             if (relation == null) {
                 // 新建Agent‑Skill绑定记录
                 relation = new AgentSkillEntity();
+                relation.setId(IdWorker.getId());
                 relation.setAgentId(agentId);
                 relation.setSkillId(entry.getKey());
                 relation.setSkillVersionId(entry.getValue());
                 relation.setEnabled(true);
-                agentSkillMapper.insert(relation);
-                changed = true;
-            } else if (!entry.getValue().equals(relation.getSkillVersionId()) || !Boolean.TRUE.equals(relation.getEnabled())) {
-                // 已存在记录，版本或者启用状态不一致，执行更新
-                relation.setSkillVersionId(entry.getValue());
-                relation.setEnabled(true);
-                agentSkillMapper.updateById(relation);
-                changed = true;
+                additions.add(relation);
             }
         }
+        if (!additions.isEmpty()) {
+            agentSkillMapper.insertBatch(additions);
+        }
+        changed = !updates.isEmpty() || !additions.isEmpty();
 
         // 如果绑定关系发生变更：递增Agent配置版本号，记录审计日志
         if (changed) {

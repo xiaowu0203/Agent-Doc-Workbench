@@ -15,7 +15,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * WorkerCapability Segment 的不可变追加与受控解密入口。
@@ -90,6 +96,34 @@ public class WorkerCapabilitySegmentService {
             throw new BusinessException(ErrorCode.CONFLICT, "WorkerCapability 已过期或撤销");
         }
         return cryptoService.decrypt(entity.getKeyVersion(), entity.getEncryptedCapability());
+    }
+
+    /**
+     * 一次加载多个能力分片的明文 Capability，逐个沿用单分片的归属、状态与过期校验。
+     */
+    public Map<Long, String> requireActiveCapabilities(Collection<Long> segmentIds, Long runId, Long spaceId) {
+        List<Long> ids = segmentIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        List<EvaluationWorkerCapabilitySegmentEntity> entities = mapper.selectList(
+                new LambdaQueryWrapper<EvaluationWorkerCapabilitySegmentEntity>()
+                        .in(EvaluationWorkerCapabilitySegmentEntity::getId, ids));
+        Map<Long, EvaluationWorkerCapabilitySegmentEntity> byId = entities.stream()
+                .collect(Collectors.toMap(EvaluationWorkerCapabilitySegmentEntity::getId, value -> value));
+        Map<Long, String> capabilities = new LinkedHashMap<>();
+        for (Long segmentId : ids) {
+            EvaluationWorkerCapabilitySegmentEntity entity = byId.get(segmentId);
+            if (entity == null || !runId.equals(entity.getRunId()) || !spaceId.equals(entity.getSpaceId())) {
+                throw new BusinessException(ErrorCode.NOT_FOUND, "WorkerCapability Segment 不存在");
+            }
+            if (!EvaluationWorkerCapabilityStatus.ACTIVE.name().equals(entity.getStatus())
+                    || entity.getExpiresAt() == null || !entity.getExpiresAt().isAfter(LocalDateTime.now())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "WorkerCapability 已过期或撤销");
+            }
+            capabilities.put(segmentId, cryptoService.decrypt(entity.getKeyVersion(), entity.getEncryptedCapability()));
+        }
+        return capabilities;
     }
 
     /**

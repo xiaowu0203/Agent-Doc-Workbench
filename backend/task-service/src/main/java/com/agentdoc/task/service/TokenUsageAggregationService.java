@@ -7,13 +7,15 @@ import com.agentdoc.task.enums.TokenUsageDimension;
 import com.agentdoc.task.mapper.TokenDailySnapshotMapper;
 import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.mapper.TokenUsageMapper;
+import com.agentdoc.task.pojo.entity.TokenDailySnapshotEntity;
 import com.agentdoc.task.pojo.vo.TokenUsageAggregateRow;
+import com.agentdoc.task.pojo.vo.TokenUsageSnapshotRow;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -45,7 +47,7 @@ public class TokenUsageAggregationService {
      * <p>
      * 固定间隔轮询，间隔可配置；扫描今天有数据的全部空间，从明细表实时汇总 input/output/cost，写入快照表。
      * 快照只做【空间维度】当日累计快照；不做文档/Agent/任务维度。
-     * 注意：该方法不加事务，每条快照独立入库；快照是采样记录，允许少量丢失。
+     * 注意：该方法不加事务，快照一次批量入库；快照是采样记录，允许少量丢失。
      * </p>
      */
     @Scheduled(fixedDelayString = "${agent-doc.token-usage.snapshot-delay-ms:"
@@ -53,14 +55,13 @@ public class TokenUsageAggregationService {
     public void snapshotToday() {
         LocalDate date = LocalDate.now();
         LocalDate end = date.plusDays(TaskConstant.DAY_OFFSET);
-        // 查询今天产生过token消耗的全部spaceId
-        for (Long spaceId : detailMapper.listSpacesByDate(date, end)) {
-            boolean costUnavailable = Boolean.TRUE.equals(
-                    detailMapper.hasNullCostBySpaceAndDate(spaceId, date, end));
-            snapshot(spaceId, date,
-                    detailMapper.sumInputBySpaceAndDate(spaceId, date, end),
-                    detailMapper.sumOutputBySpaceAndDate(spaceId, date, end),
-                    costUnavailable ? null : detailMapper.sumCostBySpaceAndDate(spaceId, date, end));
+        List<TokenDailySnapshotEntity> snapshots = new ArrayList<>();
+        for (TokenUsageSnapshotRow row : detailMapper.summarizeBySpaceByDate(date, end)) {
+            snapshots.add(TokenUsageConvertor.toSnapshot(row.spaceId(), date, row.inputTokens(),
+                    row.outputTokens(), row.nullCost() ? null : row.cost(), TokenSnapshotType.SYSTEM));
+        }
+        if (!snapshots.isEmpty()) {
+            snapshotMapper.insertBatch(snapshots);
         }
     }
 
@@ -84,27 +85,15 @@ public class TokenUsageAggregationService {
     }
 
     /**
-     * 插入一条空间当日用量快照记录
-     * @param spaceId 空间ID
-     * @param date 快照所属日期
-     * @param input 累计输入token
-     * @param output 累计输出token
-     * @param cost 累计费用
-     */
-    public void snapshot(Long spaceId, LocalDate date, Long input, Long output, BigDecimal cost) {
-        snapshotMapper.insert(TokenUsageConvertor.toSnapshot(
-                spaceId, date, input, output, cost, TokenSnapshotType.SYSTEM));
-    }
-
-    /**
      * 将聚合行集合转换实体并批量写入聚合表
      * @param date 统计日期
      * @param rows 数据库查询出来的聚合原始行
      * @param dimension 聚合维度：SPACE / DOCUMENT / TASK / AGENT
      */
     private void insert(LocalDate date, List<TokenUsageAggregateRow> rows, TokenUsageDimension dimension) {
-        for (TokenUsageAggregateRow row : rows) {
-            usageMapper.insert(TokenUsageConvertor.toAggregate(row, date, dimension));
+        if (!rows.isEmpty()) {
+            usageMapper.insertBatch(rows.stream()
+                    .map(row -> TokenUsageConvertor.toAggregate(row, date, dimension)).toList());
         }
     }
 }

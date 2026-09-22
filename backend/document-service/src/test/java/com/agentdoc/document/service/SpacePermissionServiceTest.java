@@ -100,6 +100,14 @@ class SpacePermissionServiceTest {
         assertFalse(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
     }
 
+    @Test
+    void shouldCheckMultipleSpacesWithOneMapperCall() {
+        when(memberMapper.selectPermittedSpaceIds(any(), any(), any()))
+                .thenReturn(List.of(SPACE_ID, 2002L));
+
+        permissionService.requirePermissions(List.of(SPACE_ID, 2002L), SKILL_READ);
+    }
+
     private MemberEntity member() {
         MemberEntity member = new MemberEntity();
         member.setSpaceId(SPACE_ID);

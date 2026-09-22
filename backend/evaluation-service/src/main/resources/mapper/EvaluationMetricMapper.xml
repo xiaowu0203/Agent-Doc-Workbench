@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.agentdoc.evaluation.mapper.EvaluationMetricMapper">
+    <insert id="insertBatch">
+        INSERT INTO evaluation_metric
+            (id, space_id, run_id, case_run_id, case_attempt_id, test_case_version_id,
+             evaluation_result_id, evaluator_version_id, contract_version, source, producer_id,
+             metric_key, value_type, numeric_value, boolean_value, string_value, unit, direction, created_at)
+        VALUES
+        <foreach collection="entities" item="entity" separator=",">
+            (#{entity.id}, #{entity.spaceId}, #{entity.runId}, #{entity.caseRunId},
+             #{entity.caseAttemptId}, #{entity.testCaseVersionId}, #{entity.evaluationResultId},
+             #{entity.evaluatorVersionId}, #{entity.contractVersion}, #{entity.source},
+             #{entity.producerId}, #{entity.metricKey}, #{entity.valueType}, #{entity.numericValue},
+             #{entity.booleanValue}, #{entity.stringValue}, #{entity.unit}, #{entity.direction},
+             CURRENT_TIMESTAMP)
+        </foreach>
+    </insert>
+</mapper>

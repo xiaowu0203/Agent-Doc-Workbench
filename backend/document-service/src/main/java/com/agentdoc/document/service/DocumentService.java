@@ -1247,11 +1247,9 @@ public class DocumentService {
             return List.of();
         }
         List<DocumentEntity> documents = documentMapper.selectBatchIds(ids);
-        // 对每个空间校验读权限
-        documents.stream()
+        permissionService.requirePermissions(documents.stream()
                 .map(DocumentEntity::getSpaceId)
-                .distinct()
-                .forEach(spaceId -> permissionService.requirePermission(spaceId, DOCUMENT_READ));
+                .collect(Collectors.toSet()), DOCUMENT_READ);
         return documents.stream()
                 .map(DocumentEntity::toRefVO)
                 .toList();

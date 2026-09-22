@@ -34,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -98,15 +99,20 @@ public class EvaluationResultWriteService {
         // 主记录先入库，生成result主键ID，供子记录外键使用
         resultMapper.insert(result);
         // 批量插入证据引用记录
-        evidence.values().forEach(evidenceMapper::insert);
+        if (!evidence.isEmpty()) {
+            evidenceMapper.insertBatch(List.copyOf(evidence.values()));
+        }
         // 批量插入指标记录
-        metrics.forEach(metricMapper::insert);
+        if (!metrics.isEmpty()) {
+            metricMapper.insertBatch(metrics);
+        }
 
         // 建立 referenceKey -> 数据库自增ID映射，用于构造关联记录
         Map<String, Long> evidenceIds = new HashMap<>();
         evidence.forEach((key, value) -> evidenceIds.put(key, value.getId()));
 
         // 逐个创建【指标-证据】关联中间表记录
+        List<EvaluationMetricEvidenceEntity> links = new ArrayList<>();
         for (int index = 0; index < metrics.size(); index++) {
             EvaluationMetricEntity metric = metrics.get(index);
             StandardMetricOutput output = command.metrics().get(index);
@@ -116,8 +122,11 @@ public class EvaluationResultWriteService {
                 link.setId(IdWorker.getId());
                 link.setMetricId(metric.getId());
                 link.setEvidenceReferenceId(evidenceIds.get(evidenceKey));
-                metricEvidenceMapper.insert(link);
+                links.add(link);
             }
+        }
+        if (!links.isEmpty()) {
+            metricEvidenceMapper.insertBatch(links);
         }
         return new EvaluationResultWriteVO(result.getId(), result.getStatus(),
                 metrics.stream().map(EvaluationMetricEntity::getId).toList(),

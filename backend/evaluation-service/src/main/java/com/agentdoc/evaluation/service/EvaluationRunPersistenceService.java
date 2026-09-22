@@ -88,10 +88,11 @@ public class EvaluationRunPersistenceService {
 
             // CaseRun 指向当前最新Attempt
             caseRun.setCurrentAttemptId(attempt.getId());
-            caseRunMapper.insert(caseRun);
-            attemptMapper.insert(attempt);
-
             cases.add(new RunCaseDraft(caseRun, attempt));
+        }
+        if (!cases.isEmpty()) {
+            caseRunMapper.insertBatch(cases.stream().map(RunCaseDraft::caseRun).toList());
+            attemptMapper.insertBatch(cases.stream().map(RunCaseDraft::attempt).toList());
         }
         return new RunDraft(run, List.copyOf(cases));
     }
@@ -147,6 +148,7 @@ public class EvaluationRunPersistenceService {
                 response.taskIdsHash(), response.workerCapability(), response.workerCapabilityExpiresAt());
 
         // 更新Attempt与CaseRun状态、回放任务ID、分片ID、启动时间
+        LocalDateTime startedAt = LocalDateTime.now();
         for (RunCaseDraft item : draft.cases()) {
             String requestKey = requestKey(item.attempt().getId());
             ReplayBatchItemVO mapping = byRequestKey.get(requestKey);
@@ -154,12 +156,12 @@ public class EvaluationRunPersistenceService {
             item.attempt().setReplayTaskId(mapping.replayTaskId());
             item.attempt().setCapabilitySegmentId(segment.getId());
             item.attempt().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
-            item.attempt().setStartedAt(LocalDateTime.now());
-            attemptMapper.updateById(item.attempt());
+            item.attempt().setStartedAt(startedAt);
 
             item.caseRun().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
-            caseRunMapper.updateById(item.caseRun());
         }
+        attemptMapper.updateBatch(draft.cases().stream().map(RunCaseDraft::attempt).toList());
+        caseRunMapper.updateBatch(draft.cases().stream().map(RunCaseDraft::caseRun).toList());
 
         // Run切换为运行态，清除暂停标记、重置失败计数、记录启动时间
         draft.run().setStatus(EvaluationRunStatus.RUNNING.name());

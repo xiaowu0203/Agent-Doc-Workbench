@@ -42,6 +42,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 
@@ -92,7 +93,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_CREATED);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L)).thenReturn("capability");
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenReturn(Map.of(81L, "capability"));
         when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of(
                 new EvaluationTaskStatusVO(801L, 2, "RUNNING", false, 901L, "trace", null, null))));
 
@@ -138,7 +139,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_RUNNING);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L)).thenReturn("capability");
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenReturn(Map.of(81L, "capability"));
         when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of(
                 new EvaluationTaskStatusVO(801L, 3, "COMPLETED", true, 901L, "trace", null, null))));
         EvaluationEvidenceBundleVO evidence = evidence();
@@ -162,7 +163,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_RUNNING);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L)).thenReturn("capability");
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenReturn(Map.of(81L, "capability"));
         when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of(
                 new EvaluationTaskStatusVO(801L, 3, "COMPLETED", true, 901L, "trace", null, null))));
         EvaluationEvidenceBundleVO evidence = evidence();
@@ -209,7 +210,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_RUNNING);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L)).thenReturn("capability");
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenReturn(Map.of(81L, "capability"));
         when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of(
                 new EvaluationTaskStatusVO(801L, 3, "COMPLETED", true, 901L, "trace", null, null))));
         EvaluationEvidenceBundleVO evidence = evidence();
@@ -258,7 +259,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_RUNNING);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L)).thenReturn("capability");
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenReturn(Map.of(81L, "capability"));
         when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of(
                 new EvaluationTaskStatusVO(801L, 3, "COMPLETED", true, 901L, "trace", null, null))));
         EvaluationEvidenceBundleVO evidence = evidence();
@@ -306,7 +307,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_CREATED);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L))
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L)))
                 .thenThrow(new BusinessException(ErrorCode.UNAUTHORIZED, "WorkerCapability 已过期"));
 
         processor.process(71L);
@@ -322,7 +323,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_RUNNING);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L)).thenReturn("capability");
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenReturn(Map.of(81L, "capability"));
         when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of()));
 
         processor.process(71L);
@@ -338,7 +339,7 @@ class EvaluationRunProcessorTest {
         EvaluationCaseRunEntity caseRun = caseRun();
         EvaluationCaseAttemptEntity attempt = attempt(EvaluationAttemptStatus.REPLAY_RUNNING);
         stubRun(run, caseRun, attempt);
-        when(segmentService.requireActiveCapability(81L, 71L, 9L))
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L)))
                 .thenThrow(new IllegalStateException("temporary dependency failure"));
 
         processor.process(71L);

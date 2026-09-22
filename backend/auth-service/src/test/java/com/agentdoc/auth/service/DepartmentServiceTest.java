@@ -22,6 +22,7 @@ class DepartmentServiceTest {
         DepartmentEntity child = department(20L, 10L);
         when(departmentMapper.selectById(10L)).thenReturn(department);
         when(departmentMapper.selectById(20L)).thenReturn(child);
+        when(departmentMapper.selectHierarchy()).thenReturn(java.util.List.of(department, child));
         DepartmentService service = new DepartmentService(departmentMapper, mock(UserMapper.class),
                 mock(PlatformAuditLogService.class));
 

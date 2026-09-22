@@ -89,16 +89,24 @@ public class ExecutionMetricWriteService {
                 .map(value -> EvaluationMetricFactory.create(context, value.value())).toList();
 
         // 3. 入库：证据引用、指标、指标与证据关联表
-        evidence.values().forEach(evidenceMapper::insert);
-        metrics.forEach(metricMapper::insert);
+        if (!evidence.isEmpty()) {
+            evidenceMapper.insertBatch(List.copyOf(evidence.values()));
+        }
+        if (!metrics.isEmpty()) {
+            metricMapper.insertBatch(metrics);
+        }
+        List<EvaluationMetricEvidenceEntity> links = new ArrayList<>();
         for (int index = 0; index < metrics.size(); index++) {
             for (String evidenceKey : values.get(index).evidenceKeys()) {
                 EvaluationMetricEvidenceEntity link = new EvaluationMetricEvidenceEntity();
                 link.setId(IdWorker.getId());
                 link.setMetricId(metrics.get(index).getId());
                 link.setEvidenceReferenceId(evidence.get(evidenceKey).getId());
-                metricEvidenceMapper.insert(link);
+                links.add(link);
             }
+        }
+        if (!links.isEmpty()) {
+            metricEvidenceMapper.insertBatch(links);
         }
         return metrics.stream().map(EvaluationMetricEntity::getId).toList();
     }
@@ -212,4 +220,3 @@ public class ExecutionMetricWriteService {
      */
     private record MetricWithEvidence(StandardMetricValue value, List<String> evidenceKeys) { }
 }
-

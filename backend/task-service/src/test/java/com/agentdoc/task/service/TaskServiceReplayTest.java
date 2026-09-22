@@ -122,6 +122,8 @@ class TaskServiceReplayTest {
         AtomicReference<TaskEntity> persisted = new AtomicReference<>();
         when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(source);
         when(taskMapper.selectOne(any())).thenAnswer(invocation -> persisted.get());
+        when(taskMapper.selectList(any())).thenAnswer(invocation -> persisted.get() == null
+                ? List.of() : List.of(persisted.get()));
         when(documentFeign.checkSpacePermission(eq(SPACE_ID), any())).thenReturn(Result.ok());
         when(documentFeign.getVersionExecutionContext(DOCUMENT_ID, 7L, source.getDocumentContentSha256()))
                 .thenReturn(Result.ok(new DocumentVersionExecutionContextVO(

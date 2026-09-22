@@ -19,9 +19,6 @@ import com.agentdoc.evaluation.metric.StandardMetricOutput;
 import com.agentdoc.evaluation.metric.StandardMetricValue;
 import com.agentdoc.evaluation.pojo.entity.EvaluationCaseAttemptEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationCaseRunEntity;
-import com.agentdoc.evaluation.pojo.entity.EvaluationEvidenceReferenceEntity;
-import com.agentdoc.evaluation.pojo.entity.EvaluationMetricEntity;
-import com.agentdoc.evaluation.pojo.entity.EvaluationMetricEvidenceEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationResultEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,9 +72,9 @@ class EvaluationResultWriteServiceTest {
         assertThat(result.metricIds()).hasSize(1);
         assertThat(result.evidenceReferenceIds()).hasSize(1);
         verify(resultMapper).insert(any(EvaluationResultEntity.class));
-        verify(metricMapper).insert(any(EvaluationMetricEntity.class));
-        verify(evidenceMapper).insert(any(EvaluationEvidenceReferenceEntity.class));
-        verify(metricEvidenceMapper).insert(any(EvaluationMetricEvidenceEntity.class));
+        verify(metricMapper).insertBatch(any());
+        verify(evidenceMapper).insertBatch(any());
+        verify(metricEvidenceMapper).insertBatch(any());
     }
 
     @Test
@@ -90,7 +87,7 @@ class EvaluationResultWriteServiceTest {
         assertThatThrownBy(() -> service.append(command)).isInstanceOf(RuntimeException.class);
 
         verify(resultMapper, never()).insert(any(EvaluationResultEntity.class));
-        verify(metricMapper, never()).insert(any(EvaluationMetricEntity.class));
+        verify(metricMapper, never()).insertBatch(any());
     }
 
     private EvaluatorResultWriteCommand command(List<StandardMetricOutput> metrics,

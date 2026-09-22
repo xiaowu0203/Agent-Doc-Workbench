@@ -291,12 +291,10 @@ public class EvaluationRunService {
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 
         try {
+            Map<Long, String> capabilities = segmentService.requireActiveCapabilities(
+                    bySegment.keySet(), run.getId(), run.getSpaceId());
             for (List<EvaluationCaseAttemptEntity> segmentAttempts : bySegment.values()) {
-                String capability = segmentService.requireActiveCapability(
-                        segmentAttempts.getFirst().getCapabilitySegmentId(),
-                        run.getId(),
-                        run.getSpaceId()
-                );
+                String capability = capabilities.get(segmentAttempts.getFirst().getCapabilitySegmentId());
                 List<Long> taskIds = segmentAttempts.stream()
                         .map(EvaluationCaseAttemptEntity::getReplayTaskId)
                         .sorted()

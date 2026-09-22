@@ -88,6 +88,19 @@
           AND call_time &lt; #{end}
     </select>
 
+    <select id="summarizeBySpaceByDate"
+            resultType="com.agentdoc.task.pojo.vo.TokenUsageSnapshotRow">
+        SELECT space_id AS spaceId,
+               COALESCE(SUM(input_tokens), 0) AS inputTokens,
+               COALESCE(SUM(output_tokens), 0) AS outputTokens,
+               COALESCE(SUM(estimated_cost), 0) AS cost,
+               SUM(estimated_cost IS NULL) &gt; 0 AS nullCost
+        FROM token_usage_detail
+        WHERE call_time &gt;= #{start}
+          AND call_time &lt; #{end}
+        GROUP BY space_id
+    </select>
+
     <select id="aggregateSpace"
             resultType="com.agentdoc.task.pojo.vo.TokenUsageAggregateRow">
         SELECT space_id AS spaceId,
