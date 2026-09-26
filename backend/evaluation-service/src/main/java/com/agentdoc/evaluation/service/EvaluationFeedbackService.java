@@ -158,7 +158,7 @@ public class EvaluationFeedbackService {
         if (caseRun == null || attempt == null || !spaceId.equals(caseRun.getSpaceId())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "反馈 CaseRun 不存在");
         }
-        return new FeedbackTarget(caseRun.getRunId(), caseRun.getId(), attempt.getReplayTaskId(), null);
+        return new FeedbackTarget(caseRun.getRunId(), caseRun.getId(), attempt.getExecutionTaskId(), null);
     }
 
     /**
@@ -171,7 +171,7 @@ public class EvaluationFeedbackService {
         if (taskId != null) {
             attempt = attemptMapper.selectOne(new LambdaQueryWrapper<EvaluationCaseAttemptEntity>()
                     .eq(EvaluationCaseAttemptEntity::getSpaceId, spaceId)
-                    .eq(EvaluationCaseAttemptEntity::getReplayTaskId, taskId)
+                    .eq(EvaluationCaseAttemptEntity::getExecutionTaskId, taskId)
                     .orderByDesc(EvaluationCaseAttemptEntity::getId).last("LIMIT 1"));
         }
         if (attempt == null && executionId != null) {
@@ -195,7 +195,7 @@ public class EvaluationFeedbackService {
         if (caseRun == null || !spaceId.equals(caseRun.getSpaceId())) {
             throw new BusinessException(ErrorCode.CONFLICT, "反馈目标归属不一致");
         }
-        return new FeedbackTarget(attempt.getRunId(), caseRun.getId(), attempt.getReplayTaskId(), executionId);
+        return new FeedbackTarget(attempt.getRunId(), caseRun.getId(), attempt.getExecutionTaskId(), executionId);
     }
 
     /**

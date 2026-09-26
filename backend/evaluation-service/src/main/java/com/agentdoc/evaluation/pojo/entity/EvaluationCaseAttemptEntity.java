@@ -11,13 +11,14 @@ import java.time.LocalDateTime;
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("evaluation_case_attempt")
-@Schema(description = "评估 Replay 尝试")
+@Schema(description = "评估执行尝试")
 public class EvaluationCaseAttemptEntity extends BaseEntity {
     @Schema(description = "CaseRun ID") private Long caseRunId;
     @Schema(description = "EvaluationRun ID") private Long runId;
     @Schema(description = "所属空间 ID") private Long spaceId;
     @Schema(description = "尝试序号") private Integer attemptNo;
     @Schema(description = "Replay Task ID") private Long replayTaskId;
+    @Schema(description = "Replay 或 Experiment 的执行 Task ID") private Long executionTaskId;
     @Schema(description = "WorkerCapability Segment ID") private Long capabilitySegmentId;
     @Schema(description = "状态") private String status;
     @Schema(description = "失败阶段") private String failureStage;

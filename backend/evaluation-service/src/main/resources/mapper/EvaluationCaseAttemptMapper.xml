@@ -19,6 +19,11 @@
                 WHEN #{entity.id} THEN #{entity.replayTaskId}
             </foreach>
             END,
+            execution_task_id = CASE id
+            <foreach collection="entities" item="entity">
+                WHEN #{entity.id} THEN #{entity.executionTaskId}
+            </foreach>
+            END,
             capability_segment_id = CASE id
             <foreach collection="entities" item="entity">
                 WHEN #{entity.id} THEN #{entity.capabilitySegmentId}

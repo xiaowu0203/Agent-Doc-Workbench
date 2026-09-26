@@ -97,6 +97,7 @@ class EvaluationRunPersistenceServiceTest {
             assertThat(item.caseRun().getStatus()).isEqualTo(EvaluationAttemptStatus.REPLAY_CREATED.name());
             assertThat(item.attempt().getCapabilitySegmentId()).isEqualTo(82L);
             assertThat(item.attempt().getReplayTaskId()).isEqualTo(items.get(index).replayTaskId());
+            assertThat(item.attempt().getExecutionTaskId()).isEqualTo(items.get(index).replayTaskId());
         }
     }
 }

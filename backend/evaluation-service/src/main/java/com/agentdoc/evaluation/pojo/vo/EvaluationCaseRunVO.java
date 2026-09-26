@@ -25,8 +25,8 @@ public record EvaluationCaseRunVO(
         @Schema(description = "当前执行尝试ID")
         Long currentAttemptId,
 
-        @Schema(description = "回放任务ID")
-        Long replayTaskId,
+        @Schema(description = "Replay 或 Experiment 的执行任务ID")
+        Long executionTaskId,
 
         @Schema(description = "尝试序号，从1开始递增")
         Integer attemptNo,
@@ -43,7 +43,7 @@ public record EvaluationCaseRunVO(
     public static EvaluationCaseRunVO from(EvaluationCaseRunEntity caseRun,
                                            EvaluationCaseAttemptEntity attempt) {
         return new EvaluationCaseRunVO(caseRun.getId(), caseRun.getTestCaseVersionId(), caseRun.getStatus(),
-                caseRun.getCurrentAttemptId(), attempt.getReplayTaskId(), attempt.getAttemptNo(), List.of());
+                caseRun.getCurrentAttemptId(), attempt.getExecutionTaskId(), attempt.getAttemptNo(), List.of());
     }
 
     /**
@@ -57,7 +57,7 @@ public record EvaluationCaseRunVO(
                                            EvaluationCaseAttemptEntity attempt,
                                            List<EvaluationFeedbackVO> feedback) {
         return new EvaluationCaseRunVO(caseRun.getId(), caseRun.getTestCaseVersionId(), caseRun.getStatus(),
-                caseRun.getCurrentAttemptId(), attempt.getReplayTaskId(), attempt.getAttemptNo(),
+                caseRun.getCurrentAttemptId(), attempt.getExecutionTaskId(), attempt.getAttemptNo(),
                 List.copyOf(feedback));
     }
 }

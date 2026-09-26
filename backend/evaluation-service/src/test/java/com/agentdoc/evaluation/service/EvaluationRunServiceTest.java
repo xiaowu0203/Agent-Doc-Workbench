@@ -107,6 +107,7 @@ class EvaluationRunServiceTest {
                 "a".repeat(64), "worker-token", Instant.now().plusSeconds(600))));
         draft.run().setStatus(EvaluationRunStatus.RUNNING.name());
         draft.cases().getFirst().attempt().setReplayTaskId(801L);
+        draft.cases().getFirst().attempt().setExecutionTaskId(801L);
         draft.cases().getFirst().attempt().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
         draft.cases().getFirst().caseRun().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
         when(persistenceService.attachDispatch(eq(draft), any())).thenReturn(draft);
@@ -114,7 +115,7 @@ class EvaluationRunServiceTest {
         var result = service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L));
 
         assertThat(result.status()).isEqualTo(EvaluationRunStatus.RUNNING.name());
-        assertThat(result.cases()).singleElement().satisfies(item -> assertThat(item.replayTaskId()).isEqualTo(801L));
+        assertThat(result.cases()).singleElement().satisfies(item -> assertThat(item.executionTaskId()).isEqualTo(801L));
         ArgumentCaptor<ReplayBatchCreateDTO> request = ArgumentCaptor.forClass(ReplayBatchCreateDTO.class);
         verify(taskFeign).createReplayBatch(request.capture());
         assertThat(request.getValue().items()).singleElement().satisfies(item -> {
@@ -160,6 +161,7 @@ class EvaluationRunServiceTest {
         EvaluationCaseRunEntity caseRun = existing.cases().getFirst().caseRun();
         EvaluationCaseAttemptEntity attempt = existing.cases().getFirst().attempt();
         attempt.setReplayTaskId(801L);
+        attempt.setExecutionTaskId(801L);
         attempt.setCapabilitySegmentId(81L);
         attempt.setStatus(EvaluationAttemptStatus.COMPLETED.name());
         when(attemptMapper.selectById(73L)).thenReturn(attempt);

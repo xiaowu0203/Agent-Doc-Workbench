@@ -114,7 +114,7 @@ public class EvaluationRunPersistenceService {
      * 1. 校验Run、Space身份以及用例数量完全匹配，防止跨任务绑定；
      * 2. 校验所有Attempt都能在批量响应中找到映射；
      * 3. 创建Worker能力分片记录，绑定worker能力与过期时间；
-     * 4. 更新每一条Attempt：写入replayTaskId、分片ID、状态REPLAY_CREATED、启动时间；
+     * 4. 更新每一条Attempt：同步写入兼容 Replay Task ID 与通用执行 Task ID、分片ID、状态REPLAY_CREATED、启动时间；
      * 5. 更新CaseRun状态为REPLAY_CREATED；
      * 6. Run状态切换为RUNNING，清空暂停原因、重置对账失败计数、记录Run启动时间。
      * </p>
@@ -154,6 +154,7 @@ public class EvaluationRunPersistenceService {
             ReplayBatchItemVO mapping = byRequestKey.get(requestKey);
 
             item.attempt().setReplayTaskId(mapping.replayTaskId());
+            item.attempt().setExecutionTaskId(mapping.replayTaskId());
             item.attempt().setCapabilitySegmentId(segment.getId());
             item.attempt().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
             item.attempt().setStartedAt(startedAt);

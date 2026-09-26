@@ -287,7 +287,7 @@ public class EvaluationRunService {
         );
 
         Map<Long, List<EvaluationCaseAttemptEntity>> bySegment = allAttempts.stream()
-                .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getReplayTaskId() != null)
+                .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getExecutionTaskId() != null)
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 
         try {
@@ -296,7 +296,7 @@ public class EvaluationRunService {
             for (List<EvaluationCaseAttemptEntity> segmentAttempts : bySegment.values()) {
                 String capability = capabilities.get(segmentAttempts.getFirst().getCapabilitySegmentId());
                 List<Long> taskIds = segmentAttempts.stream()
-                        .map(EvaluationCaseAttemptEntity::getReplayTaskId)
+                        .map(EvaluationCaseAttemptEntity::getExecutionTaskId)
                         .sorted()
                         .toList();
                 List<EvaluationTaskCancelVO> results = requireData(taskFeign.cancelEvaluationTasks(capability,
@@ -338,8 +338,8 @@ public class EvaluationRunService {
             throw new BusinessException(ErrorCode.CONFLICT, "当前 CaseAttempt 不允许重试 Evaluator");
         }
 
-        if (request == null || request.workerCapabilityTtlSeconds() == null || attempt.getReplayTaskId() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluator 重试参数或 Replay Task 无效");
+        if (request == null || request.workerCapabilityTtlSeconds() == null || attempt.getExecutionTaskId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluator 重试参数或执行 Task 无效");
         }
 
         Set<Long> targets = request.evaluatorVersionIds() == null ? Set.of()
@@ -420,7 +420,7 @@ public class EvaluationRunService {
                         .eq(EvaluationCaseAttemptEntity::getCapabilitySegmentId, target.getCapabilitySegmentId())
         );
         List<Long> taskIds = segmentAttempts.stream()
-                .map(EvaluationCaseAttemptEntity::getReplayTaskId)
+                .map(EvaluationCaseAttemptEntity::getExecutionTaskId)
                 .filter(Objects::nonNull)
                 .sorted()
                 .toList();
@@ -431,7 +431,7 @@ public class EvaluationRunService {
         return requireData(taskFeign.queryEvaluationEvidence(capability,
                 new EvaluationTaskBatchQueryDTO(run.getId(), run.getSpaceId(), taskIds)))
                 .stream()
-                .filter(v -> target.getReplayTaskId().equals(v.taskId()))
+                .filter(v -> target.getExecutionTaskId().equals(v.taskId()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONFLICT, "Replay 评估事实不可用"));
     }
@@ -446,7 +446,7 @@ public class EvaluationRunService {
                         .eq(EvaluationCaseAttemptEntity::getCapabilitySegmentId, target.getCapabilitySegmentId())
         );
         List<Long> taskIds = segmentAttempts.stream()
-                .map(EvaluationCaseAttemptEntity::getReplayTaskId)
+                .map(EvaluationCaseAttemptEntity::getExecutionTaskId)
                 .filter(Objects::nonNull)
                 .sorted()
                 .toList();
@@ -457,7 +457,7 @@ public class EvaluationRunService {
         return requireData(taskFeign.queryEvaluationDocumentChanges(capability,
                 new EvaluationTaskBatchQueryDTO(run.getId(), run.getSpaceId(), taskIds)))
                 .stream()
-                .filter(v -> target.getReplayTaskId().equals(v.taskId()))
+                .filter(v -> target.getExecutionTaskId().equals(v.taskId()))
                 .toList();
     }
 
@@ -465,7 +465,7 @@ public class EvaluationRunService {
      * 续期WorkerCapability，并把新分片绑定到Attempt
      */
     private void renewWorkerCapability(EvaluationRunEntity run, EvaluationCaseAttemptEntity attempt, Long ttlSeconds) {
-        List<Long> taskIds = List.of(attempt.getReplayTaskId());
+        List<Long> taskIds = List.of(attempt.getExecutionTaskId());
         EvaluationWorkerCapabilityVO response = requireData(taskFeign.renewEvaluationWorkerCapability(
                 new EvaluationWorkerCapabilityRenewDTO(run.getId(), run.getSpaceId(), ttlSeconds, taskIds)
         ));
