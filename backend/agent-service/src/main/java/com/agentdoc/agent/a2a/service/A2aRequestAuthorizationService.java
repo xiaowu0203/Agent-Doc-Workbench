@@ -83,7 +83,9 @@ public class A2aRequestAuthorizationService {
                 || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, input.documentVersionSnapshot())
                 || !matches(jwt, JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, input.documentContentSha256())
                 || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, input.inputSnapshotSchemaVersion())
-                || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, input.inputSnapshotHash())) {
+                || !matches(jwt, JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, input.inputSnapshotHash())
+                || !matchesOptional(jwt, JwtConstant.CLAIM_DERIVATION_REQUEST_HASH,
+                input.derivationRequestHash())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "A2A 请求能力令牌范围不匹配");
         }
     }
@@ -149,5 +151,11 @@ public class A2aRequestAuthorizationService {
     private boolean matches(Jwt jwt, String claimName, Object expected) {
         Object claim = jwt.getClaim(claimName);
         return expected != null && claim != null && String.valueOf(expected).equals(String.valueOf(claim));
+    }
+
+    private boolean matchesOptional(Jwt jwt, String claimName, Object expected) {
+        Object claim = jwt.getClaim(claimName);
+        return claim == null ? expected == null
+                : expected != null && String.valueOf(expected).equals(String.valueOf(claim));
     }
 }

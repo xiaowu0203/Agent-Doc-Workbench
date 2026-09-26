@@ -54,7 +54,7 @@ class JwtServiceTest {
 
         Jwt jwt = decoder.decode(jwtService.createTaskCapabilityToken(
                 10L, 20L, 30L, 40L, TaskExecutionMode.ISOLATED.name(), 5L, "a".repeat(64),
-                1, "b".repeat(64), List.of("READ_FRAGMENT")));
+                1, "b".repeat(64), "c".repeat(64), List.of("READ_FRAGMENT")));
 
         assertEquals("10", jwt.getSubject());
         assertEquals("AGENT", jwt.getClaimAsString("actorType"));
@@ -63,6 +63,7 @@ class JwtServiceTest {
         assertEquals(List.of("workbench-task-capability"), jwt.getAudience());
         assertEquals(TaskExecutionMode.ISOLATED.name(), jwt.getClaimAsString("executionMode"));
         assertEquals("a".repeat(64), jwt.getClaimAsString("documentContentSha256"));
+        assertEquals("c".repeat(64), jwt.getClaimAsString("derivationRequestHash"));
     }
 
     @Test

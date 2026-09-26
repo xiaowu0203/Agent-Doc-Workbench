@@ -38,6 +38,12 @@ public interface AgentFeign {
     @PostMapping("/api/agent/internal/candidate-configs")
     Result<AgentCandidateConfigVO> createCandidateConfig(@RequestBody AgentCandidateConfigCreateDTO request);
 
+    /** 恢复校验候选配置并返回非敏感身份，用于创建和调度门禁。 */
+    @GetMapping("/api/agent/internal/candidate-configs/{id}/identity")
+    Result<AgentCandidateConfigVO> getCandidateConfigIdentity(@PathVariable Long id,
+                                                               @RequestParam Long spaceId,
+                                                               @RequestParam String candidateSnapshotHash);
+
     /**
      * 根据AgentId查询Agent执行配置文件
      * @param agentId AgentId

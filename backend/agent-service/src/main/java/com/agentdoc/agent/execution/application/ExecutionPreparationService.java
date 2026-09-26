@@ -18,6 +18,7 @@ import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.service.SkillSnapshotService;
+import com.agentdoc.agent.service.AgentCandidateConfigService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
@@ -64,6 +65,7 @@ public class ExecutionPreparationService {
     private final SkillPackageProperties skillPackageProperties;
     private final AgentTelemetry telemetry;
     private final AgentExecutionMapper executionMapper;
+    private final AgentCandidateConfigService candidateConfigService;
 
     /**
      * 执行Agent任务前置准备全流程
@@ -82,6 +84,9 @@ public class ExecutionPreparationService {
                                      String instruction) {
         // 若任务执行类型是【ISOLATED】类型，则走prepareReplay
         if (TaskExecutionMode.ISOLATED.name().equals(input.executionMode())) {
+            if (input.candidateConfigId() != null) {
+                return prepareExperiment(a2aTaskId, a2aContextId, input, instruction);
+            }
             return prepareReplay(a2aTaskId, a2aContextId, input, instruction);
         }
         // 读取并捕获Agent、模型、绑定技能、MCP连接等配置快照
@@ -201,6 +206,52 @@ public class ExecutionPreparationService {
             throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源包含外部 MCP，当前隔离策略拒绝执行");
         }
 
+        return prepareFrozenExecution(a2aTaskId, a2aContextId, input, instruction, snapshot,
+                source.getPromptHash(), input.sourceExecutionSnapshotHash(), "Replay");
+    }
+
+    private PreparedExecution prepareExperiment(String a2aTaskId, String a2aContextId,
+                                                AgentTaskInputDTO input, String instruction) {
+        requireReplayIdentity(input);
+        if (input.candidateConfigId() == null || input.candidateSnapshotSchemaVersion() == null
+                || input.candidateSnapshotSchemaVersion() != AgentConstant.EXECUTION_SNAPSHOT_SCHEMA_VERSION
+                || input.candidateSnapshotHash() == null || input.candidateSnapshotHash().length() != 64) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Experiment 候选配置身份不完整");
+        }
+        AgentExecutionEntity source = executionMapper.selectById(input.sourceExecutionId());
+        if (source == null || !Objects.equals(input.sourceTaskId(), source.getWorkbenchTaskId())
+                || !Objects.equals(input.spaceId(), source.getSpaceId())
+                || !Objects.equals(input.agentId(), source.getAgentId())
+                || !Objects.equals(input.sourceExecutionSnapshotSchemaVersion(),
+                source.getExecutionSnapshotSchemaVersion())
+                || !Objects.equals(input.sourceExecutionSnapshotHash(), source.getExecutionSnapshotHash())
+                || !Objects.equals(input.sourceExecutionSnapshotHash(),
+                SnapshotCanonicalV3Utils.hashEnvelope(source.getExecutionSnapshotJson()))
+                || !Objects.equals(source.getUserInstructionSnapshot(), instruction)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Experiment 来源执行身份无效");
+        }
+        AgentCandidateConfigService.RestoredCandidateConfig candidate = candidateConfigService.restore(
+                input.candidateConfigId(), input.spaceId(), input.candidateSnapshotHash());
+        if (!Objects.equals(input.agentId(), candidate.agentId())
+                || !Objects.equals(input.sourceExecutionSnapshotHash(), candidate.sourceSnapshotHash())
+                || !Objects.equals(input.candidateSnapshotSchemaVersion(),
+                candidate.candidateSnapshotSchemaVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Experiment 候选配置与来源执行不一致");
+        }
+        return prepareFrozenExecution(a2aTaskId, a2aContextId, input, instruction,
+                candidate.snapshot(), promptService.hash(candidate.systemPrompt(), instruction),
+                candidate.candidateSnapshotHash(), "Experiment");
+    }
+
+    private PreparedExecution prepareFrozenExecution(String a2aTaskId, String a2aContextId,
+                                                      AgentTaskInputDTO input, String instruction,
+                                                      JsonNode snapshot, String promptHash,
+                                                      String expectedSnapshotHash, String label) {
+        JsonNode externalMcp = snapshot.get("externalMcpSnapshot");
+        if (externalMcp != null && !externalMcp.isNull()
+                && (!externalMcp.isArray() || !externalMcp.isEmpty())) {
+            throw new BusinessException(ErrorCode.CONFLICT, label + " 快照包含外部 MCP");
+        }
         // 从快照恢复Agent实体
         AgentEntity agent = restoreAgent(snapshot, input);
         // 从快照恢复模型实体
@@ -214,12 +265,12 @@ public class ExecutionPreparationService {
         // 读取冻结的系统提示词
         String systemPrompt = text(snapshot, "systemPrompt");
         if (systemPrompt == null) {
-            throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源缺少冻结系统提示词");
+            throw new BusinessException(ErrorCode.CONFLICT, label + " 快照缺少冻结系统提示词");
         }
 
         // 将回放上下文转换为数据库执行实体
         AgentExecutionEntity execution = AgentExecutionConvertor.toEntity(
-                a2aTaskId, a2aContextId, input, agent, model, systemPrompt, source.getPromptHash());
+                a2aTaskId, a2aContextId, input, agent, model, systemPrompt, promptHash);
         // 回填冻结用户指令快照
         execution.setUserInstructionSnapshot(instruction);
         // Skill绑定快照JSON
@@ -253,8 +304,8 @@ public class ExecutionPreparationService {
         // 计算新快照哈希
         execution.setExecutionSnapshotHash(AgentExecutionConvertor.snapshotHash(execution));
         // 最终校验：恢复生成的快照哈希必须与源快照哈希保持一致，保证回放状态完全等价
-        if (!input.sourceExecutionSnapshotHash().equals(execution.getExecutionSnapshotHash())) {
-            throw new BusinessException(ErrorCode.CONFLICT, "Replay 恢复后的执行快照与来源不一致");
+        if (!expectedSnapshotHash.equals(execution.getExecutionSnapshotHash())) {
+            throw new BusinessException(ErrorCode.CONFLICT, label + " 恢复后的执行快照与冻结配置不一致");
         }
         // 持久化提交状态的回放执行记录
         executionPersistenceService.insertSubmitted(execution);

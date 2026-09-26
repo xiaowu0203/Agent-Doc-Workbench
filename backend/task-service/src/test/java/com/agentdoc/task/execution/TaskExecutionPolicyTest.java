@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TaskExecutionPolicyTest {
 
     @Test
-    void acceptsCurrentLiveLineagesAndIsolatedReplay() {
+    void acceptsCurrentLiveLineagesAndIsolatedDerivedTasks() {
         for (TaskLineageType type : new TaskLineageType[]{
                 TaskLineageType.ORIGINAL, TaskLineageType.RERUN, TaskLineageType.REVIEW_REWORK}) {
             assertThatCode(() -> TaskExecutionPolicy.requireSupported(task(type, TaskExecutionMode.LIVE)))
@@ -20,6 +20,9 @@ class TaskExecutionPolicyTest {
         }
         assertThatCode(() -> TaskExecutionPolicy.requireSupported(
                 task(TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED)))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> TaskExecutionPolicy.requireSupported(
+                task(TaskLineageType.EXPERIMENT, TaskExecutionMode.ISOLATED)))
                 .doesNotThrowAnyException();
     }
 

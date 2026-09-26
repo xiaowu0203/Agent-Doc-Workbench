@@ -7,6 +7,7 @@ import com.agentdoc.common.feign.dto.DocumentVersionSourceQueryDTO;
 import com.agentdoc.common.feign.dto.ExecutionArtifactAppendDTO;
 import com.agentdoc.common.feign.dto.EvaluationTaskBatchQueryDTO;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchCreateDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
 import com.agentdoc.common.feign.dto.SpaceRoleAuditDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
@@ -18,6 +19,7 @@ import com.agentdoc.common.feign.vo.EvaluationDocumentChangeEvidenceVO;
 import com.agentdoc.common.feign.vo.EvaluationTaskCancelVO;
 import com.agentdoc.common.feign.vo.EvaluationTaskStatusVO;
 import com.agentdoc.common.feign.vo.EvaluationWorkerCapabilityVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
 import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
 import com.agentdoc.common.feign.vo.WorkbenchSearchGroupVO;
@@ -56,6 +58,10 @@ public interface TaskFeign {
     /** 在当前用户权限上下文中批量创建 Replay 并取得窄权限 WorkerCapability。 */
     @PostMapping("/api/task/tasks/replays/batch")
     Result<ReplayBatchCreateVO> createReplayBatch(@RequestBody ReplayBatchCreateDTO request);
+
+    /** 在当前用户权限上下文中批量创建隔离 Experiment Task。 */
+    @PostMapping("/api/task/tasks/experiments/batch")
+    Result<ExperimentBatchCreateVO> createExperimentBatch(@RequestBody ExperimentBatchCreateDTO request);
 
     /** 在当前用户权限上下文中，为既有 Replay Task 重新签发窄权限 WorkerCapability。 */
     @PostMapping("/api/task/tasks/evaluation-worker-capability")

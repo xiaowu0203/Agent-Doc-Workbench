@@ -4,6 +4,8 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
 import com.agentdoc.common.feign.vo.ReplayBatchItemVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchItemVO;
 import com.agentdoc.evaluation.enums.EvaluationAttemptStatus;
 import com.agentdoc.evaluation.enums.EvaluationPauseReason;
 import com.agentdoc.evaluation.enums.EvaluationRunStatus;
@@ -15,9 +17,11 @@ import com.agentdoc.evaluation.pojo.entity.EvaluationCaseRunEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationRunEntity;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -57,11 +61,40 @@ public class EvaluationRunPersistenceService {
     @Transactional
     public RunDraft create(Long spaceId, Long datasetVersionId, Long singleTestCaseVersionId,
                            Long createdBy, List<Long> testCaseVersionIds) {
+        return createInternal(spaceId, datasetVersionId, singleTestCaseVersionId, null,
+                createdBy, testCaseVersionIds);
+    }
+
+    @Transactional
+    public RunDraft createForExperiment(Long spaceId, Long datasetVersionId, Long experimentVariantId,
+                                        Long createdBy, List<Long> testCaseVersionIds) {
+        EvaluationRunEntity existing = runMapper.selectOne(new LambdaQueryWrapper<EvaluationRunEntity>()
+                .eq(EvaluationRunEntity::getExperimentVariantId, experimentVariantId));
+        if (existing != null) {
+            return loadDraft(existing);
+        }
+        try {
+            return createInternal(spaceId, datasetVersionId, null, experimentVariantId,
+                    createdBy, testCaseVersionIds);
+        } catch (DuplicateKeyException exception) {
+            EvaluationRunEntity concurrent = runMapper.selectOne(new LambdaQueryWrapper<EvaluationRunEntity>()
+                    .eq(EvaluationRunEntity::getExperimentVariantId, experimentVariantId));
+            if (concurrent == null) {
+                throw exception;
+            }
+            return loadDraft(concurrent);
+        }
+    }
+
+    private RunDraft createInternal(Long spaceId, Long datasetVersionId, Long singleTestCaseVersionId,
+                                    Long experimentVariantId, Long createdBy,
+                                    List<Long> testCaseVersionIds) {
         EvaluationRunEntity run = new EvaluationRunEntity();
         run.setId(IdWorker.getId());
         run.setSpaceId(spaceId);
         run.setDatasetVersionId(datasetVersionId);
         run.setSingleTestCaseVersionId(singleTestCaseVersionId);
+        run.setExperimentVariantId(experimentVariantId);
         run.setStatus(EvaluationRunStatus.DISPATCHING.name());
         run.setCancelRequested(false);
         run.setCaseCount(testCaseVersionIds.size());
@@ -97,6 +130,19 @@ public class EvaluationRunPersistenceService {
         return new RunDraft(run, List.copyOf(cases));
     }
 
+    private RunDraft loadDraft(EvaluationRunEntity run) {
+        List<EvaluationCaseRunEntity> caseRuns = caseRunMapper.selectList(
+                new LambdaQueryWrapper<EvaluationCaseRunEntity>()
+                        .eq(EvaluationCaseRunEntity::getRunId, run.getId())
+                        .orderByAsc(EvaluationCaseRunEntity::getId));
+        Map<Long, EvaluationCaseAttemptEntity> attempts = attemptMapper.selectBatchIds(
+                        caseRuns.stream().map(EvaluationCaseRunEntity::getCurrentAttemptId).toList())
+                .stream().collect(Collectors.toMap(EvaluationCaseAttemptEntity::getId, Function.identity()));
+        return new RunDraft(run, caseRuns.stream()
+                .map(caseRun -> new RunCaseDraft(caseRun, attempts.get(caseRun.getCurrentAttemptId())))
+                .toList());
+    }
+
     /**
      * 绑定分发结果，默认批次号 batchNo=1
      * @param draft 创建阶段返回的Run草稿
@@ -125,6 +171,14 @@ public class EvaluationRunPersistenceService {
      */
     @Transactional
     public RunDraft attachDispatch(RunDraft draft, ReplayBatchCreateVO response, int batchNo) {
+        Map<Long, String> requestKeys = draft.cases().stream().collect(Collectors.toMap(
+                item -> item.attempt().getId(), item -> requestKey(item.attempt().getId())));
+        return attachDispatch(draft, response, batchNo, requestKeys);
+    }
+
+    @Transactional
+    public RunDraft attachDispatch(RunDraft draft, ReplayBatchCreateVO response, int batchNo,
+                                   Map<Long, String> requestKeys) {
         if (!draft.run().getId().equals(response.runId())
                 || !draft.run().getSpaceId().equals(response.spaceId())
                 || response.items().size() != draft.cases().size()) {
@@ -137,7 +191,7 @@ public class EvaluationRunPersistenceService {
 
         // 校验：每个Attempt都必须存在对应的分发映射
         for (RunCaseDraft item : draft.cases()) {
-            ReplayBatchItemVO mapping = byRequestKey.get(requestKey(item.attempt().getId()));
+            ReplayBatchItemVO mapping = byRequestKey.get(requestKeys.get(item.attempt().getId()));
             if (mapping == null) {
                 throw new BusinessException(ErrorCode.CONFLICT, "批量 Replay 响应缺少 Attempt 映射");
             }
@@ -150,7 +204,7 @@ public class EvaluationRunPersistenceService {
         // 更新Attempt与CaseRun状态、回放任务ID、分片ID、启动时间
         LocalDateTime startedAt = LocalDateTime.now();
         for (RunCaseDraft item : draft.cases()) {
-            String requestKey = requestKey(item.attempt().getId());
+            String requestKey = requestKeys.get(item.attempt().getId());
             ReplayBatchItemVO mapping = byRequestKey.get(requestKey);
 
             item.attempt().setReplayTaskId(mapping.replayTaskId());
@@ -174,6 +228,44 @@ public class EvaluationRunPersistenceService {
                 .eq(EvaluationRunEntity::getId, draft.run().getId())
                 .set(EvaluationRunEntity::getPauseReason, null));
 
+        return draft;
+    }
+
+    @Transactional
+    public RunDraft attachExperimentDispatch(RunDraft draft, ExperimentBatchCreateVO response,
+                                             Map<Long, String> requestKeys, int batchNo) {
+        if (!draft.run().getId().equals(response.runId())
+                || !draft.run().getExperimentVariantId().equals(response.variantId())
+                || !draft.run().getSpaceId().equals(response.spaceId())
+                || response.items().size() != draft.cases().size()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "批量 Experiment 响应身份不匹配");
+        }
+        Map<String, ExperimentBatchItemVO> byRequestKey = response.items().stream()
+                .collect(Collectors.toMap(ExperimentBatchItemVO::derivationRequestKey, Function.identity()));
+        for (RunCaseDraft item : draft.cases()) {
+            if (item.attempt() == null || byRequestKey.get(requestKeys.get(item.attempt().getId())) == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "批量 Experiment 响应缺少 Attempt 映射");
+            }
+        }
+        var segment = segmentService.append(draft.run().getId(), draft.run().getSpaceId(), batchNo,
+                response.taskIdsHash(), response.workerCapability(), response.workerCapabilityExpiresAt());
+        LocalDateTime startedAt = LocalDateTime.now();
+        for (RunCaseDraft item : draft.cases()) {
+            ExperimentBatchItemVO mapping = byRequestKey.get(requestKeys.get(item.attempt().getId()));
+            item.attempt().setReplayTaskId(null);
+            item.attempt().setExecutionTaskId(mapping.executionTaskId());
+            item.attempt().setCapabilitySegmentId(segment.getId());
+            item.attempt().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
+            item.attempt().setStartedAt(startedAt);
+            item.caseRun().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
+        }
+        attemptMapper.updateBatch(draft.cases().stream().map(RunCaseDraft::attempt).toList());
+        caseRunMapper.updateBatch(draft.cases().stream().map(RunCaseDraft::caseRun).toList());
+        draft.run().setStatus(EvaluationRunStatus.RUNNING.name());
+        draft.run().setPauseReason(null);
+        draft.run().setReconciliationFailureCount(0);
+        draft.run().setStartedAt(startedAt);
+        runMapper.updateById(draft.run());
         return draft;
     }
 

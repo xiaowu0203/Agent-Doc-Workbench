@@ -2,6 +2,8 @@ package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
 import com.agentdoc.common.feign.vo.ReplayBatchItemVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchItemVO;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.agentdoc.evaluation.enums.EvaluationAttemptStatus;
@@ -23,6 +25,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
@@ -99,5 +102,30 @@ class EvaluationRunPersistenceServiceTest {
             assertThat(item.attempt().getReplayTaskId()).isEqualTo(items.get(index).replayTaskId());
             assertThat(item.attempt().getExecutionTaskId()).isEqualTo(items.get(index).replayTaskId());
         }
+    }
+
+    @Test
+    void attachesExperimentDispatchOnlyToGenericExecutionTask() {
+        var service = new EvaluationRunPersistenceService(runMapper, caseRunMapper, attemptMapper, segmentService);
+        var draft = service.create(9L, 10L, null, 501L, List.of(31L));
+        draft.run().setId(71L);
+        draft.run().setExperimentVariantId(72L);
+        var item = draft.cases().getFirst();
+        String key = "experiment:70:variant:72:case:31:attempt:1";
+        var segment = new com.agentdoc.evaluation.pojo.entity.EvaluationWorkerCapabilitySegmentEntity();
+        segment.setId(82L);
+        Instant expiresAt = Instant.now().plusSeconds(600);
+        when(segmentService.append(71L, 9L, 2, "a".repeat(64), "worker-token", expiresAt))
+                .thenReturn(segment);
+        var response = new ExperimentBatchCreateVO(71L, 72L, 9L,
+                List.of(new ExperimentBatchItemVO(101L, 31L, 1, key, 901L, "PENDING")),
+                "a".repeat(64), "worker-token", expiresAt);
+
+        service.attachExperimentDispatch(draft, response, Map.of(item.attempt().getId(), key), 2);
+
+        assertThat(item.attempt().getReplayTaskId()).isNull();
+        assertThat(item.attempt().getExecutionTaskId()).isEqualTo(901L);
+        assertThat(item.attempt().getCapabilitySegmentId()).isEqualTo(82L);
+        assertThat(item.attempt().getStatus()).isEqualTo(EvaluationAttemptStatus.REPLAY_CREATED.name());
     }
 }

@@ -122,6 +122,15 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "派生请求稳定 SHA-256")
     private String derivationRequestHash;
 
+    @Schema(description = "Experiment 不可变候选配置 ID")
+    private Long candidateConfigId;
+
+    @Schema(description = "候选执行快照 schema 版本")
+    private Integer candidateSnapshotSchemaVersion;
+
+    @Schema(description = "候选执行快照 hash")
+    private String candidateSnapshotHash;
+
     @Schema(description = "消息重试次数")
     private Integer retryCount;
 

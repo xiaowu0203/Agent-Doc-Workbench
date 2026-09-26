@@ -254,7 +254,8 @@ class AgentCandidateConfigServiceTest {
 
     private AgentTaskInputDTO input() {
         return new AgentTaskInputDTO(10L, 1L, 1L, 40L, 1000L, TaskExecutionMode.LIVE.name(), 5L,
-                "a".repeat(64), 1, "b".repeat(64), null, null, null, null,
+                "a".repeat(64), 1, "b".repeat(64), null, null, null, null, null,
+                null, null, null,
                 "http://task-service/mcp", "capability");
     }
 

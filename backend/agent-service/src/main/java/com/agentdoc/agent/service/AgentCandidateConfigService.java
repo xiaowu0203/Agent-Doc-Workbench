@@ -130,17 +130,34 @@ public class AgentCandidateConfigService {
      */
     public RestoredCandidateConfig restore(Long candidateConfigId, Long spaceId,
                                             String candidateSnapshotHash) {
+        AgentCandidateConfigEntity entity = requireCandidateIdentity(
+                candidateConfigId, spaceId, candidateSnapshotHash);
+        JsonNode candidateSnapshot = validateProof(entity, true);
+        return new RestoredCandidateConfig(entity.getId(), entity.getSpaceId(), entity.getAgentId(),
+                entity.getSourceTaskId(), entity.getSourceExecutionId(),
+                entity.getSourceSnapshotHash(),
+                entity.getCandidateSnapshotSchemaVersion(), entity.getCandidateSnapshotHash(),
+                entity.getSystemPrompt(), entity.getPromptHash(), entity.getExecutionSnapshotJson(),
+                candidateSnapshot.deepCopy());
+    }
+
+    /** 恢复校验候选配置后，仅返回非敏感身份投影。 */
+    public AgentCandidateConfigVO requireRestorableIdentity(Long candidateConfigId, Long spaceId,
+                                                            String candidateSnapshotHash) {
+        AgentCandidateConfigEntity entity = requireCandidateIdentity(
+                candidateConfigId, spaceId, candidateSnapshotHash);
+        validateProof(entity, true);
+        return toVO(entity);
+    }
+
+    private AgentCandidateConfigEntity requireCandidateIdentity(Long candidateConfigId, Long spaceId,
+                                                                String candidateSnapshotHash) {
         AgentCandidateConfigEntity entity = candidateConfigMapper.selectById(candidateConfigId);
         if (entity == null || !Objects.equals(spaceId, entity.getSpaceId())
                 || !Objects.equals(candidateSnapshotHash, entity.getCandidateSnapshotHash())) {
             throw new BusinessException(ErrorCode.CONFLICT, "候选配置身份无效");
         }
-        JsonNode candidateSnapshot = validateProof(entity, true);
-        return new RestoredCandidateConfig(entity.getId(), entity.getSpaceId(), entity.getAgentId(),
-                entity.getSourceTaskId(), entity.getSourceExecutionId(),
-                entity.getCandidateSnapshotSchemaVersion(), entity.getCandidateSnapshotHash(),
-                entity.getSystemPrompt(), entity.getPromptHash(), entity.getExecutionSnapshotJson(),
-                candidateSnapshot.deepCopy());
+        return entity;
     }
 
     private JsonNode validateProof(AgentCandidateConfigEntity entity, boolean requireCredential) {
@@ -333,6 +350,7 @@ public class AgentCandidateConfigService {
     /** Agent Runtime 内部使用的已校验冻结候选配置。 */
     public record RestoredCandidateConfig(Long candidateConfigId, Long spaceId, Long agentId,
                                           Long sourceTaskId, Long sourceExecutionId,
+                                          String sourceSnapshotHash,
                                           Integer candidateSnapshotSchemaVersion,
                                           String candidateSnapshotHash, String systemPrompt,
                                           String promptHash, String executionSnapshotJson,

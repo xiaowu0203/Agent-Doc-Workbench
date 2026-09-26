@@ -48,8 +48,9 @@ public final class TaskExecutionAvailability {
         if (mode == TaskExecutionMode.LIVE && LIVE_TYPES.contains(lineage)) {
             return;
         }
-        // ISOLATED隔离模式，仅允许REPLAY回放任务
-        if (mode == TaskExecutionMode.ISOLATED && lineage == TaskLineageType.REPLAY) {
+        // ISOLATED隔离模式，允许Replay与离线Experiment任务
+        if (mode == TaskExecutionMode.ISOLATED
+                && (lineage == TaskLineageType.REPLAY || lineage == TaskLineageType.EXPERIMENT)) {
             return;
         }
         // 不在支持组合范围内，拒绝执行

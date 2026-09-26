@@ -198,6 +198,7 @@ public class JwtService {
      * @param documentContentSha256 文档内容SHA256哈希值
      * @param inputSnapshotSchemaVersion 输入快照协议版本号
      * @param inputSnapshotHash 输入快照规范化哈希，用于校验任务输入不可篡改
+     * @param derivationRequestHash Replay/Experiment 派生请求哈希，原始任务为空
      * @param actions 当前任务允许执行的动作集合，下游服务校验动作权限
      * @return 已签名的JWT令牌字符串
      */
@@ -205,11 +206,12 @@ public class JwtService {
                                             Long documentId, String executionMode,
                                             Long documentVersionSnapshot, String documentContentSha256,
                                             Integer inputSnapshotSchemaVersion, String inputSnapshotHash,
+                                            String derivationRequestHash,
                                             List<String> actions) {
         // 获取当前UTC时间，用于iat签发时间
         Instant now = Instant.now();
         // 构建JWT声明集合
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
                 // 令牌发行人，对应auth-service的issuer
                 .issuer(props.issuer())
                 // 签发时间 iat
@@ -245,8 +247,11 @@ public class JwtService {
                 // 自定义声明：scope作用域，标记为Agent任务作用域
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_AGENT)
                 // jti：全局唯一令牌ID，用于令牌撤销、审计日志
-                .id(UUID.randomUUID().toString())
-                .build();
+                .id(UUID.randomUUID().toString());
+        if (derivationRequestHash != null) {
+            builder.claim(JwtConstant.CLAIM_DERIVATION_REQUEST_HASH, derivationRequestHash);
+        }
+        JwtClaimsSet claims = builder.build();
         // 使用JwtEncoder签名，返回JWT原始字符串
         return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }

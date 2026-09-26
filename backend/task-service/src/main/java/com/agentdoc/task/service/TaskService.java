@@ -15,12 +15,17 @@ import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.TaskCapabilityIssueDTO;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityIssueDTO;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchCreateDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchItemDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchItemDTO;
 import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
+import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchItemVO;
 import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
 import com.agentdoc.common.feign.vo.ReplayBatchItemVO;
@@ -756,6 +761,47 @@ public class TaskService {
     }
 
     /**
+     * 批量创建只使用冻结候选配置的隔离 Experiment Task。
+     * 创建与调度均重新校验候选配置证明；同幂等键异内容直接冲突。
+     */
+    public ExperimentBatchCreateVO createExperimentBatch(ExperimentBatchCreateDTO request) {
+        validateExperimentBatchRequest(request);
+        Long userId = AuthUtils.getUserIdOrException();
+        AgentCandidateConfigVO candidate = requireData(agentFeign.getCandidateConfigIdentity(
+                request.candidateConfigId(), request.spaceId(), request.candidateSnapshotHash()));
+        if (!Objects.equals(candidate.candidateSnapshotSchemaVersion(), request.candidateSnapshotSchemaVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Experiment 候选配置身份不匹配");
+        }
+
+        List<ExperimentBatchPlan> plans = request.items().stream()
+                .map(item -> prepareExperimentBatchItem(request, item, candidate, userId))
+                .toList();
+        List<TaskEntity> created = persistExperimentBatch(plans);
+        List<TaskEntity> resolved = resolveExperimentBatch(plans);
+        List<Long> taskIds = resolved.stream().map(TaskEntity::getId).sorted().toList();
+        String taskIdsHash = StableSnapshotUtils.snapshotHash(1, taskIds);
+        String workerCapability = requireData(authFeign.issueEvaluationWorkerCapability(
+                new EvaluationWorkerCapabilityIssueDTO(request.runId(), request.spaceId(), taskIdsHash,
+                        request.workerCapabilityTtlSeconds(), evaluationWorkerActions())));
+        Map<String, ExperimentBatchPlan> planByKey = plans.stream()
+                .collect(Collectors.toMap(ExperimentBatchPlan::requestKey, Function.identity()));
+        created.forEach(task -> publishDerivedAndAudit(task,
+                planByKey.get(task.getDerivationRequestKey()).sourceTask(), workerCapability, "Experiment"));
+
+        List<ExperimentBatchItemVO> items = new ArrayList<>(resolved.size());
+        for (int index = 0; index < resolved.size(); index++) {
+            TaskEntity task = resolved.get(index);
+            ExperimentBatchPlan plan = plans.get(index);
+            items.add(new ExperimentBatchItemVO(plan.sourceTask().getId(), plan.testCaseVersionId(),
+                    plan.attemptNo(), plan.requestKey(), task.getId(),
+                    TaskStatus.fromCode(task.getStatus()).name()));
+        }
+        return new ExperimentBatchCreateVO(request.runId(), request.variantId(), request.spaceId(),
+                items, taskIdsHash, workerCapability,
+                Instant.now().plusSeconds(request.workerCapabilityTtlSeconds()));
+    }
+
+    /**
      * 在当前用户权限上下文中，为已有的隔离 Replay Task 重新签发窄权限 WorkerCapability。
      * 该操作不创建、不派发也不修改 Task。
      */
@@ -769,9 +815,10 @@ public class TaskService {
                 .collect(Collectors.toMap(TaskEntity::getId, Function.identity()));
         if (tasks.size() != taskIds.size() || tasks.stream().anyMatch(task ->
                 !request.spaceId().equals(task.getSpaceId())
-                        || !TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                        || (!TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                        && !TaskLineageType.EXPERIMENT.name().equals(task.getLineageType()))
                         || !TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode()))) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "只能为同空间隔离 Replay Task 续签评估能力");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只能为同空间隔离评估 Task 续签能力");
         }
         List<Long> orderedTaskIds = taskIds.stream().map(byId::get).map(TaskEntity::getId).toList();
         String taskIdsHash = StableSnapshotUtils.snapshotHash(1, orderedTaskIds);
@@ -828,6 +875,118 @@ public class TaskService {
         }
     }
 
+    private void validateExperimentBatchRequest(ExperimentBatchCreateDTO request) {
+        if (request == null || request.runId() == null || request.variantId() == null
+                || request.spaceId() == null || request.candidateConfigId() == null
+                || request.candidateSnapshotSchemaVersion() == null
+                || request.candidateSnapshotSchemaVersion() != 3
+                || request.candidateSnapshotHash() == null
+                || !request.candidateSnapshotHash().matches("[0-9a-f]{64}")
+                || request.workerCapabilityTtlSeconds() == null
+                || request.workerCapabilityTtlSeconds() < TaskConstant.MIN_WORKER_CAPABILITY_TTL_SECONDS
+                || request.workerCapabilityTtlSeconds() > TaskConstant.MAX_WORKER_CAPABILITY_TTL_SECONDS
+                || request.items() == null || request.items().isEmpty()
+                || request.items().size() > TaskConstant.MAX_REPLAY_BATCH_SIZE) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "批量 Experiment 请求参数无效");
+        }
+        Set<String> keys = new HashSet<>();
+        for (ExperimentBatchItemDTO item : request.items()) {
+            if (item == null || item.sourceTaskId() == null || item.testCaseVersionId() == null
+                    || item.attemptNo() == null || item.attemptNo() <= 0
+                    || StringUtils.isBlank(item.derivationRequestKey())
+                    || item.derivationRequestKey().length() > 191 || !keys.add(item.derivationRequestKey())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "批量 Experiment 项或幂等键无效");
+            }
+        }
+    }
+
+    private ExperimentBatchPlan prepareExperimentBatchItem(ExperimentBatchCreateDTO request,
+                                                            ExperimentBatchItemDTO item,
+                                                            AgentCandidateConfigVO candidate,
+                                                            Long userId) {
+        ReplayEligibilityVO eligibility = replayEligibility(item.sourceTaskId());
+        if (!eligibility.replayable()) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "来源任务不可用于 Experiment: " + eligibility.reasonCode());
+        }
+        TaskEntity source = require(item.sourceTaskId());
+        if (!request.spaceId().equals(source.getSpaceId())
+                || !candidate.agentId().equals(source.getAgentId())
+                || !candidate.sourceSnapshotHash().equals(eligibility.executionSnapshotHash())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Experiment 来源与候选配置不一致");
+        }
+        String requestHash = StableSnapshotUtils.snapshotHash(1, new ExperimentDerivationSnapshot(
+                source.getId(), source.getInputSnapshotSchemaVersion(), source.getInputSnapshotHash(),
+                eligibility.sourceExecutionId(), eligibility.executionSnapshotSchemaVersion(),
+                eligibility.executionSnapshotHash(), request.variantId(), item.testCaseVersionId(),
+                item.attemptNo(), request.candidateConfigId(), request.candidateSnapshotSchemaVersion(),
+                request.candidateSnapshotHash(), TaskLineageType.EXPERIMENT.name(),
+                TaskExecutionMode.ISOLATED.name()));
+        TaskEntity existing = findByDerivationRequestKey(item.derivationRequestKey());
+        if (existing != null) {
+            requireSameExperimentRequest(existing, requestHash, request);
+            return new ExperimentBatchPlan(source, item.testCaseVersionId(), item.attemptNo(),
+                    item.derivationRequestKey(), requestHash, null);
+        }
+        TaskEntity task = copyForDerived(source, source.getAgentConfigVersion(), userId,
+                TaskLineageType.EXPERIMENT, TaskExecutionMode.ISOLATED);
+        task.setDerivationRequestKey(item.derivationRequestKey());
+        task.setDerivationRequestHash(requestHash);
+        task.setCandidateConfigId(request.candidateConfigId());
+        task.setCandidateSnapshotSchemaVersion(request.candidateSnapshotSchemaVersion());
+        task.setCandidateSnapshotHash(request.candidateSnapshotHash());
+        return new ExperimentBatchPlan(source, item.testCaseVersionId(), item.attemptNo(),
+                item.derivationRequestKey(), requestHash, task);
+    }
+
+    private List<TaskEntity> persistExperimentBatch(List<ExperimentBatchPlan> plans) {
+        List<TaskEntity> created = new ArrayList<>();
+        for (int attempt = 0; attempt < TaskConstant.REPLAY_BATCH_PERSIST_ATTEMPTS; attempt++) {
+            Map<String, TaskEntity> existing = findByDerivationRequestKeys(
+                    plans.stream().map(ExperimentBatchPlan::requestKey).toList());
+            List<TaskEntity> missing = plans.stream()
+                    .filter(plan -> existing.get(plan.requestKey()) == null)
+                    .map(ExperimentBatchPlan::newTask).filter(Objects::nonNull).toList();
+            if (missing.isEmpty()) {
+                return created;
+            }
+            try {
+                taskMapper.insertBatch(missing);
+                created.addAll(missing);
+                return created;
+            } catch (DuplicateKeyException ignored) {
+                // 同幂等键并发创建时重新加载并校验。
+            }
+        }
+        resolveExperimentBatch(plans);
+        return created;
+    }
+
+    private List<TaskEntity> resolveExperimentBatch(List<ExperimentBatchPlan> plans) {
+        Map<String, TaskEntity> byRequestKey = findByDerivationRequestKeys(
+                plans.stream().map(ExperimentBatchPlan::requestKey).toList());
+        return plans.stream().map(plan -> {
+            TaskEntity task = byRequestKey.get(plan.requestKey());
+            if (task == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "批量 Experiment 并发创建未能收敛");
+            }
+            requireSameExperimentRequest(task, plan.requestHash(), null);
+            return task;
+        }).toList();
+    }
+
+    private void requireSameExperimentRequest(TaskEntity existing, String requestHash,
+                                              ExperimentBatchCreateDTO request) {
+        if (!requestHash.equals(existing.getDerivationRequestHash())
+                || !TaskLineageType.EXPERIMENT.name().equals(existing.getLineageType())
+                || !TaskExecutionMode.ISOLATED.name().equals(existing.getExecutionMode())
+                || (request != null && (!Objects.equals(request.candidateConfigId(), existing.getCandidateConfigId())
+                || !Objects.equals(request.candidateSnapshotHash(), existing.getCandidateSnapshotHash())))) {
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "派生请求幂等键已被不同 Experiment 请求占用");
+        }
+    }
+
     /**
      * 预处理单条批量回放项：校验源任务回放准入、同空间校验、计算请求哈希；
      * 存在已有幂等记录则校验幂等一致性，不存在则构造待创建Replay实体，封装为ReplayBatchPlan。
@@ -845,7 +1004,7 @@ public class TaskService {
         if (!spaceId.equals(source.getSpaceId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "批量 Replay 不允许跨 Space");
         }
-        String requestHash = replayRequestHash(source, eligibility);
+        String requestHash = replayRequestHash(source, eligibility, item);
         TaskEntity existing = findByDerivationRequestKey(item.derivationRequestKey());
         if (existing != null) {
             requireSameReplayRequest(existing, requestHash);
@@ -928,16 +1087,21 @@ public class TaskService {
      * @param source 源任务实体
      */
     private void publishReplayAndAudit(TaskEntity replay, TaskEntity source, String dispatchAuthorization) {
+        publishDerivedAndAudit(replay, source, dispatchAuthorization, "Replay");
+    }
+
+    private void publishDerivedAndAudit(TaskEntity task, TaskEntity source,
+                                        String dispatchAuthorization, String type) {
         try {
-            messagePublisher.publish(replay.getId(), dispatchAuthorization);
+            messagePublisher.publish(task.getId(), dispatchAuthorization);
         } catch (RuntimeException exception) {
-            replay.setStatus(TaskStatus.FAILED.getCode());
-            replay.setErrorMessage("Replay 消息发布失败：" + exception.getMessage());
-            replay.setEndTime(LocalDateTime.now());
-            taskMapper.updateById(replay);
+            task.setStatus(TaskStatus.FAILED.getCode());
+            task.setErrorMessage(type + " 消息发布失败：" + exception.getMessage());
+            task.setEndTime(LocalDateTime.now());
+            taskMapper.updateById(task);
         }
-        auditLogService.recordHuman(replay.getSpaceId(), AuditAction.TASK_CREATED,
-                AuditTargetType.TASK, replay.getId(), "基于任务 " + source.getTaskNo() + " 批量创建 Replay");
+        auditLogService.recordHuman(task.getSpaceId(), AuditAction.TASK_CREATED,
+                AuditTargetType.TASK, task.getId(), "基于任务 " + source.getTaskNo() + " 批量创建 " + type);
     }
 
     /**
@@ -949,7 +1113,8 @@ public class TaskService {
     public AgentExecutionReplayIdentityVO requireReplayDispatchIdentity(TaskEntity replay) {
         if (!TaskLineageType.REPLAY.name().equals(replay.getLineageType())
                 || !TaskExecutionMode.ISOLATED.name().equals(replay.getExecutionMode())
-                || replay.getParentTaskId() == null) {
+                || replay.getParentTaskId() == null || replay.getDerivationRequestHash() == null
+                || !replay.getDerivationRequestHash().matches("[0-9a-f]{64}")) {
             throw new BusinessException(ErrorCode.CONFLICT, "任务不是合法 Replay");
         }
         AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(replay.getParentTaskId()));
@@ -959,6 +1124,35 @@ public class TaskService {
             throw new BusinessException(ErrorCode.CONFLICT, "Replay 来源执行在调度前已失效");
         }
         return identity;
+    }
+
+    /** 调度 Experiment 前重新校验每条来源执行与不可变候选配置身份。 */
+    public AgentExecutionReplayIdentityVO requireExperimentDispatchIdentity(TaskEntity experiment) {
+        if (!TaskLineageType.EXPERIMENT.name().equals(experiment.getLineageType())
+                || !TaskExecutionMode.ISOLATED.name().equals(experiment.getExecutionMode())
+                || experiment.getParentTaskId() == null || experiment.getCandidateConfigId() == null
+                || experiment.getCandidateSnapshotSchemaVersion() == null
+                || experiment.getCandidateSnapshotSchemaVersion() != 3
+                || experiment.getCandidateSnapshotHash() == null
+                || experiment.getDerivationRequestHash() == null
+                || !experiment.getDerivationRequestHash().matches("[0-9a-f]{64}")) {
+            throw new BusinessException(ErrorCode.CONFLICT, "任务不是合法 Experiment");
+        }
+        AgentExecutionReplayIdentityVO source = requireData(
+                agentFeign.getReplayIdentity(experiment.getParentTaskId()));
+        AgentCandidateConfigVO candidate = requireData(agentFeign.getCandidateConfigIdentity(
+                experiment.getCandidateConfigId(), experiment.getSpaceId(),
+                experiment.getCandidateSnapshotHash()));
+        if (source.executionCount() != 1 || !source.snapshotValid()
+                || source.executionSnapshotSchemaVersion() == null
+                || source.executionSnapshotSchemaVersion() != 3 || source.externalMcpPresent()
+                || !Objects.equals(source.executionSnapshotHash(), candidate.sourceSnapshotHash())
+                || !Objects.equals(experiment.getAgentId(), candidate.agentId())
+                || !Objects.equals(experiment.getCandidateSnapshotSchemaVersion(),
+                candidate.candidateSnapshotSchemaVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Experiment 来源或候选配置在调度前已失效");
+        }
+        return source;
     }
 
     /**
@@ -1009,6 +1203,23 @@ public class TaskService {
         return StableSnapshotUtils.snapshotHash(1, snapshot);
     }
 
+    private String replayRequestHash(TaskEntity source, ReplayEligibilityVO eligibility,
+                                     ReplayBatchItemDTO item) {
+        if (item.experimentVariantId() == null && item.testCaseVersionId() == null && item.attemptNo() == null) {
+            return replayRequestHash(source, eligibility);
+        }
+        if (item.experimentVariantId() == null || item.testCaseVersionId() == null
+                || item.attemptNo() == null || item.attemptNo() <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Experiment baseline 派生身份不完整");
+        }
+        return StableSnapshotUtils.snapshotHash(1, new ExperimentBaselineDerivationSnapshot(
+                source.getId(), source.getInputSnapshotSchemaVersion(), source.getInputSnapshotHash(),
+                eligibility.sourceExecutionId(), eligibility.executionSnapshotSchemaVersion(),
+                eligibility.executionSnapshotHash(), item.experimentVariantId(), item.testCaseVersionId(),
+                item.attemptNo(), eligibility.executionSnapshotHash(), TaskLineageType.REPLAY.name(),
+                TaskExecutionMode.ISOLATED.name()));
+    }
+
     /**
      * 返回评估域冻结测试用例所需的最小来源投影，用于评估侧获取源任务快照与文档信息。
      * @param id 源任务ID
@@ -1022,11 +1233,12 @@ public class TaskService {
         }
         ReplayEligibilityVO eligibility = replayEligibility(id);
         return new ReplaySourceVO(eligibility.replayable(), eligibility.reasonCode(), eligibility.sourceTaskId(),
-                eligibility.sourceExecutionId(), source.getSpaceId(), eligibility.rootTaskId(),
+                eligibility.sourceExecutionId(), source.getSpaceId(), source.getAgentId(), source.getTokenBudget(),
+                eligibility.rootTaskId(),
                 eligibility.sourceLineage().name(), eligibility.replayDepth(),
                 eligibility.inputSnapshotSchemaVersion(), eligibility.inputSnapshotHash(),
                 eligibility.executionSnapshotSchemaVersion(), eligibility.executionSnapshotHash(),
-                source.getDocumentVersionSnapshot(), source.getDocumentContentSha256());
+                source.getDocumentId(), source.getDocumentVersionSnapshot(), source.getDocumentContentSha256());
     }
 
     /**
@@ -1430,7 +1642,7 @@ public class TaskService {
                 new TaskCapabilityIssueDTO(task.getId(), task.getAgentId(), task.getSpaceId(),
                         task.getDocumentId(), task.getExecutionMode(), task.getDocumentVersionSnapshot(),
                         task.getDocumentContentSha256(), task.getInputSnapshotSchemaVersion(),
-                        task.getInputSnapshotHash(), actions)));
+                        task.getInputSnapshotHash(), task.getDerivationRequestHash(), actions)));
     }
 
     /**
@@ -1734,6 +1946,30 @@ public class TaskService {
 
     private record ReplayBatchPlan(Long sourceTaskId, TaskEntity sourceTask, String requestKey,
                                    String requestHash, TaskEntity newTask) {
+    }
+
+    private record ExperimentDerivationSnapshot(Long sourceTaskId, Integer inputSnapshotSchemaVersion,
+                                                String inputSnapshotHash, Long sourceExecutionId,
+                                                Integer sourceExecutionSnapshotSchemaVersion,
+                                                String sourceExecutionSnapshotHash, Long variantId,
+                                                Long testCaseVersionId, Integer attemptNo,
+                                                Long candidateConfigId, Integer candidateSnapshotSchemaVersion,
+                                                String candidateSnapshotHash, String lineageType,
+                                                String executionMode) {
+    }
+
+    private record ExperimentBaselineDerivationSnapshot(Long sourceTaskId,
+                                                        Integer inputSnapshotSchemaVersion,
+                                                        String inputSnapshotHash, Long sourceExecutionId,
+                                                        Integer sourceExecutionSnapshotSchemaVersion,
+                                                        String sourceExecutionSnapshotHash, Long variantId,
+                                                        Long testCaseVersionId, Integer attemptNo,
+                                                        String candidateSnapshotHash, String lineageType,
+                                                        String executionMode) {
+    }
+
+    private record ExperimentBatchPlan(TaskEntity sourceTask, Long testCaseVersionId, Integer attemptNo,
+                                       String requestKey, String requestHash, TaskEntity newTask) {
     }
 
     /**

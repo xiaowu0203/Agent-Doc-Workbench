@@ -205,6 +205,8 @@ public class AuthService {
                 || request.documentContentSha256() == null
                 || request.inputSnapshotSchemaVersion() == null
                 || request.inputSnapshotHash() == null
+                || (request.derivationRequestHash() != null
+                && !request.derivationRequestHash().matches("[0-9a-f]{64}"))
                 || request.actions() == null
                 || request.actions().isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "任务能力令牌参数无效");
@@ -212,7 +214,7 @@ public class AuthService {
         return jwtService.createTaskCapabilityToken(request.taskId(), request.agentId(),
                 request.spaceId(), request.documentId(), request.executionMode(), request.documentVersionSnapshot(),
                 request.documentContentSha256(), request.inputSnapshotSchemaVersion(), request.inputSnapshotHash(),
-                request.actions());
+                request.derivationRequestHash(), request.actions());
     }
 
     /**
