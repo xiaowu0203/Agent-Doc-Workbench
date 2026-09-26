@@ -2,6 +2,7 @@ package com.agentdoc.common.feign;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
+import com.agentdoc.common.feign.dto.AgentCandidateConfigCreateDTO;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentEvaluationEvidenceQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
@@ -9,6 +10,7 @@ import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
+import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
@@ -31,6 +33,10 @@ import java.util.List;
 
 @FeignClient(name = "agent-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface AgentFeign {
+
+    /** 创建或幂等返回不可变 Prompt 候选配置，仅返回非敏感身份与证明字段。 */
+    @PostMapping("/api/agent/internal/candidate-configs")
+    Result<AgentCandidateConfigVO> createCandidateConfig(@RequestBody AgentCandidateConfigCreateDTO request);
 
     /**
      * 根据AgentId查询Agent执行配置文件
