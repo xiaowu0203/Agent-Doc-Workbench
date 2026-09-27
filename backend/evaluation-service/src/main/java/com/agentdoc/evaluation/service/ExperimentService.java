@@ -606,7 +606,7 @@ public class ExperimentService {
         }
     }
 
-    private String derivationKey(Long experimentId, Long variantId, Long testCaseVersionId, Integer attemptNo) {
+    static String derivationKey(Long experimentId, Long variantId, Long testCaseVersionId, Integer attemptNo) {
         return "experiment:" + experimentId + ":variant:" + variantId + ":case:"
                 + testCaseVersionId + ":attempt:" + attemptNo;
     }
