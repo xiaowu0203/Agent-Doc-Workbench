@@ -1,12 +1,14 @@
 package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.utils.RedisUtils;
+import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.evaluation.config.EvaluationRuntimeProperties;
 import com.agentdoc.evaluation.enums.ExperimentStatus;
 import com.agentdoc.evaluation.mapper.ExperimentMapper;
 import com.agentdoc.evaluation.pojo.entity.ExperimentEntity;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -18,12 +20,14 @@ import java.util.UUID;
 /** 多实例安全的 Experiment 顶层状态对账。 */
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class ExperimentReconciliationJob {
 
     private static final String LOCK_PREFIX = "evaluation:reconcile:experiment:";
 
     private final ExperimentMapper experimentMapper;
     private final ExperimentService experimentService;
+    private final ExperimentReportService reportService;
     private final ExperimentPersistenceService persistenceService;
     private final EvaluationRuntimeProperties properties;
     private final RedisUtils redisUtils;
@@ -41,6 +45,9 @@ public class ExperimentReconciliationJob {
                         .orderByAsc(ExperimentEntity::getUpdatedAt, ExperimentEntity::getId)
                         .last("LIMIT " + batchSize));
         for (ExperimentEntity experiment : experiments) {
+            processWithLease(experiment.getId());
+        }
+        for (ExperimentEntity experiment : experimentMapper.selectAwaitingInitialReport(batchSize)) {
             processWithLease(experiment.getId());
         }
     }
@@ -63,6 +70,10 @@ public class ExperimentReconciliationJob {
                 return;
             }
             experimentService.reconcile(experimentId);
+            reportService.ensureAutomatic(experimentId);
+        } catch (RuntimeException exception) {
+            log.warn("Experiment 对账或报告生成失败，experimentId={}，stack={}", experimentId,
+                    LogSanitizer.sanitizeThrowable(exception));
         } finally {
             redisUtils.deleteIfValueMatches(key, owner);
         }

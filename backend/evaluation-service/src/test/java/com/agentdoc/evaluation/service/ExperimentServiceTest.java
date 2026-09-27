@@ -18,6 +18,7 @@ import com.agentdoc.evaluation.mapper.EvaluationTestCaseMapper;
 import com.agentdoc.evaluation.mapper.EvaluationTestCaseVersionMapper;
 import com.agentdoc.evaluation.mapper.EvaluatorVersionMapper;
 import com.agentdoc.evaluation.mapper.ExperimentMapper;
+import com.agentdoc.evaluation.mapper.ExperimentReportMapper;
 import com.agentdoc.evaluation.mapper.ExperimentVariantMapper;
 import com.agentdoc.evaluation.mapper.TestCaseEvaluatorMapper;
 import com.agentdoc.evaluation.pojo.dto.ExperimentCreateDTO;
@@ -60,6 +61,7 @@ import static org.mockito.Mockito.when;
 class ExperimentServiceTest {
 
     @Mock private ExperimentMapper experimentMapper;
+    @Mock private ExperimentReportMapper reportMapper;
     @Mock private ExperimentVariantMapper variantMapper;
     @Mock private EvaluationDatasetVersionMapper datasetVersionMapper;
     @Mock private EvaluationDatasetMapper datasetMapper;
@@ -81,7 +83,7 @@ class ExperimentServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ExperimentService(experimentMapper, variantMapper, datasetVersionMapper, datasetMapper,
+        service = new ExperimentService(experimentMapper, reportMapper, variantMapper, datasetVersionMapper, datasetMapper,
                 datasetCaseMapper, testCaseVersionMapper, testCaseMapper, testCaseEvaluatorMapper,
                 evaluatorVersionMapper, runMapper, persistenceService, runPersistenceService,
                 evaluationRunService, segmentService, spaceAccessService, taskFeign, agentFeign);

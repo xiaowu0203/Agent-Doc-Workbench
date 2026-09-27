@@ -31,9 +31,9 @@ import com.agentdoc.evaluation.mapper.EvaluationTestCaseMapper;
 import com.agentdoc.evaluation.mapper.EvaluationTestCaseVersionMapper;
 import com.agentdoc.evaluation.mapper.EvaluatorVersionMapper;
 import com.agentdoc.evaluation.mapper.ExperimentMapper;
+import com.agentdoc.evaluation.mapper.ExperimentReportMapper;
 import com.agentdoc.evaluation.mapper.ExperimentVariantMapper;
 import com.agentdoc.evaluation.mapper.TestCaseEvaluatorMapper;
-import com.agentdoc.evaluation.metric.MetricDefinition;
 import com.agentdoc.evaluation.metric.MetricDefinitionCatalog;
 import com.agentdoc.evaluation.pojo.dto.ExperimentCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.ExperimentStartDTO;
@@ -46,6 +46,7 @@ import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.ExperimentEntity;
+import com.agentdoc.evaluation.pojo.entity.ExperimentReportEntity;
 import com.agentdoc.evaluation.pojo.entity.ExperimentVariantEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightIssueVO;
@@ -55,6 +56,7 @@ import com.agentdoc.evaluation.pojo.vo.ExperimentVariantVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -82,6 +84,7 @@ public class ExperimentService {
     private static final int REQUEST_SCHEMA_VERSION = 1;
 
     private final ExperimentMapper experimentMapper;
+    private final ExperimentReportMapper reportMapper;
     private final ExperimentVariantMapper variantMapper;
     private final EvaluationDatasetVersionMapper datasetVersionMapper;
     private final EvaluationDatasetMapper datasetMapper;
@@ -548,11 +551,22 @@ public class ExperimentService {
     }
 
     private ExperimentVO toVO(ExperimentEntity experiment, List<ExperimentVariantEntity> variants) {
+        ExperimentReportEntity report = reportMapper.selectOne(new LambdaQueryWrapper<ExperimentReportEntity>()
+                .eq(ExperimentReportEntity::getExperimentId, experiment.getId())
+                .orderByDesc(ExperimentReportEntity::getRevision).last("LIMIT 1"));
+        JsonNode content = report == null ? null : JsonUtils.parse(report.getReportJson(), JsonNode.class);
+        Long actualTokens = content == null || !content.hasNonNull("actualTokenUsage") ? null
+                : content.get("actualTokenUsage").longValue();
+        Long overrun = content == null || !content.hasNonNull("budgetOverrun") ? null
+                : content.get("budgetOverrun").longValue();
         return new ExperimentVO(experiment.getId(), experiment.getSpaceId(), experiment.getDatasetVersionId(),
                 experiment.getStatus(), experiment.getManifestSchemaVersion(), experiment.getManifestHash(),
-                experiment.getAuthorizedTokenBudget(), experiment.getFailureCode(), experiment.getFailureMessage(),
+                experiment.getAuthorizedTokenBudget(), actualTokens, overrun,
+                experiment.getFailureCode(), experiment.getFailureMessage(),
                 experiment.getCreatedBy(), experiment.getStartedBy(), experiment.getStartedAt(),
-                experiment.getCancelRequestedBy(), experiment.getCancelRequestedAt(), experiment.getFinishedAt(),
+                experiment.getCancelRequestedBy(), experiment.getCancelRequestedAt(),
+                experiment.getDecision(), experiment.getDecisionReason(), experiment.getDecisionReportRevision(),
+                experiment.getDecidedBy(), experiment.getDecidedAt(), experiment.getFinishedAt(),
                 variants.stream().map(this::toVariantVO).toList());
     }
 
@@ -609,21 +623,4 @@ public class ExperimentService {
                                  List<PromptCandidateCreateDTO> candidateVariants) { }
     private record CandidateDraft(String variantKey, AgentCandidateConfigVO identity) { }
     private record ManifestBuild(ExperimentManifest manifest, List<ReplaySourceVO> sources) { }
-    private record ExperimentManifest(Long datasetVersionId, List<ManifestCase> cases,
-                                      Integer sourceSnapshotSchemaVersion, String sourceSnapshotHash,
-                                      Integer metricCatalogVersion, List<MetricManifest> metrics,
-                                      String metricCatalogHash) { }
-    private record ManifestCase(Long testCaseVersionId, Long sourceTaskId, Long sourceExecutionId,
-                                Integer inputSnapshotSchemaVersion, String inputSnapshotHash,
-                                Long documentId, Long documentVersionSnapshot,
-                                String documentContentSha256, List<ManifestEvaluator> evaluators) { }
-    private record ManifestEvaluator(Long evaluatorVersionId, String evaluatorKey, String contentHash) { }
-    private record MetricManifest(String metricKey, String valueType, String unit, boolean currencyUnit,
-                                  String direction, String source, String evaluatorKey) {
-        private static MetricManifest from(MetricDefinition definition) {
-            return new MetricManifest(definition.metricKey(), definition.valueType().name(), definition.unit(),
-                    definition.currencyUnit(), definition.direction().name(), definition.source().name(),
-                    definition.evaluatorKey());
-        }
-    }
 }

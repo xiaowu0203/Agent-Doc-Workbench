@@ -3,11 +3,16 @@ package com.agentdoc.evaluation.controller;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.evaluation.pojo.dto.ExperimentCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.ExperimentDecisionDTO;
+import com.agentdoc.evaluation.pojo.dto.ExperimentReportRecalculateDTO;
 import com.agentdoc.evaluation.pojo.dto.ExperimentStartDTO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightVO;
+import com.agentdoc.evaluation.pojo.vo.ExperimentReportRevisionVO;
+import com.agentdoc.evaluation.pojo.vo.ExperimentReportVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVariantVO;
 import com.agentdoc.evaluation.service.ExperimentService;
+import com.agentdoc.evaluation.service.ExperimentReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -30,6 +35,7 @@ import java.util.List;
 public class ExperimentController {
 
     private final ExperimentService service;
+    private final ExperimentReportService reportService;
 
     @Operation(summary = "创建不可变 Experiment 与 Prompt Variant")
     @PostMapping
@@ -66,5 +72,31 @@ public class ExperimentController {
     @PutMapping("/{id}/cancel")
     public Result<ExperimentVO> cancel(@PathVariable Long id) {
         return Result.ok(service.cancel(id));
+    }
+
+    @Operation(summary = "查询 Experiment 的不可变报告版本")
+    @GetMapping("/{id}/reports")
+    public Result<List<ExperimentReportRevisionVO>> reports(@PathVariable Long id) {
+        return Result.ok(reportService.list(id));
+    }
+
+    @Operation(summary = "查询指定报告版本")
+    @GetMapping("/{id}/reports/{revision}")
+    public Result<ExperimentReportVO> report(@PathVariable Long id, @PathVariable Integer revision) {
+        return Result.ok(reportService.detail(id, revision));
+    }
+
+    @Operation(summary = "显式重算报告；输入不变时复用已有版本")
+    @PostMapping("/{id}/reports/recalculate")
+    public Result<ExperimentReportVO> recalculate(@PathVariable Long id,
+            @Valid @RequestBody ExperimentReportRecalculateDTO request) {
+        return Result.ok(reportService.recalculate(id, request));
+    }
+
+    @Operation(summary = "针对指定报告版本作人工结论")
+    @PostMapping("/{id}/decision")
+    public Result<Void> decision(@PathVariable Long id, @Valid @RequestBody ExperimentDecisionDTO request) {
+        reportService.decide(id, request);
+        return Result.ok(null);
     }
 }
