@@ -110,6 +110,7 @@ class EvaluationRunPersistenceServiceTest {
         var draft = service.create(9L, 10L, null, 501L, List.of(31L));
         draft.run().setId(71L);
         draft.run().setExperimentVariantId(72L);
+        draft.run().setPauseReason("RECONCILIATION_BLOCKED");
         var item = draft.cases().getFirst();
         String key = "experiment:70:variant:72:case:31:attempt:1";
         var segment = new com.agentdoc.evaluation.pojo.entity.EvaluationWorkerCapabilitySegmentEntity();
@@ -127,5 +128,8 @@ class EvaluationRunPersistenceServiceTest {
         assertThat(item.attempt().getExecutionTaskId()).isEqualTo(901L);
         assertThat(item.attempt().getCapabilitySegmentId()).isEqualTo(82L);
         assertThat(item.attempt().getStatus()).isEqualTo(EvaluationAttemptStatus.REPLAY_CREATED.name());
+        assertThat(draft.run().getPauseReason()).isNull();
+        verify(runMapper).update(org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.any());
     }
 }

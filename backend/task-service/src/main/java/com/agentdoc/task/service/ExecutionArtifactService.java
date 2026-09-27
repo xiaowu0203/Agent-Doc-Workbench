@@ -60,7 +60,7 @@ public class ExecutionArtifactService {
     public ExecutionArtifactAppendVO append(Long taskId, String capability, ExecutionArtifactAppendDTO request) {
         taskService.checkCapability(taskId, capability, JwtConstant.ACTION_CAPTURE_EXECUTION_ARTIFACT);
         TaskEntity task = taskService.require(taskId);
-        requireIsolatedReplay(task);
+        requireIsolatedEvaluation(task);
         validateRequest(task, request);
         if (ExecutionArtifactType.RESULT_SUMMARY.name().equals(request.artifactType())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "RESULT_SUMMARY 只能由任务终态同步生成");
@@ -72,10 +72,10 @@ public class ExecutionArtifactService {
      * 在隔离任务完成回调的同一事务内保存结果摘要产物RESULT_SUMMARY
      * @param task 隔离回放任务实体
      * @return 产物追加结果VO
-     * @throws BusinessException 非回放隔离任务、缺少AgentExecutionId、校验不通过时抛出异常
+     * @throws BusinessException 非隔离评估任务、缺少AgentExecutionId、校验不通过时抛出异常
      */
     public ExecutionArtifactAppendVO appendResultSummary(TaskEntity task) {
-        requireIsolatedReplay(task);
+        requireIsolatedEvaluation(task);
         if (task.getAgentExecutionId() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "隔离任务完成时缺少 AgentExecution ID");
         }
@@ -193,15 +193,16 @@ public class ExecutionArtifactService {
     }
 
     /**
-     * 校验任务类型：仅允许ISOLATED隔离+REPLAY回放血缘并且存在父任务的任务追加产物
+     * 校验任务类型：仅允许有来源任务的隔离 Replay/Experiment 追加产物。
      * @param task 待校验任务实体
-     * @throws BusinessException 不满足回放隔离约束则抛出
+     * @throws BusinessException 不满足隔离评估约束则抛出
      */
-    private void requireIsolatedReplay(TaskEntity task) {
+    private void requireIsolatedEvaluation(TaskEntity task) {
         if (!TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode())
-                || !TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                || (!TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                && !TaskLineageType.EXPERIMENT.name().equals(task.getLineageType()))
                 || task.getParentTaskId() == null) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "仅 Replay 隔离执行可以追加产物");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅 Replay/Experiment 隔离执行可以追加产物");
         }
     }
 

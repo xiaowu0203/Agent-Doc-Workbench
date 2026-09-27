@@ -236,13 +236,15 @@ public class ExperimentService {
         ExperimentEntity experiment = requireExperiment(id);
         spaceAccessService.requirePermission(experiment.getSpaceId(), EVALUATION_RUN);
         ExperimentStatus status = ExperimentStatus.valueOf(experiment.getStatus());
-        if (status == ExperimentStatus.CANCELED || status == ExperimentStatus.CANCEL_PENDING) {
+        if (status == ExperimentStatus.CANCELED) {
             return detailInternal(experiment);
         }
         if (status.terminal()) {
             throw new BusinessException(ErrorCode.CONFLICT, "终态 Experiment 不能取消");
         }
-        persistenceService.requestCancel(id, AuthUtils.getUserIdOrException());
+        if (status != ExperimentStatus.CANCEL_PENDING) {
+            persistenceService.requestCancel(id, AuthUtils.getUserIdOrException());
+        }
         boolean pending = false;
         for (ExperimentVariantEntity variant : variantsOf(id)) {
             if (variant.getEvaluationRunId() == null) {
@@ -519,6 +521,11 @@ public class ExperimentService {
         }
         boolean allTerminal = runs.stream().allMatch(run -> EvaluationRunStatus.valueOf(run.getStatus()).terminal());
         if (!allTerminal) {
+            if (status != ExperimentStatus.CANCEL_PENDING && runs.stream().anyMatch(run ->
+                    EvaluationRunStatus.PAUSED.name().equals(run.getStatus()))) {
+                persistenceService.updateStatus(experiment.getId(), ExperimentStatus.PAUSED,
+                        "RUN_PAUSED", "Variant EvaluationRun 已暂停，可显式恢复");
+            }
             return;
         }
         if (status == ExperimentStatus.CANCEL_PENDING

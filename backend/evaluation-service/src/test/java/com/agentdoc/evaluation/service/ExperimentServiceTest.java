@@ -8,6 +8,7 @@ import com.agentdoc.common.feign.TaskFeign;
 import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
 import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
+import com.agentdoc.evaluation.enums.EvaluationRunStatus;
 import com.agentdoc.evaluation.enums.ExperimentStatus;
 import com.agentdoc.evaluation.mapper.EvaluationDatasetCaseMapper;
 import com.agentdoc.evaluation.mapper.EvaluationDatasetMapper;
@@ -28,6 +29,7 @@ import com.agentdoc.evaluation.pojo.entity.EvaluationDatasetVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
+import com.agentdoc.evaluation.pojo.entity.EvaluationRunEntity;
 import com.agentdoc.evaluation.pojo.entity.ExperimentEntity;
 import com.agentdoc.evaluation.pojo.entity.ExperimentVariantEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
@@ -51,6 +53,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -143,6 +146,51 @@ class ExperimentServiceTest {
 
         assertThat(result.status()).isEqualTo(ExperimentStatus.RUNNING.name());
         verifyNoInteractions(taskFeign, agentFeign, persistenceService);
+    }
+
+    @Test
+    void pausesExperimentWhenVariantRunPauses() {
+        ExperimentEntity experiment = new ExperimentEntity();
+        experiment.setId(71L);
+        experiment.setStatus(ExperimentStatus.RUNNING.name());
+        ExperimentVariantEntity baseline = new ExperimentVariantEntity();
+        baseline.setEvaluationRunId(81L);
+        ExperimentVariantEntity candidateVariant = new ExperimentVariantEntity();
+        candidateVariant.setEvaluationRunId(82L);
+        EvaluationRunEntity completed = new EvaluationRunEntity();
+        completed.setId(81L);
+        completed.setStatus(EvaluationRunStatus.COMPLETED.name());
+        EvaluationRunEntity paused = new EvaluationRunEntity();
+        paused.setId(82L);
+        paused.setStatus(EvaluationRunStatus.PAUSED.name());
+        when(variantMapper.selectList(any())).thenReturn(List.of(baseline, candidateVariant));
+        when(runMapper.selectBatchIds(List.of(81L, 82L))).thenReturn(List.of(completed, paused));
+
+        service.reconcile(experiment);
+
+        verify(persistenceService).updateStatus(71L, ExperimentStatus.PAUSED, "RUN_PAUSED",
+                "Variant EvaluationRun 已暂停，可显式恢复");
+    }
+
+    @Test
+    void repeatedCancelRetriesPausedVariantRun() {
+        ExperimentEntity experiment = new ExperimentEntity();
+        experiment.setId(71L);
+        experiment.setSpaceId(9L);
+        experiment.setStatus(ExperimentStatus.CANCEL_PENDING.name());
+        ExperimentVariantEntity candidateVariant = new ExperimentVariantEntity();
+        candidateVariant.setEvaluationRunId(82L);
+        EvaluationRunEntity paused = new EvaluationRunEntity();
+        paused.setId(82L);
+        paused.setStatus(EvaluationRunStatus.PAUSED.name());
+        when(experimentMapper.selectById(71L)).thenReturn(experiment);
+        when(variantMapper.selectList(any())).thenReturn(List.of(candidateVariant));
+        when(runMapper.selectById(82L)).thenReturn(paused);
+
+        assertThat(service.cancel(71L).status()).isEqualTo(ExperimentStatus.CANCEL_PENDING.name());
+
+        verify(evaluationRunService).cancel(82L);
+        verify(persistenceService, never()).requestCancel(any(), any());
     }
 
     private void stubManifestSources() {

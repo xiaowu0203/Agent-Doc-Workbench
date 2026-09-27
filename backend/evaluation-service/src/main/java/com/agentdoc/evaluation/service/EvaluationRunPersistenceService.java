@@ -266,6 +266,9 @@ public class EvaluationRunPersistenceService {
         draft.run().setReconciliationFailureCount(0);
         draft.run().setStartedAt(startedAt);
         runMapper.updateById(draft.run());
+        runMapper.update(null, new LambdaUpdateWrapper<EvaluationRunEntity>()
+                .eq(EvaluationRunEntity::getId, draft.run().getId())
+                .set(EvaluationRunEntity::getPauseReason, null));
         return draft;
     }
 
