@@ -68,6 +68,35 @@ class ExecutionArtifactServiceTest {
     }
 
     @Test
+    void appendsExperimentArtifact() {
+        TaskEntity task = task();
+        task.setLineageType(TaskLineageType.EXPERIMENT.name());
+        when(taskService.require(TASK_ID)).thenReturn(task);
+        when(agentFeign.getReplayIdentity(TASK_ID)).thenReturn(Result.ok(identity()));
+        when(artifactMapper.selectCount(any())).thenReturn(0L);
+        when(artifactMapper.insert(any(ExecutionArtifactEntity.class))).thenReturn(1);
+
+        service.append(TASK_ID, "capability", request(hash(PAYLOAD)));
+
+        verify(artifactMapper).insert(any(ExecutionArtifactEntity.class));
+    }
+
+    @Test
+    void appendsResultSummaryWhenExperimentCompletes() {
+        TaskEntity task = task();
+        task.setLineageType(TaskLineageType.EXPERIMENT.name());
+        task.setAgentExecutionId(EXECUTION_ID);
+        task.setResultSummary("done");
+        when(agentFeign.getReplayIdentity(TASK_ID)).thenReturn(Result.ok(identity()));
+        when(artifactMapper.selectCount(any())).thenReturn(0L);
+        when(artifactMapper.insert(any(ExecutionArtifactEntity.class))).thenReturn(1);
+
+        service.appendResultSummary(task);
+
+        verify(artifactMapper).insert(any(ExecutionArtifactEntity.class));
+    }
+
+    @Test
     void returnsExistingArtifactForSameSequenceAndHash() {
         ExecutionArtifactAppendDTO request = request(hash(PAYLOAD));
         when(taskService.require(TASK_ID)).thenReturn(task());
@@ -102,7 +131,7 @@ class ExecutionArtifactServiceTest {
 
         assertThatThrownBy(() -> service.append(TASK_ID, "capability", request(hash(PAYLOAD))))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("仅 Replay 隔离执行");
+                .hasMessageContaining("仅 Replay/Experiment 隔离执行");
 
         verify(artifactMapper, never()).insert(any(ExecutionArtifactEntity.class));
     }

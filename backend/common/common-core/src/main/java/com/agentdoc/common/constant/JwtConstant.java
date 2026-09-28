@@ -48,6 +48,8 @@ public final class JwtConstant {
     public static final String CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION = "inputSnapshotSchemaVersion";
     /** 声明键：输入快照 hash。 */
     public static final String CLAIM_INPUT_SNAPSHOT_HASH = "inputSnapshotHash";
+    /** 声明键：派生请求 hash；原始 LIVE Task 为空。 */
+    public static final String CLAIM_DERIVATION_REQUEST_HASH = "derivationRequestHash";
     /** Task Capability 固定 audience。 */
     public static final String TASK_CAPABILITY_AUDIENCE = "workbench-task-capability";
     /** 声明键：Agent允许动作集合，逗号分隔，Task‑Capability JWT专属 */

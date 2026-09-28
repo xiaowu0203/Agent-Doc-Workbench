@@ -16,3 +16,5 @@
 | [ADR-0001](0001-run-compatible-execution-model.md) | 已采纳 | 不新增独立 Run 表，以 Task 与 AgentExecution 组成一次 Run-compatible Execution |
 | [ADR-0002](0002-replay-side-effect-isolation.md) | 已采纳 | Replay 强制隔离副作用，写工具只捕获候选产物 |
 | [ADR-0003](0003-telemetry-audit-ledger-boundaries.md) | 已采纳 | OTel、执行快照、业务审计和 Token 账本各自保持独立真相边界 |
+| [ADR-0004](0004-execution-snapshot-v3-canonicalization.md) | 已采纳 | Execution Snapshot v3 使用稳定 canonical envelope、UTF-8 排序和不可变 schema |
+| [ADR-0005](0005-offline-experiment-contract.md) | 已采纳 | Offline Experiment 使用冻结 manifest 与 Prompt 候选配置完成隔离的 baseline/candidate 对比 |

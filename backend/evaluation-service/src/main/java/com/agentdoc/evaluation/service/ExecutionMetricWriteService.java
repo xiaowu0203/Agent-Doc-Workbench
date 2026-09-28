@@ -61,7 +61,7 @@ public class ExecutionMetricWriteService {
 
         // 身份一致性校验：attempt、caseRun、taskId、runId、spaceId必须匹配
         if (attempt == null || caseRun == null || facts == null
-                || !attempt.getReplayTaskId().equals(facts.taskId())
+                || !attempt.getExecutionTaskId().equals(facts.taskId())
                 || !attempt.getRunId().equals(caseRun.getRunId())
                 || !attempt.getSpaceId().equals(caseRun.getSpaceId())) {
             throw new BusinessException(ErrorCode.CONFLICT, "执行 Metric 事实与 CaseAttempt 身份不一致");

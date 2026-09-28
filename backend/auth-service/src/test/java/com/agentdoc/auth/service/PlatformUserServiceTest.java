@@ -11,7 +11,11 @@ import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.entity.UserPlatformRoleEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -24,6 +28,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class PlatformUserServiceTest {
+
+    @BeforeAll
+    static void initializeTableMetadata() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
+        assistant.setCurrentNamespace(PlatformUserServiceTest.class.getName());
+        TableInfoHelper.initTableInfo(assistant, UserPlatformRoleEntity.class);
+    }
 
     @Test
     void disablingLastEnabledSuperAdminIsRejected() {

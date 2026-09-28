@@ -4,6 +4,8 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.dto.ExperimentBatchCreateDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchItemDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchItemDTO;
 import com.agentdoc.common.feign.vo.*;
@@ -17,6 +19,7 @@ import com.agentdoc.evaluation.enums.EvaluationAttemptStatus;
 import com.agentdoc.evaluation.enums.EvaluationPauseReason;
 import com.agentdoc.evaluation.enums.EvaluationRunStatus;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
+import com.agentdoc.evaluation.enums.ExperimentVariantRole;
 import com.agentdoc.evaluation.mapper.EvaluationCaseAttemptMapper;
 import com.agentdoc.evaluation.mapper.EvaluationCaseRunMapper;
 import com.agentdoc.evaluation.mapper.EvaluationDatasetCaseMapper;
@@ -26,6 +29,7 @@ import com.agentdoc.evaluation.mapper.EvaluationRunMapper;
 import com.agentdoc.evaluation.mapper.EvaluationFeedbackMapper;
 import com.agentdoc.evaluation.mapper.EvaluationTestCaseVersionMapper;
 import com.agentdoc.evaluation.mapper.EvaluationTestCaseMapper;
+import com.agentdoc.evaluation.mapper.ExperimentVariantMapper;
 import com.agentdoc.evaluation.pojo.dto.EvaluationRunCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationRunResumeDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationRetryDTO;
@@ -38,6 +42,7 @@ import com.agentdoc.evaluation.pojo.entity.EvaluationRunEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationFeedbackEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseEntity;
+import com.agentdoc.evaluation.pojo.entity.ExperimentVariantEntity;
 import com.agentdoc.evaluation.pojo.vo.EvaluationCaseRunVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationRunVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationFeedbackVO;
@@ -79,6 +84,7 @@ public class EvaluationRunService {
     private final EvaluationDatasetCaseMapper datasetCaseMapper;
     private final EvaluationTestCaseVersionMapper testCaseVersionMapper;
     private final EvaluationTestCaseMapper testCaseMapper;
+    private final ExperimentVariantMapper variantMapper;
     private final EvaluationRunMapper runMapper;
     private final EvaluationFeedbackMapper feedbackMapper;
     private final EvaluationCaseRunMapper caseRunMapper;
@@ -242,15 +248,54 @@ public class EvaluationRunService {
         }
 
         EvaluationRunPersistenceService.RunDraft draft = new EvaluationRunPersistenceService.RunDraft(run, drafts);
+        if (Boolean.TRUE.equals(run.getCancelRequested()) && drafts.stream()
+                .allMatch(item -> item.attempt().getExecutionTaskId() != null)) {
+            try {
+                renewCancellationCapability(run, drafts, request.workerCapabilityTtlSeconds());
+                return cancel(id);
+            } catch (RuntimeException exception) {
+                return toVO(persistenceService.pauseDispatch(draft));
+            }
+        }
         try {
-            ReplayBatchCreateVO response = requireData(taskFeign.createReplayBatch(new ReplayBatchCreateDTO(
-                    run.getId(),
-                    run.getSpaceId(),
-                    request.workerCapabilityTtlSeconds(),
-                    items
-            )));
-            // resume 使用新 batchNo，避免和之前分片冲突
-            draft = persistenceService.attachDispatch(draft, response, segmentService.nextBatchNo(run.getId()));
+            int batchNo = segmentService.nextBatchNo(run.getId());
+            if (run.getExperimentVariantId() == null) {
+                ReplayBatchCreateVO response = requireData(taskFeign.createReplayBatch(new ReplayBatchCreateDTO(
+                        run.getId(), run.getSpaceId(), request.workerCapabilityTtlSeconds(), items)));
+                draft = persistenceService.attachDispatch(draft, response, batchNo);
+            } else {
+                ExperimentVariantEntity variant = variantMapper.selectById(run.getExperimentVariantId());
+                if (variant == null || !Objects.equals(variant.getEvaluationRunId(), run.getId())
+                        || !Objects.equals(variant.getSpaceId(), run.getSpaceId())) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "Experiment Variant 与 Run 关联不一致");
+                }
+                Map<Long, String> requestKeys = drafts.stream().collect(Collectors.toMap(
+                        item -> item.attempt().getId(), item -> ExperimentService.derivationKey(
+                                variant.getExperimentId(), variant.getId(),
+                                item.caseRun().getTestCaseVersionId(), item.attempt().getAttemptNo())));
+                if (ExperimentVariantRole.BASELINE.name().equals(variant.getRole())) {
+                    List<ReplayBatchItemDTO> baselineItems = drafts.stream().map(item -> new ReplayBatchItemDTO(
+                            cases.get(item.caseRun().getTestCaseVersionId()).getSourceTaskId(),
+                            requestKeys.get(item.attempt().getId()), variant.getId(),
+                            item.caseRun().getTestCaseVersionId(), item.attempt().getAttemptNo())).toList();
+                    ReplayBatchCreateVO response = requireData(taskFeign.createReplayBatch(new ReplayBatchCreateDTO(
+                            run.getId(), run.getSpaceId(), request.workerCapabilityTtlSeconds(), baselineItems)));
+                    draft = persistenceService.attachDispatch(draft, response, batchNo, requestKeys);
+                } else if (ExperimentVariantRole.CANDIDATE.name().equals(variant.getRole())) {
+                    List<ExperimentBatchItemDTO> candidateItems = drafts.stream().map(item ->
+                            new ExperimentBatchItemDTO(
+                                    cases.get(item.caseRun().getTestCaseVersionId()).getSourceTaskId(),
+                                    item.caseRun().getTestCaseVersionId(), item.attempt().getAttemptNo(),
+                                    requestKeys.get(item.attempt().getId()))).toList();
+                    var response = requireData(taskFeign.createExperimentBatch(new ExperimentBatchCreateDTO(
+                            run.getId(), variant.getId(), run.getSpaceId(), variant.getCandidateConfigId(),
+                            variant.getCandidateSnapshotSchemaVersion(), variant.getCandidateSnapshotHash(),
+                            request.workerCapabilityTtlSeconds(), candidateItems)));
+                    draft = persistenceService.attachExperimentDispatch(draft, response, requestKeys, batchNo);
+                } else {
+                    throw new BusinessException(ErrorCode.CONFLICT, "Experiment Variant 角色无效");
+                }
+            }
         } catch (RuntimeException exception) {
             draft = persistenceService.pauseDispatch(draft);
         }
@@ -287,7 +332,7 @@ public class EvaluationRunService {
         );
 
         Map<Long, List<EvaluationCaseAttemptEntity>> bySegment = allAttempts.stream()
-                .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getReplayTaskId() != null)
+                .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getExecutionTaskId() != null)
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 
         try {
@@ -296,7 +341,7 @@ public class EvaluationRunService {
             for (List<EvaluationCaseAttemptEntity> segmentAttempts : bySegment.values()) {
                 String capability = capabilities.get(segmentAttempts.getFirst().getCapabilitySegmentId());
                 List<Long> taskIds = segmentAttempts.stream()
-                        .map(EvaluationCaseAttemptEntity::getReplayTaskId)
+                        .map(EvaluationCaseAttemptEntity::getExecutionTaskId)
                         .sorted()
                         .toList();
                 List<EvaluationTaskCancelVO> results = requireData(taskFeign.cancelEvaluationTasks(capability,
@@ -338,8 +383,8 @@ public class EvaluationRunService {
             throw new BusinessException(ErrorCode.CONFLICT, "当前 CaseAttempt 不允许重试 Evaluator");
         }
 
-        if (request == null || request.workerCapabilityTtlSeconds() == null || attempt.getReplayTaskId() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluator 重试参数或 Replay Task 无效");
+        if (request == null || request.workerCapabilityTtlSeconds() == null || attempt.getExecutionTaskId() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Evaluator 重试参数或执行 Task 无效");
         }
 
         Set<Long> targets = request.evaluatorVersionIds() == null ? Set.of()
@@ -420,7 +465,7 @@ public class EvaluationRunService {
                         .eq(EvaluationCaseAttemptEntity::getCapabilitySegmentId, target.getCapabilitySegmentId())
         );
         List<Long> taskIds = segmentAttempts.stream()
-                .map(EvaluationCaseAttemptEntity::getReplayTaskId)
+                .map(EvaluationCaseAttemptEntity::getExecutionTaskId)
                 .filter(Objects::nonNull)
                 .sorted()
                 .toList();
@@ -431,7 +476,7 @@ public class EvaluationRunService {
         return requireData(taskFeign.queryEvaluationEvidence(capability,
                 new EvaluationTaskBatchQueryDTO(run.getId(), run.getSpaceId(), taskIds)))
                 .stream()
-                .filter(v -> target.getReplayTaskId().equals(v.taskId()))
+                .filter(v -> target.getExecutionTaskId().equals(v.taskId()))
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONFLICT, "Replay 评估事实不可用"));
     }
@@ -446,7 +491,7 @@ public class EvaluationRunService {
                         .eq(EvaluationCaseAttemptEntity::getCapabilitySegmentId, target.getCapabilitySegmentId())
         );
         List<Long> taskIds = segmentAttempts.stream()
-                .map(EvaluationCaseAttemptEntity::getReplayTaskId)
+                .map(EvaluationCaseAttemptEntity::getExecutionTaskId)
                 .filter(Objects::nonNull)
                 .sorted()
                 .toList();
@@ -457,7 +502,7 @@ public class EvaluationRunService {
         return requireData(taskFeign.queryEvaluationDocumentChanges(capability,
                 new EvaluationTaskBatchQueryDTO(run.getId(), run.getSpaceId(), taskIds)))
                 .stream()
-                .filter(v -> target.getReplayTaskId().equals(v.taskId()))
+                .filter(v -> target.getExecutionTaskId().equals(v.taskId()))
                 .toList();
     }
 
@@ -465,7 +510,7 @@ public class EvaluationRunService {
      * 续期WorkerCapability，并把新分片绑定到Attempt
      */
     private void renewWorkerCapability(EvaluationRunEntity run, EvaluationCaseAttemptEntity attempt, Long ttlSeconds) {
-        List<Long> taskIds = List.of(attempt.getReplayTaskId());
+        List<Long> taskIds = List.of(attempt.getExecutionTaskId());
         EvaluationWorkerCapabilityVO response = requireData(taskFeign.renewEvaluationWorkerCapability(
                 new EvaluationWorkerCapabilityRenewDTO(run.getId(), run.getSpaceId(), ttlSeconds, taskIds)
         ));
@@ -487,6 +532,24 @@ public class EvaluationRunService {
         );
         attempt.setCapabilitySegmentId(segment.getId());
         attemptMapper.updateById(attempt);
+    }
+
+    private void renewCancellationCapability(EvaluationRunEntity run,
+                                             List<EvaluationRunPersistenceService.RunCaseDraft> drafts,
+                                             Long ttlSeconds) {
+        List<Long> taskIds = drafts.stream().map(item -> item.attempt().getExecutionTaskId()).sorted().toList();
+        EvaluationWorkerCapabilityVO response = requireData(taskFeign.renewEvaluationWorkerCapability(
+                new EvaluationWorkerCapabilityRenewDTO(run.getId(), run.getSpaceId(), ttlSeconds, taskIds)));
+        String expectedHash = StableSnapshotUtils.snapshotHash(1, taskIds);
+        if (!Objects.equals(run.getId(), response.runId())
+                || !Objects.equals(run.getSpaceId(), response.spaceId())
+                || !Objects.equals(expectedHash, response.taskIdsHash())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "WorkerCapability 续签响应身份不匹配");
+        }
+        var segment = segmentService.append(run.getId(), run.getSpaceId(), segmentService.nextBatchNo(run.getId()),
+                response.taskIdsHash(), response.workerCapability(), response.expiresAt());
+        drafts.forEach(item -> item.attempt().setCapabilitySegmentId(segment.getId()));
+        attemptMapper.updateBatch(drafts.stream().map(EvaluationRunPersistenceService.RunCaseDraft::attempt).toList());
     }
 
     /**

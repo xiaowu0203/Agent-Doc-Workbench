@@ -140,7 +140,7 @@ public class EvaluationRunProcessor {
                 new LambdaQueryWrapper<EvaluationCaseAttemptEntity>()
                         .eq(EvaluationCaseAttemptEntity::getRunId, runId));
         Map<Long, List<EvaluationCaseAttemptEntity>> bySegment = allAttempts.stream()
-                .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getReplayTaskId() != null)
+                .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getExecutionTaskId() != null)
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 
         try {
@@ -183,7 +183,7 @@ public class EvaluationRunProcessor {
         String capability = capabilities.get(attempts.getFirst().getCapabilitySegmentId());
 
         // 批量查询回放任务状态
-        List<Long> taskIds = attempts.stream().map(EvaluationCaseAttemptEntity::getReplayTaskId).sorted().toList();
+        List<Long> taskIds = attempts.stream().map(EvaluationCaseAttemptEntity::getExecutionTaskId).sorted().toList();
         EvaluationTaskBatchQueryDTO query = new EvaluationTaskBatchQueryDTO(run.getId(), run.getSpaceId(), taskIds);
         Map<Long, EvaluationTaskStatusVO> statuses = requireData(
                 taskFeign.queryEvaluationTaskStatuses(capability, query)).stream()
@@ -191,7 +191,7 @@ public class EvaluationRunProcessor {
 
         // 判断是否需要拉取证据包：存在活跃Attempt且对应回放任务已经终态
         boolean needsEvidence = attempts.stream().anyMatch(attempt -> {
-            EvaluationTaskStatusVO status = statuses.get(attempt.getReplayTaskId());
+            EvaluationTaskStatusVO status = statuses.get(attempt.getExecutionTaskId());
             return status != null && status.terminal()
                     && EvaluationAttemptStatus.valueOf(attempt.getStatus()).active();
         });
@@ -203,7 +203,7 @@ public class EvaluationRunProcessor {
 
         // 筛选回放已COMPLETED的Attempt，判断是否存在需要document-change证据的评估器，按需拉取
         List<EvaluationCaseAttemptEntity> completedAttempts = attempts.stream().filter(attempt -> {
-            EvaluationTaskStatusVO status = statuses.get(attempt.getReplayTaskId());
+            EvaluationTaskStatusVO status = statuses.get(attempt.getExecutionTaskId());
             return status != null && "COMPLETED".equals(status.status())
                     && EvaluationAttemptStatus.valueOf(attempt.getStatus()).active();
         }).toList();
@@ -218,9 +218,9 @@ public class EvaluationRunProcessor {
         for (EvaluationCaseAttemptEntity attempt : attempts) {
             EvaluationCaseRunEntity caseRun = caseByAttempt.get(attempt.getId());
             if (caseRun != null) {
-                advanceAttempt(attempt, caseRun, statuses.get(attempt.getReplayTaskId()),
-                        evidence.get(attempt.getReplayTaskId()),
-                        documentChanges.getOrDefault(attempt.getReplayTaskId(), List.of()),
+                advanceAttempt(attempt, caseRun, statuses.get(attempt.getExecutionTaskId()),
+                        evidence.get(attempt.getExecutionTaskId()),
+                        documentChanges.getOrDefault(attempt.getExecutionTaskId(), List.of()),
                         Boolean.TRUE.equals(run.getCancelRequested()));
             }
         }

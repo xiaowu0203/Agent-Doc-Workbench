@@ -5,10 +5,14 @@ import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.feign.TaskFeign;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchCreateDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
 import com.agentdoc.common.feign.vo.EvaluationDocumentChangeEvidenceVO;
 import com.agentdoc.common.feign.vo.EvaluationEvidenceBundleVO;
 import com.agentdoc.common.feign.vo.EvaluationWorkerCapabilityVO;
+import com.agentdoc.common.feign.vo.EvaluationTaskCancelVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchItemVO;
 import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
 import com.agentdoc.common.feign.vo.ReplayBatchItemVO;
 import com.agentdoc.common.utils.StableSnapshotUtils;
@@ -26,7 +30,9 @@ import com.agentdoc.evaluation.mapper.EvaluationRunMapper;
 import com.agentdoc.evaluation.mapper.EvaluationFeedbackMapper;
 import com.agentdoc.evaluation.mapper.EvaluationTestCaseVersionMapper;
 import com.agentdoc.evaluation.mapper.EvaluationTestCaseMapper;
+import com.agentdoc.evaluation.mapper.ExperimentVariantMapper;
 import com.agentdoc.evaluation.pojo.dto.EvaluationRunCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.EvaluationRunResumeDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationRetryDTO;
 import com.agentdoc.evaluation.pojo.entity.EvaluationCaseAttemptEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationCaseRunEntity;
@@ -34,6 +40,7 @@ import com.agentdoc.evaluation.pojo.entity.EvaluationRunEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluationWorkerCapabilitySegmentEntity;
+import com.agentdoc.evaluation.pojo.entity.ExperimentVariantEntity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,11 +55,14 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,6 +74,7 @@ class EvaluationRunServiceTest {
     @Mock private EvaluationDatasetCaseMapper datasetCaseMapper;
     @Mock private EvaluationTestCaseVersionMapper testCaseVersionMapper;
     @Mock private EvaluationTestCaseMapper testCaseMapper;
+    @Mock private ExperimentVariantMapper variantMapper;
     @Mock private EvaluationRunMapper runMapper;
     @Mock private EvaluationFeedbackMapper feedbackMapper;
     @Mock private EvaluationCaseRunMapper caseRunMapper;
@@ -81,7 +92,7 @@ class EvaluationRunServiceTest {
     void setUp() {
         runtimeProperties = new EvaluationRuntimeProperties();
         service = new EvaluationRunService(datasetVersionMapper, datasetMapper, datasetCaseMapper,
-                testCaseVersionMapper, testCaseMapper,
+                testCaseVersionMapper, testCaseMapper, variantMapper,
                 runMapper, feedbackMapper, caseRunMapper, attemptMapper, persistenceService, spaceAccessService, taskFeign,
                 segmentService, runProcessor, runtimeProperties);
         Jwt jwt = Jwt.withTokenValue("token").header("alg", "RS256").subject("501")
@@ -107,6 +118,7 @@ class EvaluationRunServiceTest {
                 "a".repeat(64), "worker-token", Instant.now().plusSeconds(600))));
         draft.run().setStatus(EvaluationRunStatus.RUNNING.name());
         draft.cases().getFirst().attempt().setReplayTaskId(801L);
+        draft.cases().getFirst().attempt().setExecutionTaskId(801L);
         draft.cases().getFirst().attempt().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
         draft.cases().getFirst().caseRun().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
         when(persistenceService.attachDispatch(eq(draft), any())).thenReturn(draft);
@@ -114,7 +126,7 @@ class EvaluationRunServiceTest {
         var result = service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L));
 
         assertThat(result.status()).isEqualTo(EvaluationRunStatus.RUNNING.name());
-        assertThat(result.cases()).singleElement().satisfies(item -> assertThat(item.replayTaskId()).isEqualTo(801L));
+        assertThat(result.cases()).singleElement().satisfies(item -> assertThat(item.executionTaskId()).isEqualTo(801L));
         ArgumentCaptor<ReplayBatchCreateDTO> request = ArgumentCaptor.forClass(ReplayBatchCreateDTO.class);
         verify(taskFeign).createReplayBatch(request.capture());
         assertThat(request.getValue().items()).singleElement().satisfies(item -> {
@@ -160,6 +172,7 @@ class EvaluationRunServiceTest {
         EvaluationCaseRunEntity caseRun = existing.cases().getFirst().caseRun();
         EvaluationCaseAttemptEntity attempt = existing.cases().getFirst().attempt();
         attempt.setReplayTaskId(801L);
+        attempt.setExecutionTaskId(801L);
         attempt.setCapabilitySegmentId(81L);
         attempt.setStatus(EvaluationAttemptStatus.COMPLETED.name());
         when(attemptMapper.selectById(73L)).thenReturn(attempt);
@@ -199,6 +212,127 @@ class EvaluationRunServiceTest {
         assertThat(renew.getValue().taskIds()).containsExactly(801L);
         assertThat(attempt.getCapabilitySegmentId()).isEqualTo(82L);
         verify(runProcessor).retryEvaluation(73L, evidence, List.of(documentChange), java.util.Set.of(41L));
+    }
+
+    @Test
+    void resumesCandidateWithOriginalExperimentDerivationKey() {
+        EvaluationRunPersistenceService.RunDraft draft = pausedExperimentDraft();
+        ExperimentVariantEntity variant = experimentVariant("CANDIDATE");
+        stubPausedExperiment(draft, variant);
+        String key = ExperimentService.derivationKey(91L, 88L, 31L, 1);
+        when(taskFeign.createExperimentBatch(any())).thenReturn(Result.ok(new ExperimentBatchCreateVO(
+                71L, 88L, 9L, List.of(new ExperimentBatchItemVO(99L, 31L, 1, key, 801L, "FAILED")),
+                "a".repeat(64), "worker-token", Instant.now().plusSeconds(600))));
+        when(persistenceService.attachExperimentDispatch(any(), any(), anyMap(), eq(2)))
+                .thenAnswer(invocation -> {
+                    draft.run().setStatus(EvaluationRunStatus.RUNNING.name());
+                    return draft;
+                });
+
+        service.resume(71L, new EvaluationRunResumeDTO(600L));
+
+        ArgumentCaptor<ExperimentBatchCreateDTO> request =
+                ArgumentCaptor.forClass(ExperimentBatchCreateDTO.class);
+        verify(taskFeign).createExperimentBatch(request.capture());
+        assertThat(request.getValue().candidateConfigId()).isEqualTo(89L);
+        assertThat(request.getValue().items()).singleElement().satisfies(item -> {
+            assertThat(item.derivationRequestKey()).isEqualTo(key);
+            assertThat(item.testCaseVersionId()).isEqualTo(31L);
+            assertThat(item.attemptNo()).isEqualTo(1);
+        });
+        verify(taskFeign, never()).createReplayBatch(any());
+    }
+
+    @Test
+    void resumesBaselineWithOriginalExperimentDerivationKey() {
+        EvaluationRunPersistenceService.RunDraft draft = pausedExperimentDraft();
+        stubPausedExperiment(draft, experimentVariant("BASELINE"));
+        String key = ExperimentService.derivationKey(91L, 88L, 31L, 1);
+        when(taskFeign.createReplayBatch(any())).thenReturn(Result.ok(new ReplayBatchCreateVO(
+                71L, 9L, List.of(new ReplayBatchItemVO(99L, key, 801L, "FAILED")),
+                "a".repeat(64), "worker-token", Instant.now().plusSeconds(600))));
+        when(persistenceService.attachDispatch(any(), any(), eq(2), anyMap()))
+                .thenAnswer(invocation -> {
+                    draft.run().setStatus(EvaluationRunStatus.RUNNING.name());
+                    return draft;
+                });
+
+        service.resume(71L, new EvaluationRunResumeDTO(600L));
+
+        ArgumentCaptor<ReplayBatchCreateDTO> request = ArgumentCaptor.forClass(ReplayBatchCreateDTO.class);
+        verify(taskFeign).createReplayBatch(request.capture());
+        assertThat(request.getValue().items()).singleElement().satisfies(item -> {
+            assertThat(item.derivationRequestKey()).isEqualTo(key);
+            assertThat(item.experimentVariantId()).isEqualTo(88L);
+            assertThat(item.testCaseVersionId()).isEqualTo(31L);
+            assertThat(item.attemptNo()).isEqualTo(1);
+        });
+        verify(taskFeign, never()).createExperimentBatch(any());
+    }
+
+    @Test
+    void canceledPausedExperimentRenewsExistingTaskWithoutDerivingAgain() {
+        EvaluationRunPersistenceService.RunDraft draft = pausedExperimentDraft();
+        draft.run().setCancelRequested(true);
+        EvaluationCaseAttemptEntity attempt = draft.cases().getFirst().attempt();
+        when(runMapper.selectById(71L)).thenReturn(draft.run());
+        when(caseRunMapper.selectList(any())).thenReturn(List.of(draft.cases().getFirst().caseRun()));
+        when(attemptMapper.selectBatchIds(any())).thenReturn(List.of(attempt));
+        when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(List.of(publishedCase()));
+        when(segmentService.nextBatchNo(71L)).thenReturn(2);
+        when(attemptMapper.selectList(any())).thenReturn(List.of(attempt));
+        when(feedbackMapper.selectList(any())).thenReturn(List.of());
+        Instant expiresAt = Instant.now().plusSeconds(600);
+        String taskIdsHash = StableSnapshotUtils.snapshotHash(1, List.of(801L));
+        when(taskFeign.renewEvaluationWorkerCapability(any())).thenReturn(Result.ok(
+                new EvaluationWorkerCapabilityVO(71L, 9L, taskIdsHash, "renewed-token", expiresAt)));
+        EvaluationWorkerCapabilitySegmentEntity segment = new EvaluationWorkerCapabilitySegmentEntity();
+        segment.setId(82L);
+        when(segmentService.append(71L, 9L, 2, taskIdsHash, "renewed-token", expiresAt))
+                .thenReturn(segment);
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L)))
+                .thenReturn(Map.of(82L, "renewed-token"));
+        when(taskFeign.cancelEvaluationTasks(eq("renewed-token"), any())).thenReturn(Result.ok(
+                List.of(new EvaluationTaskCancelVO(801L, true, "FAILED", "ALREADY_TERMINAL"))));
+
+        service.resume(71L, new EvaluationRunResumeDTO(600L));
+
+        assertThat(attempt.getCapabilitySegmentId()).isEqualTo(82L);
+        verify(attemptMapper).updateBatch(any());
+        verify(taskFeign, never()).createExperimentBatch(any());
+        verify(taskFeign, never()).createReplayBatch(any());
+        verify(taskFeign).cancelEvaluationTasks(eq("renewed-token"), any());
+    }
+
+    private EvaluationRunPersistenceService.RunDraft pausedExperimentDraft() {
+        EvaluationRunPersistenceService.RunDraft draft = draft();
+        draft.run().setStatus(EvaluationRunStatus.PAUSED.name());
+        draft.run().setExperimentVariantId(88L);
+        draft.cases().getFirst().attempt().setExecutionTaskId(801L);
+        return draft;
+    }
+
+    private ExperimentVariantEntity experimentVariant(String role) {
+        ExperimentVariantEntity variant = new ExperimentVariantEntity();
+        variant.setId(88L);
+        variant.setExperimentId(91L);
+        variant.setSpaceId(9L);
+        variant.setEvaluationRunId(71L);
+        variant.setRole(role);
+        variant.setCandidateConfigId("CANDIDATE".equals(role) ? 89L : null);
+        variant.setCandidateSnapshotSchemaVersion(3);
+        variant.setCandidateSnapshotHash("candidate-hash");
+        return variant;
+    }
+
+    private void stubPausedExperiment(EvaluationRunPersistenceService.RunDraft draft,
+                                      ExperimentVariantEntity variant) {
+        when(runMapper.selectById(71L)).thenReturn(draft.run());
+        when(caseRunMapper.selectList(any())).thenReturn(List.of(draft.cases().getFirst().caseRun()));
+        when(attemptMapper.selectBatchIds(any())).thenReturn(List.of(draft.cases().getFirst().attempt()));
+        when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(List.of(publishedCase()));
+        when(variantMapper.selectById(88L)).thenReturn(variant);
+        when(segmentService.nextBatchNo(71L)).thenReturn(2);
     }
 
     private EvaluationTestCaseVersionEntity publishedCase() {

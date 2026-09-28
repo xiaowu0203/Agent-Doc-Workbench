@@ -421,6 +421,7 @@ class EvaluationRunProcessorTest {
         attempt.setSpaceId(9L);
         attempt.setAttemptNo(1);
         attempt.setReplayTaskId(801L);
+        attempt.setExecutionTaskId(801L);
         attempt.setCapabilitySegmentId(81L);
         attempt.setStatus(status.name());
         return attempt;

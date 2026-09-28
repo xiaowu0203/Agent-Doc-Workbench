@@ -99,6 +99,6 @@ class RuntimeContextPropagationTest {
     private AgentTaskInputDTO taskInput() {
         return new AgentTaskInputDTO(1L, 2L, 3L, null, null,
                 TaskExecutionMode.LIVE.name(), 1L, "a".repeat(64), 1, "b".repeat(64),
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null);
     }
 }

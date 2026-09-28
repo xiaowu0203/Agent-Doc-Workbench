@@ -16,10 +16,14 @@ package com.agentdoc.common.feign.dto;
  * @param documentContentSha256        文档内容SHA256哈希，校验文档内容未被篡改
  * @param inputSnapshotSchemaVersion    输入快照Schema版本，用于快照序列化兼容
  * @param inputSnapshotHash             输入上下文快照哈希，A2A令牌核心校验字段
+ * @param derivationRequestHash          派生请求哈希；原始 LIVE Task 为空
  * @param sourceTaskId                  来源任务ID，链式执行溯源；无上游时可为null
  * @param sourceExecutionId             来源执行ID，链式执行溯源；无上游时可为null
  * @param sourceExecutionSnapshotSchemaVersion 上游执行快照Schema版本，溯源快照兼容
  * @param sourceExecutionSnapshotHash   上游执行快照哈希，校验上游上下文未篡改
+ * @param candidateConfigId             Experiment 不可变候选配置 ID；非 Experiment 为空
+ * @param candidateSnapshotSchemaVersion 候选执行快照 schema 版本；非 Experiment 为空
+ * @param candidateSnapshotHash         候选执行快照 hash；非 Experiment 为空
  * @param mcpServerUrl                  工作台内置MCP服务地址
  * @param taskCapability                A2A能力令牌（task capability jwt），用于权限校验
  */
@@ -34,10 +38,14 @@ public record AgentTaskInputDTO(
         String documentContentSha256,
         Integer inputSnapshotSchemaVersion,
         String inputSnapshotHash,
+        String derivationRequestHash,
         Long sourceTaskId,
         Long sourceExecutionId,
         Integer sourceExecutionSnapshotSchemaVersion,
         String sourceExecutionSnapshotHash,
+        Long candidateConfigId,
+        Integer candidateSnapshotSchemaVersion,
+        String candidateSnapshotHash,
         String mcpServerUrl,
         String taskCapability) {
 }

@@ -9,9 +9,12 @@ import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityIssueDTO;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchCreateDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchItemDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchItemDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
+import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
 import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.common.utils.StableSnapshotUtils;
@@ -50,6 +53,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class TaskServiceReplayTest {
@@ -153,6 +157,50 @@ class TaskServiceReplayTest {
         verify(authFeign).issueEvaluationWorkerCapability(capability.capture());
         assertThat(capability.getValue().taskIdsHash()).isEqualTo(result.taskIdsHash());
         assertThat(capability.getValue().runId()).isEqualTo(701L);
+    }
+
+    @Test
+    void createsExperimentBatchIdempotentlyWithFrozenCandidateIdentity() {
+        TaskEntity source = sourceTask();
+        AtomicReference<TaskEntity> persisted = new AtomicReference<>();
+        String sourceHash = "c".repeat(64);
+        String candidateHash = "d".repeat(64);
+        when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(source);
+        when(taskMapper.selectOne(any())).thenAnswer(invocation -> persisted.get());
+        when(taskMapper.selectList(any())).thenAnswer(invocation -> persisted.get() == null
+                ? List.of() : List.of(persisted.get()));
+        when(documentFeign.checkSpacePermission(eq(SPACE_ID), any())).thenReturn(Result.ok());
+        when(documentFeign.getVersionExecutionContext(DOCUMENT_ID, 7L, source.getDocumentContentSha256()))
+                .thenReturn(Result.ok(new DocumentVersionExecutionContextVO(
+                        DOCUMENT_ID, 7L, source.getDocumentContentSha256(), 50L)));
+        when(agentFeign.getReplayIdentity(SOURCE_TASK_ID)).thenReturn(Result.ok(
+                new AgentExecutionReplayIdentityVO(1, 901L, 3, sourceHash, true, false)));
+        when(agentFeign.getCandidateConfigIdentity(601L, SPACE_ID, candidateHash)).thenReturn(Result.ok(
+                new AgentCandidateConfigVO(601L, SPACE_ID, AGENT_ID, SOURCE_TASK_ID, 901L,
+                        3, sourceHash, 3, candidateHash, "e".repeat(64),
+                        List.of("snapshot.systemPrompt"))));
+        doAnswer(invocation -> {
+            List<TaskEntity> tasks = invocation.getArgument(0);
+            persisted.set(tasks.getFirst());
+            return null;
+        }).when(taskMapper).insertBatch(any());
+        when(authFeign.issueEvaluationWorkerCapability(any())).thenReturn(Result.ok("worker-token"));
+        String key = "experiment:501:variant:601:case:701:attempt:1";
+        ExperimentBatchCreateDTO request = new ExperimentBatchCreateDTO(801L, 601L, SPACE_ID,
+                601L, 3, candidateHash, 600L,
+                List.of(new ExperimentBatchItemDTO(SOURCE_TASK_ID, 701L, 1, key)));
+
+        var first = service.createExperimentBatch(request);
+        var retried = service.createExperimentBatch(request);
+
+        assertThat(first.items().getFirst().executionTaskId()).isEqualTo(persisted.get().getId());
+        assertThat(retried.items().getFirst().executionTaskId()).isEqualTo(persisted.get().getId());
+        assertThat(persisted.get().getLineageType()).isEqualTo(TaskLineageType.EXPERIMENT.name());
+        assertThat(persisted.get().getExecutionMode()).isEqualTo(TaskExecutionMode.ISOLATED.name());
+        assertThat(persisted.get().getCandidateConfigId()).isEqualTo(601L);
+        assertThat(persisted.get().getCandidateSnapshotHash()).isEqualTo(candidateHash);
+        verify(taskMapper, times(1)).insertBatch(any());
+        verify(messagePublisher, times(1)).publish(persisted.get().getId(), "worker-token");
     }
 
     @Test

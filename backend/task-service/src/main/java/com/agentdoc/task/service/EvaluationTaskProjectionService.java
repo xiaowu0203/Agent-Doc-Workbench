@@ -297,9 +297,10 @@ public class EvaluationTaskProjectionService {
         Map<Long, TaskEntity> byId = tasks.stream().collect(Collectors.toMap(TaskEntity::getId, Function.identity()));
         if (tasks.size() != taskIds.size() || tasks.stream().anyMatch(task ->
                 !request.spaceId().equals(task.getSpaceId())
-                        || !TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                        || (!TaskLineageType.REPLAY.name().equals(task.getLineageType())
+                        && !TaskLineageType.EXPERIMENT.name().equals(task.getLineageType()))
                         || !TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode()))) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "WorkerCapability 绑定的 Replay Task 已失效");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "WorkerCapability 绑定的隔离评估 Task 已失效");
         }
         return taskIds.stream().map(byId::get).toList();
     }

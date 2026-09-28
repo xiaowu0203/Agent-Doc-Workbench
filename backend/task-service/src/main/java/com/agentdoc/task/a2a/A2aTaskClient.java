@@ -85,10 +85,13 @@ public class A2aTaskClient {
         AgentTaskInputDTO input = new AgentTaskInputDTO(
                 task.getId(), task.getAgentId(), task.getSpaceId(), task.getDocumentId(), task.getTokenBudget(),
                 task.getExecutionMode(), task.getDocumentVersionSnapshot(), task.getDocumentContentSha256(),
-                task.getInputSnapshotSchemaVersion(), task.getInputSnapshotHash(), task.getParentTaskId(),
+                task.getInputSnapshotSchemaVersion(), task.getInputSnapshotHash(),
+                task.getDerivationRequestHash(), task.getParentTaskId(),
                 sourceExecution == null ? null : sourceExecution.executionId(),
                 sourceExecution == null ? null : sourceExecution.executionSnapshotSchemaVersion(),
                 sourceExecution == null ? null : sourceExecution.executionSnapshotHash(),
+                task.getCandidateConfigId(), task.getCandidateSnapshotSchemaVersion(),
+                task.getCandidateSnapshotHash(),
                 properties.getMcpServerUrl(), capability);
         // 构建A2A消息：用户指令文本 + 结构化任务输入数据Part
         Message message = Message.builder()

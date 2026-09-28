@@ -153,7 +153,7 @@ public class EvaluationResultQueryService {
      * 查询关联人工反馈记录
      * <p>多条件或逻辑：
      * 1. 必选：spaceId + caseRunId
-     * 2. 可选或条件：replayTaskId / executionId，满足其一即可命中
+     * 2. 可选或条件：executionTaskId / executionId，满足其一即可命中
      * 按主键升序返回反馈列表
      * </p>
      * @param result 评估结果主实体
@@ -174,8 +174,8 @@ public class EvaluationResultQueryService {
                     // 基础条件：同一caseRun
                     values.eq(EvaluationFeedbackEntity::getCaseRunId, attempt.getCaseRunId());
                     // 可选：回放任务ID
-                    if (attempt.getReplayTaskId() != null) {
-                        values.or().eq(EvaluationFeedbackEntity::getTaskId, attempt.getReplayTaskId());
+                    if (attempt.getExecutionTaskId() != null) {
+                        values.or().eq(EvaluationFeedbackEntity::getTaskId, attempt.getExecutionTaskId());
                     }
                     // 可选：Agent执行ID
                     if (executionId != null) {

@@ -130,6 +130,16 @@ class EvaluationTaskProjectionServiceTest {
         verify(cryptoService, never()).decrypt(any());
     }
 
+    @Test
+    void acceptsIsolatedExperimentForWorkerEvidenceQuery() {
+        TaskEntity experiment = task();
+        experiment.setLineageType(TaskLineageType.EXPERIMENT.name());
+        when(taskMapper.selectBatchIds(List.of(TASK_ID))).thenReturn(List.of(experiment));
+        when(artifactMapper.selectList(any())).thenReturn(List.of());
+
+        assertThat(service.documentChanges("worker-capability", request())).isEmpty();
+    }
+
     private static EvaluationTaskBatchQueryDTO request() {
         return new EvaluationTaskBatchQueryDTO(RUN_ID, SPACE_ID, List.of(TASK_ID));
     }

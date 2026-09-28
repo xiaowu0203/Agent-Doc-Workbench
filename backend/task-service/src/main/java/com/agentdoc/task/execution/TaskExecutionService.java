@@ -148,7 +148,9 @@ public class TaskExecutionService {
             // 生成 A2A Task Capability，并加密存储到数据库
             capability = taskService.resolveDispatchCapability(task);
             sourceExecution = TaskLineageType.REPLAY.name().equals(task.getLineageType())
-                    ? taskService.requireReplayDispatchIdentity(task) : null;
+                    ? taskService.requireReplayDispatchIdentity(task)
+                    : TaskLineageType.EXPERIMENT.name().equals(task.getLineageType())
+                    ? taskService.requireExperimentDispatchIdentity(task) : null;
         } finally {
             AuthorizationContext.clear();
         }

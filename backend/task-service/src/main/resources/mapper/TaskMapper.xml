@@ -41,6 +41,9 @@
         `execution_mode`,
         `derivation_request_key`,
         `derivation_request_hash`,
+        `candidate_config_id`,
+        `candidate_snapshot_schema_version`,
+        `candidate_snapshot_hash`,
         `retry_count`,
         `capability_token`,
         `created_by`
@@ -84,6 +87,9 @@
             #{entity.executionMode},
             #{entity.derivationRequestKey},
             #{entity.derivationRequestHash},
+            #{entity.candidateConfigId},
+            #{entity.candidateSnapshotSchemaVersion},
+            #{entity.candidateSnapshotHash},
             #{entity.retryCount},
             #{entity.capabilityToken},
             #{entity.createdBy}

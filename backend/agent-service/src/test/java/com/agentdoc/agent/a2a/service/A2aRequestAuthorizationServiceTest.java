@@ -64,10 +64,39 @@ class A2aRequestAuthorizationServiceTest {
                 .hasMessageContaining("范围不匹配");
     }
 
+    @Test
+    void shouldRejectDerivedRequestHashOutsideCapabilityScope() {
+        Jwt jwt = Jwt.withTokenValue(CAPABILITY)
+                .header("alg", "none")
+                .subject("agent-task")
+                .claim(JwtConstant.CLAIM_TASK_ID, TASK_ID)
+                .claim(JwtConstant.CLAIM_AGENT_ID, AGENT_ID)
+                .claim(JwtConstant.CLAIM_SPACE_ID, SPACE_ID)
+                .claim(JwtConstant.CLAIM_DOCUMENT_ID, DOCUMENT_ID)
+                .claim(JwtConstant.CLAIM_EXECUTION_MODE, TaskExecutionMode.LIVE.name())
+                .claim(JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT, 5L)
+                .claim(JwtConstant.CLAIM_DOCUMENT_CONTENT_SHA256, "a".repeat(64))
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, 1)
+                .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, "b".repeat(64))
+                .claim(JwtConstant.CLAIM_DERIVATION_REQUEST_HASH, "c".repeat(64))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+
+        assertThatThrownBy(() -> service.requireTaskScope(params(input(
+                CAPABILITY, DOCUMENT_ID, "d".repeat(64)))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("范围不匹配");
+    }
+
     private AgentTaskInputDTO input(String capability, Long documentId) {
+        return input(capability, documentId, null);
+    }
+
+    private AgentTaskInputDTO input(String capability, Long documentId, String derivationRequestHash) {
         return new AgentTaskInputDTO(TASK_ID, AGENT_ID, SPACE_ID, documentId, 1000L,
                 TaskExecutionMode.LIVE.name(), 5L, "a".repeat(64), 1, "b".repeat(64),
-                null, null, null, null,
+                derivationRequestHash, null, null, null, null,
+                null, null, null,
                 "http://task-service/mcp", capability);
     }
 

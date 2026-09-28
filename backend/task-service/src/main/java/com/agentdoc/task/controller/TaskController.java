@@ -8,8 +8,10 @@ import com.agentdoc.task.pojo.dto.TaskCreateDTO;
 import com.agentdoc.task.pojo.dto.ReplayCreateDTO;
 import com.agentdoc.common.feign.dto.ReplayBatchCreateDTO;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityRenewDTO;
+import com.agentdoc.common.feign.dto.ExperimentBatchCreateDTO;
 import com.agentdoc.common.feign.vo.ReplayBatchCreateVO;
 import com.agentdoc.common.feign.vo.EvaluationWorkerCapabilityVO;
+import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
 import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
 import com.agentdoc.task.pojo.param.TaskCreateOptionsParam;
 import com.agentdoc.task.pojo.param.TaskSearchParam;
@@ -123,6 +125,12 @@ public class TaskController {
     @PostMapping("/replays/batch")
     public Result<ReplayBatchCreateVO> createReplayBatch(@RequestBody ReplayBatchCreateDTO request) {
         return Result.ok(taskService.createReplayBatch(request));
+    }
+
+    @Operation(summary = "批量创建隔离 Experiment Task")
+    @PostMapping("/experiments/batch")
+    public Result<ExperimentBatchCreateVO> createExperimentBatch(@RequestBody ExperimentBatchCreateDTO request) {
+        return Result.ok(taskService.createExperimentBatch(request));
     }
 
     @Operation(summary = "为既有 Evaluation Replay 续签 WorkerCapability")

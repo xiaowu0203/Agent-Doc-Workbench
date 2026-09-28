@@ -45,6 +45,7 @@ class EvaluationResultQueryServiceTest {
         result.setId(11L); result.setSpaceId(9L); result.setRunId(21L); result.setCaseAttemptId(31L);
         EvaluationCaseAttemptEntity attempt = new EvaluationCaseAttemptEntity();
         attempt.setId(31L); attempt.setCaseRunId(41L); attempt.setReplayTaskId(51L);
+        attempt.setExecutionTaskId(51L);
         EvaluationFeedbackEntity feedback = new EvaluationFeedbackEntity();
         feedback.setId(61L); feedback.setSpaceId(9L); feedback.setCaseRunId(41L); feedback.setLabel("ACCEPTED");
         when(resultMapper.selectById(11L)).thenReturn(result);

@@ -17,6 +17,7 @@ import java.util.List;
  * @param documentContentSha256       文档内容SHA256哈希，校验文档基线未篡改
  * @param inputSnapshotSchemaVersion  输入快照Schema版本，用于快照序列化兼容
  * @param inputSnapshotHash           输入上下文快照哈希，核心防篡改校验字段
+ * @param derivationRequestHash       派生请求哈希，绑定 Replay/Experiment 的冻结派生身份
  * @param actions                     允许的细粒度操作动作集合，最小权限控制
  */
 public record TaskCapabilityIssueDTO(
@@ -29,5 +30,6 @@ public record TaskCapabilityIssueDTO(
         String documentContentSha256,
         Integer inputSnapshotSchemaVersion,
         String inputSnapshotHash,
+        String derivationRequestHash,
         List<String> actions) {
 }

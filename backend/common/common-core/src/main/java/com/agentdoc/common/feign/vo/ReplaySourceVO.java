@@ -11,6 +11,8 @@ package com.agentdoc.common.feign.vo;
  * @param sourceTaskId                   来源原始任务ID
  * @param sourceExecutionId              来源Agent执行记录ID
  * @param spaceId                        工作空间ID，权限隔离边界
+ * @param agentId                        来源 Agent ID
+ * @param tokenBudget                    来源 Task 冻结 Token 预算
  * @param rootTaskId                     顶层根任务ID，用于溯源链路归属
  * @param sourceLineage                  来源任务血缘标识，可用于追踪链式执行
  * @param replayDepth                    当前回放嵌套深度，防止无限递归回放
@@ -18,6 +20,7 @@ package com.agentdoc.common.feign.vo;
  * @param inputSnapshotHash              输入上下文快照哈希
  * @param executionSnapshotSchemaVersion 执行快照Schema版本，序列化兼容
  * @param executionSnapshotHash          完整执行上下文快照哈希
+ * @param documentId                     冻结输入所属文档 ID
  * @param documentVersionSnapshot        基线文档冻结版本号
  * @param documentContentSha256          基线文档内容SHA256哈希
  */
@@ -27,6 +30,8 @@ public record ReplaySourceVO(
         Long sourceTaskId,
         Long sourceExecutionId,
         Long spaceId,
+        Long agentId,
+        Long tokenBudget,
         Long rootTaskId,
         String sourceLineage,
         Integer replayDepth,
@@ -34,6 +39,7 @@ public record ReplaySourceVO(
         String inputSnapshotHash,
         Integer executionSnapshotSchemaVersion,
         String executionSnapshotHash,
+        Long documentId,
         Long documentVersionSnapshot,
         String documentContentSha256) {
 }

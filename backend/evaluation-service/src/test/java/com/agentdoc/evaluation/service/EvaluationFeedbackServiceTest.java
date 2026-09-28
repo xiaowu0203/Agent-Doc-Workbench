@@ -65,6 +65,7 @@ class EvaluationFeedbackServiceTest {
         caseRun.setId(21L); caseRun.setRunId(11L); caseRun.setSpaceId(9L); caseRun.setCurrentAttemptId(31L);
         EvaluationCaseAttemptEntity attempt = new EvaluationCaseAttemptEntity();
         attempt.setId(31L); attempt.setRunId(11L); attempt.setCaseRunId(21L); attempt.setReplayTaskId(41L);
+        attempt.setExecutionTaskId(41L);
         when(caseRunMapper.selectById(21L)).thenReturn(caseRun);
         when(attemptMapper.selectById(31L)).thenReturn(attempt);
 

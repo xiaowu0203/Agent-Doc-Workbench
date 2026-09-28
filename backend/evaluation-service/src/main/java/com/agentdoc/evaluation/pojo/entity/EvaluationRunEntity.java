@@ -16,6 +16,7 @@ public class EvaluationRunEntity extends BaseEntity {
     @Schema(description = "所属空间 ID") private Long spaceId;
     @Schema(description = "数据集版本 ID") private Long datasetVersionId;
     @Schema(description = "单测试用例版本 ID") private Long singleTestCaseVersionId;
+    @Schema(description = "Experiment Variant ID；普通 Run 为空") private Long experimentVariantId;
     @Schema(description = "运行状态") private String status;
     @Schema(description = "暂停原因") private String pauseReason;
     @Schema(description = "是否请求取消") private Boolean cancelRequested;
