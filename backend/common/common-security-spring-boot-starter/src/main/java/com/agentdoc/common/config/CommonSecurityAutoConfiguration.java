@@ -2,6 +2,7 @@ package com.agentdoc.common.config;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.ObjectProvider;
@@ -63,7 +64,8 @@ public class CommonSecurityAutoConfiguration {
     @ConditionalOnMissingBean(JwtDecoder.class)
     @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
     public JwtDecoder businessJwtDecoder(SecurityVerifyProperties properties) {
-        return NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
+        JwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
+        return token -> TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token));
     }
 
     /**

@@ -1,0 +1,7 @@
+package com.agentdoc.task.enums;
+
+/** Trace 读取可用性，不是 Task 的业务状态。 */
+public enum TaskTraceAvailability {
+    AVAILABLE, NO_TRACE, INVALID_TRACE_ID, NOT_CONFIGURED, NOT_FOUND_OR_NOT_SAMPLED,
+    RETENTION_WINDOW_ELAPSED, BACKEND_UNAVAILABLE, PAYLOAD_INVALID, PAYLOAD_TOO_LARGE, UNRELATED_TRACE
+}

@@ -316,7 +316,7 @@ public class AgentExecutionQueryService {
                 execution.getInputTokensEstimated(), execution.getCachedInputTokens(),
                 execution.getCachedInputTokensEstimated(), execution.getOutputTokens(),
                 execution.getOutputTokensEstimated(), execution.getStartedAt(), execution.getFinishedAt(),
-                execution.getCreatedAt());
+                execution.getCreatedAt(), execution.getTraceId(), execution.getSpanId());
     }
 
     /**

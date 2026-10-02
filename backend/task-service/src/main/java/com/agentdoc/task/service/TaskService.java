@@ -389,6 +389,9 @@ public class TaskService {
         if (param.getStatus() != null) {
             wrapper.eq(TaskEntity::getStatus, param.getStatus().getCode());
         }
+        if (param.getExecutionMode() != null) {
+            wrapper.eq(TaskEntity::getExecutionMode, param.getExecutionMode().name());
+        }
         if (param.getAgentId() != null) {
             wrapper.eq(TaskEntity::getAgentId, param.getAgentId());
         }
@@ -698,6 +701,8 @@ public class TaskService {
                 AuthUtils.getUserIdOrException(), TaskLineageType.REPLAY, TaskExecutionMode.ISOLATED);
         replay.setDerivationRequestKey(request.derivationRequestKey());
         replay.setDerivationRequestHash(requestHash);
+        // 手工 Replay 的 MQ 不携带用户身份，在当前已授权请求中签发并加密保存。
+        replay.setCapabilityToken(cryptoService.encrypt(issueCapability(replay)));
         try {
             taskMapper.insert(replay);
         } catch (DuplicateKeyException exception) {
@@ -1647,7 +1652,8 @@ public class TaskService {
 
     /**
      * 获取本次投递使用的明文能力令牌。
-     * Replay隔离任务在真正投递执行时才签发窄权限令牌，令牌加密持久化到task表，避免重复签发。
+     * 手工 Replay 在创建请求中签发并加密保存；批量隔离任务在首次投递时凭 Worker 授权签发。
+     * 已保存的 Replay 证明须仍然有效，不能通过派发自动续期。
      * 并发场景使用条件更新防止重复写入；非隔离实时任务必须预先存在令牌，否则抛异常。
      * @param task 任务实体
      * @return 解密后的明文能力令牌
@@ -1656,13 +1662,17 @@ public class TaskService {
     public String resolveDispatchCapability(TaskEntity task) {
         // 数据库已存在加密令牌，直接解密返回
         if (task.getCapabilityToken() != null && !task.getCapabilityToken().isBlank()) {
-            return cryptoService.decrypt(task.getCapabilityToken());
+            String capability = cryptoService.decrypt(task.getCapabilityToken());
+            if (TaskLineageType.REPLAY.name().equals(task.getLineageType())) {
+                taskCapabilityVerifier.verify(capability);
+            }
+            return capability;
         }
         // 非隔离模式实时任务，要求预先已经存在能力令牌，不能现场签发
         if (!TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode())) {
             throw new BusinessException(ErrorCode.CONFLICT, "实时任务缺少能力令牌");
         }
-        // 隔离Replay任务：现场签发令牌，加密写入数据库
+        // 尚无证明的批量隔离任务：凭派发上下文授权签发，加密写入数据库。
         String capability = issueCapability(task);
         String encrypted = cryptoService.encrypt(capability);
         // 条件更新：仅当capability_token为空时更新，防止并发重复签发

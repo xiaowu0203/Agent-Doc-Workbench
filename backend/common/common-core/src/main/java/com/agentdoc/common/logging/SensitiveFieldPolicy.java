@@ -24,7 +24,8 @@ public final class SensitiveFieldPolicy {
             "setcookie", "x.api.key", "xapikey", "api.key", "apikey", "token", "access.token",
             "accesstoken", "refresh.token", "refreshtoken", "id.token", "idtoken", "secret",
             "client.secret", "clientsecret", "password", "passwd", "credential", "private.key",
-            "privatekey", "capability");
+            "privatekey", "capability", "source.capability", "sourcecapability",
+            "machine.key", "machinekey", "previous.machine.key", "previousmachinekey");
 
     /**
      * 白名单数字字段：即使命中名字规则，只要值是Number类型就不脱敏。

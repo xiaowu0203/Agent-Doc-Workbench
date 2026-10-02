@@ -182,6 +182,8 @@ sequenceDiagram
 
 签发时，`task-service` 先完成资源和范围判断；`auth-service` 负责使用 RSA 私钥生成 JWT。Capability 当前由 `AuthConstant.TASK_CAPABILITY_TTL_HOURS` 控制，代码值为 6 小时。
 
+单个手工 Replay 同样在创建请求的用户授权上下文中签发，但动作仅允许读取冻结文档与捕获隔离产物，密文与新 Task 一起保存，MQ 只发送 taskId；六小时从创建时起算，派发前失效则拒绝，不自动续签。批量评估 Replay/Experiment 仍由绑定资源集合的 WorkerCapability 在首次派发时签发 Task Capability，不把用户登录 JWT 发送给后台消费者。详见 [ADR-0002](adr/0002-replay-side-effect-isolation.md)。
+
 核心代码：
 
 - TaskService 调用 Auth：`backend/task-service/.../service/TaskService.java:108`

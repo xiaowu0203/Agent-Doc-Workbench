@@ -17,6 +17,14 @@ public class SecurityVerifyProperties {
      */
     private String jwksUrl;
 
+    /** 恢复 JWT 的固定 issuer，必须与 auth-service 一致。 */
+    private String taskRecoveryIssuer = "agent-doc-workbench";
+
+    /** 是否接收恢复窄凭证，默认关闭；紧急隔离时关闭。 */
+    private boolean taskRecoveryEnabled;
+    /** 恢复直连 HTTP 仅在运维确认等价加密的内部网络中放行；默认仅允许 TLS/loopback。 */
+    private boolean taskRecoveryTrustedEncryptedNetwork;
+
     /**
      * 是否启用任务能力令牌请求过滤器，默认关闭。
      */

@@ -29,6 +29,19 @@ spring:
   # Jackson JSON序列化全局时区，统一东八区，解决日期时间序列化时差问题
   jackson:
     time-zone: Asia/Shanghai
+  cloud:
+    openfeign:
+      client:
+        config:
+          # 专用直连客户端不打印凭证/证明，超时受整轮 45 秒预算约束。
+          task-recovery-auth:
+            connectTimeout: 2000
+            readTimeout: 5000
+            loggerLevel: none
+          task-recovery-document:
+            connectTimeout: 2000
+            readTimeout: 5000
+            loggerLevel: none
   ai:
     mcp:
       server:
@@ -38,6 +51,16 @@ spring:
 
 # 自定义openapi配置
 agent-doc:
+  task-trace:
+    # Jaeger 内部只读查询根地址；空值禁用，不能配置凭证或用户输入 URL
+    query-url: ${JAEGER_QUERY_URL:}
+  task-recovery:
+    enabled: ${TASK_RECOVERY_ENABLED:false}
+    machine-key: ${TASK_RECOVERY_MACHINE_KEY:}
+    auth-url: ${TASK_RECOVERY_AUTH_URL:http://localhost:8081}
+    agent-url: ${TASK_RECOVERY_AGENT_URL:http://localhost:8084}
+    document-url: ${TASK_RECOVERY_DOCUMENT_URL:http://localhost:8082}
+    trusted-encrypted-network: ${TASK_RECOVERY_TRUSTED_ENCRYPTED_NETWORK:false}
   replay:
     # 紧急回滚时关闭，仅阻止新Replay创建
     creation-enabled: ${REPLAY_CREATION_ENABLED:true}

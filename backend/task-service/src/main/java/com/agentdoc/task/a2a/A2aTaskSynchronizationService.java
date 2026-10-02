@@ -10,23 +10,20 @@ import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.task.convertor.A2aTaskConvertor;
 import com.agentdoc.task.enums.TaskStatus;
 import com.agentdoc.common.enums.TaskExecutionMode;
-import com.agentdoc.task.mapper.TaskMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.security.TaskCapabilityCryptoService;
-import com.agentdoc.task.service.TokenUsageService;
-import com.agentdoc.task.service.ExecutionArtifactService;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.RequiredArgsConstructor;
 import org.a2aproject.sdk.spec.Task;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
 /**
  * A2A任务状态同步服务
  * <p>
  * 负责将远端Agent‑Server返回的任务状态数据同步更新到本地数据库。
  * 使用条件更新，仅当本地任务仍处于远端活跃状态时才允许更新，防止终态被覆盖。
- * 更新成功后，如果任务已完成，记录Token消耗用量；内部调用Agent服务Feign接口获取执行配置档案。
+ * 远端查询/草稿收尾在本地事务外执行，终态与权威账本/隔离产物在同一短事务内提交。
  * 回调链路、定时对账任务均会调用该服务完成状态落地。
  * </p>
  */
@@ -34,20 +31,18 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class A2aTaskSynchronizationService {
 
-    private final TaskMapper taskMapper;
     private final AgentFeign agentFeign;
     private final DocumentFeign documentFeign;
-    private final TokenUsageService tokenUsageService;
     private final TaskCapabilityCryptoService cryptoService;
-    private final ExecutionArtifactService executionArtifactService;
+    private final TaskTerminalPersistenceService persistenceService;
 
     /**
      * 执行远端任务 → 本地任务实体状态同步并落库
      * <p>
-     * 流程：转换器把远端数据写入task实体 → 条件式数据库更新；
+     * 流程：校验远端身份 → 获取终态账本投影 → 必要的草稿收尾 → 短事务条件写回；
      * 更新条件：主键匹配 且 当前本地任务处于远端活跃状态，避免已完结任务被回调/对账覆盖。
      * 更新行数为0代表条件不满足，直接返回false。
-     * 任务状态为完成时，调用Token用量服务记录消耗账单。
+     * 任务为完成/失败/取消终态时，同事务调用Token用量服务记录消耗账单。
      * </p>
      *
      * @param task        本地任务实体，会被{@link A2aTaskConvertor#apply(TaskEntity, Task)}回填远端数据
@@ -55,39 +50,21 @@ public class A2aTaskSynchronizationService {
      * @return true：数据库更新成功；false：条件不满足未执行更新
      * @throws BusinessException 获取Agent执行档案接口调用异常时抛出
      */
-    @Transactional(rollbackFor = Exception.class)
     public boolean synchronize(TaskEntity task, Task remoteTask) {
+        return synchronize(task, remoteTask, () -> true);
+    }
+
+    /** 普通对账使用相同短事务，并在远程收尾前后验证锁所有权。 */
+    public boolean synchronize(TaskEntity task, Task remoteTask, BooleanSupplier ownsLock) {
+        if (!TaskStatus.remoteActiveCodes().contains(task.getStatus())) { return false; }
+        Long boundExecution = task.getAgentExecutionId();
+        requireRemoteIdentity(task, remoteTask);
         // 将远端A2A任务数据转换、回填到本地task对象
-        A2aTaskConvertor.apply(task, remoteTask);
+        applyRemote(task, remoteTask);
         TaskStatus status = TaskStatus.fromCode(task.getStatus());
-        // 任务完成，且执行模式为隔离模式，记录结果摘要
-        if (status == TaskStatus.COMPLETED
-                && TaskExecutionMode.ISOLATED.name().equals(task.getExecutionMode())) {
-            if (task.getAgentExecutionId() == null) {
-                AgentExecutionTokenUsageVO usage = requireTokenUsage(agentFeign.getExecutionTokenUsage(task.getId()));
-                task.setAgentExecutionId(usage.executionId());
-            }
-            executionArtifactService.appendResultSummary(task);
-        }
-        // 条件更新：仅本地任务还处于远端活跃状态，才允许覆盖状态，保护已终态数据
-        int updated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
-                .eq(TaskEntity::getId, task.getId())
-                .in(TaskEntity::getStatus, TaskStatus.remoteActiveCodes())
-                .set(TaskEntity::getA2aTaskId, task.getA2aTaskId())
-                .set(TaskEntity::getA2aContextId, task.getA2aContextId())
-                .set(TaskEntity::getStatus, task.getStatus())
-                .set(TaskEntity::getLastHeartbeatAt, task.getLastHeartbeatAt())
-                .set(TaskEntity::getEndTime, task.getEndTime())
-                .set(TaskEntity::getResultSummary, task.getResultSummary())
-                .set(TaskEntity::getErrorMessage, task.getErrorMessage())
-                .set(TaskEntity::getTokensUsed, task.getTokensUsed())
-                .set(TaskEntity::getTokensEstimated, task.getTokensEstimated())
-                .set(TaskEntity::getAgentExecutionId, task.getAgentExecutionId())
-                .set(TaskEntity::getPromptHash, task.getPromptHash()));
-        // 更新行数为0：说明任务已经不是远端活跃状态，放弃同步
-        if (updated == 0) {
-            return false;
-        }
+        A2aTokenUsage usage = isTerminal(status) ? resolveTokenUsage(task) : null;
+        requireExecutionBinding(task, boundExecution, usage);
+        requireLock(ownsLock);
         // 执行模式为实时LIVE、文档类型是草稿，且任务终态（完成/终止/失败）时，执行草稿文档收尾处理
         if (TaskExecutionMode.LIVE.name().equals(task.getExecutionMode())
                 && DocType.fromCode(task.getDocumentType()) == DocType.DRAFT
@@ -95,10 +72,53 @@ public class A2aTaskSynchronizationService {
                 || status == TaskStatus.FAILED)) {
             finalizeDraft(task, status);
         }
-        if (status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED || status == TaskStatus.FAILED) {
-            tokenUsageService.recordRemote(task, resolveTokenUsage(task));
+        return persistenceService.persist(task, usage, ownsLock);
+    }
+
+    /** 恢复路径已完成独立草稿收尾；直接消费受控查询附带的账本，不再用原凭证做 RPC。 */
+    public boolean synchronizeRecovered(TaskEntity task, Task remoteTask, AgentExecutionTokenUsageVO projection,
+                                         BooleanSupplier ownsLock) {
+        if (!TaskStatus.remoteActiveCodes().contains(task.getStatus())) { return false; }
+        Long boundExecution = task.getAgentExecutionId();
+        requireRemoteIdentity(task, remoteTask);
+        applyRemote(task, remoteTask);
+        TaskStatus status = TaskStatus.fromCode(task.getStatus());
+        A2aTokenUsage usage = isTerminal(status) ? tokenUsage(requireTokenUsage(Result.ok(projection))) : null;
+        requireExecutionBinding(task, boundExecution, usage);
+        return persistenceService.persist(task, usage, ownsLock);
+    }
+
+    private void requireRemoteIdentity(TaskEntity task, Task remote) {
+        if (remote == null || remote.status() == null || remote.status().state() == null
+                || (task.getA2aTaskId() != null && !task.getA2aTaskId().equals(remote.id()))
+                || (task.getA2aContextId() != null && !task.getA2aContextId().equals(remote.contextId()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "RECOVERY_IDENTITY_MISMATCH");
         }
-        return true;
+    }
+
+    private void applyRemote(TaskEntity task, Task remote) {
+        boolean cancelRequested = TaskStatus.CANCELING.getCodeEquals(task.getStatus());
+        A2aTaskConvertor.apply(task, remote);
+        // 活跃远端状态不能抹掉已落库的取消意图；否则下一轮无法申请窄取消动作。
+        if (cancelRequested && !remote.status().state().isFinal()) { task.setStatus(TaskStatus.CANCELING.getCode()); }
+    }
+
+    private void requireExecutionBinding(TaskEntity task, Long bound, A2aTokenUsage usage) {
+        Long executionId = usage == null ? task.getAgentExecutionId() : usage.executionId();
+        if ((bound != null && !Objects.equals(bound, executionId))
+                || (usage != null && task.getAgentExecutionId() != null
+                && !Objects.equals(task.getAgentExecutionId(), executionId))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "RECOVERY_IDENTITY_MISMATCH");
+        }
+        task.setAgentExecutionId(executionId);
+    }
+
+    private boolean isTerminal(TaskStatus status) {
+        return status == TaskStatus.COMPLETED || status == TaskStatus.TERMINATED || status == TaskStatus.FAILED;
+    }
+
+    private void requireLock(BooleanSupplier ownsLock) {
+        if (!ownsLock.getAsBoolean()) { throw new BusinessException(ErrorCode.CONFLICT, "RECOVERY_CAPACITY_EXCEEDED"); }
     }
 
     /**
@@ -134,6 +154,10 @@ public class A2aTaskSynchronizationService {
      */
     private A2aTokenUsage resolveTokenUsage(TaskEntity task) {
         AgentExecutionTokenUsageVO usageProjection = requireTokenUsage(agentFeign.getExecutionTokenUsage(task.getId()));
+        return tokenUsage(usageProjection);
+    }
+
+    private A2aTokenUsage tokenUsage(AgentExecutionTokenUsageVO usageProjection) {
         return new A2aTokenUsage(usageProjection.inputTokens(), usageProjection.cachedInputTokens(),
                 usageProjection.outputTokens(), Boolean.TRUE.equals(usageProjection.inputTokensEstimated()),
                 Boolean.TRUE.equals(usageProjection.cachedInputTokensEstimated()),

@@ -3,6 +3,7 @@ package com.agentdoc.auth.config;
 import com.agentdoc.auth.service.JwtService;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -62,7 +63,8 @@ public class SecurityConfig {
      */
     @Bean
     public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
+        JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
+        return token -> TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token));
     }
 
     /**
@@ -82,6 +84,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 无需认证放行接口：登录注册、刷新令牌、登出、健康检查、Swagger文档、jwks公钥接口
                         .requestMatchers(
+                                "/api/auth/internal/task-recovery-capabilities",
+                                "/api/auth/internal/task-draft-finalization-capabilities",
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/refresh",

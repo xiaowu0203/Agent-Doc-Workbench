@@ -76,13 +76,13 @@ class TaskExecutionQueryServiceTest {
                 11L, "T-11", 7L, 9L, 13L, type, "审计任务", "检查文档", status,
                 5000L, TaskReadScope.FULL, List.of(), 120L, true,
                 LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(),
-                0, null, resultSummary, 2L, LocalDateTime.now());
+                0, null, resultSummary, 2L, LocalDateTime.now(), null);
     }
 
     private AgentExecutionAuditVO audit(String agentName) {
         return new AgentExecutionAuditVO(3L, 11L, 7L, 9L, agentName, 4L, 12, 300,
                 "COMPLETED", false, "prompt", "snapshot", 2, null, null, List.of(), List.of(),
                 List.of(), List.of(), 100L, false, 0L, false, 20L, false,
-                LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now());
+                LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(), null, null);
     }
 }

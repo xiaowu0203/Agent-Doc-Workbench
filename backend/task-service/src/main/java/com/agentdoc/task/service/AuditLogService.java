@@ -21,6 +21,9 @@ import com.agentdoc.task.mapper.AuditLogMapper;
 import com.agentdoc.task.pojo.entity.AuditLogEntity;
 import com.agentdoc.task.pojo.param.AuditLogSearchParam;
 import com.agentdoc.task.pojo.vo.AuditLogVO;
+import com.agentdoc.task.pojo.vo.TaskRecoveryEventVO;
+import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +31,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -41,6 +45,31 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.ROLE_MANAGE;
 @Service
 @RequiredArgsConstructor
 public class AuditLogService {
+
+    /** 恢复专用追加审计；自动动作不伪装成人类用户。 */
+    public void recordRecovery(Long spaceId, Long taskId, AuditAction action, TaskRecoveryEventVO event) {
+        record(spaceId, taskId, event.userId() == null ? ActorType.SERVICE : ActorType.HUMAN,
+                event.userId() == null ? TaskRecoveryConstant.SERVICE_ACTOR_ID : event.userId(),
+                action, AuditTargetType.TASK, taskId, JsonUtils.toJson(event));
+    }
+
+    /** 诊断只读取最近的恢复结果/开始事件；权限由 Task 恢复应用入口校验。 */
+    public TaskRecoveryEventVO latestRecoveryEvent(Long taskId) {
+        AuditLogEntity row = auditLogMapper.selectOne(new LambdaQueryWrapper<AuditLogEntity>()
+                .eq(AuditLogEntity::getTaskId, taskId)
+                .in(AuditLogEntity::getAction, AuditAction.TASK_RECOVERY_STARTED.name(), AuditAction.TASK_RECOVERY_FINISHED.name())
+                .orderByDesc(AuditLogEntity::getCreatedAt).orderByDesc(AuditLogEntity::getId).last("LIMIT 1"));
+        return row == null ? null : JsonUtils.parse(row.getDetail(), TaskRecoveryEventVO.class);
+    }
+
+    /** 告警阈值使用追加审计中的最近三次结果，不建立持久化恢复表。 */
+    public List<TaskRecoveryEventVO> recentRecoveryResults(Long taskId) {
+        return auditLogMapper.selectList(new LambdaQueryWrapper<AuditLogEntity>()
+                        .eq(AuditLogEntity::getTaskId, taskId).eq(AuditLogEntity::getAction, AuditAction.TASK_RECOVERY_FINISHED.name())
+                        .orderByDesc(AuditLogEntity::getCreatedAt).orderByDesc(AuditLogEntity::getId)
+                        .last("LIMIT " + TaskRecoveryConstant.FAILURE_ALERT_THRESHOLD))
+                .stream().map(row -> JsonUtils.parse(row.getDetail(), TaskRecoveryEventVO.class)).filter(Objects::nonNull).toList();
+    }
 
     private final AuditLogMapper auditLogMapper;
     private final DocumentFeign documentFeign;
@@ -179,6 +208,7 @@ public class AuditLogService {
      * @return 展示用操作人名称
      */
     private String actorName(AuditLogEntity row, Map<Long, String> userNames, Map<Long, String> agentNames) {
+        if (ActorType.SERVICE.getCode() == row.getActorType()) { return TaskRecoveryConstant.SERVICE; }
         if (ActorType.AGENT.getCode() == row.getActorType()) {
             return agentNames.getOrDefault(row.getActorId(), "Agent");
         }

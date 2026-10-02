@@ -1,6 +1,7 @@
 package com.agentdoc.task.pojo.param;
 
 import com.agentdoc.common.pojo.dto.PageParam;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.task.enums.TaskStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
@@ -26,6 +27,9 @@ public class TaskSearchParam extends PageParam {
 
     @Schema(description = "任务状态")
     private TaskStatus status;
+
+    @Schema(description = "执行模式；来源任务选择器使用 LIVE")
+    private TaskExecutionMode executionMode;
 
     @Schema(description = "Agent ID")
     private Long agentId;

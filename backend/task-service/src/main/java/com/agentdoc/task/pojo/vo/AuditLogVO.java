@@ -48,6 +48,10 @@ public record AuditLogVO(
                 case TASK_BUDGET_TERMINATED -> "任务预算终止";
                 case TASK_RETRY -> "重试任务";
                 case TASK_FAILED -> "任务失败";
+                case TASK_RECOVERY_STARTED -> "开始任务恢复";
+                case TASK_RECOVERY_ACTION -> "任务恢复动作";
+                case TASK_RECOVERY_FINISHED -> "结束任务恢复";
+                case TASK_RECOVERY_ALERT -> "任务恢复告警";
                 case CHANGE_REQUEST_SUBMITTED -> "提交变更请求";
                 case CHANGE_REQUEST_CLAIMED -> "领取变更请求";
                 case CHANGE_REQUEST_UNCLAIMED -> "取消领取变更请求";

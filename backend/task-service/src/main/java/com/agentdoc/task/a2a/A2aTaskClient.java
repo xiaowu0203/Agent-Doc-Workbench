@@ -1,6 +1,7 @@
 package com.agentdoc.task.a2a;
 
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
@@ -16,8 +17,11 @@ import org.springframework.http.MediaType;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 import java.util.UUID;
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 /**
  * A2A Agent‑to‑Agent 远端任务HTTP客户端
@@ -55,6 +59,8 @@ public class A2aTaskClient {
      * Spring RestClient HTTP客户端实例，指向远端Agent‑Service服务地址
      */
     private final RestClient restClient;
+    /** 对账查询单独设置有界超时，不改变既有提交/取消行为。 */
+    private final RestClient reconciliationClient;
     /** A2A 客户端和回调配置。 */
     private final A2aProperties properties;
 
@@ -67,6 +73,10 @@ public class A2aTaskClient {
     public A2aTaskClient(RestClient.Builder builder,
                          A2aProperties properties) {
         this.restClient = builder.baseUrl(properties.getAgentServiceUrl()).build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(TaskRecoveryConstant.MAX_CONNECT_TIMEOUT_MS)).build());
+        factory.setReadTimeout(Duration.ofMillis(TaskRecoveryConstant.MAX_READ_TIMEOUT_MS));
+        this.reconciliationClient = builder.clone().requestFactory(factory).baseUrl(properties.getAgentServiceUrl()).build();
         this.properties = properties;
     }
 
@@ -135,7 +145,15 @@ public class A2aTaskClient {
      * @return 远端A2A任务对象
      */
     public Task get(String taskId, String capability) {
-        return restClient.get()
+        return get(restClient, taskId, capability);
+    }
+
+    public Task getForReconciliation(String taskId, String capability) {
+        return get(reconciliationClient, taskId, capability);
+    }
+
+    private Task get(RestClient client, String taskId, String capability) {
+        return client.get()
                 .uri(properties.getPaths().getTask(), taskId)
                 .header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + capability)
                 .header(A2A_VERSION_HEADER, A2A_VERSION)

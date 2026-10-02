@@ -9,6 +9,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LogSanitizerTest {
 
     @Test
+    void recoveryMachineKeysAndProofsAreRedactedInMapsJsonAndFreeText() {
+        Map<String, Object> sanitized = LogSanitizer.sanitizeMap(Map.of(
+                "X-Task-Recovery-Machine-Key", "machine-secret", "machineKey", "machine-secret",
+                "previousMachineKey", "previous-secret", "sourceCapability", "proof-secret",
+                "X-Task-Recovery-Capability", "recovery-secret"), SensitiveFieldPolicy.defaults());
+        assertThat(sanitized.values()).containsOnly(LogSanitizer.REDACTED);
+        assertThat(LogSanitizer.sanitizeText("X-Task-Recovery-Machine-Key=machine-secret machineKey=another-secret"))
+                .doesNotContain("machine-secret", "another-secret");
+        assertThat(LogSanitizer.sanitizeJson("{\"sourceCapability\":\"proof-secret\"}", null)).doesNotContain("proof-secret");
+    }
+
+    @Test
     void classifiesSensitiveKeysWithoutTokenPluralFalsePositive() {
         SensitiveFieldPolicy policy = SensitiveFieldPolicy.defaults();
 

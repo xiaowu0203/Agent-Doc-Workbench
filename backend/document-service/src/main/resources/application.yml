@@ -42,6 +42,9 @@ agent-doc:
   security:
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
     task-capability-filter-enabled: true
+    task-recovery-enabled: ${TASK_RECOVERY_ENABLED:false}
+    task-recovery-issuer: agent-doc-workbench
+    task-recovery-trusted-encrypted-network: ${TASK_RECOVERY_TRUSTED_ENCRYPTED_NETWORK:false}
 
 # Spring Boot Actuator 健康检查端点配置
 management:

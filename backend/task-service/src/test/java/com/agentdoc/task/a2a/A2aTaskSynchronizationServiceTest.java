@@ -53,10 +53,13 @@ class A2aTaskSynchronizationServiceTest {
         TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
         ExecutionArtifactService executionArtifactService = mock(ExecutionArtifactService.class);
         A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
-                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService,
-                executionArtifactService);
+                agentFeign, documentFeign, cryptoService,
+                new TaskTerminalPersistenceService(taskMapper, tokenUsageService, executionArtifactService));
         TaskEntity task = activeTask();
         Task remoteTask = completedTask();
+        when(agentFeign.getExecutionTokenUsage(task.getId())).thenReturn(Result.ok(
+                new AgentExecutionTokenUsageVO(12L, 30L, 1L, BigDecimal.ZERO, BigDecimal.ZERO,
+                        "CNY", 1, LocalDateTime.now(), 3L, false, null, false, 2L, false)));
 
         when(taskMapper.update(any(), any())).thenReturn(0);
         assertThat(service.synchronize(task, remoteTask)).isFalse();
@@ -83,8 +86,8 @@ class A2aTaskSynchronizationServiceTest {
         TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
         ExecutionArtifactService executionArtifactService = mock(ExecutionArtifactService.class);
         A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
-                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService,
-                executionArtifactService);
+                agentFeign, documentFeign, cryptoService,
+                new TaskTerminalPersistenceService(taskMapper, tokenUsageService, executionArtifactService));
         TaskEntity task = activeTask();
         task.setDocumentType(DocType.DRAFT.getCode());
         task.setExecutionMode(TaskExecutionMode.ISOLATED.name());
@@ -109,8 +112,8 @@ class A2aTaskSynchronizationServiceTest {
         TaskCapabilityCryptoService cryptoService = mock(TaskCapabilityCryptoService.class);
         ExecutionArtifactService executionArtifactService = mock(ExecutionArtifactService.class);
         A2aTaskSynchronizationService service = new A2aTaskSynchronizationService(
-                taskMapper, agentFeign, documentFeign, tokenUsageService, cryptoService,
-                executionArtifactService);
+                agentFeign, documentFeign, cryptoService,
+                new TaskTerminalPersistenceService(taskMapper, tokenUsageService, executionArtifactService));
         TaskEntity task = activeTask();
         task.setExecutionMode(TaskExecutionMode.ISOLATED.name());
         when(taskMapper.update(any(), any())).thenReturn(1);

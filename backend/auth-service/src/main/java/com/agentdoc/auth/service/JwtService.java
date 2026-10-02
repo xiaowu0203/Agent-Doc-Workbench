@@ -4,6 +4,8 @@ import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.auth.constant.AuthConstant;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.constant.TaskRecoveryConstant;
+import com.agentdoc.common.feign.dto.TaskRecoveryIssueDTO;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -14,6 +16,7 @@ import com.nimbusds.jose.proc.SecurityContext;
 import io.micrometer.common.util.StringUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
@@ -332,6 +335,28 @@ public class JwtService {
      */
     public JWKSet jwkSet() {
         return new JWKSet(publicJwk());
+    }
+
+    /** 仅供通过机器与历史证明校验的专用签发服务使用。 */
+    String createTaskRecoveryToken(Jwt source, TaskRecoveryIssueDTO request, boolean draft, List<String> actions) {
+        Instant now = Instant.now();
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder().issuer(props.issuer()).issuedAt(now).notBefore(now)
+                .expiresAt(now.plusSeconds(draft ? TaskRecoveryConstant.DRAFT_TTL_SECONDS
+                        : TaskRecoveryConstant.A2A_TTL_SECONDS))
+                .subject(TaskRecoveryConstant.SERVICE).id(UUID.randomUUID().toString())
+                .audience(List.of(draft ? TaskRecoveryConstant.DRAFT_AUDIENCE : TaskRecoveryConstant.A2A_AUDIENCE))
+                .claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_SERVICE)
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_SERVICE)
+                .claim(JwtConstant.CLAIM_SERVICE, TaskRecoveryConstant.SERVICE)
+                .claim(TaskRecoveryConstant.PURPOSE, draft ? TaskRecoveryConstant.DRAFT_PURPOSE
+                        : TaskRecoveryConstant.A2A_PURPOSE)
+                .claim(TaskRecoveryConstant.ACTIONS, actions)
+                .claim(TaskRecoveryConstant.A2A_TASK_ID, request.a2aTaskId())
+                .claim(TaskRecoveryConstant.SOURCE_JTI, source.getId())
+                .claim(TaskRecoveryConstant.RECOVERY_ID, request.recoveryId());
+        request.identity().toClaims().forEach((key, value) -> { if (value != null) { builder.claim(key, value); } });
+        if (draft) { builder.claim(TaskRecoveryConstant.REMOTE_STATUS, request.remoteTerminalStatus()); }
+        return encoder.encode(JwtEncoderParameters.from(builder.build())).getTokenValue();
     }
 
     /**

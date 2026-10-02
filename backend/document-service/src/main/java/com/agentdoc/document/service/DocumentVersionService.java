@@ -53,6 +53,15 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ
 @RequiredArgsConstructor
 public class DocumentVersionService {
 
+    /** 草稿终态收尾专用幂等查询，不加载正文或调用跨服务引用。 */
+    public DocumentVersionEntity findAgentDraftSnapshot(Long documentId, Long taskId) {
+        return versionMapper.selectOne(new LambdaQueryWrapper<DocumentVersionEntity>()
+                .eq(DocumentVersionEntity::getDocumentId, documentId)
+                .eq(DocumentVersionEntity::getSourceTaskId, taskId)
+                .eq(DocumentVersionEntity::getSourceType, DocumentVersionSourceType.AGENT_DRAFT.name())
+                .orderByDesc(DocumentVersionEntity::getVersionNo).last("LIMIT 1"));
+    }
+
     private final DocumentVersionMapper versionMapper;
     private final DocumentMapper documentMapper;
     private final SpacePermissionService permissionService;
