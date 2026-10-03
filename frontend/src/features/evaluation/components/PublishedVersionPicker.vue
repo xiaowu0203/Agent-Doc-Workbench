@@ -1,7 +1,13 @@
 <template>
   <el-dialog
     :model-value="open"
-    :title="kind === 'evaluators' ? '选择已发布评估器版本' : '选择已发布测试用例版本'"
+    :title="
+      kind === 'evaluators'
+        ? '选择已发布评估器版本'
+        : kind === 'datasets'
+          ? '选择已发布数据集版本'
+          : '选择已发布测试用例版本'
+    "
     width="760px"
     @close="$emit('close')"
   >
@@ -56,7 +62,9 @@
               {{
                 'evaluatorKey' in version
                   ? version.evaluatorKey
-                  : `来源 Task #${version.sourceTaskId}`
+                  : 'sourceTaskId' in version
+                    ? `来源 Task #${version.sourceTaskId}`
+                    : `内容 hash：${version.contentHash}`
               }}
             </p>
           </div>
@@ -96,6 +104,8 @@ import {
   searchTestCases,
   searchEvaluatorVersions,
   searchTestCaseVersions,
+  searchDatasets,
+  searchDatasetVersions,
 } from '../api/evaluation-api'
 import { EVALUATOR_GUIDES } from '../catalog'
 import type {
@@ -104,17 +114,19 @@ import type {
   EvaluatorVersion,
   TestCaseVersion,
   EvaluationPage,
+  EvaluationDataset,
+  DatasetVersion,
 } from '../types'
 import type { EntityId } from '@/features/workspace/types'
 const props = defineProps<{
   open: boolean
   spaceId: string
-  kind: 'evaluators' | 'test-cases'
+  kind: 'evaluators' | 'test-cases' | 'datasets'
   excludeIds: string[]
 }>()
 const emit = defineEmits<{
   close: []
-  select: [version: EvaluatorVersion | TestCaseVersion, name: string]
+  select: [version: EvaluatorVersion | TestCaseVersion | DatasetVersion, name: string]
 }>()
 const keyword = ref(''),
   selectedParent = ref<EntityId>(),
@@ -122,20 +134,20 @@ const keyword = ref(''),
   versionsLoading = ref(false),
   error = ref(''),
   versionError = ref('')
-const parentPage = ref<EvaluationPage<Evaluator | EvaluationTestCase>>({
+const parentPage = ref<EvaluationPage<Evaluator | EvaluationTestCase | EvaluationDataset>>({
   records: [],
   total: 0,
   pageNum: 1,
   pageSize: 10,
 })
-const versionPage = ref<EvaluationPage<EvaluatorVersion | TestCaseVersion>>({
+const versionPage = ref<EvaluationPage<EvaluatorVersion | TestCaseVersion | DatasetVersion>>({
   records: [],
   total: 0,
   pageNum: 1,
   pageSize: 10,
 })
 let parentRequest: AbortController | undefined, versionRequest: AbortController | undefined
-function validVersion(value: EvaluatorVersion | TestCaseVersion) {
+function validVersion(value: EvaluatorVersion | TestCaseVersion | DatasetVersion) {
   if (String(value.spaceId) !== props.spaceId || value.status !== 'PUBLISHED' || !value.contentHash)
     return false
   if ('evaluatorKey' in value) {
@@ -174,7 +186,9 @@ async function searchParents(pageNum: number) {
     const result =
       props.kind === 'evaluators'
         ? await searchEvaluators(query, request.signal)
-        : await searchTestCases(query, request.signal)
+        : props.kind === 'datasets'
+          ? await searchDatasets(query, request.signal)
+          : await searchTestCases(query, request.signal)
     if (request.signal.aborted) return
     if (result.records.some((item) => String(item.spaceId) !== props.spaceId || item.archived))
       throw new Error('绑定资源归属或状态不一致')
@@ -207,14 +221,21 @@ async function loadVersions(pageNum: number) {
     const result =
       props.kind === 'evaluators'
         ? await searchEvaluatorVersions(query, request.signal)
-        : await searchTestCaseVersions(query, request.signal)
+        : props.kind === 'datasets'
+          ? await searchDatasetVersions(query, request.signal)
+          : await searchTestCaseVersions(query, request.signal)
     if (request.signal.aborted) return
     if (
       result.records.some(
         (item) =>
           String(item.spaceId) !== props.spaceId ||
-          String('evaluatorId' in item ? item.evaluatorId : item.testCaseId) !==
-            String(selectedParent.value),
+          String(
+            'evaluatorId' in item
+              ? item.evaluatorId
+              : 'datasetId' in item
+                ? item.datasetId
+                : item.testCaseId,
+          ) !== String(selectedParent.value),
       )
     )
       throw new Error('绑定版本归属不一致')
@@ -225,7 +246,7 @@ async function loadVersions(pageNum: number) {
     if (!request.signal.aborted) versionsLoading.value = false
   }
 }
-function choose(version: EvaluatorVersion | TestCaseVersion) {
+function choose(version: EvaluatorVersion | TestCaseVersion | DatasetVersion) {
   if (!validVersion(version) || props.excludeIds.includes(String(version.id))) return
   const name =
     parentPage.value.records.find((item) => String(item.id) === String(selectedParent.value))

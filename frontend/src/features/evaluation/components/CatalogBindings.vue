@@ -82,7 +82,7 @@ import {
   replaceDatasetCases,
   replaceTestCaseEvaluators,
 } from '../api/evaluation-api'
-import type { EvaluatorVersion, TestCaseVersion } from '../types'
+import type { DatasetVersion, EvaluatorVersion, TestCaseVersion } from '../types'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
 import JsonConfigEditor from './JsonConfigEditor.vue'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
@@ -125,7 +125,8 @@ function remove(index: number) {
   rows.value.splice(index, 1)
   markDirty()
 }
-function add(version: EvaluatorVersion | TestCaseVersion, name: string) {
+function add(version: EvaluatorVersion | TestCaseVersion | DatasetVersion, name: string) {
+  if ('datasetId' in version) return
   if (!props.editable || rows.value.some((row) => row.versionId === String(version.id))) return
   rows.value.push({
     versionId: String(version.id),
