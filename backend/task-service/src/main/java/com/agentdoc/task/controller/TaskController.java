@@ -111,7 +111,7 @@ public class TaskController {
     @Operation(summary = "查询任务 Replay 准入")
     @GetMapping("/{id}/replay-eligibility")
     public Result<ReplayEligibilityVO> replayEligibility(@PathVariable Long id) {
-        return Result.ok(taskService.replayEligibility(id));
+        return Result.ok(taskService.readReplayEligibility(id));
     }
 
     @Operation(summary = "创建隔离 Replay")

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { evaluationRoute } from './routes'
 import EvaluationWorkbenchLayout from './components/EvaluationWorkbenchLayout.vue'
+import EvaluationEntryView from '@/views/EvaluationEntryView.vue'
 import { installRouterGuards } from '@/router/guards'
 import AppSidebar from '@/shared/components/AppSidebar.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
@@ -31,6 +32,7 @@ function testRouter(guarded = true) {
       },
       { path: '/login', component: { template: '<div />' } },
       { path: '/forbidden', component: { template: '<div />' } },
+      { path: '/spaces/:spaceId/tasks/:taskId', component: { template: '<div />' } },
     ],
   })
   if (guarded) installRouterGuards(router)
@@ -72,6 +74,25 @@ function setPermissions(permissions: string[]) {
 }
 
 describe('evaluation navigation and permission boundary', () => {
+  it('preserves a selected source task and only links back with task read permission', async () => {
+    setPermissions([SPACE_PERMISSIONS.EVALUATION_READ])
+    const router = testRouter(false)
+    await router.push(`/spaces/${spaceId}/evaluation/test-cases?sourceTaskId=2104902086192304129`)
+    const wrapper = mount(EvaluationEntryView, {
+      props: { section: 'test-cases' },
+      global: { plugins: [pinia, router] },
+    })
+    expect(wrapper.text()).toContain('已选择来源任务 #2104902086192304129')
+    expect(wrapper.findAll('a')).toHaveLength(0)
+    setPermissions([SPACE_PERMISSIONS.EVALUATION_READ, SPACE_PERMISSIONS.TASK_READ])
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('a').attributes('href')).toBe(
+      `/spaces/${spaceId}/tasks/2104902086192304129?tab=evidence`,
+    )
+    await router.push(`/spaces/${spaceId}/evaluation/test-cases?sourceTaskId=invalid`)
+    expect(wrapper.text()).not.toContain('已选择来源任务')
+    wrapper.unmount()
+  })
   it.each(paths)('rejects a deep link without read permission: %s', async (path) => {
     setPermissions([SPACE_PERMISSIONS.EVALUATION_MANAGE, SPACE_PERMISSIONS.EVALUATION_RUN])
     const router = testRouter()

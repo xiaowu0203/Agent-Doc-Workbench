@@ -26,6 +26,8 @@
 
 各权限正交。无 read 权限时菜单不显示、深链拒绝，服务端仍逐入口校验。Experiment 首版不新增名称字段，以 ID、DatasetVersion 和 variantKey 识别。配置编辑采用 JSON 编辑区，前端只做语法校验，后端裁决领域契约。
 
+`GET /api/task/tasks/{id}/replay-eligibility` 是只读准入查询，按来源 Task 解析 Space 并要求 `task:read`；核验冻结文档版本沿用 Document 服务的 `document:read` 校验，缺少该权限时返回 403，不扩大文档访问权限。查询不创建 Task、签发 Capability 或发送消息。创建 Replay 仍要求 `task:read + task:create + evaluation:run`。从任务详情沉淀测试用例需要当前 Space 的 `task:read + document:read + evaluation:read + evaluation:manage`、`COMPLETED + LIVE` 来源及动态准入通过，不从 Catalog 管理权限推导执行权限。
+
 ## 2. 归档准入矩阵
 
 下表以既有业务校验为基线；主资源 active 表示 `archived=false`。历史读取均需要正常权限，不能以归档为由重写或删除历史结果。
@@ -61,6 +63,7 @@ Dataset/TestCase 主资源归档后，既有 PUBLISHED 版本不能用于**新�
 | `GET /api/evaluation/dataset-versions/{id}/cases` | 绑定 ID、目标 Case/版本 ID、名称、版本号/状态、顺序、enabled | 从版本解析 Space 后校验 `evaluation:read` |
 | `GET /api/evaluation/test-case-versions/{id}/evaluators` | 绑定 ID、Evaluator/版本 ID、名称、版本号/状态、evaluatorKey、顺序及绑定级 expectedJson | 同上 |
 | `POST /api/evaluation/case-runs/{id}/attempts/search` | PageParam；Attempt 按 attemptNo/ID 倒序，批量附带本页 Result 摘要 | CaseRun → Run → Space 归属一致后校验 `evaluation:read` |
+| `GET /api/evaluation/task-links/{taskId}?spaceId=...` | 通过 executionTaskId 查询唯一 Attempt，沿 CaseRun、Run、TestCaseVersion、Variant、Experiment 的正式关系返回身份；未绑定返回 null | 所声明 Space 的 `task:read + evaluation:read`；查询与每段关系均验证同 Space |
 
 新增 Run/Experiment 搜索的时间边界均包含端点，from 不得晚于 to。Run 摘要包含版本名称/号、状态/暂停原因、取消意图、总/完成/异常 Case 数与时间；Experiment 摘要包含版本名称/号、状态、Variant/关联 Run 数、授权 Token、失败码与人工结论身份。缺失名称显示不可用，不捏造当前配置。
 
@@ -69,6 +72,8 @@ Attempt 摘要包含 replayTaskId/executionTaskId、失败阶段/码、脱敏说
 绑定级 expectedJson 是既有编辑载荷的一部分，详情读模型应保留以支持 DRAFT 无损编辑；它仅包含受验证的评估预期配置，不得作为 Prompt、文档正文或秘密的存储通道。读取和更新均受管理页面/后端既有数据安全约束。
 
 名称、进度、绑定与结果批量加载，不在循环内 SQL/RPC。日志只记录非敏感身份、状态、时间条件存在性、页码/大小、结果数和 Trace ID，不打印完整查询请求。
+
+Task 关联查询仅返回任务、来源任务、用例/版本、CaseRun/Attempt、Run、Experiment/Variant 身份，不读取其他业务域表，不根据 rootTaskId 推断所属实验。缺失父记录、跨 Space 或不一致的 Run/Variant 反向关系拒绝返回；请求不改变执行或评估状态。
 
 Task 现有搜索增加可选 `executionMode`，来源选择器用 `COMPLETED + LIVE`。选择后单独调用现有 ReplayEligibility；不能对每行调用、不能将列表可见解释为动态准入已通过。“沉淀为测试用例”还需 `evaluation:manage`、当前 Space 归属及最终准入。
 

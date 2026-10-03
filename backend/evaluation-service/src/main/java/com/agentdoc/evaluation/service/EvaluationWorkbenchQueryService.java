@@ -40,6 +40,7 @@ import com.agentdoc.evaluation.pojo.vo.DatasetCaseBindingVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationCaseAttemptHistoryVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationResultSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationRunSummaryVO;
+import com.agentdoc.evaluation.pojo.vo.EvaluationTaskLinkVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseEvaluatorBindingVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -59,6 +60,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 
 /** Phase 5 工作台所需的轻量分页与关联读模型。 */
 @Service
@@ -85,6 +87,48 @@ public class EvaluationWorkbenchQueryService {
     private final EvaluatorVersionMapper evaluatorVersionMapper;
     private final TestCaseEvaluatorMapper testCaseEvaluatorMapper;
     private final SpaceAccessService spaceAccessService;
+
+    /** 只沿已持久化的评估外键查询，不跨域读取 Task 表或使用 rootTaskId 猜测。 */
+    public EvaluationTaskLinkVO taskLinks(Long spaceId, Long taskId) {
+        if (spaceId == null || spaceId <= 0 || taskId == null || taskId <= 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "空间与任务 ID 必须为正数");
+        }
+        spaceAccessService.requirePermission(spaceId, TASK_READ);
+        spaceAccessService.requirePermission(spaceId, EVALUATION_READ);
+        EvaluationCaseAttemptEntity attempt = attemptMapper.selectOne(
+                new LambdaQueryWrapper<EvaluationCaseAttemptEntity>()
+                        .eq(EvaluationCaseAttemptEntity::getSpaceId, spaceId)
+                        .eq(EvaluationCaseAttemptEntity::getExecutionTaskId, taskId));
+        if (attempt == null) { return null; }
+        requireLink(Objects.equals(attempt.getSpaceId(), spaceId)
+                && Objects.equals(attempt.getExecutionTaskId(), taskId));
+        EvaluationCaseRunEntity caseRun = caseRunMapper.selectById(attempt.getCaseRunId());
+        requireLink(caseRun != null && Objects.equals(caseRun.getSpaceId(), spaceId)
+                && Objects.equals(caseRun.getRunId(), attempt.getRunId()));
+        EvaluationRunEntity run = runMapper.selectById(caseRun.getRunId());
+        requireLink(run != null && Objects.equals(run.getSpaceId(), spaceId));
+        EvaluationTestCaseVersionEntity version = testCaseVersionMapper.selectById(caseRun.getTestCaseVersionId());
+        requireLink(version != null && Objects.equals(version.getSpaceId(), spaceId));
+        EvaluationTestCaseEntity testCase = testCaseMapper.selectById(version.getTestCaseId());
+        requireLink(testCase != null && Objects.equals(testCase.getSpaceId(), spaceId));
+        Long experimentId = null;
+        String variantKey = null;
+        if (run.getExperimentVariantId() != null) {
+            ExperimentVariantEntity variant = variantMapper.selectById(run.getExperimentVariantId());
+            requireLink(variant != null && Objects.equals(variant.getSpaceId(), spaceId)
+                    && Objects.equals(variant.getEvaluationRunId(), run.getId()));
+            ExperimentEntity experiment = experimentMapper.selectById(variant.getExperimentId());
+            requireLink(experiment != null && Objects.equals(experiment.getSpaceId(), spaceId));
+            experimentId = experiment.getId();
+            variantKey = variant.getVariantKey();
+        }
+        return new EvaluationTaskLinkVO(taskId, spaceId, version.getSourceTaskId(), version.getTestCaseId(),
+                version.getId(), caseRun.getId(), attempt.getId(), run.getId(), experimentId, variantKey);
+    }
+
+    private static void requireLink(boolean valid) {
+        if (!valid) { throw new BusinessException(ErrorCode.NOT_FOUND, "执行任务的评估关联不可用"); }
+    }
 
     public PageVO<EvaluationRunSummaryVO> searchRuns(EvaluationRunSearchParam param) {
         param.validate();

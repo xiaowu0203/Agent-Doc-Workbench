@@ -8,6 +8,14 @@
         <span> / {{ task?.taskNo || '详情' }}</span>
       </template>
       <template #actions>
+        <el-button
+          v-if="canSeedTestCase"
+          :loading="eligibilityLoading"
+          :disabled="!eligibility?.replayable"
+          :title="seedReason"
+          @click="seedTestCase"
+          >沉淀为测试用例</el-button
+        >
         <el-button v-if="canRun" type="primary" :loading="running" @click="triggerRun"
           >运行任务</el-button
         >
@@ -28,9 +36,23 @@
           }}</span>
           <span>Agent：{{ detail.agentName || `#${task.agentId}` }}</span>
           <span class="refresh-state">{{
-            refreshing ? '正在刷新…' : isActive ? '每 3 秒自动刷新' : '执行已结束'
+            refreshing ? '正在刷新…' : isActive ? '页面可见时每 3 秒刷新' : '执行已结束'
           }}</span>
         </div>
+
+        <el-alert v-if="refreshError" type="warning" :closable="false" :title="refreshError" />
+        <p v-if="canSeedTestCase" class="seed-reason" role="status">{{ seedReason }}</p>
+        <nav class="detail-tabs" aria-label="任务详情导航">
+          <button
+            v-for="tab in detailTabs"
+            :key="tab.key"
+            type="button"
+            :aria-current="activeTab === tab.key ? 'page' : undefined"
+            @click="setTab(tab.key)"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
 
         <div class="metric-grid">
           <article class="surface-card metric-card metric-token">
@@ -59,11 +81,21 @@
           </article>
         </div>
 
-        <div class="execution-layout">
+        <TaskEvidencePanel
+          v-if="activeTab === 'evidence'"
+          :detail="detail"
+          @open-trace="setTab('trace')"
+        />
+        <TaskTracePanel v-if="activeTab === 'trace'" :detail="detail" />
+        <div
+          v-if="activeTab !== 'evidence'"
+          class="execution-layout"
+          :class="{ 'execution-layout--audit': activeTab === 'trace' }"
+        >
           <article class="surface-card trail-card">
             <div class="card-heading">
               <div>
-                <h2>执行轨迹</h2>
+                <h2>{{ activeTab === 'trace' ? '业务调用审计' : '执行轨迹' }}</h2>
                 <p>最新轮次优先，默认展开最近 2 轮</p>
               </div>
               <div class="trail-heading-tools">
@@ -149,7 +181,7 @@
             </button>
           </article>
 
-          <aside class="side-column">
+          <aside v-if="activeTab === 'details'" class="side-column">
             <article class="surface-card snapshot-card">
               <div class="card-heading">
                 <div>
@@ -197,17 +229,22 @@
               <div class="card-heading">
                 <div><h2>输出预览</h2></div>
               </div>
-              <template v-if="detail.output">
+              <template v-if="task.executionMode === 'ISOLATED'">
+                <strong>隔离候选产物</strong>
+                <p>本次执行只捕获候选产物，不表示已修改业务文档。</p>
+                <el-button type="primary" plain @click="setTab('evidence')">查看候选产物</el-button>
+              </template>
+              <template v-else-if="detail.output">
                 <strong>{{ outputTitle }}</strong>
                 <p>{{ task.resultSummary || '任务已生成业务结果。' }}</p>
                 <el-button
-                  v-if="detail.output.type === 'DRAFT_DOCUMENT'"
+                  v-if="detail.output.type === 'DRAFT_DOCUMENT' && canReadDocument"
                   type="primary"
                   plain
                   @click="openOutputDocument"
                   >打开草稿文档</el-button
                 >
-                <template v-else>
+                <template v-else-if="detail.output.type === 'CHANGE_REQUEST'">
                   <el-button
                     v-if="canOpenChangeRequest"
                     type="primary"
@@ -231,7 +268,7 @@
           </aside>
         </div>
 
-        <article class="surface-card instruction-card">
+        <article v-if="activeTab === 'details'" class="surface-card instruction-card">
           <h2>任务指令</h2>
           <p>{{ task.instruction }}</p>
           <div v-if="task.focusRegions.length" class="focus-regions">
@@ -254,10 +291,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { normalizeApiError } from '@/api/errors'
 import {
   getTaskExecutionDetail,
+  getReplayEligibility,
   rerunTask,
   runTask,
   terminateTask,
 } from '@/features/task/api/task-api'
+import TaskEvidencePanel from '@/features/task/components/TaskEvidencePanel.vue'
+import TaskTracePanel from '@/features/task/components/TaskTracePanel.vue'
+import type { ReplayEligibility } from '@/features/task/engineering-types'
 import type { TaskExecutionDetail, TaskStatus } from '@/features/task/types'
 import DataState from '@/shared/components/DataState.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
@@ -293,11 +334,28 @@ const detail = ref<TaskExecutionDetail | null>(null),
   terminating = ref(false),
   rerunning = ref(false),
   error = ref(''),
+  refreshError = ref(''),
   trailFilter = ref<TrailFilter>('ALL'),
   showAllRounds = ref(false),
   expandedRoundIds = ref<Set<string>>(new Set())
 let controller: AbortController | null = null,
   pollTimer: number | null = null
+let failures = 0
+let eligibilityController: AbortController | null = null
+const eligibility = ref<ReplayEligibility | null>(null),
+  eligibilityLoading = ref(false),
+  eligibilityError = ref('')
+const detailTabs = [
+  { key: 'details', label: '任务详情' },
+  { key: 'evidence', label: '执行证据' },
+  { key: 'trace', label: '调用审计与 Trace' },
+]
+const activeTab = computed(() =>
+  route.query.tab === 'evidence' || route.query.tab === 'trace' ? route.query.tab : 'details',
+)
+function setTab(tab: string) {
+  void router.replace({ query: { ...route.query, tab: tab === 'details' ? undefined : tab } })
+}
 const spaceId = computed(() => route.params.spaceId as string),
   taskId = computed(() => route.params.taskId as string),
   task = computed(() => detail.value?.task ?? null)
@@ -310,6 +368,30 @@ const activeStatuses: TaskStatus[] = [
   'CANCELING',
 ]
 const isActive = computed(() => Boolean(task.value && activeStatuses.includes(task.value.status)))
+const inCurrentSpace = computed(() => String(workspace.currentSpaceId) === String(spaceId.value))
+const canReadDocument = computed(
+  () => inCurrentSpace.value && workspace.hasPermission(SPACE_PERMISSIONS.DOCUMENT_READ),
+)
+const canSeedTestCase = computed(() =>
+  Boolean(
+    task.value?.status === 'COMPLETED' &&
+    task.value.executionMode === 'LIVE' &&
+    inCurrentSpace.value &&
+    workspace.hasPermission(SPACE_PERMISSIONS.TASK_READ) &&
+    workspace.hasPermission(SPACE_PERMISSIONS.EVALUATION_READ) &&
+    workspace.hasPermission(SPACE_PERMISSIONS.EVALUATION_MANAGE),
+  ),
+)
+const seedReason = computed(() =>
+  !canReadDocument.value
+    ? '需要文档读取权限才能核验冻结输入。'
+    : eligibilityLoading.value
+      ? '正在核验冻结输入与回放资格…'
+      : eligibilityError.value ||
+        (eligibility.value?.replayable
+          ? '冻结输入可回放，可进入测试用例目录继续沉淀。'
+          : `暂不可沉淀：${eligibility.value?.reasonCode || '资格尚未核验'}`),
+)
 const canTerminate = computed(() =>
   Boolean(
     task.value &&
@@ -319,7 +401,9 @@ const canTerminate = computed(() =>
 )
 const canRun = computed(() =>
   Boolean(
-    task.value?.status === 'PENDING' && workspace.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
+    task.value?.status === 'PENDING' &&
+    task.value.executionMode === 'LIVE' &&
+    workspace.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
   ),
 )
 const canOpenChangeRequest = computed(() =>
@@ -327,7 +411,9 @@ const canOpenChangeRequest = computed(() =>
 )
 const canRerun = computed(() =>
   Boolean(
-    task.value?.status === 'FAILED' && workspace.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
+    task.value?.status === 'FAILED' &&
+    task.value.executionMode === 'LIVE' &&
+    workspace.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
   ),
 )
 const headerDescription = computed(() =>
@@ -522,40 +608,114 @@ watch(
   },
   { immediate: true },
 )
-watch(taskId, () => {
-  trailFilter.value = 'ALL'
-  showAllRounds.value = false
-  expandedRoundIds.value = new Set()
-})
+watch(
+  [spaceId, taskId],
+  () => {
+    stopPolling()
+    detail.value = null
+    failures = 0
+    refreshError.value = ''
+    trailFilter.value = 'ALL'
+    showAllRounds.value = false
+    expandedRoundIds.value = new Set()
+    void loadDetail()
+  },
+  { immediate: true },
+)
 
-onMounted(loadDetail)
-onBeforeUnmount(stopPolling)
+watch([taskId, canSeedTestCase, canReadDocument], () => void checkEligibility(), {
+  immediate: true,
+})
+onMounted(() => document.addEventListener('visibilitychange', visibilityChanged))
+onBeforeUnmount(() => {
+  stopPolling()
+  eligibilityController?.abort()
+  document.removeEventListener('visibilitychange', visibilityChanged)
+})
+function visibilityChanged() {
+  if (document.hidden) stopPolling()
+  else if (isActive.value || !detail.value) void loadDetail(Boolean(detail.value))
+}
 function stopPolling() {
   controller?.abort()
+  loading.value = false
+  refreshing.value = false
   if (pollTimer !== null) window.clearTimeout(pollTimer)
   pollTimer = null
 }
 function schedulePoll() {
   if (pollTimer !== null) window.clearTimeout(pollTimer)
-  pollTimer = isActive.value ? window.setTimeout(() => loadDetail(true), 3000) : null
+  const delay = failures ? [5000, 10000, 20000, 30000][Math.min(failures - 1, 3)] : 3000
+  pollTimer =
+    isActive.value && !document.hidden ? window.setTimeout(() => loadDetail(true), delay) : null
 }
 async function loadDetail(background = false) {
   controller?.abort()
-  controller = new AbortController()
+  if (pollTimer !== null) window.clearTimeout(pollTimer)
+  pollTimer = null
+  const request = new AbortController()
+  controller = request
+  const requestedTaskId = taskId.value,
+    requestedSpaceId = spaceId.value
   if (background) refreshing.value = true
   else loading.value = true
   if (!background) error.value = ''
   try {
-    detail.value = await getTaskExecutionDetail(taskId.value, controller.signal)
+    const response = await getTaskExecutionDetail(requestedTaskId, request.signal)
+    if (request.signal.aborted) return
+    if (
+      String(response.task.id) !== requestedTaskId ||
+      String(response.task.spaceId) !== requestedSpaceId
+    )
+      throw new Error('任务关联身份不一致')
+    detail.value = response
+    failures = 0
+    refreshError.value = ''
   } catch (e) {
-    if (!controller.signal.aborted && !detail.value) error.value = normalizeApiError(e).message
+    if (!request.signal.aborted) {
+      failures++
+      if (!detail.value) error.value = normalizeApiError(e).message
+      else
+        refreshError.value = `刷新失败：${normalizeApiError(e).message}；保留上次业务记录，稍后重试。`
+    }
   } finally {
-    if (!controller.signal.aborted) {
+    if (!request.signal.aborted) {
       loading.value = false
       refreshing.value = false
       schedulePoll()
     }
   }
+}
+async function checkEligibility() {
+  eligibilityController?.abort()
+  eligibility.value = null
+  eligibilityError.value = ''
+  eligibilityLoading.value = false
+  if (!canSeedTestCase.value || !canReadDocument.value) return false
+  const request = new AbortController()
+  eligibilityController = request
+  eligibilityLoading.value = true
+  const currentId = taskId.value
+  try {
+    const result = await getReplayEligibility(currentId, request.signal)
+    if (request.signal.aborted || !canSeedTestCase.value) return false
+    if (String(result.sourceTaskId) !== currentId) throw new Error('回放资格关联身份不一致')
+    eligibility.value = result
+    return result.replayable
+  } catch (e) {
+    if (!request.signal.aborted) eligibilityError.value = normalizeApiError(e).message
+    return false
+  } finally {
+    if (!request.signal.aborted) eligibilityLoading.value = false
+  }
+}
+async function seedTestCase() {
+  if (!(await checkEligibility())) return
+  void router.push({
+    name: 'evaluation-test-cases',
+    params: { spaceId: spaceId.value },
+    query: { sourceTaskId: taskId.value },
+  })
 }
 async function terminate() {
   try {
@@ -594,7 +754,6 @@ async function rerun() {
     const rerunResult = await rerunTask(taskId.value)
     ElMessage.success('新任务已进入执行队列')
     await router.replace(`/spaces/${spaceId.value}/tasks/${rerunResult.id}`)
-    await loadDetail()
   } catch (e) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(normalizeApiError(e).message)
   } finally {
@@ -668,6 +827,10 @@ function toolSourceLabel(
   return '调用工具'
 }
 function toolDisplayName(toolName: string) {
+  if (task.value?.executionMode === 'ISOLATED') {
+    if (toolName === 'workbench_apply_draft_changes') return '捕获候选草稿变更'
+    if (toolName === 'workbench_propose_changes') return '捕获候选变更提案'
+  }
   const names: Record<string, string> = {
     workbench_get_task_context: '获取任务上下文',
     workbench_read_document_fragment: '读取文档片段',
@@ -713,6 +876,37 @@ function durationBetween(start: string | null, end: string | null) {
   color: var(--adw-color-primary);
   background: none;
   cursor: pointer;
+}
+.detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  border-bottom: 1px solid var(--adw-border-color);
+  margin: 18px 0;
+}
+.detail-tabs button {
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--adw-text-secondary);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+.detail-tabs [aria-current='page'] {
+  border-bottom-color: var(--adw-color-primary);
+  color: var(--adw-color-primary);
+  font-weight: 600;
+}
+.seed-reason {
+  margin: 0;
+  color: var(--adw-text-secondary);
+  font-size: 12px;
+  text-align: right;
+}
+.execution-layout.execution-layout--audit {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 18px;
 }
 .status-line {
   display: flex;

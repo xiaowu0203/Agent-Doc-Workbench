@@ -1,5 +1,6 @@
 import { request } from '@/api/client'
 import type { EntityId } from '@/features/workspace/types'
+import type { EvaluationTaskLink } from '@/features/task/engineering-types'
 import type {
   DatasetCaseBinding,
   DatasetCaseBindingsRequest,
@@ -47,6 +48,19 @@ import type {
   TestCaseVersion,
   TestCaseVersionCreateRequest,
 } from '@/features/evaluation/types'
+
+export function getEvaluationTaskLink(
+  spaceId: EntityId,
+  taskId: EntityId,
+  signal?: AbortSignal,
+): Promise<EvaluationTaskLink | null> {
+  return request<EvaluationTaskLink | null>({
+    method: 'GET',
+    url: `/evaluation/task-links/${taskId}`,
+    params: { spaceId },
+    signal,
+  })
+}
 
 export function searchDatasets(
   payload: EvaluationResourceSearch,

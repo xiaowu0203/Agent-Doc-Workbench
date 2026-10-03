@@ -6,6 +6,8 @@ import type { PlatformRoleKey } from '@/shared/constants/platform-roles'
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string
   readonly VITE_GATEWAY_URL: string
+  readonly VITE_JAEGER_UI_URL?: string
+  readonly VITE_JAEGER_UI_ACCESS_CONTROL_CONFIRMED?: string
 }
 
 interface ImportMeta {

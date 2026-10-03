@@ -611,6 +611,13 @@ public class TaskService {
         return entity;
     }
 
+    /** 页面只读准入，不签发 Capability，也不隐含创建或执行权限。 */
+    public ReplayEligibilityVO readReplayEligibility(Long id) {
+        TaskEntity source = require(id);
+        requirePermission(source.getSpaceId(), TASK_READ);
+        return resolveReplayEligibility(source);
+    }
+
     /**
      * 查询任务是否满足Replay回放准入条件；所有拒绝场景返回稳定原因码，不猜测来源执行。
      * 校验清单：权限、源任务必须终态、血缘类型支持、根任务ID、输入快照完整且哈希合法、文档快照校验、Agent执行快照校验（版本、有效性、外部MCP禁止）。
@@ -622,6 +629,10 @@ public class TaskService {
         requirePermission(source.getSpaceId(), TASK_READ);
         requirePermission(source.getSpaceId(), TASK_CREATE);
         requirePermission(source.getSpaceId(), EVALUATION_RUN);
+        return resolveReplayEligibility(source);
+    }
+
+    private ReplayEligibilityVO resolveReplayEligibility(TaskEntity source) {
         TaskLineageType lineage;
         try {
             lineage = TaskLineageType.valueOf(source.getLineageType());
@@ -654,7 +665,7 @@ public class TaskService {
                 || !source.getDocumentContentSha256().equals(frozenDocument.contentSha256())) {
             return ineligible(source, lineage, "DOCUMENT_SNAPSHOT_INVALID", null);
         }
-        AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(id));
+        AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(source.getId()));
         if (identity.executionCount() == 0) {
             return ineligible(source, lineage, "AGENT_EXECUTION_MISSING", identity);
         }

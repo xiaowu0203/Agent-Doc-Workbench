@@ -9,6 +9,7 @@ import com.agentdoc.evaluation.pojo.param.ExperimentSearchParam;
 import com.agentdoc.evaluation.pojo.vo.DatasetCaseBindingVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationCaseAttemptHistoryVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationRunSummaryVO;
+import com.agentdoc.evaluation.pojo.vo.EvaluationTaskLinkVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseEvaluatorBindingVO;
 import com.agentdoc.evaluation.service.EvaluationWorkbenchQueryService;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -33,6 +35,12 @@ import java.util.List;
 public class EvaluationWorkbenchController {
 
     private final EvaluationWorkbenchQueryService queryService;
+
+    @Operation(summary = "查询执行 Task 的评估来源与返回身份")
+    @GetMapping("/task-links/{taskId}")
+    public Result<EvaluationTaskLinkVO> taskLinks(@PathVariable Long taskId, @RequestParam Long spaceId) {
+        return Result.ok(queryService.taskLinks(spaceId, taskId));
+    }
 
     @Operation(summary = "分页搜索 EvaluationRun")
     @PostMapping("/runs/search")

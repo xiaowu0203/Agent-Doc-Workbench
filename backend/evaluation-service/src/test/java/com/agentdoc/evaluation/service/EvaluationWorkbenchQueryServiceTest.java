@@ -51,10 +51,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -88,6 +90,99 @@ class EvaluationWorkbenchQueryServiceTest {
     @Mock private TestCaseEvaluatorMapper testCaseEvaluatorMapper;
     @Mock private SpaceAccessService spaceAccessService;
     @InjectMocks private EvaluationWorkbenchQueryService service;
+
+    @Test
+    void taskLinksRequireBothPermissionsBeforeQuerying() {
+        doNothing().when(spaceAccessService).requirePermission(9L, TASK_READ);
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN, "无评估读取权限"))
+                .when(spaceAccessService).requirePermission(9L, EVALUATION_READ);
+        assertThatThrownBy(() -> service.taskLinks(9L, 100L)).isInstanceOf(BusinessException.class);
+        verify(spaceAccessService).requirePermission(9L, TASK_READ);
+        verifyNoInteractions(attemptMapper, caseRunMapper, runMapper);
+    }
+
+    @Test
+    void unlinkedTaskReturnsNullAndQueryIsScopedByExecutionIdentity() {
+        when(attemptMapper.selectOne(any())).thenAnswer(call -> {
+            LambdaQueryWrapper<EvaluationCaseAttemptEntity> query = call.getArgument(0);
+            assertThat(query.getSqlSegment()).contains("space_id =", "execution_task_id =")
+                    .doesNotContain("root_task_id", "replay_task_id");
+            assertThat(query.getParamNameValuePairs().values()).contains(9L, 100L);
+            return null;
+        });
+        assertThat(service.taskLinks(9L, 100L)).isNull();
+        verifyNoInteractions(caseRunMapper, runMapper, variantMapper, experimentMapper);
+    }
+
+    @Test
+    void taskLinksUseFrozenCaseAndBidirectionalExperimentReferences() {
+        var run = stubTaskLink();
+        run.setExperimentVariantId(60L);
+        var variant = new ExperimentVariantEntity();
+        variant.setId(60L); variant.setSpaceId(9L); variant.setExperimentId(70L);
+        variant.setEvaluationRunId(1L); variant.setVariantKey("candidate");
+        var experiment = new ExperimentEntity();
+        experiment.setId(70L); experiment.setSpaceId(9L);
+        when(variantMapper.selectById(60L)).thenReturn(variant);
+        when(experimentMapper.selectById(70L)).thenReturn(experiment);
+
+        var links = service.taskLinks(9L, 100L);
+
+        assertThat(links.sourceTaskId()).isEqualTo(80L);
+        assertThat(links.testCaseId()).isEqualTo(50L);
+        assertThat(links.runId()).isEqualTo(1L);
+        assertThat(links.experimentId()).isEqualTo(70L);
+        assertThat(links.variantKey()).isEqualTo("candidate");
+    }
+
+    @Test
+    void ordinaryReplayHasNoInventedExperiment() {
+        stubTaskLink();
+        assertThat(service.taskLinks(9L, 100L).experimentId()).isNull();
+        verifyNoInteractions(variantMapper, experimentMapper);
+    }
+
+    @Test
+    void taskLinksRejectForeignSpaceAndBrokenRunRelations() {
+        var attempt = attempt(90L, 1);
+        attempt.setExecutionTaskId(100L); attempt.setSpaceId(9L); attempt.setRunId(1L);
+        when(attemptMapper.selectOne(any())).thenReturn(attempt);
+        var foreignCase = caseRun(31L, 1L, "COMPLETED");
+        foreignCase.setSpaceId(8L);
+        when(caseRunMapper.selectById(31L)).thenReturn(foreignCase);
+        assertThatThrownBy(() -> service.taskLinks(9L, 100L)).isInstanceOf(BusinessException.class);
+        foreignCase.setSpaceId(9L); foreignCase.setRunId(2L);
+        assertThatThrownBy(() -> service.taskLinks(9L, 100L)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(runMapper, testCaseVersionMapper, variantMapper);
+    }
+
+    @Test
+    void taskLinksRejectVariantLinkedToAnotherRun() {
+        stubTaskLink().setExperimentVariantId(60L);
+        var variant = new ExperimentVariantEntity();
+        variant.setId(60L); variant.setSpaceId(9L); variant.setEvaluationRunId(2L);
+        when(variantMapper.selectById(60L)).thenReturn(variant);
+        assertThatThrownBy(() -> service.taskLinks(9L, 100L)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(experimentMapper);
+    }
+
+    private EvaluationRunEntity stubTaskLink() {
+        var attempt = attempt(90L, 1);
+        attempt.setExecutionTaskId(100L); attempt.setSpaceId(9L); attempt.setRunId(1L);
+        when(attemptMapper.selectOne(any())).thenReturn(attempt);
+        var caseRun = caseRun(31L, 1L, "COMPLETED");
+        caseRun.setTestCaseVersionId(40L);
+        when(caseRunMapper.selectById(31L)).thenReturn(caseRun);
+        var run = run(1L);
+        when(runMapper.selectById(1L)).thenReturn(run);
+        var version = new EvaluationTestCaseVersionEntity();
+        version.setId(40L); version.setSpaceId(9L); version.setTestCaseId(50L); version.setSourceTaskId(80L);
+        when(testCaseVersionMapper.selectById(40L)).thenReturn(version);
+        var testCase = new EvaluationTestCaseEntity();
+        testCase.setId(50L); testCase.setSpaceId(9L);
+        when(testCaseMapper.selectById(50L)).thenReturn(testCase);
+        return run;
+    }
 
     @Test
     void batchesRunNamesAndCountsWithoutExpandingAttempts() {

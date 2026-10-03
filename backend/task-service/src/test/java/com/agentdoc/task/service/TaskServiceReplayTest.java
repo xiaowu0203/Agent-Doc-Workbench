@@ -79,6 +79,9 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_RUN;
 
 @ExtendWith(MockitoExtension.class)
 class TaskServiceReplayTest {
@@ -334,6 +337,56 @@ class TaskServiceReplayTest {
                         DOCUMENT_ID, 7L, source.getDocumentContentSha256(), 50L)));
         when(agentFeign.getReplayIdentity(SOURCE_TASK_ID)).thenReturn(Result.ok(
                 new AgentExecutionReplayIdentityVO(1, 901L, 3, "c".repeat(64), true, false)));
+    }
+
+    @Test
+    void readEligibilityDoesNotRequireTaskCreateOrEvaluationRunAndHasNoExecutionSideEffects() {
+        prepareManualReplaySource();
+        assertThat(service.readReplayEligibility(SOURCE_TASK_ID).replayable()).isTrue();
+        verify(documentFeign).checkSpacePermission(SPACE_ID, TASK_READ);
+        verify(documentFeign, never()).checkSpacePermission(SPACE_ID, TASK_CREATE);
+        verify(documentFeign, never()).checkSpacePermission(SPACE_ID, EVALUATION_RUN);
+        verify(taskMapper, never()).insert(any(TaskEntity.class));
+        verify(authFeign, never()).issueTaskCapability(any());
+        verify(messagePublisher, never()).publish(anyLong());
+    }
+
+    @Test
+    void readEligibilityPreservesFrozenDocumentPermissionDenial() {
+        TaskEntity source = sourceTask();
+        when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(source);
+        when(documentFeign.checkSpacePermission(SPACE_ID, TASK_READ)).thenReturn(Result.ok());
+        when(documentFeign.getVersionExecutionContext(DOCUMENT_ID, 7L, source.getDocumentContentSha256()))
+                .thenReturn(Result.fail(ErrorCode.FORBIDDEN));
+
+        assertThatThrownBy(() -> service.readReplayEligibility(SOURCE_TASK_ID))
+                .isInstanceOf(BusinessException.class);
+        verify(agentFeign, never()).getReplayIdentity(anyLong());
+        verify(taskMapper, never()).insert(any(TaskEntity.class));
+        verify(authFeign, never()).issueTaskCapability(any());
+        verify(messagePublisher, never()).publish(anyLong());
+    }
+
+    @Test
+    void readEligibilityRejectsMissingTaskReadBeforeResolvingSnapshots() {
+        when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(sourceTask());
+        when(documentFeign.checkSpacePermission(SPACE_ID, TASK_READ)).thenReturn(Result.fail(ErrorCode.FORBIDDEN));
+        assertThatThrownBy(() -> service.readReplayEligibility(SOURCE_TASK_ID)).isInstanceOf(BusinessException.class);
+        verify(documentFeign, never()).getVersionExecutionContext(anyLong(), anyLong(), any());
+        verify(agentFeign, never()).getReplayIdentity(anyLong());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"task:create", "evaluation:run"})
+    void replayCreationStillRequiresEachExecutionPermission(String deniedPermission) {
+        when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(sourceTask());
+        when(documentFeign.checkSpacePermission(eq(SPACE_ID), any())).thenAnswer(call ->
+                deniedPermission.equals(call.getArgument(1)) ? Result.fail(ErrorCode.FORBIDDEN) : Result.ok());
+        assertThatThrownBy(() -> service.createReplay(SOURCE_TASK_ID, new ReplayCreateDTO("manual-denied")))
+                .isInstanceOf(BusinessException.class);
+        verify(taskMapper, never()).insert(any(TaskEntity.class));
+        verify(authFeign, never()).issueTaskCapability(any());
+        verify(messagePublisher, never()).publish(anyLong());
     }
 
     @Test
