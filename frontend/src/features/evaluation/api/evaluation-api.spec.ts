@@ -11,6 +11,22 @@ beforeEach(() => {
 })
 
 describe('evaluation HTTP contracts', () => {
+  it('updates draft configuration via version resources without changing frozen source fields', async () => {
+    const signal = new AbortController().signal
+    const evaluator = { configSchemaVersion: 1, configJson: '{}', resultSchemaVersion: 1 }
+    const testCase = {
+      expectedSchemaVersion: 1,
+      expectedJson: '{}',
+      sourceType: 'LIVE',
+      sanitizationNote: null,
+    }
+    await api.updateEvaluatorVersion('21', evaluator, signal)
+    await api.updateTestCaseVersion('22', testCase, signal)
+    expect(vi.mocked(request).mock.calls.map(([config]) => config)).toEqual([
+      { method: 'PUT', url: '/evaluation/evaluator-versions/21', data: evaluator, signal },
+      { method: 'PUT', url: '/evaluation/test-case-versions/22', data: testCase, signal },
+    ])
+  })
   it('uses space-scoped POST searches and explicit default pagination', async () => {
     const signal = new AbortController().signal
     const payload = {

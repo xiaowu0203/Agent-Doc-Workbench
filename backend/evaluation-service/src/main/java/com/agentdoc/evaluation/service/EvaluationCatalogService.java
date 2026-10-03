@@ -25,10 +25,12 @@ import com.agentdoc.evaluation.pojo.dto.DatasetVersionCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationDatasetCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationTestCaseCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseEvaluatorBindingDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseEvaluatorBindingsDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.param.EvaluationResourceSearchParam;
 import com.agentdoc.evaluation.pojo.param.EvaluationVersionSearchParam;
 import com.agentdoc.evaluation.pojo.entity.EvaluationDatasetCaseEntity;
@@ -46,8 +48,10 @@ import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -733,6 +737,69 @@ public class EvaluationCatalogService {
         version.setStatus(EvaluationVersionStatus.PUBLISHED.name());
         version.setPublishedAt(LocalDateTime.now());
         evaluatorVersionMapper.updateById(version);
+        return EvaluatorVersionVO.from(version);
+    }
+
+    /** 更新草稿预期配置，冻结来源不参与写入。 */
+    @Transactional
+    public TestCaseVersionVO updateTestCaseVersion(Long id, TestCaseVersionUpdateDTO dto) {
+        EvaluationTestCaseVersionEntity version = requireDraftTestCaseVersion(id);
+        spaceAccessService.requirePermission(version.getSpaceId(), EVALUATION_MANAGE);
+        EvaluationTestCaseEntity parent = requireTestCase(version.getTestCaseId());
+        if (!version.getSpaceId().equals(parent.getSpaceId())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "TestCaseVersion 空间归属不一致");
+        }
+        if (!TaskExecutionMode.LIVE.name().equals(dto.sourceType())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "首版测试用例仅支持 LIVE 来源");
+        }
+        if (JsonUtils.parseStrict(dto.expectedJson(), JsonNode.class) == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "预期结果 JSON 语法无效");
+        }
+        int changed = testCaseVersionMapper.update(null, new LambdaUpdateWrapper<EvaluationTestCaseVersionEntity>()
+                .eq(EvaluationTestCaseVersionEntity::getId, id)
+                .eq(EvaluationTestCaseVersionEntity::getStatus, EvaluationVersionStatus.DRAFT.name())
+                .set(EvaluationTestCaseVersionEntity::getExpectedSchemaVersion, dto.expectedSchemaVersion())
+                .set(EvaluationTestCaseVersionEntity::getExpectedJson, dto.expectedJson())
+                .set(EvaluationTestCaseVersionEntity::getSourceType, dto.sourceType())
+                .set(EvaluationTestCaseVersionEntity::getSanitizationNote, trim(dto.sanitizationNote())));
+        if (changed != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, "草稿状态已变化，请重新加载");
+        }
+        version.setExpectedSchemaVersion(dto.expectedSchemaVersion());
+        version.setExpectedJson(dto.expectedJson());
+        version.setSourceType(dto.sourceType());
+        version.setSanitizationNote(trim(dto.sanitizationNote()));
+        return TestCaseVersionVO.from(version);
+    }
+
+    /** 更新评估器草稿配置，实现版本保持创建时取值。 */
+    @Transactional
+    public EvaluatorVersionVO updateEvaluatorVersion(Long id, EvaluatorVersionUpdateDTO dto) {
+        EvaluatorVersionEntity version = requireEvaluatorVersion(id);
+        spaceAccessService.requirePermission(version.getSpaceId(), EVALUATION_MANAGE);
+        EvaluatorEntity parent = requireEvaluator(version.getEvaluatorId());
+        if (!version.getSpaceId().equals(parent.getSpaceId())
+                || !version.getEvaluatorKey().equals(parent.getEvaluatorKey())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "EvaluatorVersion 资源归属不一致");
+        }
+        if (!EvaluationVersionStatus.DRAFT.name().equals(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "只有 DRAFT 评估器版本可以修改");
+        }
+        if (JsonUtils.parseStrict(dto.configJson(), JsonNode.class) == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "评估器配置 JSON 语法无效");
+        }
+        int changed = evaluatorVersionMapper.update(null, new LambdaUpdateWrapper<EvaluatorVersionEntity>()
+                .eq(EvaluatorVersionEntity::getId, id)
+                .eq(EvaluatorVersionEntity::getStatus, EvaluationVersionStatus.DRAFT.name())
+                .set(EvaluatorVersionEntity::getConfigSchemaVersion, dto.configSchemaVersion())
+                .set(EvaluatorVersionEntity::getConfigJson, dto.configJson())
+                .set(EvaluatorVersionEntity::getResultSchemaVersion, dto.resultSchemaVersion()));
+        if (changed != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, "草稿状态已变化，请重新加载");
+        }
+        version.setConfigSchemaVersion(dto.configSchemaVersion());
+        version.setConfigJson(dto.configJson());
+        version.setResultSchemaVersion(dto.resultSchemaVersion());
         return EvaluatorVersionVO.from(version);
     }
 

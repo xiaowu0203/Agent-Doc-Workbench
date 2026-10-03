@@ -8,9 +8,11 @@ import com.agentdoc.evaluation.pojo.dto.DatasetVersionCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationDatasetCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationTestCaseCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseEvaluatorBindingsDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.param.EvaluationResourceSearchParam;
 import com.agentdoc.evaluation.pojo.param.EvaluationVersionSearchParam;
 import com.agentdoc.evaluation.pojo.vo.DatasetVersionVO;
@@ -206,6 +208,13 @@ public class EvaluationCatalogController {
         return Result.ok(catalogService.createTestCaseVersion(dto));
     }
 
+    @Operation(summary = "修改 TestCase DRAFT 配置", description = "仅修改草稿预期与脱敏说明，不改动冻结来源")
+    @PutMapping("/test-case-versions/{id}")
+    public Result<TestCaseVersionVO> updateTestCaseVersion(@PathVariable Long id,
+            @Valid @RequestBody TestCaseVersionUpdateDTO dto) {
+        return Result.ok(catalogService.updateTestCaseVersion(id, dto));
+    }
+
     @Operation(summary = "替换 DRAFT TestCase 的评估器绑定", description = "仅草稿版本允许；全量替换本用例版本绑定的评估器列表")
     @PutMapping("/test-case-versions/{id}/evaluators")
     public Result<TestCaseVersionVO> replaceTestCaseEvaluators(
@@ -231,6 +240,13 @@ public class EvaluationCatalogController {
     @PostMapping("/evaluator-versions")
     public Result<EvaluatorVersionVO> createEvaluatorVersion(@Valid @RequestBody EvaluatorVersionCreateDTO dto) {
         return Result.ok(catalogService.createEvaluatorVersion(dto));
+    }
+
+    @Operation(summary = "修改 Evaluator DRAFT 配置", description = "仅修改草稿配置，不改动实现版本")
+    @PutMapping("/evaluator-versions/{id}")
+    public Result<EvaluatorVersionVO> updateEvaluatorVersion(@PathVariable Long id,
+            @Valid @RequestBody EvaluatorVersionUpdateDTO dto) {
+        return Result.ok(catalogService.updateEvaluatorVersion(id, dto));
     }
 
     @Operation(summary = "发布 Evaluator 版本", description = "评估器草稿版本转正，指标契约冻结，可被正式测试用例版本绑定使用")

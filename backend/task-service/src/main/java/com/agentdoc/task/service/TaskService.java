@@ -1247,7 +1247,7 @@ public class TaskService {
         if (!source.getSpaceId().equals(expectedSpaceId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "来源任务不存在");
         }
-        ReplayEligibilityVO eligibility = replayEligibility(id);
+        ReplayEligibilityVO eligibility = readReplayEligibility(id);
         return new ReplaySourceVO(eligibility.replayable(), eligibility.reasonCode(), eligibility.sourceTaskId(),
                 eligibility.sourceExecutionId(), source.getSpaceId(), source.getAgentId(), source.getTokenBudget(),
                 eligibility.rootTaskId(),

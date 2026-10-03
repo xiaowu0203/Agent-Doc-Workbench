@@ -352,6 +352,17 @@ class TaskServiceReplayTest {
     }
 
     @Test
+    void catalogSourceReadDoesNotRequireExecutionPermissions() {
+        prepareManualReplaySource();
+        assertThat(service.replaySource(SOURCE_TASK_ID, SPACE_ID).replayable()).isTrue();
+        verify(documentFeign, never()).checkSpacePermission(SPACE_ID, TASK_CREATE);
+        verify(documentFeign, never()).checkSpacePermission(SPACE_ID, EVALUATION_RUN);
+        verify(taskMapper, never()).insert(any(TaskEntity.class));
+        verify(authFeign, never()).issueTaskCapability(any());
+        verify(messagePublisher, never()).publish(anyLong());
+    }
+
+    @Test
     void readEligibilityPreservesFrozenDocumentPermissionDenial() {
         TaskEntity source = sourceTask();
         when(taskMapper.selectById(SOURCE_TASK_ID)).thenReturn(source);

@@ -30,6 +30,10 @@
 
 ## 2. 归档准入矩阵
 
+Catalog 草稿配置使用 `PUT /api/evaluation/evaluator-versions/{id}` 和 `PUT /api/evaluation/test-case-versions/{id}`，均从版本解析 Space，要求 `evaluation:manage`、父资源未归档及版本为 DRAFT。Evaluator 更新 configSchemaVersion/configJson/resultSchemaVersion；TestCase 更新 expectedSchemaVersion/expectedJson/sourceType/sanitizationNote，首版 sourceType 仅允许 LIVE。来源 Task/Execution、文档与输入/执行快照以及实现版本保持创建时冻结，不能经更新载荷替换。更新按 DRAFT 状态条件写入，已发布/归档版本和并发发布冲突返回 409。JSON 语法保存前校验，领域契约在发布时权威校验。
+
+冻结 TestCase 来源只读取 Task 与执行快照，不要求 task:create/evaluation:run；Catalog 写入口仍校验 evaluation:manage，Task 来源读取要求 task:read，冻结文档核验继续要求 document:read。页面来源选择器分页查询 COMPLETED + LIVE，只对选中项核验 ReplayEligibility，提交创建版本前重新核验。
+
 下表以既有业务校验为基线；主资源 active 表示 `archived=false`。历史读取均需要正常权限，不能以归档为由重写或删除历史结果。
 
 | 主资源/版本状态 | 新建另一版本 | 新绑定该版本 | 新 Run/Experiment 使用 | 历史读取 |

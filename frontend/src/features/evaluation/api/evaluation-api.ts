@@ -28,6 +28,7 @@ import type {
   EvaluatorCreateRequest,
   EvaluatorVersion,
   EvaluatorVersionCreateRequest,
+  EvaluatorVersionUpdateRequest,
   Experiment,
   ExperimentCreateRequest,
   ExperimentDecisionRequest,
@@ -47,6 +48,7 @@ import type {
   TestCaseEvaluatorBindingsRequest,
   TestCaseVersion,
   TestCaseVersionCreateRequest,
+  TestCaseVersionUpdateRequest,
 } from '@/features/evaluation/types'
 
 export function getEvaluationTaskLink(
@@ -233,6 +235,19 @@ export function publishTestCaseVersion(
   })
 }
 
+export function updateTestCaseVersion(
+  id: EntityId,
+  payload: TestCaseVersionUpdateRequest,
+  signal?: AbortSignal,
+): Promise<TestCaseVersion> {
+  return request<TestCaseVersion>({
+    method: 'PUT',
+    url: `/evaluation/test-case-versions/${id}`,
+    data: payload,
+    signal,
+  })
+}
+
 export function archiveTestCaseVersion(
   id: EntityId,
   signal?: AbortSignal,
@@ -323,6 +338,19 @@ export function publishEvaluatorVersion(
   return request<EvaluatorVersion>({
     method: 'PUT',
     url: `/evaluation/evaluator-versions/${id}/publish`,
+    signal,
+  })
+}
+
+export function updateEvaluatorVersion(
+  id: EntityId,
+  payload: EvaluatorVersionUpdateRequest,
+  signal?: AbortSignal,
+): Promise<EvaluatorVersion> {
+  return request<EvaluatorVersion>({
+    method: 'PUT',
+    url: `/evaluation/evaluator-versions/${id}`,
+    data: payload,
     signal,
   })
 }

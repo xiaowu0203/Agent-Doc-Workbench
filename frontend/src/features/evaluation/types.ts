@@ -257,6 +257,12 @@ export interface EvaluatorVersionCreateRequest {
   resultSchemaVersion: number
 }
 
+export type EvaluatorVersionUpdateRequest = Omit<EvaluatorVersionCreateRequest, 'evaluatorId'>
+export type TestCaseVersionUpdateRequest = Omit<
+  TestCaseVersionCreateRequest,
+  'testCaseId' | 'sourceTaskId'
+>
+
 export interface ExperimentCreateRequest {
   spaceId: EntityId
   clientRequestKey: string

@@ -21,6 +21,13 @@ import com.agentdoc.evaluation.pojo.entity.EvaluationTestCaseVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
+import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionUpdateDTO;
+import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,8 +37,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 
 @ExtendWith(MockitoExtension.class)
 class EvaluationCatalogServiceTest {
@@ -52,9 +65,108 @@ class EvaluationCatalogServiceTest {
 
     @BeforeEach
     void setUp() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "catalog-test");
+        TableInfoHelper.initTableInfo(assistant, EvaluatorVersionEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseVersionEntity.class);
         service = new EvaluationCatalogService(datasetMapper, datasetVersionMapper, datasetCaseMapper,
                 testCaseMapper, testCaseVersionMapper, testCaseEvaluatorMapper, evaluatorMapper,
                 evaluatorVersionMapper, spaceAccessService, taskFeign, evaluatorContractValidator);
+    }
+
+    @Test
+    void updatesDraftExpectedWithoutChangingFrozenSourceAndClearsNote() {
+        EvaluationTestCaseVersionEntity version = draftCase();
+        version.setSourceTaskId(88L);
+        version.setSourceInputHash("frozen-input");
+        version.setSourceExecutionHash("frozen-execution");
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(version);
+        when(testCaseMapper.selectById(32L)).thenReturn(testCase(false));
+        when(testCaseVersionMapper.update(isNull(), any())).thenReturn(1);
+
+        var result = service.updateTestCaseVersion(31L, new TestCaseVersionUpdateDTO(1, "{}", "LIVE", null));
+        assertThat(result.sourceTaskId()).isEqualTo(88L);
+        assertThat(result.sourceInputHash()).isEqualTo("frozen-input");
+        assertThat(result.sourceExecutionHash()).isEqualTo("frozen-execution");
+        assertThat(result.sanitizationNote()).isNull();
+        verify(spaceAccessService).requirePermission(9L, EVALUATION_MANAGE);
+        verify(taskFeign, never()).getReplaySource(any(), any());
+    }
+
+    @Test
+    void updatesEvaluatorDraftWithoutChangingImplementation() {
+        EvaluatorVersionEntity version = draftEvaluator();
+        when(evaluatorVersionMapper.selectById(41L)).thenReturn(version);
+        when(evaluatorMapper.selectById(42L)).thenReturn(evaluator(false));
+        when(evaluatorVersionMapper.update(isNull(), any())).thenReturn(1);
+        var result = service.updateEvaluatorVersion(41L, new EvaluatorVersionUpdateDTO(1, "{}", 1));
+        assertThat(result.implementationVersion()).isEqualTo("phase3-v1");
+        verify(spaceAccessService).requirePermission(9L, EVALUATION_MANAGE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PUBLISHED", "ARCHIVED"})
+    void frozenVersionsRejectUpdates(String status) {
+        var caseVersion = draftCase();
+        caseVersion.setStatus(status);
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(caseVersion);
+        assertThatThrownBy(() -> service.updateTestCaseVersion(31L,
+                new TestCaseVersionUpdateDTO(1, "{}", "LIVE", null))).isInstanceOf(BusinessException.class);
+        var evaluatorVersion = draftEvaluator();
+        evaluatorVersion.setStatus(status);
+        when(evaluatorVersionMapper.selectById(41L)).thenReturn(evaluatorVersion);
+        when(evaluatorMapper.selectById(42L)).thenReturn(evaluator(false));
+        assertThatThrownBy(() -> service.updateEvaluatorVersion(41L,
+                new EvaluatorVersionUpdateDTO(1, "{}", 1))).isInstanceOf(BusinessException.class);
+        verify(testCaseVersionMapper, never()).update(isNull(), any());
+        verify(evaluatorVersionMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void deniedManagerCannotWriteDraft() {
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(draftCase());
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(spaceAccessService)
+                .requirePermission(9L, EVALUATION_MANAGE);
+        assertThatThrownBy(() -> service.updateTestCaseVersion(31L,
+                new TestCaseVersionUpdateDTO(1, "{}", "LIVE", null))).isInstanceOf(BusinessException.class);
+        verify(testCaseVersionMapper, never()).update(isNull(), any());
+    }
+
+    @Test
+    void rejectsConcurrentPublishInsteadOfWritingFrozenEvaluator() {
+        when(evaluatorVersionMapper.selectById(41L)).thenReturn(draftEvaluator());
+        when(evaluatorMapper.selectById(42L)).thenReturn(evaluator(false));
+        when(evaluatorVersionMapper.update(isNull(), any())).thenReturn(0);
+        assertThatThrownBy(() -> service.updateEvaluatorVersion(41L,
+                new EvaluatorVersionUpdateDTO(1, "{}", 1))).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void rejectsInvalidJsonBeforeWritingDraft() {
+        when(evaluatorVersionMapper.selectById(41L)).thenReturn(draftEvaluator());
+        when(evaluatorMapper.selectById(42L)).thenReturn(evaluator(false));
+        assertThatThrownBy(() -> service.updateEvaluatorVersion(41L,
+                new EvaluatorVersionUpdateDTO(1, "invalid", 1))).isInstanceOf(RuntimeException.class);
+        verify(evaluatorVersionMapper, never()).update(isNull(), any());
+    }
+
+    private static EvaluationTestCaseVersionEntity draftCase() {
+        var version = new EvaluationTestCaseVersionEntity();
+        version.setId(31L);
+        version.setTestCaseId(32L);
+        version.setSpaceId(9L);
+        version.setStatus("DRAFT");
+        return version;
+    }
+
+    private static EvaluatorVersionEntity draftEvaluator() {
+        var version = new EvaluatorVersionEntity();
+        version.setId(41L);
+        version.setEvaluatorId(42L);
+        version.setSpaceId(9L);
+        version.setEvaluatorKey("artifact-contract");
+        version.setStatus("DRAFT");
+        version.setImplementationVersion("phase3-v1");
+        return version;
     }
 
     @Test
