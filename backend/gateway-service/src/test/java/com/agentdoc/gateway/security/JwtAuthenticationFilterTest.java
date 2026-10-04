@@ -1,6 +1,9 @@
 package com.agentdoc.gateway.security;
 
 import com.agentdoc.gateway.config.GatewayAuthProperties;
+import com.agentdoc.common.constant.TaskRecoveryConstant;
+import java.util.List;
+import org.springframework.http.HttpMethod;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -22,6 +25,35 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class JwtAuthenticationFilterTest {
+
+    @Test
+    void rejectsInternalRecoveryPathsBeforeWildcardWhitelistAndOptionsIncludingEncodedPaths() {
+        GatewayAuthProperties properties = new GatewayAuthProperties();
+        properties.setWhitelist(List.of("/**"));
+        JwtAuthenticationFilter denied = new JwtAuthenticationFilter(mock(JwtDecoder.class), properties);
+        for (String path : List.of("/api/auth/internal/task-recovery-capabilities",
+                "/api/auth/internal/task-draft-finalization-capabilities",
+                "/api/agent/internal/a2a/tasks/remote/recovery",
+                "/api/document/internal/task-drafts/1/finalize",
+                "/api/agent;param=1/internal/a2a/tasks/remote/recovery",
+                "/api//agent/internal/a2a/tasks/remote/recovery",
+                "/api/other/../agent/internal/a2a/tasks/remote/recovery",
+                "/api/%61gent/internal/a2a/tasks/remote/recovery")) {
+            MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.OPTIONS, path).build());
+            denied.filter(exchange, ex -> { throw new AssertionError("内部路径不能转发"); }).block();
+            assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
+        }
+    }
+
+    @Test
+    void recoveryCapabilityIsNotAUserOrGeneralServiceBearerToken() {
+        Jwt jwt = Jwt.withTokenValue("recovery").header("alg", "RS256").subject("task-service")
+                .claim(TaskRecoveryConstant.PURPOSE, TaskRecoveryConstant.A2A_PURPOSE).build();
+        when(jwtDecoder.decode("recovery")).thenReturn(jwt);
+        MockServerWebExchange exchange = exchange("/api/task/tasks/1", "Authorization", "Bearer recovery");
+        filter.filter(exchange, ex -> { throw new AssertionError("恢复凭证不能访问业务接口"); }).block();
+        assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
+    }
 
     private JwtDecoder jwtDecoder;
     private JwtAuthenticationFilter filter;

@@ -1,0 +1,97 @@
+{
+  "expectedCaseCount": 1,
+  "variantCount": 2,
+  "cases": [
+    {
+      "variantKey": "baseline",
+      "runId": 1,
+      "testCaseVersionId": 2,
+      "caseRunId": 3,
+      "attemptId": 4,
+      "taskId": 5,
+      "attemptStatus": "COMPLETED",
+      "failureCode": null
+    }
+  ],
+  "cells": [
+    {
+      "value": {
+        "testCaseVersionId": 2,
+        "metricKey": "rule.boolean",
+        "evaluatorVersionId": 6,
+        "variantKey": "baseline",
+        "runId": 1,
+        "metricId": 7,
+        "numericValue": 0,
+        "booleanValue": false,
+        "stringValue": "",
+        "unit": null,
+        "missingReason": null
+      },
+      "evidenceIds": [
+        8
+      ]
+    }
+  ],
+  "summaries": [
+    {
+      "variantKey": "baseline",
+      "metricKey": "rule.boolean",
+      "expectedCount": 1,
+      "validCount": 1,
+      "missingCount": 0,
+      "trueCount": 0,
+      "falseCount": 1,
+      "numericTotalsByUnit": {
+        "USD": 0
+      },
+      "numericMeansByUnit": {
+        "USD": 0
+      },
+      "missingReasons": {}
+    }
+  ],
+  "comparisons": [
+    {
+      "candidateVariantKey": "candidate",
+      "metricKey": "rule.boolean",
+      "pairedCount": 1,
+      "incomparableCurrencyCount": 0,
+      "improvedCount": 0,
+      "worsenedCount": 0,
+      "unchangedCount": 1,
+      "meanCandidateMinusBaseline": null,
+      "meanCandidateMinusBaselineByCurrency": {}
+    }
+  ],
+  "metricEvidence": [
+    {
+      "metricId": 7,
+      "evidenceId": 8,
+      "evidenceType": "ARTIFACT",
+      "businessId": "9",
+      "contentHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "feedback": [
+    {
+      "id": 10,
+      "variantKey": "baseline",
+      "testCaseVersionId": 2,
+      "sourceType": "MANUAL",
+      "sourceBusinessId": "10",
+      "label": "ACCEPTED",
+      "score": null
+    }
+  ],
+  "feedbackCoverage": [
+    {
+      "variantKey": "baseline",
+      "sourceType": "MANUAL",
+      "coveredCaseCount": 1
+    }
+  ],
+  "authorizedTokenBudget": 0,
+  "actualTokenUsage": null,
+  "budgetOverrun": null
+}

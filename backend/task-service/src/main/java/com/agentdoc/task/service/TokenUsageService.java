@@ -106,9 +106,7 @@ public class TokenUsageService {
         Long input = result.inputTokens();
         Long output = result.outputTokens();
 
-        if (input == null && result.cachedInputTokens() == null && output == null) {
-            return true;
-        }
+        // 终态恢复仍须为该 execution 留下完整价格/身份账本；全缺失用量保留 NULL，不跳过或伪装成 0。
 
         // 计算本次总消耗token：输入+输出；任一为null则总消耗为null，不强行填充0
         Long used = input == null || output == null ? null : input + output;
@@ -142,12 +140,14 @@ public class TokenUsageService {
         // 仅当任务配置了预算、且本次总消耗token不为null，才执行预算判断
         if (task.getTokenBudget() != null && used != null && used > task.getTokenBudget()) {
             // 预算超限：修改任务状态为终止，写入错误提示、记录结束时间
-            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+            int terminated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                     .eq(TaskEntity::getId, task.getId())
+                    .in(TaskEntity::getStatus, TaskStatus.remoteActiveCodes())
                     .set(TaskEntity::getStatus, TaskStatus.TERMINATED.getCode())
                     .set(TaskEntity::getErrorMessage, "任务 Token 预算已用尽")
                     .set(TaskEntity::getEndTime, LocalDateTime.now()));
             // 更新内存任务状态
+            if (terminated == 0) { return true; }
             task.setStatus(TaskStatus.TERMINATED.getCode());
             // 返回false：任务被预算熔断，禁止继续执行
             return false;

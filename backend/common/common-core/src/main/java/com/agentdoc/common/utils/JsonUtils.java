@@ -1,6 +1,8 @@
 package com.agentdoc.common.utils;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -43,6 +45,22 @@ public final class JsonUtils {
         try {
             return OBJECT_MAPPER.readValue(json, type);
         } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
+    /**
+     * 严格读取不可信的版本化 JSON：拒绝重复字段与根值后的额外内容。
+     * 不改变既有 parse 的兼容行为；无效内容返回 null。
+     */
+    public static <T> T parseStrict(String json, Class<T> type) {
+        if (json == null || json.isBlank()) { return null; }
+        try {
+            return OBJECT_MAPPER.readerFor(type)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .with(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .readValue(json);
+        } catch (JsonProcessingException invalid) {
             return null;
         }
     }

@@ -158,6 +158,14 @@ const menuItems: MenuItem[] = [
     group: '能力',
   },
   {
+    label: '评估与实验',
+    icon: DataAnalysis,
+    scope: 'space',
+    permission: SPACE_PERMISSIONS.EVALUATION_READ,
+    path: 'evaluation',
+    group: '洞察',
+  },
+  {
     label: '用量与审计',
     icon: DataAnalysis,
     scope: 'space',

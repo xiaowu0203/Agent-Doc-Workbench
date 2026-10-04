@@ -3,6 +3,7 @@ package com.agentdoc.gateway.security;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.logging.LogSanitizer;
+import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.gateway.config.GatewayAuthProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -22,7 +23,10 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
+import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.util.UriUtils;
+import java.nio.charset.StandardCharsets;
 import reactor.core.publisher.Mono;
 
 
@@ -70,6 +74,21 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         // 获取请求路径
         String path = request.getURI().getPath();
+        // 恢复机器入口只能直连内部服务，必须在白名单和 OPTIONS 放行之前拒绝。
+        String recoveryPath;
+        try {
+            // 额外解码一层以拒绝下游可能再次解码的路径；不让编码或 matrix 参数绕过内部入口封禁。
+            recoveryPath = StringUtils.cleanPath(UriUtils.decode(path, StandardCharsets.UTF_8)
+                    .replaceAll(";[^/]*", "").replaceAll("/{2,}", "/"));
+        } catch (IllegalArgumentException exception) {
+            return unauthorized(exchange.getResponse(), "非法请求路径");
+        }
+        if (recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
+                || recoveryPath.startsWith("/api/auth/internal/task-draft-finalization-capabilities")
+                || recoveryPath.startsWith("/api/agent/internal/a2a/")
+                || recoveryPath.startsWith("/api/document/internal/task-drafts/")) {
+            return unauthorized(exchange.getResponse(), "恢复内部入口不通过公共网关开放");
+        }
         // -------- 步骤1：OPTIONS跨域预检请求、白名单接口直接放行，跳过鉴权 --------
         if (request.getMethod() == HttpMethod.OPTIONS || isWhitelisted(path)) {
             return chain.filter(exchange);
@@ -88,7 +107,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
         try {
             // 使用JWKS公钥解码器验签、解析JWT（无效 token 直接 401，不转发）
-            jwtDecoder.decode(token);
+            TaskRecoveryJwtUtils.rejectGeneralAccess(jwtDecoder.decode(token));
         } catch (JwtException e) {
             log.debug("JWT 校验失败, path={}, reason={}", LogSanitizer.sanitizeText(path),
                     LogSanitizer.sanitizeText(e.getMessage()));

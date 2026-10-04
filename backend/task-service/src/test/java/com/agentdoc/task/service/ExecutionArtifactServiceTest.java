@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -87,13 +88,34 @@ class ExecutionArtifactServiceTest {
         task.setLineageType(TaskLineageType.EXPERIMENT.name());
         task.setAgentExecutionId(EXECUTION_ID);
         task.setResultSummary("done");
-        when(agentFeign.getReplayIdentity(TASK_ID)).thenReturn(Result.ok(identity()));
         when(artifactMapper.selectCount(any())).thenReturn(0L);
         when(artifactMapper.insert(any(ExecutionArtifactEntity.class))).thenReturn(1);
 
         service.appendResultSummary(task);
 
         verify(artifactMapper).insert(any(ExecutionArtifactEntity.class));
+        verifyNoInteractions(agentFeign);
+    }
+
+    @Test
+    void externalArtifactStillRequiresAgentExecutionIdentity() {
+        when(taskService.require(TASK_ID)).thenReturn(task());
+
+        assertThatThrownBy(() -> service.append(TASK_ID, "capability", request(hash(PAYLOAD))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("无法确认 AgentExecution 归属");
+
+        verify(artifactMapper, never()).insert(any(ExecutionArtifactEntity.class));
+    }
+
+    @Test
+    void internalResultSummaryStillRequiresBoundExecution() {
+        assertThatThrownBy(() -> service.appendResultSummary(task()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("缺少 AgentExecution ID");
+
+        verifyNoInteractions(agentFeign);
+        verify(artifactMapper, never()).insert(any(ExecutionArtifactEntity.class));
     }
 
     @Test

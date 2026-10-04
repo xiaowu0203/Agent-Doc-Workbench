@@ -44,13 +44,14 @@ public record TaskVO(
         @Schema(description = "最近一次失败原因") String errorMessage,
         @Schema(description = "任务结果摘要") String resultSummary,
         @Schema(description = "创建人用户 ID") Long createdBy,
-        @Schema(description = "创建时间") LocalDateTime createdAt) {
+        @Schema(description = "创建时间") LocalDateTime createdAt,
+        @Schema(description = "Task Trace ID；遥测可能未采样或已过期") String traceId) {
 
     public TaskVO withTokenUsage(Long used, Boolean estimated) {
         return new TaskVO(parentTaskId, rootTaskId, lineageType, executionMode,
                 id, taskNo, spaceId, agentId, documentId, documentType, name, instruction, status,
                 tokenBudget, readScope, focusRegions, used, estimated, startTime, dispatchedAt, lastHeartbeatAt,
-                endTime, retryCount, errorMessage, resultSummary, createdBy, createdAt);
+                endTime, retryCount, errorMessage, resultSummary, createdBy, createdAt, traceId);
     }
 
     public static TaskVO from(TaskEntity entity) {
@@ -61,7 +62,8 @@ public record TaskVO(
                 TaskStatus.fromCode(entity.getStatus()), entity.getTokenBudget(), readScope(entity), focusRegions(entity),
                 entity.getTokensUsed(), entity.getTokensEstimated(), entity.getStartTime(), entity.getDispatchedAt(), entity.getLastHeartbeatAt(),
                 entity.getEndTime(), entity.getRetryCount(),
-                entity.getErrorMessage(), entity.getResultSummary(), entity.getCreatedBy(), entity.getCreatedAt());
+                entity.getErrorMessage(), entity.getResultSummary(), entity.getCreatedBy(), entity.getCreatedAt(),
+                entity.getTraceId());
     }
 
     private static TaskReadScope readScope(TaskEntity entity) {

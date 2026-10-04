@@ -58,7 +58,7 @@ public final class LogSanitizer {
     private static final Pattern SENSITIVE_PAIR = Pattern.compile(
             "(?i)\\b(authorization|proxy[-_.]?authorization|cookie|set[-_.]?cookie|x[-_.]?api[-_.]?key|"
                     + "api[-_.]?key|access[-_.]?token|refresh[-_.]?token|id[-_.]?token|token|"
-                    + "client[-_.]?secret|secret|password|passwd|credential|private[-_.]?key|capability)"
+                    + "client[-_.]?secret|secret|password|passwd|credential|private[-_.]?key|capability|machine[-_.]?key)"
                     + "\\s*[:=]\\s*([^\\s,;}]+)");
 
     /** HTTP/HTTPS URL 匹配，用于后续URL脱敏处理 */

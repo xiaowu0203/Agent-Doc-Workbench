@@ -10,7 +10,8 @@ import lombok.Getter;
 public enum ActorType {
 
     HUMAN(1, "用户"),
-    AGENT(2, "Agent");
+    AGENT(2, "Agent"),
+    SERVICE(3, "服务");
 
     @Schema(description = "主体类型编码")
     private final int code;

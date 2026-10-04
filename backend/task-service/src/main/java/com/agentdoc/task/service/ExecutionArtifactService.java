@@ -35,7 +35,7 @@ import java.util.Map;
  * 隔离执行不可变候选产物服务
  * <p>
  * 仅支持REPLAY隔离回放任务的产物写入；产物按executionId+sequenceNo唯一约束，具备幂等性；
- * RESULT_SUMMARY结果摘要只能由任务终态回调生成，不允许外部直接追加；存储时校验payload哈希保证内容不可篡改。
+ * RESULT_SUMMARY结果摘要只能由任务终态同步生成，不允许外部直接追加；存储时校验payload哈希保证内容不可篡改。
  * </p>
  */
 @Service
@@ -69,7 +69,7 @@ public class ExecutionArtifactService {
     }
 
     /**
-     * 在隔离任务完成回调的同一事务内保存结果摘要产物RESULT_SUMMARY
+     * 在隔离任务完成终态同步的同一事务内保存结果摘要产物RESULT_SUMMARY
      * @param task 隔离回放任务实体
      * @return 产物追加结果VO
      * @throws BusinessException 非隔离评估任务、缺少AgentExecutionId、校验不通过时抛出异常
@@ -186,9 +186,13 @@ public class ExecutionArtifactService {
         if (!expectedHash.equals(request.payloadSha256())) {
             throw new BusinessException(ErrorCode.CONFLICT, "隔离执行产物 hash 不匹配");
         }
-        AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(task.getId()));
-        if (identity.executionCount() != 1 || !request.executionId().equals(identity.executionId())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "隔离执行产物不属于当前任务执行");
+        // 内部终态摘要已由 TaskTerminalPersistenceService 校验权威用量与执行绑定；
+        // 过期恢复线程没有原调用身份，不能再依赖普通 Agent Feign 查询。
+        if (!resultSummary) {
+            AgentExecutionReplayIdentityVO identity = requireData(agentFeign.getReplayIdentity(task.getId()));
+            if (identity.executionCount() != 1 || !request.executionId().equals(identity.executionId())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "隔离执行产物不属于当前任务执行");
+            }
         }
     }
 

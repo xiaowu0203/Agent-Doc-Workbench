@@ -43,6 +43,10 @@
 
 `03-agent-management.png`、`04-skill-management.png`、`05-mcp-management.png` 是此前生成的表格/主从布局版本，继续保留用于和卡片版比较，不作为本版主入口。
 
+## 版本设计稿
+
+- [v0.2.0 Phase 5 UI 效果图](v0.2.0/README.md)：Run/Trace、OTel 联合诊断、Evaluation Catalog、EvaluationRun 和离线 Experiment。该目录描述目标设计，不表示功能已经发布。
+
 ## 信息架构建议
 
 登录后的一级导航建议稳定为：

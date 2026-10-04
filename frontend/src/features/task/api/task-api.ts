@@ -2,11 +2,17 @@ import { request } from '@/api/client'
 import type { PageResult } from '@/features/document/types'
 import type { EntityId } from '@/features/workspace/types'
 import type {
+  ExecutionArtifact,
+  ReplayEligibility,
+  TaskTraceView,
+} from '@/features/task/engineering-types'
+import type {
   CreateTaskRequest,
   CreatedTask,
   TaskCreateOptions,
   TaskDetail,
   TaskExecutionDetail,
+  TaskExecutionMode,
   TaskToolCallPageItem,
   TaskDraft,
   TaskFocusRegion,
@@ -31,6 +37,7 @@ export function searchTasks(
     pageSize: number
     keyword?: string
     status?: TaskStatus
+    executionMode?: TaskExecutionMode
     agentId?: EntityId
     modelId?: EntityId
     documentId?: EntityId
@@ -70,6 +77,32 @@ export function getTaskExecutionDetail(
   return request<TaskExecutionDetail>({
     method: 'GET',
     url: `/task/tasks/${taskId}/execution-detail`,
+    signal,
+  })
+}
+
+export function getTaskTrace(taskId: EntityId, signal?: AbortSignal): Promise<TaskTraceView> {
+  return request<TaskTraceView>({ method: 'GET', url: `/task/tasks/${taskId}/trace-view`, signal })
+}
+
+export function getTaskArtifacts(
+  taskId: EntityId,
+  signal?: AbortSignal,
+): Promise<ExecutionArtifact[]> {
+  return request<ExecutionArtifact[]>({
+    method: 'GET',
+    url: `/task/tasks/${taskId}/execution-artifacts`,
+    signal,
+  })
+}
+
+export function getReplayEligibility(
+  taskId: EntityId,
+  signal?: AbortSignal,
+): Promise<ReplayEligibility> {
+  return request<ReplayEligibility>({
+    method: 'GET',
+    url: `/task/tasks/${taskId}/replay-eligibility`,
     signal,
   })
 }

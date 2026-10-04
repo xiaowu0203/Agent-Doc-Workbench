@@ -38,6 +38,10 @@ agent-doc:
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
     # 是否开启TaskCapabilityAuthenticationFilter任务能力令牌鉴权过滤器
     task-capability-filter-enabled: true
+    # 紧急关闭仅拒绝专用恢复入口，不影响普通 Task 能力校验。
+    task-recovery-enabled: ${TASK_RECOVERY_ENABLED:false}
+    task-recovery-issuer: agent-doc-workbench
+    task-recovery-trusted-encrypted-network: ${TASK_RECOVERY_TRUSTED_ENCRYPTED_NETWORK:false}
     capability-auth-endpoints:
       - /mcp
       - /mcp/**

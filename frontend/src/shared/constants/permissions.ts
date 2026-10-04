@@ -27,6 +27,9 @@ export const SPACE_PERMISSIONS = {
   USAGE_READ: 'usage:read',
   USAGE_EXPORT: 'usage:export',
   AUDIT_READ: 'audit:read',
+  EVALUATION_READ: 'evaluation:read',
+  EVALUATION_MANAGE: 'evaluation:manage',
+  EVALUATION_RUN: 'evaluation:run',
 } as const
 
 export type SpacePermissionCode = (typeof SPACE_PERMISSIONS)[keyof typeof SPACE_PERMISSIONS]

@@ -1,6 +1,7 @@
 import type { RouteRecordRaw } from 'vue-router'
 
 import WorkbenchLayout from '@/layouts/WorkbenchLayout.vue'
+import { evaluationRoute } from '@/features/evaluation/routes'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { PLATFORM_ROLES } from '@/shared/constants/platform-roles'
 
@@ -37,6 +38,7 @@ export const routes: RouteRecordRaw[] = [
     component: WorkbenchLayout,
     meta: { requiresAuth: true },
     children: [
+      evaluationRoute,
       {
         path: '',
         name: 'home',

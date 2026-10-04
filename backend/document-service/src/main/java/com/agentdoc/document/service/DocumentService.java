@@ -1125,6 +1125,10 @@ public class DocumentService {
         permissionService.requireAgentCapability(doc.getSpaceId(), doc.getId(), JwtConstant.ACTION_WRITE_DRAFT);
         requireDraft(doc);
         Long taskId = requireAgentTaskId();
+        return finalizeAgentDraftChanges(doc, taskId, AuthUtils.getAgentIdOrException());
+    }
+
+    private MergeResultVO finalizeAgentDraftChanges(DocumentEntity doc, Long taskId, Long agentId) {
         if (doc.getAgentStagedTaskId() == null) {
             // 没有暂存变更，直接返回当前文档信息
             return doc.toMergeResultVO();
@@ -1137,7 +1141,6 @@ public class DocumentService {
             throw new BusinessException(ErrorCode.CONFLICT, "文档已被其他修改改变，请重新执行任务");
         }
         String content = doc.getAgentStagedContent();
-        Long agentId = AuthUtils.getAgentIdOrException();
         long nextVersion = doc.getVersion() + DocumentConstant.VERSION_INCREMENT;
 
         // 把暂存内容写进文档主表
@@ -1145,6 +1148,8 @@ public class DocumentService {
                 .eq(DocumentEntity::getId, doc.getId())
                 .eq(DocumentEntity::getVersion, doc.getVersion())
                 .eq(DocumentEntity::getAgentStagedTaskId, taskId)
+                .eq(DocumentEntity::getAgentStagedBaseVersion, doc.getAgentStagedBaseVersion())
+                .eq(DocumentEntity::getAgentStagedRevision, doc.getAgentStagedRevision())
                 .set(DocumentEntity::getContent, content)
                 .set(DocumentEntity::getVersion, nextVersion)
                 .set(DocumentEntity::getUpdatedBy, agentId));
@@ -1183,6 +1188,51 @@ public class DocumentService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权丢弃其他任务的暂存变更");
         }
         clearAgentStaging(doc.getId(), taskId);
+    }
+
+    /**
+     * 专用恢复应用服务在完整验签后调用；不建立普通 Agent 身份或接收新正文。
+     * 同一事务复用原草稿提交规则，并用原版本/sourceTaskId 保护重复请求。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void finalizeRecoveredTaskDraft(Long documentId, Long spaceId, Long taskId, Long agentId,
+                                           Long frozenVersion, String frozenContentHash, boolean completed) {
+        DocumentEntity doc = requireDoc(documentId);
+        requireDraft(doc);
+        if (!Objects.equals(doc.getSpaceId(), spaceId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "RECOVERY_IDENTITY_MISMATCH");
+        }
+        if (versionService.findAgentDraftSnapshot(documentId, taskId) != null) { return; }
+        if (doc.getAgentStagedTaskId() == null) { return; }
+        if (!Objects.equals(doc.getAgentStagedTaskId(), taskId)
+                || !Objects.equals(doc.getAgentStagedBaseVersion(), frozenVersion)
+                || !Objects.equals(doc.getAgentStagedBaseVersion(), doc.getVersion())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "DRAFT_VERSION_CONFLICT");
+        }
+        if (!Objects.equals(StableSnapshotUtils.sha256Utf8(doc.getContent()), frozenContentHash)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "RECOVERY_IDENTITY_MISMATCH");
+        }
+        if (completed) {
+            try { finalizeAgentDraftChanges(doc, taskId, agentId); }
+            catch (BusinessException exception) {
+                if (exception.getCode() == ErrorCode.CONFLICT.getCode()) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "DRAFT_VERSION_CONFLICT");
+                }
+                throw exception;
+            }
+        } else {
+            int updated = documentMapper.update(null, new LambdaUpdateWrapper<DocumentEntity>()
+                    .eq(DocumentEntity::getId, documentId).eq(DocumentEntity::getSpaceId, spaceId)
+                    .eq(DocumentEntity::getVersion, frozenVersion)
+                    .eq(DocumentEntity::getAgentStagedTaskId, taskId)
+                    .eq(DocumentEntity::getAgentStagedBaseVersion, frozenVersion)
+                    .eq(DocumentEntity::getAgentStagedRevision, doc.getAgentStagedRevision())
+                    .set(DocumentEntity::getAgentStagedTaskId, null)
+                    .set(DocumentEntity::getAgentStagedBaseVersion, null)
+                    .set(DocumentEntity::getAgentStagedRevision, null)
+                    .set(DocumentEntity::getAgentStagedContent, null));
+            if (updated != 1) { throw new BusinessException(ErrorCode.CONFLICT, "DRAFT_VERSION_CONFLICT"); }
+        }
     }
 
     /**

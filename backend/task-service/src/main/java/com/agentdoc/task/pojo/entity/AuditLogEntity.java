@@ -25,7 +25,7 @@ public class AuditLogEntity extends BaseEntity {
     @Schema(description = "关联任务 ID")
     private Long taskId;
 
-    @Schema(description = "主体类型：1 人 / 2 Agent")
+    @Schema(description = "主体类型：1 人 / 2 Agent / 3 服务")
     private Integer actorType;
 
     @Schema(description = "主体 ID")

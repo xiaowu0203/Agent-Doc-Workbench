@@ -9,6 +9,7 @@ import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.enums.ExperimentStatus;
+import com.agentdoc.evaluation.convertor.ExperimentReportConvertor;
 import com.agentdoc.evaluation.mapper.ExperimentMapper;
 import com.agentdoc.evaluation.mapper.ExperimentReportMapper;
 import com.agentdoc.evaluation.mapper.ExperimentVariantMapper;
@@ -23,7 +24,6 @@ import com.agentdoc.evaluation.pojo.vo.ExperimentReportRevisionVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentReportVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -54,12 +54,14 @@ public class ExperimentReportService {
     private final ExperimentReportPersistenceService persistenceService;
     private final SpaceAccessService spaceAccessService;
     private final AgentFeign agentFeign;
+    private final ExperimentReportConvertor reportConvertor;
 
     public List<ExperimentReportRevisionVO> list(Long experimentId) {
         ExperimentEntity experiment = requireExperiment(experimentId);
         spaceAccessService.requirePermission(experiment.getSpaceId(), EVALUATION_READ);
         return reportMapper.selectList(new LambdaQueryWrapper<ExperimentReportEntity>()
                 .eq(ExperimentReportEntity::getExperimentId, experimentId)
+                .eq(ExperimentReportEntity::getSpaceId, experiment.getSpaceId())
                 .orderByAsc(ExperimentReportEntity::getRevision)).stream().map(this::toRevisionVO).toList();
     }
 
@@ -68,6 +70,7 @@ public class ExperimentReportService {
         spaceAccessService.requirePermission(experiment.getSpaceId(), EVALUATION_READ);
         ExperimentReportEntity report = reportMapper.selectOne(new LambdaQueryWrapper<ExperimentReportEntity>()
                 .eq(ExperimentReportEntity::getExperimentId, experimentId)
+                .eq(ExperimentReportEntity::getSpaceId, experiment.getSpaceId())
                 .eq(ExperimentReportEntity::getRevision, revision));
         if (report == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "报告 revision 不存在");
@@ -283,11 +286,7 @@ public class ExperimentReportService {
     }
 
     private ExperimentReportVO toVO(ExperimentReportEntity report) {
-        JsonNode selected = JsonUtils.parse(report.getSelectedRecordIdsJson(), JsonNode.class);
-        JsonNode content = JsonUtils.parse(report.getReportJson(), JsonNode.class);
-        return new ExperimentReportVO(report.getExperimentId(), report.getRevision(),
-                report.getReportSchemaVersion(), report.getManifestHash(), report.getCalculationInputHash(),
-                selected, content, report.getContentHash(), report.getGeneratedBy(), report.getCreatedAt());
+        return reportConvertor.toVO(report);
     }
 
     private record RecalculationRequest(Long experimentId, String clientRequestKey) { }

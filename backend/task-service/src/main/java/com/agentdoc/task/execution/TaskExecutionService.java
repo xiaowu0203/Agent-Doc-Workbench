@@ -145,8 +145,13 @@ public class TaskExecutionService {
             if (dispatchAuthorization != null && !dispatchAuthorization.isBlank()) {
                 AuthorizationContext.set("Bearer " + dispatchAuthorization);
             }
-            // 生成 A2A Task Capability，并加密存储到数据库
+            // 读取既有 Task Capability，或凭 Worker 授权首次签发并加密保存。
             capability = taskService.resolveDispatchCapability(task);
+            if ((dispatchAuthorization == null || dispatchAuthorization.isBlank())
+                    && TaskLineageType.REPLAY.name().equals(task.getLineageType())) {
+                // 手工 Replay 用新 Task 的有效证明完成来源复核，不用于签发或替代 Worker 身份。
+                AuthorizationContext.set("Bearer " + capability);
+            }
             sourceExecution = TaskLineageType.REPLAY.name().equals(task.getLineageType())
                     ? taskService.requireReplayDispatchIdentity(task)
                     : TaskLineageType.EXPERIMENT.name().equals(task.getLineageType())

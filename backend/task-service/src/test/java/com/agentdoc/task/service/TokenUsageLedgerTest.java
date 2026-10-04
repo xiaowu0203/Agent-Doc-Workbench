@@ -8,6 +8,7 @@ import com.agentdoc.task.mapper.TokenUsageDetailMapper;
 import com.agentdoc.task.mapper.TokenUsageMapper;
 import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.pojo.entity.TokenUsageDetailEntity;
+import com.agentdoc.task.enums.TaskStatus;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -82,6 +83,33 @@ class TokenUsageLedgerTest {
 
         verify(detailMapper, never()).insert(any(TokenUsageDetailEntity.class));
         verify(taskMapper, never()).update(any(), any());
+    }
+
+    @Test
+    void budgetOverrunCannotReplaceAnAlreadyCompletedBusinessState() {
+        TaskEntity task = task();
+        task.setStatus(TaskStatus.COMPLETED.getCode());
+        task.setTokenBudget(1L);
+        // 条件更新在数据库中未命中活动态；账本仍应记录真实超额，而不覆盖终态。
+        when(taskMapper.update(any(), any())).thenReturn(0);
+        assertThat(service.recordRemote(task, usage())).isTrue();
+        assertThat(task.getStatus()).isEqualTo(TaskStatus.COMPLETED.getCode());
+        verify(detailMapper).insert(any(TokenUsageDetailEntity.class));
+    }
+
+    @Test
+    void entirelyUnavailableUsageStillCreatesAnIdentifiedLedgerWithNullTokensAndCost() {
+        TaskEntity task = task();
+        A2aTokenUsage unavailable = new A2aTokenUsage(null, null, null, false, false, false,
+                91L, 12L, 4L, BigDecimal.ONE, BigDecimal.TEN, "CNY", 1, LocalDateTime.now());
+        assertThat(service.recordRemote(task, unavailable)).isTrue();
+        ArgumentCaptor<TokenUsageDetailEntity> captor = ArgumentCaptor.forClass(TokenUsageDetailEntity.class);
+        verify(detailMapper).insert(captor.capture());
+        assertThat(captor.getValue().getExecutionId()).isEqualTo(91L);
+        assertThat(captor.getValue().getInputTokens()).isNull();
+        assertThat(captor.getValue().getOutputTokens()).isNull();
+        assertThat(captor.getValue().getEstimatedCost()).isNull();
+        assertThat(task.getTokensUsed()).isNull();
     }
 
     @Test

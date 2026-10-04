@@ -38,6 +38,16 @@
 
 任何一层缺失都不能视为隔离完成。
 
+### 手工 Replay 的异步授权
+
+单个手工 Replay 在通过用户空间权限与来源准入校验后，于创建请求的用户授权上下文中签发新 Task 的隔离 Capability，并以既有 AES-GCM 加密随 Task 一起保存；签发或加密失败时不落库、不发布 MQ。MQ 仍只携带 taskId，不保存用户 Access Token，也不伪装成 Evaluation Worker。
+
+手工 Replay 的 Capability 固定六小时 TTL 从创建签发时起算，排队时间计入有效期。派发前验证既有证明的有效性，过期或签名失效就拒绝，不自动续签；来源执行身份仍在派发前重新核验。相同派生幂等键返回既有 Task，不重签、不重派，也不重置失败状态。
+
+来源身份的既有 Feign 查询仍经过 Gateway。手工派发仅在该来源复核阶段使用新 Task 的有效 Capability 作为 Bearer，通过原有网关验签，不将它用于再次签发证明；已有 Worker 派发身份保持优先。该线程授权上下文必须在成功或失败后清理，不放行匿名查询、不携带用户登录 JWT，也不改变来源准入和接收端的冻结身份核验。
+
+批量评估 Replay 和离线 Experiment 保持原有绑定 EvaluationRun/Space/Task 集合的 WorkerCapability 派发流程，Task Capability 仍在首次实际派发时签发。上述区别不改变隔离动作集合、冻结身份、四层副作用隔离或 Auth 接口的鉴权规则；旧缺少证明的任务不补造。
+
 ### 冻结输入
 
 Replay 的任务输入与运行配置分别由 ADR-0001 的 input snapshot 和 execution snapshot 表示，并以各自 schema 版本与哈希组成四元身份。用户指令、目标文档与冻结版本、读取范围和关注区域属于任务输入；系统 Prompt、模型参数、Skill 版本与选择结果、工具定义以及 MCP 非秘密配置属于运行配置。当前 v0.1.0 未冻结文档版本/正文，也没有从 AgentExecution 快照恢复 Runtime 的路径；实现 Replay 前必须补齐，不能把读取当前文档称为 Replay。

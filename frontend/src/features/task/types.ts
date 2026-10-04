@@ -93,6 +93,7 @@ export interface CreatedTask {
 }
 
 export interface TaskDetail {
+  traceId: string | null
   id: EntityId
   parentTaskId: EntityId | null
   rootTaskId: EntityId
@@ -123,6 +124,8 @@ export interface TaskDetail {
 }
 
 export interface AgentExecutionAudit {
+  traceId: string | null
+  spanId: string | null
   id: EntityId
   workbenchTaskId: EntityId
   spaceId: EntityId

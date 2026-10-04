@@ -6,7 +6,11 @@ import org.a2aproject.sdk.server.agentexecution.AgentExecutor;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
 import org.a2aproject.sdk.server.tasks.AgentEmitter;
 import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 /**
  * A2A Agent执行器实现
@@ -32,6 +36,12 @@ public class WorkbenchAgentExecutor implements AgentExecutor {
      */
     @Override
     public void execute(RequestContext context, AgentEmitter emitter) throws A2AError {
+        if (context.getTask() == null) {
+            // 异步事件处理器不会自行保留初始 Message，先保存已授权的新任务输入。
+            emitter.addTask(emitter.taskBuilder()
+                    .status(new TaskStatus(TaskState.TASK_STATE_SUBMITTED))
+                    .history(List.of(context.getMessage())).build());
+        }
         executionService.execute(context, emitter);
     }
 

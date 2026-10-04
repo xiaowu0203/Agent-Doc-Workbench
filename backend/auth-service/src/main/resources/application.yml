@@ -51,6 +51,14 @@ auth:
 
 # 自定义openapi配置
 agent-doc:
+  security:
+    # TLS 在可信加密内部网络外终止时须显式确认；不是来源 IP 授权。
+    task-recovery-trusted-encrypted-network: ${TASK_RECOVERY_TRUSTED_ENCRYPTED_NETWORK:false}
+  task-recovery:
+    # 空密钥默认禁用；当前与旧密钥仅由环境变量提供，轮换重叠最长 5 分钟。
+    machine-key: ${TASK_RECOVERY_MACHINE_KEY:}
+    previous-machine-key: ${TASK_RECOVERY_PREVIOUS_MACHINE_KEY:}
+    key-rotated-at: ${TASK_RECOVERY_KEY_ROTATED_AT:}
   openapi:
     title: Auth Service API
     description: 认证服务：注册、登录、刷新、JWKS

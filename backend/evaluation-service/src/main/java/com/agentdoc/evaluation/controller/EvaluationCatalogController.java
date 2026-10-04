@@ -8,9 +8,11 @@ import com.agentdoc.evaluation.pojo.dto.DatasetVersionCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationDatasetCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.dto.EvaluationTestCaseCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseEvaluatorBindingsDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.param.EvaluationResourceSearchParam;
 import com.agentdoc.evaluation.pojo.param.EvaluationVersionSearchParam;
 import com.agentdoc.evaluation.pojo.vo.DatasetVersionVO;
@@ -90,7 +92,7 @@ public class EvaluationCatalogController {
         return Result.ok(catalogService.getDataset(id));
     }
 
-    @Operation(summary = "归档数据集", description = "软归档数据集，归档后不可新建版本，已有版本仍可用于评估运行")
+    @Operation(summary = "归档数据集", description = "归档后不可新建版本或使用存量版本创建新运行；历史运行仍可读取")
     @PutMapping("/datasets/{id}/archive")
     public Result<EvaluationDatasetVO> archiveDataset(
             @Parameter(description = "数据集ID") @PathVariable Long id) {
@@ -118,7 +120,7 @@ public class EvaluationCatalogController {
         return Result.ok(catalogService.getTestCase(id));
     }
 
-    @Operation(summary = "归档测试用例", description = "软归档测试用例，归档后禁止新建版本，存量版本可继续回放评估")
+    @Operation(summary = "归档测试用例", description = "归档后不可新建版本或使用存量版本创建新运行；历史运行仍可读取")
     @PutMapping("/test-cases/{id}/archive")
     public Result<EvaluationTestCaseVO> archiveTestCase(
             @Parameter(description = "测试用例ID") @PathVariable Long id) {
@@ -206,6 +208,13 @@ public class EvaluationCatalogController {
         return Result.ok(catalogService.createTestCaseVersion(dto));
     }
 
+    @Operation(summary = "修改 TestCase DRAFT 配置", description = "仅修改草稿预期与脱敏说明，不改动冻结来源")
+    @PutMapping("/test-case-versions/{id}")
+    public Result<TestCaseVersionVO> updateTestCaseVersion(@PathVariable Long id,
+            @Valid @RequestBody TestCaseVersionUpdateDTO dto) {
+        return Result.ok(catalogService.updateTestCaseVersion(id, dto));
+    }
+
     @Operation(summary = "替换 DRAFT TestCase 的评估器绑定", description = "仅草稿版本允许；全量替换本用例版本绑定的评估器列表")
     @PutMapping("/test-case-versions/{id}/evaluators")
     public Result<TestCaseVersionVO> replaceTestCaseEvaluators(
@@ -231,6 +240,13 @@ public class EvaluationCatalogController {
     @PostMapping("/evaluator-versions")
     public Result<EvaluatorVersionVO> createEvaluatorVersion(@Valid @RequestBody EvaluatorVersionCreateDTO dto) {
         return Result.ok(catalogService.createEvaluatorVersion(dto));
+    }
+
+    @Operation(summary = "修改 Evaluator DRAFT 配置", description = "仅修改草稿配置，不改动实现版本")
+    @PutMapping("/evaluator-versions/{id}")
+    public Result<EvaluatorVersionVO> updateEvaluatorVersion(@PathVariable Long id,
+            @Valid @RequestBody EvaluatorVersionUpdateDTO dto) {
+        return Result.ok(catalogService.updateEvaluatorVersion(id, dto));
     }
 
     @Operation(summary = "发布 Evaluator 版本", description = "评估器草稿版本转正，指标契约冻结，可被正式测试用例版本绑定使用")

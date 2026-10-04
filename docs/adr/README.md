@@ -18,3 +18,4 @@
 | [ADR-0003](0003-telemetry-audit-ledger-boundaries.md) | 已采纳 | OTel、执行快照、业务审计和 Token 账本各自保持独立真相边界 |
 | [ADR-0004](0004-execution-snapshot-v3-canonicalization.md) | 已采纳 | Execution Snapshot v3 使用稳定 canonical envelope、UTF-8 排序和不可变 schema |
 | [ADR-0005](0005-offline-experiment-contract.md) | 已采纳 | Offline Experiment 使用冻结 manifest 与 Prompt 候选配置完成隔离的 baseline/candidate 对比 |
+| [ADR-0006](0006-task-terminal-recovery.md) | 已采纳 | 通过单 Task 短期恢复凭证自动收敛终态，LIVE 草稿受控收尾，异常保留受审计人工兜底 |

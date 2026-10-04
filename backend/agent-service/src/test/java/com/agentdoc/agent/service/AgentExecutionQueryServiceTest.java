@@ -72,6 +72,8 @@ class AgentExecutionQueryServiceTest {
         AgentExecutionAuditVO result = service.getByWorkbenchTask(11L, 7L);
 
         assertThat(result.agentName()).isEqualTo("审计 Agent");
+        assertThat(result.traceId()).isEqualTo("0123456789abcdef0123456789abcdef");
+        assertThat(result.spanId()).isEqualTo("0123456789abcdef");
         assertThat(result.model().displayName()).isEqualTo("GPT Test");
         assertThat(result.skill().boundSkills()).singleElement()
                 .satisfies(skill -> assertThat(skill.skillVersionId()).isEqualTo(22L));
@@ -117,6 +119,8 @@ class AgentExecutionQueryServiceTest {
         execution.setSpaceId(7L);
         execution.setAgentId(9L);
         execution.setAgentNameSnapshot("审计 Agent");
+        execution.setTraceId("0123456789abcdef0123456789abcdef");
+        execution.setSpanId("0123456789abcdef");
         execution.setAgentConfigVersion(4L);
         execution.setMaxIterations(12);
         execution.setExecutionTimeoutSeconds(300);

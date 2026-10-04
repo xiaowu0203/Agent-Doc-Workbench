@@ -34,6 +34,8 @@ import java.util.List;
  * @param startedAt Agent 执行开始时间
  * @param finishedAt Agent 执行结束时间
  * @param createdAt Agent 执行记录创建时间
+ * @param traceId 执行 Trace ID；可能未采样或已过期
+ * @param spanId Agent 主执行 Span ID
  */
 public record AgentExecutionAuditVO(
         Long id,
@@ -63,7 +65,9 @@ public record AgentExecutionAuditVO(
         Boolean outputTokensEstimated,
         LocalDateTime startedAt,
         LocalDateTime finishedAt,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        String traceId,
+        String spanId) {
 
     /**
      * @param id 模型 ID
