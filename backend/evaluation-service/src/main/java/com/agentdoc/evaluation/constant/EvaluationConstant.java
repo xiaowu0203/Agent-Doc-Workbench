@@ -51,7 +51,8 @@ public final class EvaluationConstant {
      */
     public static final Set<String> BUILT_IN_EVALUATORS = Set.of(
             "task-terminal-status", "artifact-contract", "text-assertion",
-            "document-change-validator", "isolation-invariant", "audit-ledger-integrity");
+            "document-change-validator", "isolation-invariant", "audit-ledger-integrity",
+            "online-original-text-assertion", "online-document-change-validator");
 
     /**
      * 私有构造，禁止实例化常量类

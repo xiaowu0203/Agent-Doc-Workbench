@@ -24,6 +24,10 @@ import java.util.List;
         url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface DocumentFeign {
 
+    /** 校验实际空间 OWNER；不采用平台超管兜底。 */
+    @GetMapping("/api/document/spaces/{spaceId}/owner-permission")
+    Result<Void> checkSpaceOwner(@PathVariable Long spaceId);
+
     /**
      * 应用变更并合并至正式文档（校验基线版本，防并发覆盖；自动生成新版本快照）。
      *

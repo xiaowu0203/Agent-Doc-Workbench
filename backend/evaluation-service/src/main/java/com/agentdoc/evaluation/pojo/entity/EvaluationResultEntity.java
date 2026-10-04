@@ -14,6 +14,11 @@ import java.time.LocalDateTime;
 @TableName("evaluation_result")
 @Schema(description = "不可变评估结果")
 public class EvaluationResultEntity extends BaseEntity {
+    @Schema(description = "主体类型 CASE_ATTEMPT/ONLINE_TASK") private String subjectType = "CASE_ATTEMPT";
+    @Schema(description = "线上分配身份，离线为空") private Long onlineAssignmentId;
+    @Schema(description = "线上评价尝试身份，离线为空") private Long onlineEvaluationAttemptId;
+    @Schema(description = "线上 Task 身份，离线为空") private Long taskId;
+    @Schema(description = "线上 Execution 身份，离线为空") private Long executionId;
     @Schema(description = "所属空间 ID") private Long spaceId;
     @Schema(description = "EvaluationRun ID") private Long runId;
     @Schema(description = "CaseAttempt ID") private Long caseAttemptId;

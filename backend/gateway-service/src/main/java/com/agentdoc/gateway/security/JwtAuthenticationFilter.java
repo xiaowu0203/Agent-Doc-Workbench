@@ -83,7 +83,8 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         } catch (IllegalArgumentException exception) {
             return unauthorized(exchange.getResponse(), "非法请求路径");
         }
-        if (recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
+        if (recoveryPath.equals("/internal") || recoveryPath.startsWith("/internal/")
+                || recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
                 || recoveryPath.startsWith("/api/auth/internal/task-draft-finalization-capabilities")
                 || recoveryPath.startsWith("/api/agent/internal/a2a/")
                 || recoveryPath.startsWith("/api/document/internal/task-drafts/")) {

@@ -9,6 +9,7 @@ import com.agentdoc.document.mapper.PermissionMapper;
 import com.agentdoc.document.mapper.SpaceRoleMapper;
 import com.agentdoc.document.mapper.SpaceRolePermissionMapper;
 import com.agentdoc.document.pojo.entity.MemberEntity;
+import com.agentdoc.document.pojo.entity.SpaceRoleEntity;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -114,6 +115,24 @@ class SpacePermissionServiceTest {
         member.setUserId(USER_ID);
         member.setRoleId(ROLE_ID);
         return member;
+    }
+
+    @Test
+    void onlineOwnerGateDoesNotAllowPlatformSuperAdminWithoutMembership() {
+        login(List.of(SUPER_ADMIN));
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        assertThrows(BusinessException.class, () -> permissionService.requireOwner(SPACE_ID));
+    }
+
+    @Test
+    void onlineOwnerGateAcceptsProtectedOwnerAndRejectsCustomManageRole() {
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        var role = new SpaceRoleEntity();
+        role.setId(ROLE_ID); role.setSpaceId(SPACE_ID); role.setRoleKey("CUSTOM_MANAGE");
+        when(spaceRoleMapper.selectById(ROLE_ID)).thenReturn(role);
+        assertThrows(BusinessException.class, () -> permissionService.requireOwner(SPACE_ID));
+        role.setRoleKey("OWNER");
+        permissionService.requireOwner(SPACE_ID);
     }
 
     private void login(List<String> platformRoles) {

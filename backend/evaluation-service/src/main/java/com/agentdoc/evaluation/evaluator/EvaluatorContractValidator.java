@@ -63,6 +63,10 @@ public class EvaluatorContractValidator {
      * @param expected     true=expectedJson，false=configJson，区分必填规则
      */
     private void validate(String evaluatorKey, String json, boolean expected) {
+        if (OnlineRuleContractValidator.onlineOnly(evaluatorKey)) {
+            OnlineRuleContractValidator.validate(evaluatorKey, json, expected);
+            return;
+        }
         JsonNode value = object(json);
         switch (evaluatorKey) {
             // 无配置字段，只允许空对象

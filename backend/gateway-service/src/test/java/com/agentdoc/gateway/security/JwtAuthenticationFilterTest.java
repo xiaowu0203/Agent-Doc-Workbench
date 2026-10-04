@@ -33,6 +33,10 @@ class JwtAuthenticationFilterTest {
         JwtAuthenticationFilter denied = new JwtAuthenticationFilter(mock(JwtDecoder.class), properties);
         for (String path : List.of("/api/auth/internal/task-recovery-capabilities",
                 "/api/auth/internal/task-draft-finalization-capabilities",
+                "/internal/online-configs/prepare",
+                "/%69nternal/online-configs/prepare",
+                "/internal;param=1/online-configs/prepare",
+                "/internal//online-configs/prepare",
                 "/api/agent/internal/a2a/tasks/remote/recovery",
                 "/api/document/internal/task-drafts/1/finalize",
                 "/api/agent;param=1/internal/a2a/tasks/remote/recovery",
@@ -40,7 +44,7 @@ class JwtAuthenticationFilterTest {
                 "/api/other/../agent/internal/a2a/tasks/remote/recovery",
                 "/api/%61gent/internal/a2a/tasks/remote/recovery")) {
             MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.OPTIONS, path).build());
-            denied.filter(exchange, ex -> { throw new AssertionError("内部路径不能转发"); }).block();
+            denied.filter(exchange, ex -> { throw new AssertionError("内部路径不能转发: " + path); }).block();
             assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
         }
     }

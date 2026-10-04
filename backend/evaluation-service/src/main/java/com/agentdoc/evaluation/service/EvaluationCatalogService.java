@@ -8,6 +8,8 @@ import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
+import com.agentdoc.common.enums.OnlineReasonCode;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
@@ -634,6 +636,9 @@ public class EvaluationCatalogService {
             // 优先取绑定行上的预期；为空则回退到用例版本全局 expectedJson
             String expectedJson = binding.getExpectedJson() == null || binding.getExpectedJson().isBlank()
                     ? version.getExpectedJson() : binding.getExpectedJson();
+            if (OnlineRuleContractValidator.onlineOnly(evaluatorVersion.getEvaluatorKey())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, OnlineReasonCode.ONLINE_RULE_NOT_OFFLINE_COMPATIBLE.name());
+            }
             evaluatorContractValidator.validateExpected(evaluatorVersion.getEvaluatorKey(), expectedJson);
         }
         Object expected = JsonUtils.parse(version.getExpectedJson(), Object.class);
@@ -702,7 +707,8 @@ public class EvaluationCatalogService {
         entity.setConfigSchemaVersion(dto.configSchemaVersion());
         entity.setConfigJson(dto.configJson());
         entity.setResultSchemaVersion(dto.resultSchemaVersion());
-        entity.setImplementationVersion("phase3-v1");
+        entity.setImplementationVersion(OnlineRuleContractValidator.onlineOnly(evaluator.getEvaluatorKey())
+                ? "online-contract-v2" : "phase3-v1");
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         evaluatorVersionMapper.insert(entity);
         return EvaluatorVersionVO.from(entity);

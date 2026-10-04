@@ -17,6 +17,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 agent-doc:
+  online:
+    # 线上模板直连 Agent；默认本机8084，按部署拓扑设置，不经公共网关。
+    agent-url: ${AGENT_INTERNAL_URL:http://localhost:8084}
   feign:
     # Feign调用网关地址
     gateway-url: ${GATEWAY_URL:http://localhost:9090}

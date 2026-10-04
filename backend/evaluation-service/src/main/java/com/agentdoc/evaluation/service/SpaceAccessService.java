@@ -3,6 +3,7 @@ package com.agentdoc.evaluation.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.enums.OnlineReasonCode;
 import com.agentdoc.common.feign.DocumentFeign;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -16,6 +17,14 @@ import org.springframework.stereotype.Component;
 public class SpaceAccessService {
 
     private final DocumentFeign documentFeign;
+
+    /** 要求受保护 OWNER 身份，不以 platform role 代替。 */
+    public void requireOwner(Long spaceId) {
+        Result<Void> result = documentFeign.checkSpaceOwner(spaceId);
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, OnlineReasonCode.OWNER_REQUIRED.name());
+        }
+    }
 
     /**
      * 校验用户在指定空间下是否拥有目标权限

@@ -13,6 +13,15 @@ import java.math.BigDecimal;
 @TableName("evaluation_feedback")
 @Schema(description = "不可变人工评估反馈")
 public class EvaluationFeedbackEntity extends BaseEntity {
+    @Schema(description = "线上分配身份，历史反馈为空") private Long onlineAssignmentId;
+    @Schema(description = "原始产物证据身份") private Long originalEvidenceId;
+    @Schema(description = "原始产物摘要") private String originalEvidenceHash;
+    @Schema(description = "原始 rubric 0～4，既有 score 仍为0～1") private Integer rubricScore;
+    @Schema(description = "BLINDED/NON_BLINDED/UNKNOWN") private String blindness;
+    @Schema(description = "追加更正的前序反馈身份") private Long supersedesFeedbackId;
+    @Schema(description = "理由码列表 JSON") private String reasonCodesJson;
+    @Schema(description = "独立确认的严重安全事件") private Boolean seriousSafetyEvent;
+    @Schema(description = "严重事件依据") private String safetyReason;
     @Schema(description = "归属空间ID")
     private Long spaceId;
 

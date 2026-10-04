@@ -11,6 +11,7 @@ import com.agentdoc.document.pojo.vo.EffectivePermissionVO;
 import com.agentdoc.document.pojo.vo.DocumentStatsVO;
 import com.agentdoc.document.service.DocumentService;
 import com.agentdoc.document.service.SpaceService;
+import com.agentdoc.document.service.SpacePermissionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -39,6 +40,14 @@ public class SpaceController {
 
     private final SpaceService spaceService;
     private final DocumentService documentService;
+    private final SpacePermissionService permissionService;
+
+    @Operation(summary = "校验实际空间 OWNER 身份")
+    @GetMapping("/{id}/owner-permission")
+    public Result<Void> checkOwner(@PathVariable Long id) {
+        permissionService.requireOwner(id);
+        return Result.ok();
+    }
 
     @Operation(summary = "创建空间")
     @PostMapping

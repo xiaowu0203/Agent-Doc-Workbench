@@ -1,6 +1,6 @@
 # 受控线上 A/B：数据、API 与协议契约
 
-状态：已冻结，2026-10-04；依据 [ADR-0007](adr/0007-controlled-online-ab.md)。这是目标契约，不代表 API/调度已经实现或部署。实施按先数据与只读预检、再分配安全内核、再评价报告、最后页面和受控真实验收推进。
+状态：已冻结，2026-10-04；依据 [ADR-0007](adr/0007-controlled-online-ab.md)。下文为完整目标契约；当前源码实现边界见第 11 节，不代表已经部署。实施按先数据与只读预检、再分配安全内核、再评价报告、最后页面和受控真实验收推进。
 
 ## 1. 基线、版本与限制
 
@@ -18,7 +18,7 @@
 
 ## 2. Canonical、hash 与固定分桶
 
-所有新 hash 输入采用 envelope：domain 字符串、schemaVersion 整数、payload 对象。对象 key 按 UTF-8 无符号字节序排序，JSON 无额外空白/BOM/末尾换行，UTF-8 SHA-256 小写 hex；null/空对象/空数组互异，禁止重复 key、非法 Unicode、二进制浮点/NaN/Infinity。
+所有新 hash 输入采用 envelope：domain 字符串、schemaVersion 整数、payload 按下表定义（online.expected 为数组，其余为对象）。对象 key 按 UTF-8 无符号字节序排序，JSON 无额外空白/BOM/末尾换行，UTF-8 SHA-256 小写 hex；null/空对象/空数组互异，禁止重复 key、非法 Unicode、二进制浮点/NaN/Infinity。
 
 ID/版本化十进制指标使用规范文本；整数策略参数保持 JSON 整数；小数参数必须为无指数的规范十进制字符串（去末尾零、零为 0），不得把字符串 0.80 和 0.8 当不同已规范输入。业务字符串保留内容，除各字段明确 trim 外不做 NFC 或换行替换。
 
@@ -28,9 +28,13 @@ documentIds 按数值升序；两组固定 BASELINE、CANDIDATE 顺序；Skill �
 | --- | --- |
 | online.bucket | experimentId、documentId、seed |
 | online.create-request | creatorId、spaceId 及第 3 节所有创建字段（不含 clientRequestKey；服务端将 hash 纳入 key 冲突检查） |
+| online.template-request | experimentId、spaceId、agentId、requestHash、candidateAgentPrompt；独立验证模板捕获重试，不与创建请求 hash 混用 |
 | online.task-request | actorId、spaceId、agentId、documentId、name、instruction、tokenBudget、readScope、focusRegions |
 | online.template | spaceId、agentId、agentConfigVersion、role、systemPrompt、nonPromptConfig、dependencyManifest |
 | online.non-prompt | template 去除 role/systemPrompt 后全部字段 |
+| online.dependencies | dependencyManifest 全部字段 |
+| online.expected | 按 documentId 排序的 expectedBindings 数组；该 domain 的 payload 为数组 |
+| online.preflight | experimentId、actorId、manifestHash、dependencyHash、stateVersion、checkedAt；缺失当前依赖使用 null |
 | online.manifest | 第 4 节全部私有 manifest 字段 |
 | online.binding | 第 6 节 OnlineTaskBindingDTO 全部字段（不含 bindingHash） |
 | online.slot-permit | experimentId、assignmentId、taskId、bindingHash、generation |
@@ -239,3 +243,17 @@ OnlineExperimentReportVO：reportType/schemaVersion、id/experimentId/revision�
 新模块实施前依次证明：迁移/主体唯一与历史不变；完整绑定/新输入/双实例槽/预算/停止/熔断/对账；原始 LIVE 规则/盲态/报告/决定；页面权限/确认/轮询；具体样本额度的真实验收。预检不能因草案可创建就返回 startable=true。
 
 性能按明确环境/索引/数据量/查询形状记录：P6-01 EXPLAIN，P6-02热点并发，P6-03百万 assignment 规模/报告构建，P6-05补真实页面。1 秒 p95 仅分页/报告概要读取参考目标，构建另计，不预先建设聚合平台。
+
+## 11. P6-01 已实现边界
+
+源码已实现第 3 节的创建、实验分页、详情、OWNER 预检和 assignment 分页五个公共端点。创建先预留操作者范围内的幂等身份，再跨服务捕获当前配置；模板双写和最终实验落库各有独立短事务。概要/详情仅返回身份、证明、参数和统计投影，不返回 Prompt、expected 正文或完整 manifest。尚未接入 Task/Execution 事实时，assignment 的 factStatus 为 UNKNOWN。
+
+Agent 内部入口为 POST /internal/online-configs/prepare 和 GET /internal/online-configs/{experimentId}/dependency?spaceId=...，使用 common-core 的 AgentOnlineConfigFeign 直连，服务复查当前 OWNER 及相应 evaluation/agent 权限。Evaluation 的 agent-doc.online.agent-url 读取 AGENT_INTERNAL_URL，默认 http://localhost:8084；部署必须指向 Agent 内网地址。Gateway 拒绝规范化后的 /internal 及其子路径，不能将直连地址配置为公共网关。受保护 OWNER 通过 GET /api/document/spaces/{spaceId}/owner-permission 核验，平台管理员身份不能替代该角色。
+
+当前模板冻结模型配置/参数/价格、Skill 版本/正文与目录身份、工具白名单、Prompt 和会话策略。runtimeRelease/toolRelease 此批是 Agent 执行应用服务和工具会话工厂的 class 指纹，**尚不构成完整传递依赖的发布证明**；安全分配接入前须补齐实际 Runtime、适配器、工具定义/实现及跨服务发布身份，不能直接据这两个指纹判定可执行。
+
+新线上质量规则已注册 expected/config 契约和指标元数据，版本标记 online-contract-v2；旧 text-assertion 仍读取摘要，旧隔离规则仍执行原契约。线上规则不能绑定离线 TestCase，也不能在旧离线引擎执行。真实 LIVE 原始证据评价、报告、启动/分配/启停与窄签名授权留在后续批次。
+
+因此 preflight.startable 固定为 false，并返回 ONLINE_EXECUTION_NOT_READY、ONLINE_RULE_NOT_READY、ONLINE_REPORT_NOT_READY；draftEligible 仅表示本批能检查的结构、范围、版本、依赖和占位条件。历史成本估算不可用时明确为空，不填零。60 秒 preflight proof 目前是只读摘要；后续 start/resume 必须执行完整权威复查，不能将该摘要作为现成启动许可。
+
+V31 新增意图/模板/槽/动作请求基础，向前修正占位和操作者幂等唯一键，并用 MySQL 5.7 INSERT/UPDATE trigger 约束 Result/Metric/Evidence 两种主体互斥。历史 schema 1 只读且不能启动，不自动重算 JSON/hash。迁移和事务验证在隔离库完成；此实现边界不授权迁移实际业务库或启动真实实验。
