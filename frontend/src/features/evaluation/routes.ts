@@ -28,7 +28,7 @@ export const evaluationRoute: RouteRecordRaw = {
           ? () => import('@/views/EvaluationCatalogView.vue')
           : section.key === 'runs'
             ? () => import('@/views/EvaluationRunView.vue')
-            : () => import('@/views/EvaluationEntryView.vue'),
+            : () => import('@/views/ExperimentView.vue'),
       meta: { evaluationSection: section.key },
       props: (route) => ({
         section: section.key,
