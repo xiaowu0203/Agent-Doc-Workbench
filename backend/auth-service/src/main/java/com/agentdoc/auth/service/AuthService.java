@@ -196,6 +196,9 @@ public class AuthService {
      * 校验任务能力参数并签发短时令牌。
      */
     public String issueTaskCapability(TaskCapabilityIssueDTO request) {
+        if (request != null && request.onlineIdentity() != null) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "线上执行凭证必须经 WAIT 与权威槽交换");
+        }
         if (request == null
                 || request.taskId() == null
                 || request.agentId() == null
@@ -214,7 +217,7 @@ public class AuthService {
         return jwtService.createTaskCapabilityToken(request.taskId(), request.agentId(),
                 request.spaceId(), request.documentId(), request.executionMode(), request.documentVersionSnapshot(),
                 request.documentContentSha256(), request.inputSnapshotSchemaVersion(), request.inputSnapshotHash(),
-                request.derivationRequestHash(), request.actions());
+                request.derivationRequestHash(), request.actions(), null);
     }
 
     /**

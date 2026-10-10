@@ -4,6 +4,9 @@ import com.agentdoc.auth.service.JwtService;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
+import com.agentdoc.common.utils.OnlineCapabilityUtils;
+import com.agentdoc.common.config.SecurityVerifyProperties;
+import com.agentdoc.common.security.OnlineCapabilityVerifier;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -64,7 +67,13 @@ public class SecurityConfig {
     @Bean
     public JwtDecoder jwtDecoder() {
         JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
-        return token -> TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token));
+        return token -> OnlineCapabilityUtils.rejectGeneralAccess(TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token)));
+    }
+
+    /** 专用线上凭证使用本机公钥，不通过禁止窄令牌的普通解码器。 */
+    @Bean
+    public OnlineCapabilityVerifier onlineCapabilityVerifier(SecurityVerifyProperties properties) {
+        return new OnlineCapabilityVerifier(NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build(), properties);
     }
 
     /**
@@ -86,6 +95,9 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/internal/task-recovery-capabilities",
                                 "/api/auth/internal/task-draft-finalization-capabilities",
+                                "/api/auth/internal/online-capabilities",
+                                "/api/auth/internal/online-release",
+                                "/api/auth/internal/online-waits/*/exchange", "/api/auth/internal/online-waits/*/renew",
                                 "/api/auth/register",
                                 "/api/auth/login",
                                 "/api/auth/refresh",

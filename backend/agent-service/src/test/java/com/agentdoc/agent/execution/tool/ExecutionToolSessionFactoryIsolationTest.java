@@ -86,7 +86,7 @@ class ExecutionToolSessionFactoryIsolationTest {
                 11L, 20L, 30L, 40L, 1000L, TaskExecutionMode.ISOLATED.name(), 5L,
                 "b".repeat(64), 1, "c".repeat(64), "e".repeat(64), 10L, 9L, 3,
                 "d".repeat(64), null, null, null,
-                "http://task-service/mcp", "capability");
+                "http://task-service/mcp", "capability", null);
         return new AgentRuntimeContext(12L, new AgentEntity(), new ModelEntity(), input,
                 "instruction", "prompt", null, List.of(), external);
     }

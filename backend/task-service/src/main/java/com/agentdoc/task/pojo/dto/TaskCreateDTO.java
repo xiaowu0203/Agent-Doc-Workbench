@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
@@ -37,7 +38,9 @@ public record TaskCreateDTO(
         TaskReadScope readScope,
         @Valid @Size(max = MAX_TASK_FOCUS_REGION_COUNT)
         @Schema(description = "文档关注区域；RANGES 模式下同时作为读取白名单")
-        List<@NotNull TaskFocusRegionDTO> focusRegions) {
+        List<@NotNull TaskFocusRegionDTO> focusRegions,
+        @Schema(description = "创建幂等键；相同空间/发起者/key复用原Task及冻结输入")
+        @Pattern(regexp = "[A-Za-z0-9._:-]{1,64}") String clientRequestKey) {
 
     /**
      * 转换为待执行任务实体。

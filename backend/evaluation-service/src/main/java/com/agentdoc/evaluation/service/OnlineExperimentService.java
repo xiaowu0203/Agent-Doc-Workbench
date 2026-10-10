@@ -75,6 +75,7 @@ public class OnlineExperimentService {
     private final SpaceAccessService access;
     private final AgentOnlineConfigFeign agentFeign;
     private final DocumentFeign documentFeign;
+    private final OnlinePreflightProofService preflightProofs;
 
     public OnlineExperimentVO create(OnlineExperimentCreateDTO raw) {
         var request = OnlineExperimentRequestValidator.normalize(raw);
@@ -161,7 +162,7 @@ public class OnlineExperimentService {
         entity.setMaxTaskCount(request.maxTaskCount());
         entity.setAssignedTaskCount(0);
         entity.setReservedTokenBudget(0L);
-        entity.setConsumedTokens(0L);
+        entity.setConsumedTokens(BigInteger.ZERO);
         entity.setBaselineSlotCount(0);
         entity.setCandidateSlotCount(0);
         entity.setUnknownTaskCount(0);
@@ -285,8 +286,10 @@ public class OnlineExperimentService {
         proof.put("checkedAt", checked.toString());
         String upper = BigInteger.valueOf(entity.getMaxTaskCount()).multiply(
                 new BigInteger(payload.path("budgetPlan").path("perTask").asText())).toString();
+        String proofHash = OnlineProtocolUtils.hash("online.preflight", proof);
+        preflightProofs.save(entity, currentDependency, proofHash, checked.plusSeconds(PREFLIGHT_SECONDS));
         return new OnlineExperimentPreflightVO(identity, entity.getManifestHash(), checked.toString(),
-                OnlineProtocolUtils.hash("online.preflight", proof), checked.plusSeconds(PREFLIGHT_SECONDS).toString(),
+                proofHash, checked.plusSeconds(PREFLIGHT_SECONDS).toString(),
                 draftEligible, false, documents.size() - candidate, candidate, srm, upper, null, List.copyOf(issues));
     }
 

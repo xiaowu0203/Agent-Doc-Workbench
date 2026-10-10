@@ -38,7 +38,7 @@ public class OnlineAssignmentConvertor {
                 value.getTaskConfirmedAt(),
                 value.getSettledAt(),
                 value.getUpdatedAt(),
-                value.getCreatedAt(), "UNKNOWN");
+                value.getCreatedAt(), value.getExecutionStatus() == null ? "UNKNOWN" : value.getExecutionStatus());
     }
-    private static String text(Long value) { return value == null ? null : value.toString(); }
+    private static String text(Number value) { return value == null ? null : value.toString(); }
 }

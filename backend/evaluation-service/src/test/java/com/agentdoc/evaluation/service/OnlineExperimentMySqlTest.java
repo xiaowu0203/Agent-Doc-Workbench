@@ -109,7 +109,7 @@ class OnlineExperimentMySqlTest {
             when(agents.onlineDependency(anyLong(), eq(101L))).thenReturn(Result.ok(pair.dependencyHash()));
             var service = new OnlineExperimentService(experiments, context.getBean(OnlineAssignmentMapper.class),
                     new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, context.getBean(OnlineExperimentPersistenceService.class),
-                    versions, new EvaluatorContractValidator(), access, agents, documents);
+                    versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class));
             var created = service.create(OnlineExperimentRequestValidatorTest.request());
             assertThat(service.create(OnlineExperimentRequestValidatorTest.request()).summary().id()).isEqualTo(created.summary().id());
             assertThat(created.summary().createdAt()).isNotNull();

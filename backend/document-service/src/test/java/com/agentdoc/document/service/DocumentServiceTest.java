@@ -45,6 +45,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * {@link DocumentService} 单元测试：编辑触发版本快照、审批合并防并发覆盖。
@@ -112,6 +113,18 @@ class DocumentServiceTest {
         entity.setCreatedBy(USER_ID);
         entity.setUpdatedBy(USER_ID);
         return entity;
+    }
+
+    @Test
+    void onlineFrozenVersionCheckNeedsNoUserContextAndDoesNotRecurseThroughTaskCapability() {
+        SecurityContextHolder.clearContext();
+        var snapshot = new DocumentVersionEntity(); snapshot.setContent("冻结正文");
+        snapshot.setContentSha256(StableSnapshotUtils.sha256Utf8(snapshot.getContent()));
+        when(versionService.requireVersion(DOCUMENT_ID, 1L)).thenReturn(snapshot);
+        documentService.requireOnlineFrozenVersion(DOCUMENT_ID, 1L, snapshot.getContentSha256());
+        verifyNoInteractions(permissionService, authFeign, documentMapper);
+        snapshot.setContent("篡改正文");
+        assertThrows(BusinessException.class, () -> documentService.requireOnlineFrozenVersion(DOCUMENT_ID, 1L, snapshot.getContentSha256()));
     }
 
     @Test

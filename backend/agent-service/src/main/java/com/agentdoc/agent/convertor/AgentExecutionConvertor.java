@@ -11,6 +11,8 @@ import com.agentdoc.common.enums.TokenValueSource;
 import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.pojo.TokenValue;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
+import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.common.utils.SnapshotCanonicalV3Utils;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -55,6 +57,13 @@ public final class AgentExecutionConvertor {
         entity.setA2aTaskId(a2aTaskId);
         entity.setA2aContextId(a2aContextId);
         entity.setWorkbenchTaskId(input.workbenchTaskId());
+        if (input.onlineIdentity() != null) {
+            var identity = input.onlineIdentity(); OnlineIdentityUtils.requireComplete(identity);
+            entity.setOnlineExperimentId(OnlineProtocolUtils.id(identity.experimentId()));
+            entity.setOnlineAssignmentId(OnlineProtocolUtils.id(identity.assignmentId()));
+            entity.setOnlineBindingSchemaVersion(identity.bindingSchemaVersion()); entity.setOnlineBindingHash(identity.bindingHash());
+            entity.setOnlineSlotGeneration(identity.generation()); entity.setOnlineSlotPermitHash(identity.permitHash());
+        }
         entity.setTraceId(TraceContext.getTelemetryTraceId());
         entity.setSpanId(TraceContext.getTelemetrySpanId());
         entity.setSpaceId(input.spaceId());

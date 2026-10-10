@@ -159,6 +159,11 @@ public class AgentExecutionQueryService {
         if (execution == null) {
             return null;
         }
+        return tokenUsageOf(execution);
+    }
+
+    /** 调用方已批量取得同领域权威记录，复用冻结价格投影而不逐条查询数据库。 */
+    public AgentExecutionTokenUsageVO tokenUsageOf(AgentExecutionEntity execution) {
         // 将模型快照信息转为Map
         Map<String, Object> model = map(execution.getModelSnapshot());
         // 组装Token用量VO返回

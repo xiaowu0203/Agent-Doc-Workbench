@@ -26,6 +26,7 @@ package com.agentdoc.common.feign.dto;
  * @param candidateSnapshotHash         候选执行快照 hash；非 Experiment 为空
  * @param mcpServerUrl                  工作台内置MCP服务地址
  * @param taskCapability                A2A能力令牌（task capability jwt），用于权限校验
+ * @param onlineIdentity                线上绑定与执行槽证明；普通、派生和离线任务为空
  */
 public record AgentTaskInputDTO(
         Long workbenchTaskId,
@@ -47,5 +48,6 @@ public record AgentTaskInputDTO(
         Integer candidateSnapshotSchemaVersion,
         String candidateSnapshotHash,
         String mcpServerUrl,
-        String taskCapability) {
+        String taskCapability,
+        OnlineDispatchIdentityDTO onlineIdentity) {
 }

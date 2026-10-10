@@ -4,6 +4,7 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
+import com.agentdoc.common.utils.OnlineCapabilityUtils;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.gateway.config.GatewayAuthProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -83,7 +84,8 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         } catch (IllegalArgumentException exception) {
             return unauthorized(exchange.getResponse(), "非法请求路径");
         }
-        if (recoveryPath.equals("/internal") || recoveryPath.startsWith("/internal/")
+        if (OnlineCapabilityUtils.internalPath(recoveryPath)
+                || recoveryPath.equals("/internal") || recoveryPath.startsWith("/internal/")
                 || recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
                 || recoveryPath.startsWith("/api/auth/internal/task-draft-finalization-capabilities")
                 || recoveryPath.startsWith("/api/agent/internal/a2a/")
@@ -108,7 +110,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
         try {
             // 使用JWKS公钥解码器验签、解析JWT（无效 token 直接 401，不转发）
-            TaskRecoveryJwtUtils.rejectGeneralAccess(jwtDecoder.decode(token));
+            OnlineCapabilityUtils.rejectGeneralAccess(TaskRecoveryJwtUtils.rejectGeneralAccess(jwtDecoder.decode(token)));
         } catch (JwtException e) {
             log.debug("JWT 校验失败, path={}, reason={}", LogSanitizer.sanitizeText(path),
                     LogSanitizer.sanitizeText(e.getMessage()));

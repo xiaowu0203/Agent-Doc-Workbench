@@ -5,6 +5,7 @@ import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.feign.dto.TaskRecoveryIdentityDTO;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
@@ -105,6 +106,8 @@ public class TaskRecoveryVerifier {
 
     /** 逐字段匹配接收方已有冻结输入；可选派生身份仅在双方都为空时省略。 */
     public void requireIdentity(Jwt jwt, TaskRecoveryIdentityDTO identity) {
+        try { OnlineIdentityUtils.requireJwt(jwt, identity.onlineIdentity()); }
+        catch (RuntimeException invalid) { throw denied(); }
         identity.toClaims().forEach((field, expected) -> {
             Object actual = jwt.getClaim(field);
             if (JwtConstant.CLAIM_DERIVATION_REQUEST_HASH.equals(field) && expected == null && actual == null) { return; }

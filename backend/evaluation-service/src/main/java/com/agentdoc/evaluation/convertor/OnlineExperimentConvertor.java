@@ -40,5 +40,5 @@ public class OnlineExperimentConvertor {
                 entity.getBaselineSlotCount(), entity.getCandidateSlotCount(), entity.getUnknownTaskCount(), List.copyOf(reasons),
                 entity.getLastReconciledAt(), entity.getCreatedBy().toString(), entity.getCreatedAt(), entity.getUpdatedAt());
     }
-    private static String text(Long value) { return value == null ? null : value.toString(); }
+    private static String text(Number value) { return value == null ? null : value.toString(); }
 }

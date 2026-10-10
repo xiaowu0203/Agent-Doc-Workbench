@@ -2,6 +2,7 @@ package com.agentdoc.common.feign.interceptor;
 
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
+import com.agentdoc.common.constant.OnlineCapabilityConstant;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.feign.context.AuthorizationContext;
 import feign.RequestInterceptor;
@@ -48,6 +49,7 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
     public void apply(RequestTemplate template) {
         // 专用恢复调用不透传用户、Agent 或已过期能力凭证，避免混合身份和凭证泄漏。
         if (template.headers().keySet().stream().anyMatch(key -> TaskRecoveryConstant.MACHINE_KEY_HEADER.equalsIgnoreCase(key)
+                || OnlineCapabilityConstant.HEADER.equalsIgnoreCase(key)
                 || TaskRecoveryConstant.CAPABILITY_HEADER.equalsIgnoreCase(key))) {
             template.removeHeader(HttpHeaders.AUTHORIZATION);
             template.removeHeader(HeaderConstants.X_TASK_CAPABILITY);
@@ -56,7 +58,8 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
         // 1. 尝试从Servlet Web请求上下文获取原始Authorization（同步Web请求场景）
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         // 判断是否为Servlet Web请求上下文
-        if (attributes instanceof ServletRequestAttributes servletAttributes) {
+        if (!template.headers().containsKey(HttpHeaders.AUTHORIZATION)
+                && attributes instanceof ServletRequestAttributes servletAttributes) {
             // 提取原始请求的Authorization头部（JWT Token）
             String authorization = servletAttributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);
             // 头部非空，则设置到Feign下游请求模板中，实现头透传

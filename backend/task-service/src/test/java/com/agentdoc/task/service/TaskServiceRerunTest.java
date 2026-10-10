@@ -1,5 +1,7 @@
 package com.agentdoc.task.service;
 
+import static org.mockito.Mockito.mock;
+
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.DocType;
@@ -70,7 +72,7 @@ class TaskServiceRerunTest {
     void setUp() {
         service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService, authFeign, auditLogService,
-                new ObjectMapper(), taskCapabilityVerifier, new ReplayProperties());
+                new ObjectMapper(), taskCapabilityVerifier, new ReplayProperties(), null, mock(TaskOnlineRoutingService.class), mock(TaskOnlineDispatchService.class));
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")
                 .subject(String.valueOf(USER_ID))

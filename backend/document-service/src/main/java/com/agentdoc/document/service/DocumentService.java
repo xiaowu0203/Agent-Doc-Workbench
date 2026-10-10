@@ -1031,6 +1031,15 @@ public class DocumentService {
         } else {
             permissionService.requirePermission(document.getSpaceId(), DOCUMENT_READ);
         }
+        return checkedFrozenVersion(documentId, version, expectedSha256);
+    }
+
+    /** 仅供已验签且显式校验原操作者权限的线上准入证明使用，避免递归调用 Task 能力校验。 */
+    public void requireOnlineFrozenVersion(Long documentId, Long version, String expectedSha256) {
+        checkedFrozenVersion(documentId, version, expectedSha256);
+    }
+
+    private DocumentVersionEntity checkedFrozenVersion(Long documentId, Long version, String expectedSha256) {
         DocumentVersionEntity snapshot = versionService.requireVersion(documentId, version);
         String actualSha256 = StableSnapshotUtils.sha256Utf8(snapshot.getContent());
         if (expectedSha256 == null || !expectedSha256.equals(snapshot.getContentSha256())
@@ -1334,5 +1343,15 @@ public class DocumentService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "文档不存在");
         }
         return doc;
+    }
+
+    /** 调用方已用签名授权复核 OWNER；批量复核固定范围归属，避免逐条数据库查询。 */
+    public void requireOnlineResources(Long spaceId, List<Long> ids) {
+        if (ids == null || ids.isEmpty()) { throw new BusinessException(ErrorCode.CONFLICT, "RESOURCE_FORBIDDEN"); }
+        var rows = documentMapper.selectBatchIds(ids);
+        if (rows.size() != ids.size() || rows.stream().anyMatch(row -> !spaceId.equals(row.getSpaceId())
+                || !Integer.valueOf(DocStatus.NORMAL.getCode()).equals(row.getStatus()) || DocType.fromCode(row.getDocType()) == null)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "RESOURCE_FORBIDDEN");
+        }
     }
 }

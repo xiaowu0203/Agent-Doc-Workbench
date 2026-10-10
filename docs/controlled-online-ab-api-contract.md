@@ -1,6 +1,6 @@
 # 受控线上 A/B：数据、API 与协议契约
 
-状态：已冻结，2026-10-04；依据 [ADR-0007](adr/0007-controlled-online-ab.md)。下文为完整目标契约；当前源码实现边界见第 11 节，不代表已经部署。实施按先数据与只读预检、再分配安全内核、再评价报告、最后页面和受控真实验收推进。
+状态：已冻结，2026-10-04；依据 [ADR-0007](adr/0007-controlled-online-ab.md)。下文为完整目标契约；当前源码实现边界见第 11、12 节，不代表已经部署。实施按先数据与只读预检、再分配安全内核、再评价报告、最后页面和受控真实验收推进。
 
 ## 1. 基线、版本与限制
 
@@ -30,9 +30,12 @@ documentIds 按数值升序；两组固定 BASELINE、CANDIDATE 顺序；Skill �
 | online.create-request | creatorId、spaceId 及第 3 节所有创建字段（不含 clientRequestKey；服务端将 hash 纳入 key 冲突检查） |
 | online.template-request | experimentId、spaceId、agentId、requestHash、candidateAgentPrompt；独立验证模板捕获重试，不与创建请求 hash 混用 |
 | online.task-request | actorId、spaceId、agentId、documentId、name、instruction、tokenBudget、readScope、focusRegions |
+| online.route | binding 或非参与 reason，二者恰有一个非空；路由决定持久化后不可重新分组 |
+| online.action-request | experimentId、actorId、action、完整 request；用于启停请求幂等冲突校验 |
 | online.template | spaceId、agentId、agentConfigVersion、role、systemPrompt、nonPromptConfig、dependencyManifest |
 | online.non-prompt | template 去除 role/systemPrompt 后全部字段 |
 | online.dependencies | dependencyManifest 全部字段 |
+| online.release | 当前进程发布内容映射：classes/相对类名→class SHA-256、jars/JAR SHA-256→同摘要、runtime/java.version 与 runtime/java.vendor→实际 JVM 字符串；机器路径不进入映射 |
 | online.expected | 按 documentId 排序的 expectedBindings 数组；该 domain 的 payload 为数组 |
 | online.preflight | experimentId、actorId、manifestHash、dependencyHash、stateVersion、checkedAt；缺失当前依赖使用 null |
 | online.manifest | 第 4 节全部私有 manifest 字段 |
@@ -42,6 +45,8 @@ documentIds 按数值升序；两组固定 BASELINE、CANDIDATE 顺序；Skill �
 | online.report | 第 9 节报告正文（不含自身 reportHash） |
 
 online.task-request 的 name/instruction 使用既有 Java trim；readScope null 规范为 FULL，focusRegions null 为 []；tokenBudget 的原始 null 保留，不用当前默认预算替代。意图第一次解析默认/冻结文档版本后保存 effectiveBudget 和输入身份；同 key 重试使用该意图，不再次读当前版本改变输入。
+
+online.slot-permit 的 generation 使用正 Long 规范十进制文本；槽释放保留 generation，下次新占用递增，不能重用旧证明。online.release 遍历启动 classpath 与 JAR Manifest Class-Path；打包运行时对完整 JAR（含嵌套依赖）取摘要。缺失发布文件拒绝生成证明，进程内固定身份。测试启动器自身的临时路径不计入发布内容，但其依赖继续遍历。
 
 分桶：hash = SHA256(canonical online.bucket envelope)；bucket = 无符号完整 256 位 hash 整数 mod 10000；bucket < candidateWeightBps 为 CANDIDATE，否则 BASELINE。前端不能提交 seed/桶/组。边界 bucket = weight 属于 BASELINE。
 
@@ -57,9 +62,10 @@ online.task-request 的 name/instruction 使用既有 Java trim；readScope null
 | POST /search | OnlineExperimentSearchParam → PageVO<OnlineExperimentSummaryVO> | space:read + evaluation:read |
 | GET /{id} | OnlineExperimentVO | space:read + evaluation:read |
 | GET /{id}/preflight | OnlineExperimentPreflightVO | OWNER + evaluation:read |
-| POST /{id}/start | OnlineExperimentStartDTO → OnlineExperimentVO | OWNER + evaluation:run + task:terminate（确认自动取消策略） |
-| POST /{id}/pause、/resume、/stop | OnlineExperimentStateDTO → OnlineExperimentVO | OWNER + evaluation:run；resume 还复查启动取消权限 |
-| POST /{id}/emergency-stop | OnlineExperimentStateDTO → OnlineExperimentVO | OWNER + evaluation:run，取消动作另校验 task:terminate；缺取消权限仍先关门并返回未决 |
+| POST /{id}/start | OnlineExperimentStartDTO → OnlineExperimentActionVO | OWNER + evaluation:run + task:terminate（确认自动取消策略） |
+| POST /{id}/pause、/resume、/stop | OnlineExperimentStateDTO → OnlineExperimentActionVO | OWNER + evaluation:run；resume 还复查启动取消权限 |
+| POST /{id}/emergency-stop | OnlineExperimentStateDTO → OnlineExperimentActionVO | OWNER + evaluation:run，取消动作另校验 task:terminate；缺取消权限仍先关门并返回未决 |
+| POST /{id}/reauthorize | OnlineExperimentStateDTO → OnlineExperimentActionVO | 当前 OWNER + evaluation:run + task:terminate；显式恢复同一 manifest 的控制授权，不自动恢复实验 |
 | POST /{id}/assignments/search | OnlineAssignmentSearchParam → PageVO<OnlineAssignmentVO> | space:read + evaluation:read；任务详情另查 task:read/文档访问 |
 | GET /{id}/reports、/reports/{revision} | revision 列表/OnlineExperimentReportVO | space:read + evaluation:read |
 | POST /{id}/reports/recalculate | OnlineReportRecalculateDTO → OnlineReportRevisionVO | OWNER + evaluation:manage |
@@ -150,11 +156,19 @@ Task/Agent 保存必要身份，Agent 接受/开始时向 Evaluation 权威复�
 
 新增内部接口固定为 /internal/online-configs（Agent）、/internal/online-assignments（Evaluation）、/internal/online-observation 与 /internal/online-cancellation（Task/Document 按领域分别承接）。common-core 统一 Feign，Gateway 禁止公共路由到 /internal/**；每服务仍校验来源与窄权限，路径隐藏不能替代鉴权。
 
+派发与恢复 DTO 用可空 `onlineIdentity` 对象传递四项 binding 与两项槽身份；JWT 使用固定的平铺 claim。非参与时对象为空且六项 claim 均不存在，部分字段一律拒绝。恢复查询使用原执行身份，可以收尾已释放的槽，但不能以恢复凭证进入模型。
+
+P6-02 的状态动作返回不可变 `OnlineExperimentActionVO`（experimentId、status、stateVersion、manifestHash、reasonCode、activeSlot、三个窗口/紧急时点），同 key 重试返回原动作结果；当前完整详情仍通过 GET 读取。动作结果独立保存，避免后续对账改变状态后把新状态冒充原动作结果。
+
 内部动作：prepare-template、request/confirm-assignment、claim/release-slot、read-binding、observe-task/ledger/original-evidence、request-emergency-cancel。取消只针对当前实验的既存 assignment Task 集合；不允许创建 LIVE、编辑 Agent、提交/合并文档。操作留内部身份及维护者确认来源，不能伪装任务发起人。
 
 自动观察凭证为短期 ONLINE_OBSERVE 受众，绑定 Space/实验及实际 Task 集合，仅只读；失效可续同一范围，不改 TTL 策略绕过授权。Task 普通 Capability 仍按既有 6 小时 TTL/ADR-0006 恢复，不拿观察凭证执行模型/Workbench 写工具。
 
 Global feature 默认关闭；关闭时普通创建无分配依赖。开启时普通入口使用已有 TaskCreateDTO 增加可选 clientRequestKey；命中线上参与检查时 key 必需，null 返回 REQUEST_KEY_REQUIRED。新前端所有正常创建生成稳定 key；一次表单重试复用。客户端不能提交 variant/template/执行模式。路由查证不可用拒绝有风险创建，不当作不参与。
+
+Task 意图在分配前冻结输入。Evaluation 通过 Task 的内部权威接口复核意图及当前发起者权限，不能仅相信调用方上传的输入 hash。参与和不参与决定均写回意图：`online.route` schema 2 包含 binding、reason；同 key 重试复用该决定。接受响应丢失时先查询同一 Task 的既有 assignment，再检查当前门禁。尚未取得路由决定的意图不得落 Task 或签发普通执行凭证。预算、依赖或查证失败返回拒绝，不能转为普通生产执行；确定不在活动实验范围内才允许普通配置。
+
+V33 向 Task/AgentExecution 增加四项线上身份及槽 generation/hash，Task 另存加密 WAIT 凭证。WAIT 受众只允许读原绑定、取得原 Task 槽和交换原 Task 执行凭证，不建立用户/Agent/Worker 通用上下文。普通任务签发入口不能签发带线上身份的执行凭证；必须经 Auth 的 WAIT 交换，权威复核槽、Task 输入和原文档动作后签发。两种凭证分别存储，不能把 WAIT 当作执行或取消凭证。
 
 ## 7. 生命周期与保护
 
@@ -250,10 +264,58 @@ OnlineExperimentReportVO：reportType/schemaVersion、id/experimentId/revision�
 
 Agent 内部入口为 POST /internal/online-configs/prepare 和 GET /internal/online-configs/{experimentId}/dependency?spaceId=...，使用 common-core 的 AgentOnlineConfigFeign 直连，服务复查当前 OWNER 及相应 evaluation/agent 权限。Evaluation 的 agent-doc.online.agent-url 读取 AGENT_INTERNAL_URL，默认 http://localhost:8084；部署必须指向 Agent 内网地址。Gateway 拒绝规范化后的 /internal 及其子路径，不能将直连地址配置为公共网关。受保护 OWNER 通过 GET /api/document/spaces/{spaceId}/owner-permission 核验，平台管理员身份不能替代该角色。
 
-当前模板冻结模型配置/参数/价格、Skill 版本/正文与目录身份、工具白名单、Prompt 和会话策略。runtimeRelease/toolRelease 此批是 Agent 执行应用服务和工具会话工厂的 class 指纹，**尚不构成完整传递依赖的发布证明**；安全分配接入前须补齐实际 Runtime、适配器、工具定义/实现及跨服务发布身份，不能直接据这两个指纹判定可执行。
+P6-01 提交时模板冻结模型配置/参数/价格、Skill 版本/正文与目录身份、工具白名单、Prompt 和会话策略；当时 runtimeRelease/toolRelease 仅为两个入口 class 指纹，尚不构成完整传递依赖发布证明。P6-02 对 Agent 进程发布证明的补齐见第 12 节；跨服务发布身份接入仍是启动前提。
 
 新线上质量规则已注册 expected/config 契约和指标元数据，版本标记 online-contract-v2；旧 text-assertion 仍读取摘要，旧隔离规则仍执行原契约。线上规则不能绑定离线 TestCase，也不能在旧离线引擎执行。真实 LIVE 原始证据评价、报告、启动/分配/启停与窄签名授权留在后续批次。
 
 因此 preflight.startable 固定为 false，并返回 ONLINE_EXECUTION_NOT_READY、ONLINE_RULE_NOT_READY、ONLINE_REPORT_NOT_READY；draftEligible 仅表示本批能检查的结构、范围、版本、依赖和占位条件。历史成本估算不可用时明确为空，不填零。60 秒 preflight proof 目前是只读摘要；后续 start/resume 必须执行完整权威复查，不能将该摘要作为现成启动许可。
 
 V31 新增意图/模板/槽/动作请求基础，向前修正占位和操作者幂等唯一键，并用 MySQL 5.7 INSERT/UPDATE trigger 约束 Result/Metric/Evidence 两种主体互斥。历史 schema 1 只读且不能启动，不自动重算 JSON/hash。迁移和事务验证在隔离库完成；此实现边界不授权迁移实际业务库或启动真实实验。
+
+## 12. P6-02 安全内核细化
+
+P6-02 已开始，当前完成内部短事务内核、Task 创建意图，以及保护窄授权签发/只读证明的源码接入，**尚未完成跨服务 LIVE 闭环**。写内核没有 HTTP、MQ 或定时扫描入口，不提供启动/恢复；现有公共 preflight.startable 仍为 false。权限、事实来源和依赖复查由后续应用层完成后才能调用内核，不能把内核参数当作客户端授权证明。
+
+V31 已提交为历史。新增 V32 只覆盖实际消费的 DECIMAL(38,0) 账本投影、终态/未决时间、槽开始/创建时间、保护授权人和追加审计事件，不回改 V31；Task/Agent 签名字段及窄授权持久化将在接入时继续向前迁移。授权额度和单次预留保持正 Long，实际累计消费使用 BigInteger/十进制文本，超出授权也保留原值，不截断为授权或 Long 最大值。
+
+Agent 新模板的 releaseProofSchemaVersion=2、applicationRelease 覆盖当前进程全部应用/依赖 class 或 JAR 及 JVM 身份，替代两个入口指纹；实际有效参数另入冻结清单。Task、Document、Auth 的内部发布证明也纳入传递依赖。旧双模板保留只读，缺完整发布身份须重建实验。
+
+内核已实现：操作者/key 分配幂等、单调接受顺序、稳定文档组、完整预算预留；实验→槽→assignment 行锁、每组一个槽、重投复用 generation、旧证明失效；状态版本检查、普通/紧急关门；两个独立权威来源的事实合并、终态释放槽与账本结算分离、未知保留及五分钟暂停、实际超额熔断、同组最近 20 项失败至少 6 项暂停。终态顺序使用 Agent 实际 finishedAt（统一至数据库毫秒精度），取消排除健康窗口；未经双源确证的未投递不能零结算。Task 账本与 Agent 实际执行通过独立窄授权观察适配取得。
+
+以下契约已接入源码；部署与完整实验启动仍受后续门禁约束：
+
+参与任务先保存预分配 Task 身份和冻结输入，再申请 assignment；相同操作者/key 重试不读取新版输入。未取槽时 Auth 签发 ONLINE_WAIT（固定受众 online-assignment-wait），只允许原 Task 申请槽/换取完整执行令牌，不能用于模型或文档工具。取得当前 generation/permit 后才签发普通 Task Capability，同时绑定线上四项身份；WAIT/普通能力均绑定服务器核验的 actorId，恢复身份也保留四项，但恢复只查证/取消，不能开始新执行。
+
+自动保护由 OWNER + evaluation:run + task:terminate 明确确认。Auth 签发短期 ONLINE_CONTROL 授权，续签保持 Space/实验/授权人和 manifest 身份，Document 复查授权人当前 OWNER/动作权限；停机导致授权过期时保留未决并要求显式恢复授权，不绕过 TTL。控制授权仅可在当前实验申请短期 ONLINE_OBSERVE/ONLINE_CANCEL；后两者绑定排序后的既存 assignment Task 集合，Task/Agent 服务逐条与 Evaluation 权威绑定交叉核验，不能创建 LIVE 或改变生产配置。凭证仅密文保存，审计保留 SERVICE 和授权人身份，不伪装人类调用。
+
+分配/占槽/开始检查采用实验→槽→assignment 锁序，所有 RPC 在事务外；普通暂停和正常停止允许已接受项继续，紧急熔断则禁止未开始项。槽记录开始准入：熔断与开始竞争由同一实验锁线性化；Agent 数据库实际终态可释放槽，但 Task 账本未知仍保留 Token 预留。取消仅设置请求标记，实际运行退出才产生权威终态；Task 的推送终态、MQ 投递失败或远端请求超时都不能单独证明模型已停止。
+
+本批所有新增路径默认关闭。即使安全内核就绪，线上规则和报告缺失仍阻止启动；后续能力必须通过实际实现就绪检查，不新增可跳过这些门禁的布尔开关。
+
+### 12.1 保护授权传输与签发
+
+ONLINE_CONTROL、ONLINE_OBSERVE、ONLINE_CANCEL 固定使用各自 `online-experiment-control`、`online-experiment-observe`、`online-experiment-cancel` 受众，`onlinePurpose` 声明区分用途；身份包含 schema 2、十进制文本的 Space/实验/授权人及 manifestHash。它们都是 evaluation-service 的 SERVICE 身份，有效期最长 300 秒，不携带 Agent/Worker 动作或登录角色。OBSERVE/CANCEL 另外绑定 `online.task-set` 域下的 Task 集合 hash：ID 按数值升序、拒绝重复，每批 1—100 项；到期时间不得晚于源 CONTROL，接收方必须同时验证真实 assignment，而不能只信任集合 hash。
+
+初次 CONTROL 由已登录人类明确确认自动取消，Auth 回查 Evaluation 冻结身份，并通过 Document 当前 OWNER、evaluation:run、task:terminate 校验。续签及派生使用 `X-ONLINE-CAPABILITY` 专用头，普通 Bearer、Task Capability、离线 Worker 均不能作为这些机器请求的身份；续签必须持有尚未过期的 CONTROL，保持原授权人、Space、实验和 manifest，并再次查当前权限。OBSERVE/CANCEL 不能续 CONTROL，不能换实验或扩大为未接受的 Task。授权过期后只能由当前 OWNER 重新明确授权。
+
+OWNER 变更后，当前 OWNER 可通过同一人类入口重新明确确认；新凭证不自动替换实验保护授权人。状态应用层须按状态版本确认授权人并保存密文/审计，Evaluation 权威授权人尚未匹配时不得续签或派生任务凭证。旧 CONTROL 不得因新的当前用户或新的 OWNER 身份而改写原授权人。
+
+内部授权/证明端点只直连服务，公共 Gateway 拒绝转发；TLS 或实际 loopback 才接收专用头，不信任转发头代替加密。普通 JWT 解码器拒绝以上受众/用途及 ONLINE_WAIT，专用调用不透传用户或 Task 凭证。接收器 `agent-doc.security.online-capability-enabled` 默认 false；issuer 通过 `agent-doc.security.online-capability-issuer` 对齐 Auth，默认 agent-doc-workbench。这两个配置仅控制凭证接收，不能绕过 preflight 的执行、评价、报告和部署门禁。
+
+初次授权入口为 `POST /api/auth/internal/online-control-authorizations`，状态应用层持当前人类 JWT 请求 experimentId、manifestHash、automaticCancellationAcknowledged，操作者来自该 JWT；凭证只在后端传递和加密保存，不通过公共 Gateway 或浏览器签发入口返回。内部续签/派生入口为 `POST /api/auth/internal/online-capabilities`，请求只含 purpose/taskIds，其他范围从合法 CONTROL 继承。Evaluation 的 `/api/evaluation/internal/online-authorizations/{experimentId}/human-proof`、`control-proof` 和 `bindings` 只返回权威身份或完整 accepted binding，不返回正文、Prompt、密钥，也不接受分配/开始/取消指令。Document 的 `/api/document/internal/online-authorizations/spaces/{spaceId}/human-permission` 在初次签发时一次裁决当前人类的受保护 OWNER 与两项动作；`/{experimentId}/permission` 在续签/派生时复查签名授权人的相同权限，不改变 SecurityContext。
+
+线上授权请求的 ID 必须是 JSON 文本，ack 必须是 JSON 布尔值；拒绝数字 ID、字符串布尔值和重复/尾随 JSON，不能依赖反序列化的标量自动转换。Task 集合批量证明入口遵循相同文本 ID 约束。
+
+### 12.2 当前接入边界
+
+普通 Task 创建支持可选 clientRequestKey。提供 key 时先持久化唯一预分配 Task ID，再冻结业务输入和有效预算；Task 与创建审计在短事务内共同落库，签发/MQ 在事务外完成。参与请求从冻结意图取得 Evaluation 的持久化路由，组与预算在落 Task 前接受；同一请求重试不换输入、版本、预算或身份。无 key 的普通创建沿用既有路径；开启路由后，符合 ACTIVE 范围的无 key 请求拒绝。
+
+WAIT 由原创建者签发，排队续签及交换走专用头。取槽后才签发带完整六项身份的 Task Capability；Task、Agent 输入、执行记录和恢复身份保持同一 binding/generation/permit。两条 Runtime 统一消费冻结完整 Prompt，开始前再次验证当前依赖、原输入及 Evaluation 准入；普通 RERUN、REVIEW_REWORK 与离线执行保持原边界。
+
+状态变更与请求结果在短事务内共同保存。OnlineExperimentActionVO 是该请求首次成功时的不可变状态快照，含状态版本、manifestHash、原因与冻结窗口，不含凭证；重复请求即使后来状态变化仍返回原结果，最新状态通过 detail 获取。START 还必须匹配服务器保存的预检 proof；RESUME 复核原期限、额度、全部 UNKNOWN、完整健康窗口与 SRM，不能改 seed 或追加预算。
+
+CONTROL 密文、密钥版本及 UTC 到期时间持久化。扫描默认每 30 秒有界处理，每批至多 100 个已接受 Task；有限授权续签、当前 OWNER/资源/发布依赖复查、原创建意图修复、重复派发及独立 Task/Agent 观察都在数据库事务外进行。过期控制授权需要当前 OWNER 显式重新授权；缺失或过期 WAIT 需要原创建者重新授权，CONTROL 不能替代它签发模型能力。
+
+OBSERVE/CANCEL 消费者验证完整已接受集合及当前保护权限；取消仅请求实际 Runtime 收尾。终态槽释放独立于 Token 账本，账本未知仍保留预算；进程死亡、网络异常、Task 终态及取消请求不构成 Agent 实际终态。运行 SRM 首次异常仅留证据，至少五分钟后再次异常才暂停；健康窗口与未知保护不因排队或样本不足绕过。
+
+新增路径默认关闭。公开 start/resume 当前仍返回 ONLINE_EXECUTION_NOT_READY：线上规则和报告属于后续交付，不能以安全内核测试通过绕过完整预检。源码/隔离测试不代表已经迁移业务库、部署或启动真实实验。

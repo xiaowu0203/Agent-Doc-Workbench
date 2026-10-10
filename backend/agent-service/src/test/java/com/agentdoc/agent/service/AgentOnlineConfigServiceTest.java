@@ -3,6 +3,9 @@ package com.agentdoc.agent.service;
 import com.agentdoc.agent.config.SkillPackageProperties;
 import com.agentdoc.agent.execution.application.ExecutionPreparationTransactionService;
 import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
+import com.agentdoc.agent.execution.skill.SkillCandidate;
+import com.agentdoc.agent.skill.archive.SkillPackageEntry;
+import com.agentdoc.agent.enums.SkillEntryType;
 import com.agentdoc.agent.execution.prompt.PromptService;
 import com.agentdoc.agent.mapper.AgentOnlineConfigMapper;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
@@ -13,6 +16,9 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.OnlineTaskFeign;
+import com.agentdoc.common.feign.OnlineAuthFeign;
+import com.agentdoc.common.feign.OnlineDocumentFeign;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
 import org.junit.jupiter.api.*;
 import org.springframework.core.io.ByteArrayResource;
@@ -33,6 +39,9 @@ class AgentOnlineConfigServiceTest {
     private final SkillSnapshotService skills = mock(SkillSnapshotService.class);
     private final DocumentFeign documents = mock(DocumentFeign.class);
     private final SpaceAccessService access = mock(SpaceAccessService.class);
+    private final OnlineTaskFeign onlineTasks = mock(OnlineTaskFeign.class);
+    private final OnlineAuthFeign onlineAuth = mock(OnlineAuthFeign.class);
+    private final OnlineDocumentFeign onlineDocuments = mock(OnlineDocumentFeign.class);
     private final List<AgentOnlineConfigEntity> stored = new ArrayList<>();
     private AgentOnlineConfigService service;
     private AgentEntity agent;
@@ -44,7 +53,11 @@ class AgentOnlineConfigServiceTest {
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         var prompt = new PromptService(new ByteArrayResource("platform".getBytes(StandardCharsets.UTF_8)));
-        service = new AgentOnlineConfigService(mapper, persistence, capture, skills, prompt, new SkillPackageProperties(), access, documents);
+        service = new AgentOnlineConfigService(mapper, persistence, capture, skills, prompt, new SkillPackageProperties(), access, documents,
+                onlineTasks, onlineAuth, onlineDocuments);
+        when(onlineTasks.release(any(), any())).thenReturn(Result.ok("a".repeat(64)));
+        when(onlineAuth.release(any(), any())).thenReturn(Result.ok("b".repeat(64)));
+        when(onlineDocuments.release(any(), any())).thenReturn(Result.ok("c".repeat(64)));
         agent = new AgentEntity();
         agent.setId(201L); agent.setSpaceId(101L); agent.setConfigVersion(1L);
         agent.setSystemPrompt("baseline"); agent.setSkillSelectionMode("ALL_BOUND"); agent.setExternalMcpEnabled(false);
@@ -119,11 +132,41 @@ class AgentOnlineConfigServiceTest {
     }
 
     @Test
+    void unchangedAgentAndModelStillDetectSkillResourceAndToolDependencies() {
+        var resource = new SkillPackageEntry("references/example.md", SkillEntryType.REFERENCE, 10, "e".repeat(64), true);
+        var original = new SkillCandidate(81L, 82L, 1, "sample-skill", "处理文档", "f".repeat(64), "owned-package", "冻结指令", List.of("read_fragment"), List.of(resource));
+        when(capture.capture(201L)).thenReturn(new ExecutionPreparationTransactionService.CapturedExecution(agent, model, List.of(original), List.of()));
+        var pair = service.prepare(request()); String frozen = stored.getFirst().getTemplateJson();
+        var changedResource = new SkillPackageEntry(resource.path(), resource.type(), resource.size(), "1".repeat(64), true);
+        var resourceDrift = new SkillCandidate(81L, 82L, 1, original.name(), original.activationDescription(), original.sha256(), original.storageKey(), original.instructionText(), original.allowedTools(), List.of(changedResource));
+        when(capture.capture(201L)).thenReturn(new ExecutionPreparationTransactionService.CapturedExecution(agent, model, List.of(resourceDrift), List.of()));
+        assertThat(service.dependency(901L, 101L)).isNotEqualTo(pair.dependencyHash());
+        var toolDrift = new SkillCandidate(81L, 82L, 1, original.name(), original.activationDescription(), original.sha256(), original.storageKey(), original.instructionText(), List.of("read_fragment", "write_draft"), original.readableResources());
+        when(capture.capture(201L)).thenReturn(new ExecutionPreparationTransactionService.CapturedExecution(agent, model, List.of(toolDrift), List.of()));
+        assertThat(service.dependency(901L, 101L)).isNotEqualTo(pair.dependencyHash());
+        assertThat(agent.getConfigVersion()).isEqualTo(1L); assertThat(model.getConfigVersion()).isEqualTo(1L);
+        assertThat(stored.getFirst().getTemplateJson()).isEqualTo(frozen); verify(persistence, times(1)).savePair(anyList());
+    }
+
+    @Test
     void currentDependencyDriftIsReportedWithoutChangingFrozenTemplates() {
         var pair = service.prepare(request());
         String frozen = stored.getFirst().getTemplateJson();
         model.setConfigVersion(2L);
         assertThat(service.dependency(901L, 101L)).isNotEqualTo(pair.dependencyHash());
         assertThat(stored.getFirst().getTemplateJson()).isEqualTo(frozen);
+    }
+
+    @Test
+    void downstreamReleaseDriftCannotBeHiddenByUnchangedAgentVersion() {
+        var pair = service.prepare(request());
+        String frozen = stored.getFirst().getTemplateJson();
+        when(onlineTasks.release(any(), any())).thenReturn(Result.ok("d".repeat(64)));
+        assertThat(service.dependency(901L, 101L)).isNotEqualTo(pair.dependencyHash());
+        when(onlineTasks.release(any(), any())).thenReturn(Result.ok("a".repeat(64)));
+        when(onlineDocuments.release(any(), any())).thenReturn(Result.fail(ErrorCode.SERVICE_UNAVAILABLE));
+        assertThatThrownBy(() -> service.dependency(901L, 101L)).hasMessageContaining("TEMPLATE_INVALID");
+        assertThat(stored.getFirst().getTemplateJson()).isEqualTo(frozen);
+        verify(persistence, times(1)).savePair(anyList());
     }
 }

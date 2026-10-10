@@ -19,6 +19,8 @@ import com.agentdoc.agent.pojo.entity.ModelEntity;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.service.SkillSnapshotService;
 import com.agentdoc.agent.service.AgentCandidateConfigService;
+import com.agentdoc.agent.service.AgentOnlineConfigService;
+import com.agentdoc.agent.service.OnlineAgentAdmissionService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
@@ -66,6 +68,8 @@ public class ExecutionPreparationService {
     private final AgentTelemetry telemetry;
     private final AgentExecutionMapper executionMapper;
     private final AgentCandidateConfigService candidateConfigService;
+    private final AgentOnlineConfigService onlineConfigService;
+    private final OnlineAgentAdmissionService onlineAdmission;
 
     /**
      * 执行Agent任务前置准备全流程
@@ -82,6 +86,9 @@ public class ExecutionPreparationService {
      */
     public PreparedExecution prepare(String a2aTaskId, String a2aContextId, AgentTaskInputDTO input,
                                      String instruction) {
+        if (input.onlineIdentity() != null && TaskExecutionMode.ISOLATED.name().equals(input.executionMode())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "隔离任务不得携带线上绑定");
+        }
         // 若任务执行类型是【ISOLATED】类型，则走prepareReplay
         if (TaskExecutionMode.ISOLATED.name().equals(input.executionMode())) {
             if (input.candidateConfigId() != null) {
@@ -115,7 +122,8 @@ public class ExecutionPreparationService {
                 selection);
 
         // 拼接最终系统提示词，注入技能快照片段
-        String systemPrompt = promptService.systemPrompt(agent.getSystemPrompt(), snapshot.catalogPromptSection());
+        String systemPrompt = input.onlineIdentity() == null ? promptService.systemPrompt(agent.getSystemPrompt(), snapshot.catalogPromptSection())
+                : onlineConfigService.executionPrompt(onlineAdmission.binding(input), captured, input.taskCapability());
 
         // 校验最终系统提示词字节大小，不超过配置上限
         if (systemPrompt.getBytes(StandardCharsets.UTF_8).length

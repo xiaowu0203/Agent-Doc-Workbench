@@ -8,6 +8,9 @@ public enum OnlineReasonCode {
     IDEMPOTENCY_CONFLICT,
     /** 需要实际空间所有者。 */
     OWNER_REQUIRED,
+    /** 当前授权人的动作权限不足。 */ RESOURCE_FORBIDDEN,
+    /** 权威线上身份或 accepted binding 不匹配。 */ BINDING_INVALID,
+    /** 自动保护窄授权缺失、过期或已撤权。 */ CANCEL_AUTHORIZATION_UNAVAILABLE,
     /** 十进制身份或预算非法。 */
     ID_INVALID,
     /** 随机种子非法。 */
@@ -65,5 +68,14 @@ public enum OnlineReasonCode {
     /** 范围未覆盖两组。 */
     RANGE_MISSING_VARIANT,
     /** 线上实验不存在。 */
-    ONLINE_EXPERIMENT_NOT_FOUND
+    ONLINE_EXPERIMENT_NOT_FOUND,
+    /** 已关闭新分配门禁。 */ ONLINE_GATE_CLOSED,
+    /** 达到任务数或Token预留上限。 */ ONLINE_BUDGET_EXHAUSTED,
+    /** 同组已有执行，等待而非执行失败。 */ ONLINE_SLOT_BUSY,
+    /** 已释放或不匹配的槽证明。 */ ONLINE_SLOT_INVALID,
+    /** 实际Token超出授权，紧急停止。 */ ONLINE_TOKEN_OVERRUN,
+    /** 执行或账本事实无法查证。 */ ONLINE_FACT_UNKNOWN,
+    /** 同组最近20项实际终态中失败至少6项。 */ ONLINE_HEALTH_FAILURE,
+    /** 时间窗口关闭。 */ ONLINE_ASSIGNMENT_DEADLINE,
+    /** 状态版本不匹配。 */ ONLINE_STATE_CONFLICT
 }

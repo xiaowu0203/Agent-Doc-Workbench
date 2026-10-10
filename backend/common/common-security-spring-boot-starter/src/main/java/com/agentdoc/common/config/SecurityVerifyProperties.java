@@ -17,6 +17,11 @@ public class SecurityVerifyProperties {
      */
     private String jwksUrl;
 
+    /** 是否接收线上保护窄凭证，默认关闭；不控制实验启动就绪。 */
+    private boolean onlineCapabilityEnabled;
+    /** 线上保护 JWT 的 issuer，必须与 auth-service 一致。 */
+    private String onlineCapabilityIssuer = "agent-doc-workbench";
+
     /** 恢复 JWT 的固定 issuer，必须与 auth-service 一致。 */
     private String taskRecoveryIssuer = "agent-doc-workbench";
 

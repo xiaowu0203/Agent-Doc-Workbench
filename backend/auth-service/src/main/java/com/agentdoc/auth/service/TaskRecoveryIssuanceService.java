@@ -2,6 +2,7 @@ package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.config.TaskRecoverySigningProperties;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.enums.TaskExecutionMode;
@@ -120,6 +121,7 @@ public class TaskRecoveryIssuanceService {
                 throw denied();
             }
         });
+        OnlineIdentityUtils.requireJwt(jwt, request.identity().onlineIdentity());
         if (!List.of(TaskExecutionMode.LIVE.name(), TaskExecutionMode.ISOLATED.name())
                 .contains(request.identity().executionMode())) { throw denied(); }
         return jwt;

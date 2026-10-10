@@ -6,12 +6,18 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
+import java.math.BigInteger;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("online_experiment")
 @Schema(description = "OnlineExperimentEntity")
 public class OnlineExperimentEntity extends BaseEntity {
+    @Schema(description = "自动取消的明确授权人") private Long controlAuthorizedBy;
+    @Schema(description = "保护授权加密密钥版本") private String controlKeyVersion;
+    @Schema(description = "保护 CONTROL 密文，不进入公开 VO") private String controlCiphertext;
+    @Schema(description = "CONTROL 的 UTC 有效截止") private LocalDateTime controlExpiresAt;
+    @Schema(description = "首次参与文档 SRM 的最近运行复查时间") private LocalDateTime lastRuntimeSrmCheckAt;
     @Schema(description = "空间") private Long spaceId;
     @Schema(description = "Agent") private Long agentId;
     @Schema(description = "实验名称") private String name;
@@ -28,7 +34,7 @@ public class OnlineExperimentEntity extends BaseEntity {
     @Schema(description = "任务上限") private Integer maxTaskCount;
     @Schema(description = "已分配数") private Integer assignedTaskCount;
     @Schema(description = "未结算预留") private Long reservedTokenBudget;
-    @Schema(description = "实际账本Token") private Long consumedTokens;
+    @Schema(description = "实际账本Token，可真实超过Long授权上限") private BigInteger consumedTokens;
     @Schema(description = "拒绝/暂停原因") private String reasonCode;
     @Schema(description = "创建者") private Long createdBy;
     @Schema(description = "状态操作者") private Long stateChangedBy;

@@ -10,6 +10,7 @@ import com.agentdoc.document.mapper.SpaceRoleMapper;
 import com.agentdoc.document.mapper.SpaceRolePermissionMapper;
 import com.agentdoc.document.pojo.entity.MemberEntity;
 import com.agentdoc.document.pojo.entity.SpaceRoleEntity;
+import com.agentdoc.document.pojo.entity.SpaceRolePermissionEntity;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,8 @@ import static com.agentdoc.common.constant.JwtConstant.SCOPE_USER;
 import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
 import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.SKILL_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -69,6 +72,19 @@ class SpacePermissionServiceTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void onlineActorProofUsesCurrentMembershipAndRequiresDocumentReadWithoutUserContext() {
+        SecurityContextHolder.clearContext();
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        var role = new SpaceRoleEntity(); role.setId(ROLE_ID); role.setSpaceId(SPACE_ID);
+        when(spaceRoleMapper.selectById(ROLE_ID)).thenReturn(role);
+        var create = new SpaceRolePermissionEntity(); create.setPermissionCode(TASK_CREATE);
+        var read = new SpaceRolePermissionEntity(); read.setPermissionCode(DOCUMENT_READ);
+        when(rolePermissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(create, read), List.of(create));
+        permissionService.requireOnlineTaskCreatePermission(SPACE_ID, USER_ID);
+        assertThrows(BusinessException.class, () -> permissionService.requireOnlineTaskCreatePermission(SPACE_ID, USER_ID));
     }
 
     @Test
@@ -143,5 +159,33 @@ class SpacePermissionServiceTest {
                 .claim(CLAIM_PLATFORM_ROLES, platformRoles)
                 .build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+    }
+
+    @Test
+    void onlineProtectionUsesExplicitActorWithoutHumanContextAndChecksBothActions() {
+        SecurityContextHolder.clearContext();
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        var role = new SpaceRoleEntity(); role.setId(ROLE_ID); role.setSpaceId(SPACE_ID);
+        role.setRoleKey("OWNER"); role.setProtectedRole(true);
+        when(spaceRoleMapper.selectById(ROLE_ID)).thenReturn(role);
+        var run = new SpaceRolePermissionEntity(); run.setPermissionCode("evaluation:run");
+        var cancel = new SpaceRolePermissionEntity(); cancel.setPermissionCode("task:terminate");
+        when(rolePermissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(run, cancel));
+        permissionService.requireOnlineProtectionPermission(SPACE_ID, USER_ID);
+        assertEquals(null, SecurityContextHolder.getContext().getAuthentication());
+        when(rolePermissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(run));
+        assertThrows(BusinessException.class, () -> permissionService.requireOnlineProtectionPermission(SPACE_ID, USER_ID));
+    }
+
+    @Test
+    void onlineProtectionRejectsUnprotectedOwnerWrongSpaceOrRevokedMember() {
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        var role = new SpaceRoleEntity(); role.setId(ROLE_ID); role.setSpaceId(SPACE_ID); role.setRoleKey("OWNER");
+        when(spaceRoleMapper.selectById(ROLE_ID)).thenReturn(role);
+        assertThrows(BusinessException.class, () -> permissionService.requireOnlineProtectionPermission(SPACE_ID, USER_ID));
+        role.setProtectedRole(true); role.setSpaceId(2002L);
+        assertThrows(BusinessException.class, () -> permissionService.requireOnlineProtectionPermission(SPACE_ID, USER_ID));
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(null);
+        assertThrows(BusinessException.class, () -> permissionService.requireOnlineProtectionPermission(SPACE_ID, USER_ID));
     }
 }

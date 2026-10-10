@@ -51,7 +51,7 @@ class OnlineExperimentServiceTest {
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         service = new OnlineExperimentService(mapper, assignments, new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, persistence,
-                versions, new EvaluatorContractValidator(), access, agents, documents);
+                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class));
         when(intents.selectOne(any())).thenAnswer(call -> intent.get());
         doAnswer(call -> { intent.set(call.getArgument(0)); return null; }).when(persistence).reserve(any());
         doAnswer(call -> { stored.set(call.getArgument(0)); return null; }).when(persistence).complete(any());

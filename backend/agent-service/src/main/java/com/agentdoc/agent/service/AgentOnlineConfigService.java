@@ -5,8 +5,6 @@ import static com.agentdoc.common.enums.OnlineReasonCode.*;
 import com.agentdoc.agent.config.SkillPackageProperties;
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.execution.application.ExecutionPreparationTransactionService;
-import com.agentdoc.agent.execution.application.AgentExecutionApplicationService;
-import com.agentdoc.agent.execution.tool.ExecutionToolSessionFactory;
 import com.agentdoc.agent.execution.prompt.PromptService;
 import com.agentdoc.agent.execution.skill.SkillSelectionResult;
 import com.agentdoc.agent.mapper.AgentOnlineConfigMapper;
@@ -15,11 +13,17 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.OnlineTaskFeign;
+import com.agentdoc.common.feign.OnlineAuthFeign;
+import com.agentdoc.common.feign.OnlineDocumentFeign;
+import com.agentdoc.common.feign.dto.OnlineAssignmentRequestDTO;
+import com.agentdoc.common.feign.dto.OnlineTaskBindingDTO;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
 import com.agentdoc.common.feign.vo.AgentOnlineConfigPairVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
+import com.agentdoc.common.utils.OnlineReleaseUtils;
 import com.agentdoc.common.utils.SnapshotCanonicalV3Utils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -30,12 +34,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.HexFormat;
 import java.util.Locale;
 import java.util.TreeMap;
 
@@ -55,6 +57,34 @@ public class AgentOnlineConfigService {
     private final SkillPackageProperties limits;
     private final SpaceAccessService access;
     private final DocumentFeign documentFeign;
+    private final OnlineTaskFeign onlineTaskFeign;
+    private final OnlineAuthFeign onlineAuthFeign;
+    private final OnlineDocumentFeign onlineDocumentFeign;
+
+    /** 当前依赖匹配后只读取原模板 Prompt，不重新组装或改用当前 Agent Prompt。 */
+    public String executionPrompt(OnlineTaskBindingDTO binding, ExecutionPreparationTransactionService.CapturedExecution captured, String capability) {
+        var pair = rows(id(binding.experimentId()));
+        if (pair.size() != 2) { throw invalid(); }
+        existing(pair, id(binding.spaceId()), id(binding.agentId()), pair.getFirst().getRequestHash());
+        var selected = pair.stream().filter(v -> v.getId().toString().equals(binding.templateId())).findFirst().orElseThrow(AgentOnlineConfigService::invalid);
+        if (!selected.getRole().equals(binding.variant()) || !selected.getTemplateHash().equals(binding.templateHash())
+                || !selected.getNonPromptHash().equals(binding.nonPromptHash()) || !selected.getDependencyHash().equals(binding.dependencyHash())
+                || selected.getExecutionTimeoutSeconds() != binding.executionTimeoutSeconds()
+                || !binding.spaceId().equals(captured.agent().getSpaceId().toString())
+                || !binding.agentId().equals(captured.agent().getId().toString())
+                || !binding.dependencyHash().equals(material(captured, "Bearer " + capability, null).dependencyHash())) { throw invalid(); }
+        return OnlineProtocolUtils.object(selected.getTemplateJson()).path("payload").path("systemPrompt").asText();
+    }
+
+    public String taskDependency(Long experimentId, OnlineAssignmentRequestDTO request) {
+        if (request == null || !AuthUtils.getUserIdOrException().toString().equals(request.actorId())) { throw invalid(); }
+        var result = onlineTaskFeign.creationProof(request.taskId());
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode() || !request.equals(result.data())) { throw invalid(); }
+        var pair = rows(experimentId);
+        if (pair.size() != 2 || pair.stream().anyMatch(v -> !request.spaceId().equals(v.getSpaceId().toString())
+                || !request.agentId().equals(v.getAgentId().toString()))) { throw invalid(); }
+        return material(captureService.capture(id(request.agentId()))).dependencyHash();
+    }
 
     public AgentOnlineConfigPairVO prepare(AgentOnlineConfigPrepareDTO request) {
         if (request == null) { throw invalid(); }
@@ -98,7 +128,17 @@ public class AgentOnlineConfigService {
         return material(captureService.capture(pair.getFirst().getAgentId())).dependencyHash();
     }
 
+    /** 仅供已验签的控制观察应用服务使用；不依赖人类上下文。 */
+    String machineDependency(Long experimentId, Long spaceId, String control) {
+        var pair = rows(experimentId);
+        if (pair.size() != 2 || pair.stream().anyMatch(value -> !spaceId.equals(value.getSpaceId()))) { throw invalid(); }
+        return material(captureService.capture(pair.getFirst().getAgentId()), null, control).dependencyHash();
+    }
+
     private Material material(ExecutionPreparationTransactionService.CapturedExecution capture) {
+        return material(capture, null, null);
+    }
+    private Material material(ExecutionPreparationTransactionService.CapturedExecution capture, String authorization, String control) {
         var agent = capture.agent();
         var model = capture.model();
         if (!"ALL_BOUND".equals(agent.getSkillSelectionMode()) || Boolean.TRUE.equals(agent.getExternalMcpEnabled())
@@ -142,8 +182,11 @@ public class AgentOnlineConfigService {
         nonPrompt.put("externalMcpEnabled", false);
         nonPrompt.put("crossTaskSession", false);
         nonPrompt.put("cachePolicy", "TASK_SCOPED");
-        nonPrompt.put("runtimeRelease", releaseHash(AgentExecutionApplicationService.class));
-        nonPrompt.put("toolRelease", releaseHash(ExecutionToolSessionFactory.class));
+        nonPrompt.put("releaseProofSchemaVersion", OnlineProtocolUtils.SCHEMA_VERSION);
+        nonPrompt.put("applicationRelease", OnlineReleaseUtils.current());
+        nonPrompt.put("taskRelease", release(onlineTaskFeign.release(authorization, control)));
+        nonPrompt.put("documentRelease", release(onlineDocumentFeign.release(authorization, control)));
+        nonPrompt.put("authRelease", release(onlineAuthFeign.release(authorization, control)));
         Map<String, Object> dependencies = new TreeMap<>(nonPrompt);
         dependencies.put("agentConfigVersion", agent.getConfigVersion());
         dependencies.put("platformPromptHash", StableSnapshotUtils.sha256Utf8(promptService.systemPrompt("", "")));
@@ -226,13 +269,6 @@ public class AgentOnlineConfigService {
         }
     }
 
-    private static String releaseHash(Class<?> type) {
-        try (var input = type.getResourceAsStream(type.getSimpleName() + ".class")) {
-            if (input == null) { throw invalid(); }
-            return StableSnapshotUtils.sha256Utf8(HexFormat.of().formatHex(input.readAllBytes()));
-        } catch (IOException failure) { throw new BusinessException(ErrorCode.INTERNAL_ERROR, DEPENDENCY_UNAVAILABLE.name()); }
-    }
-
     private static void rejectSecretFields(JsonNode value) {
         if (value == null) { throw invalid(); }
         if (value.isObject()) { value.fields().forEachRemaining(field -> {
@@ -250,6 +286,11 @@ public class AgentOnlineConfigService {
     }
 
     private static BusinessException invalid() { return new BusinessException(ErrorCode.CONFLICT, TEMPLATE_INVALID.name()); }
+
+    private static String release(Result<String> result) {
+        if (result == null || result.code() != ErrorCode.SUCCESS.getCode() || result.data() == null || !result.data().matches("[0-9a-f]{64}")) { throw invalid(); }
+        return result.data();
+    }
 
     private record Material(Map<String, Object> nonPrompt, Map<String, Object> dependencies,
                             String dependencyHash, String catalog, int timeout) { }

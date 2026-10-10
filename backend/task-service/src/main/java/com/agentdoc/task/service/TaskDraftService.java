@@ -163,7 +163,7 @@ public class TaskDraftService {
         // 使用草稿数据创建正式任务
         TaskVO task = taskService.create(new TaskCreateDTO(
                 entity.getSpaceId(), entity.getAgentId(), entity.getDocumentId(), entity.getName(),
-                entity.getInstruction(), entity.getTokenBudget(), readScope, regions));
+                entity.getInstruction(), entity.getTokenBudget(), readScope, regions, null));
 
         // 任务创建成功，删除草稿
         taskDraftMapper.deleteById(entity.getId());

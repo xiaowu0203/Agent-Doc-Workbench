@@ -1,5 +1,7 @@
 package com.agentdoc.task.service;
 
+import static org.mockito.Mockito.mock;
+
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -68,7 +70,7 @@ class TaskServiceCapabilityTest {
     void setUp() {
         service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService,
-                authFeign, auditLogService, objectMapper, taskCapabilityVerifier, new ReplayProperties());
+                authFeign, auditLogService, objectMapper, taskCapabilityVerifier, new ReplayProperties(), null, mock(TaskOnlineRoutingService.class), mock(TaskOnlineDispatchService.class));
     }
 
     @Test

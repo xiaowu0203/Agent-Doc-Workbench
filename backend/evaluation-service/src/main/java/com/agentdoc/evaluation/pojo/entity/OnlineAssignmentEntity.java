@@ -5,12 +5,17 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import java.time.LocalDateTime;
+import java.math.BigInteger;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("online_assignment")
 @Schema(description = "不可变线上分配身份及独立状态投影")
 public class OnlineAssignmentEntity extends BaseEntity {
+    @Schema(description = "Agent权威执行状态") private String executionStatus;
+    @Schema(description = "Agent实际终态观察时间") private LocalDateTime executionTerminalAt;
+    @Schema(description = "最近权威观察时间") private LocalDateTime lastObservedAt;
+    @Schema(description = "本轮未知事实首次发现时间") private LocalDateTime unresolvedSince;
     @Schema(description = "实验") private Long experimentId;
     @Schema(description = "空间") private Long spaceId;
     @Schema(description = "Agent") private Long agentId;
@@ -39,7 +44,7 @@ public class OnlineAssignmentEntity extends BaseEntity {
     @Schema(description = "取消状态") private String cancelStatus;
     @Schema(description = "结算状态") private String settlementStatus;
     @Schema(description = "权威执行身份") private Long executionId;
-    @Schema(description = "实际Token未知为空") private Long consumedTokens;
+    @Schema(description = "实际Token未知为空，真实超额不截断") private BigInteger consumedTokens;
     @Schema(description = "未决原因") private String reasonCode;
     @Schema(description = "确认时间") private LocalDateTime taskConfirmedAt;
     @Schema(description = "结算时间") private LocalDateTime settledAt;

@@ -8,16 +8,20 @@ import com.agentdoc.agent.execution.context.AgentRuntimeContext;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.agent.execution.runtime.AgentExecutionTerminatedException;
 import com.agentdoc.agent.execution.context.SkillExecutionSnapshot;
+import com.agentdoc.agent.execution.model.TokenUsage;
+import com.agentdoc.common.pojo.TokenValue;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.observability.AgentTelemetry;
 import com.agentdoc.agent.pojo.entity.AgentEntity;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.pojo.entity.ModelEntity;
+import com.agentdoc.agent.service.OnlineAgentAdmissionService;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.agentdoc.common.constant.A2aMetadataConstant;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.a2aproject.sdk.server.agentexecution.RequestContext;
@@ -57,6 +61,7 @@ public class AgentExecutionApplicationService {
     private final AgentExecutionRuntime runtime;
     /** JSON对象转换，用于解析A2A消息内的自定义DataPart */
     private final ObjectMapper objectMapper;
+    private final OnlineAgentAdmissionService onlineAdmission;
 
     /**
      * 执行Agent任务主流程
@@ -113,7 +118,10 @@ public class AgentExecutionApplicationService {
         emitter.startWork();
         // 更新数据库状态为WORKING执行中
         executionPersistenceService.markWorking(execution);
+        boolean runtimeInvoked = false;
         try {
+            // 模型入口与 emergency-stop 共用 Evaluation 权威门禁，不以签名有效代替当前准入。
+            if (input.onlineIdentity() != null) { onlineAdmission.begin(input); }
             // 调用运行时执行业务逻辑；传入取消回调，运行时内部可轮询判断是否被取消
             boolean streaming = context.getCallContext() != null
                     && Boolean.TRUE.equals(context.getCallContext().getState()
@@ -122,6 +130,7 @@ public class AgentExecutionApplicationService {
             // 构建Agent运行时上下文
             AgentRuntimeContext runtimeContext = new AgentRuntimeContext(execution.getId(), agent, model, input, instruction,
                     systemPrompt, skillSnapshot, skillSnapshot.allowedMcpTools(), prepared.externalMcpConnections());
+            runtimeInvoked = true;
             if (streaming) {
                 result = runtime.execute(runtimeContext, () -> isCancelRequested(execution.getId()), emitter::sendMessage);
             } else {
@@ -165,7 +174,11 @@ public class AgentExecutionApplicationService {
             // 运行时异常：模型报错、工具异常等，状态置为FAILED
             agentTelemetry.markFailed(exception);
             String errorMessage = safeMessage(exception);
-            executionPersistenceService.markFailed(execution, errorMessage);
+            if (input.onlineIdentity() != null && !runtimeInvoked) {
+                // 准入拒绝发生在 Runtime 入口之前，ALL_BOUND 准备路径不调用模型；此处可以确证实际消耗为零。
+                executionPersistenceService.markFailed(execution, errorMessage,
+                        new TokenUsage(TokenValue.provider(0L), TokenValue.provider(0L), TokenValue.provider(0L)));
+            } else { executionPersistenceService.markFailed(execution, errorMessage); }
             // 触发回调task-service，任务失败了
             emitter.fail(agentMessage(errorMessage));
         }
@@ -181,6 +194,13 @@ public class AgentExecutionApplicationService {
         AgentExecutionEntity execution = findByA2aTaskId(context.getTaskId());
         if (execution == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 执行不存在");
+        }
+        if (execution.getOnlineAssignmentId() != null) {
+            executionMapper.update(null, new LambdaUpdateWrapper<AgentExecutionEntity>().eq(AgentExecutionEntity::getId, execution.getId())
+                    .notIn(AgentExecutionEntity::getStatus, List.of("COMPLETED", "FAILED", "CANCELED", "TIMED_OUT"))
+                    .set(AgentExecutionEntity::getCancelRequested, true));
+            emitter.sendMessage(agentMessage("取消请求已记录，等待执行收尾"));
+            return;
         }
         // 修改状态为已取消，写库
         executionPersistenceService.markCanceled(execution);

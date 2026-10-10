@@ -54,7 +54,7 @@ class JwtServiceTest {
 
         Jwt jwt = decoder.decode(jwtService.createTaskCapabilityToken(
                 10L, 20L, 30L, 40L, TaskExecutionMode.ISOLATED.name(), 5L, "a".repeat(64),
-                1, "b".repeat(64), "c".repeat(64), List.of("READ_FRAGMENT")));
+                1, "b".repeat(64), "c".repeat(64), List.of("READ_FRAGMENT"), null));
 
         assertEquals("10", jwt.getSubject());
         assertEquals("AGENT", jwt.getClaimAsString("actorType"));
