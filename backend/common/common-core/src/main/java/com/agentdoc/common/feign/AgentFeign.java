@@ -17,6 +17,7 @@ import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
 import com.agentdoc.common.feign.vo.AgentEvaluationEvidenceVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
 import com.agentdoc.common.feign.vo.AgentRefVO;
+import com.agentdoc.common.feign.vo.AgentOnlineOriginalTextVO;
 import com.agentdoc.common.feign.vo.AgentTaskOptionVO;
 import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
@@ -33,6 +34,10 @@ import java.util.List;
 
 @FeignClient(name = "agent-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface AgentFeign {
+
+    /** 当前人类 Task/文档授权下读取原始最终文本，不接受执行能力代替读取权限。 */
+    @GetMapping("/api/agent/executions/tasks/{taskId}/online-original-text")
+    Result<AgentOnlineOriginalTextVO> getOnlineOriginalText(@PathVariable Long taskId, @RequestParam Long spaceId);
 
     /** 创建或幂等返回不可变 Prompt 候选配置，仅返回非敏感身份与证明字段。 */
     @PostMapping("/api/agent/internal/candidate-configs")

@@ -391,7 +391,7 @@ public class OnlineExperimentService {
         return List.copyOf(values);
     }
 
-    private static String versionHash(EvaluatorVersionEntity version) {
+    static String versionHash(EvaluatorVersionEntity version) {
         return StableSnapshotUtils.snapshotHash(1, new VersionHash(version.getEvaluatorKey(), version.getConfigSchemaVersion(),
                 JsonUtils.parse(version.getConfigJson(), Object.class), version.getResultSchemaVersion(), version.getImplementationVersion()));
     }

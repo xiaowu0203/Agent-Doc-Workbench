@@ -3,6 +3,9 @@ package com.agentdoc.evaluation.service;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.utils.AuthUtils;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionCreateDTO;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
 import com.agentdoc.evaluation.mapper.EvaluationDatasetCaseMapper;
@@ -40,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -101,6 +105,21 @@ class EvaluationCatalogServiceTest {
         var result = service.updateEvaluatorVersion(41L, new EvaluatorVersionUpdateDTO(1, "{}", 1));
         assertThat(result.implementationVersion()).isEqualTo("phase3-v1");
         verify(spaceAccessService).requirePermission(9L, EVALUATION_MANAGE);
+    }
+
+    @Test
+    void newOriginalTextVersionUsesImplementedEngineWithoutChangingPublishedContractOnlyVersion() {
+        var parent = evaluator(false); parent.setEvaluatorKey("online-original-text-assertion");
+        when(evaluatorMapper.selectById(42L)).thenReturn(parent);
+        var prior = draftEvaluator(); prior.setStatus("PUBLISHED"); prior.setVersionNo(7); prior.setImplementationVersion("online-contract-v2");
+        when(evaluatorVersionMapper.selectOne(any())).thenReturn(prior);
+        try (var auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUserIdOrException).thenReturn(501L);
+            var result = service.createEvaluatorVersion(new EvaluatorVersionCreateDTO(42L,1,"{}",1));
+            assertThat(result.implementationVersion()).isEqualTo(OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION);
+            assertThat(result.versionNo()).isEqualTo(8); assertThat(prior.getImplementationVersion()).isEqualTo("online-contract-v2");
+        }
+        verify(evaluatorVersionMapper,never()).updateById(any(EvaluatorVersionEntity.class));
     }
 
     @ParameterizedTest

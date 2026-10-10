@@ -21,6 +21,8 @@ public enum EvaluationEvidenceType {
     CHANGE_REQUEST,
     /** 文档版本快照 */
     DOCUMENT_VERSION,
+    /** 审批前捕获的 Agent 原始最终文本 */
+    ORIGINAL_TEXT,
     /** 审计日志 */
     AUDIT_LOG
 }

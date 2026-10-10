@@ -35,6 +35,14 @@ public enum OnlineReasonCode {
     ONLINE_RULE_INVALID,
     /** 规则版本或 LIVE 引擎未就绪。 */
     ONLINE_RULE_NOT_READY,
+    /** 规则求值异常，不代表原执行失败。 */ ONLINE_RULE_ERROR,
+    /** 原始证据身份或正文摘要不一致。 */ ORIGINAL_EVIDENCE_INVALID,
+    /** 原始证据读取来源暂不可用。 */ ORIGINAL_EVIDENCE_UNAVAILABLE,
+    /** 当前正文读取权限不足。 */ ACCESS_DENIED,
+    /** 原分配尚无权威执行身份，不能伪造评价主体。 */ ONLINE_EVALUATION_SUBJECT_NOT_READY,
+    /** 评价请求或追加主体与已保存身份冲突。 */ ONLINE_EVALUATION_IDENTITY_CONFLICT,
+    /** 原始文本全部必需断言通过。 */ ORIGINAL_TEXT_ASSERTIONS_PASSED,
+    /** 原始文本至少一条必需断言失败。 */ ORIGINAL_TEXT_ASSERTIONS_FAILED,
     /** 旧规则不适用于 LIVE 原始评价。 */
     ONLINE_RULE_NOT_LIVE_COMPATIBLE,
     /** 线上规则不能用于离线证据。 */

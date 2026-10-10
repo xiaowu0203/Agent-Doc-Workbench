@@ -67,6 +67,7 @@ online.slot-permit 的 generation 使用正 Long 规范十进制文本；槽释�
 | POST /{id}/emergency-stop | OnlineExperimentStateDTO → OnlineExperimentActionVO | OWNER + evaluation:run，取消动作另校验 task:terminate；缺取消权限仍先关门并返回未决 |
 | POST /{id}/reauthorize | OnlineExperimentStateDTO → OnlineExperimentActionVO | 当前 OWNER + evaluation:run + task:terminate；显式恢复同一 manifest 的控制授权，不自动恢复实验 |
 | POST /{id}/assignments/search | OnlineAssignmentSearchParam → PageVO<OnlineAssignmentVO> | space:read + evaluation:read；任务详情另查 task:read/文档访问 |
+| POST /{id}/assignments/{assignmentId}/evaluations | OnlineEvaluationCreateDTO → OnlineEvaluationVO | evaluation:run + task:read + 当前文档访问；只评价冻结规则，不创建或执行 LIVE Task |
 | GET /{id}/reports、/reports/{revision} | revision 列表/OnlineExperimentReportVO | space:read + evaluation:read |
 | POST /{id}/reports/recalculate | OnlineReportRecalculateDTO → OnlineReportRevisionVO | OWNER + evaluation:manage |
 | POST /{id}/decision | OnlineExperimentDecisionDTO → OnlineExperimentVO | OWNER + evaluation:manage |
@@ -319,3 +320,15 @@ CONTROL 密文、密钥版本及 UTC 到期时间持久化。扫描默认每 30 
 OBSERVE/CANCEL 消费者验证完整已接受集合及当前保护权限；取消仅请求实际 Runtime 收尾。终态槽释放独立于 Token 账本，账本未知仍保留预算；进程死亡、网络异常、Task 终态及取消请求不构成 Agent 实际终态。运行 SRM 首次异常仅留证据，至少五分钟后再次异常才暂停；健康窗口与未知保护不因排队或样本不足绕过。
 
 新增路径默认关闭。公开 start/resume 当前仍返回 ONLINE_EXECUTION_NOT_READY：线上规则和报告属于后续交付，不能以安全内核测试通过绕过完整预检。源码/隔离测试不代表已经迁移业务库、部署或启动真实实验。
+
+## 13. P6-03 原始文本评价接入
+
+Agent 完成线上执行时追加本 Execution 唯一的原始最终文本，正文取自 Runtime 返回值而非事后读取 resultSummary。保存 Task/Execution/Space/Agent/实验/assignment、binding、正文 SHA-256、捕获时间及身份 hash；重复写入只能复用相同内容，不覆盖旧证据。捕获失败记录身份与异常类型，执行终态保持原结果；不从历史摘要回填缺失证据。
+
+原始文本读取为 `GET /api/agent/executions/tasks/{taskId}/online-original-text?spaceId=...`，仅当前人类用户可读，Agent 通过 Task 的 `GET /api/task/tasks/{taskId}/original-evidence-permission?spaceId=...&executionId=...` 复核当前 Task、Execution、文档归属及 task:read/document:read。该入口不接受 CONTROL/OBSERVE/Worker/Task Capability 代替正文授权，也不返回 Prompt 或分组。证据不可用返回 EVIDENCE_UNAVAILABLE，正文仅在这条受控读取链路中传递，不进入普通结果 VO、日志或 Span。
+
+OnlineEvaluationCreateDTO 只含 clientRequestKey、ruleKey（ASCII 规则键），身份由路径定位；发布 EvaluatorVersion、expected 和证据目标从实验 manifest 取得，不接受调用者临时修改。首批仅实现 online-original-text-assertion 的 ORIGINAL_TEXT 证据适配；其他规则拒绝为 ONLINE_RULE_NOT_READY，公开启动依旧关闭。
+
+新建原始文本版本使用实现标识 online-original-text-v1，发布后按既有内容 hash 契约冻结。仅注册契约的历史 online-contract-v2 版本不改写、不冒充已实现引擎；必须新建并发布实际引擎版本，再在新实验 manifest 中冻结。评价入口同时复核实现标识、版本实际内容 hash 和 manifest 引用 hash。
+
+评价求值与 RPC 在事务外；追加尝试、Result、Metric 和 Evidence 在单个短事务保存，ONLINE_TASK 归属与 CASE_ATTEMPT 互斥。请求键在 assignment + evaluatorVersion 下幂等，冲突拒绝；每条冻结 ruleKey 使用递增 attemptNo，失败/缺失尝试也保留。相同请求复用首次结果，不因正文或执行投影后来变化而改写。缺原始证据为 SKIPPED/EVIDENCE_UNAVAILABLE，不生成数值零；断言有效失败则保留 pass-ratio=0 等真实指标。评价不修改原 Task/Execution 终态。

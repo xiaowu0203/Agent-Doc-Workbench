@@ -8,7 +8,7 @@ import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Set;
 
-/** 新线上规则只注册契约；LIVE 原始证据引擎在 P6-03 完成。 */
+/** 线上规则的冻结配置/期望契约；各原始证据适配分别通过执行就绪门禁。 */
 public final class OnlineRuleContractValidator {
     public static final String TEXT = "online-original-text-assertion";
     public static final String CHANGE = "online-document-change-validator";

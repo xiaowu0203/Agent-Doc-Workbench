@@ -37,6 +37,11 @@ import java.util.List;
 @FeignClient(name = "task-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface TaskFeign {
 
+    /** 当前人类原始证据授权；只返回允许/拒绝，不返回正文。 */
+    @GetMapping("/api/task/tasks/{taskId}/original-evidence-permission")
+    Result<Void> checkOriginalEvidencePermission(@PathVariable Long taskId,
+            @RequestParam Long spaceId, @RequestParam Long executionId);
+
     /**
      * 检查任务是否具备执行能力。
      */
