@@ -2,6 +2,8 @@
 
 本文记录 P6-03 原始评价、服务器盲态资格与 ONLINE_V1 后端验收。接口与分析口径以[正式契约](controlled-online-ab-api-contract.md)及[ADR-0007](adr/0007-controlled-online-ab.md)为准。完整页面属于 P6-04，真实服务、消息、模型及页面闭环属于 P6-05；公开 start/resume 的部署门禁仍关闭。
 
+本批实现及测试对应提交 [e678ca6](https://github.com/xiaowu0203/Agent-Doc-Workbench/commit/e678ca6c16c4f3778d5d306701539e4d0fd826a6)。该提交的说明因终端编码显示为问号，源码内容及验收结果保持完整；此记录向前补充可复查的实现关联，不改写已推送历史。
+
 ## 功能与历史验证
 
 2026-10-12 在 JDK 21 上完成相关模块回归，并在专门创建的 MySQL 5.7 隔离库验证真实迁移、唯一键、事务和竞争。验证不修改应用业务库，隔离库在结束后清理。
