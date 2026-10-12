@@ -107,7 +107,7 @@ class TaskCreationIntentMySqlTest {
         @Bean TaskService taskService(TaskMapper tasks, AgentFeign agents, DocumentFeign documents, TaskMessagePublisher messages,
                 TaskCapabilityCryptoService crypto, AuthFeign auth, AuditLogService audit, TaskCreationIntentService creation, TaskCreationIntentMapper creationIntentMapper) {
             return new TaskService(tasks, mock(TokenUsageDetailMapper.class), mock(A2aTaskClient.class), agents, documents,
-                    messages, crypto, auth, audit, new ObjectMapper(), mock(TaskCapabilityVerifier.class), new ReplayProperties(), creation, new TaskOnlineRoutingService(new OnlineTaskProperties(), mock(OnlineEvaluationFeign.class), creationIntentMapper), mock(TaskOnlineDispatchService.class));
+                    messages, crypto, auth, audit, new ObjectMapper(), mock(TaskCapabilityVerifier.class), new ReplayProperties(), creation, new TaskOnlineRoutingService(new OnlineTaskProperties(), mock(OnlineEvaluationFeign.class), creationIntentMapper), mock(TaskOnlineDispatchService.class), mock(OnlineEvaluationFeign.class));
         }
     }
     private AnnotationConfigApplicationContext first;

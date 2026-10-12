@@ -10,6 +10,7 @@ import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.common.enums.OnlineReasonCode;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
@@ -710,7 +711,7 @@ public class EvaluationCatalogService {
         entity.setResultSchemaVersion(dto.resultSchemaVersion());
         entity.setImplementationVersion(OnlineRuleContractValidator.TEXT.equals(evaluator.getEvaluatorKey())
                 ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION
-                : OnlineRuleContractValidator.onlineOnly(evaluator.getEvaluatorKey()) ? "online-contract-v2" : "phase3-v1");
+                : OnlineRuleContractValidator.CHANGE.equals(evaluator.getEvaluatorKey()) ? OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION : "phase3-v1");
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         evaluatorVersionMapper.insert(entity);
         return EvaluatorVersionVO.from(entity);

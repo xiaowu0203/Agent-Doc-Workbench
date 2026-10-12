@@ -4,6 +4,7 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.evaluation.evaluator.DeterministicEvaluationOutcome;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
 import com.agentdoc.evaluation.mapper.EvaluationEvidenceReferenceMapper;
 import com.agentdoc.evaluation.mapper.EvaluationMetricMapper;
@@ -61,7 +62,7 @@ public class OnlineEvaluationPersistenceService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public OnlineEvaluationVO append(OnlineAssignmentEntity origin, Long versionId, String ruleKey, String key,
+    public OnlineEvaluationVO append(OnlineAssignmentEntity origin, String evaluatorKey, Long versionId, String ruleKey, String key,
             String requestHash, String expectedHash, Long actor, LocalDateTime startedAt, DeterministicEvaluationOutcome outcome) {
         var assignment = assignments.lockTask(origin.getTaskId());
         if (assignment == null || !Objects.equals(assignment.getId(), origin.getId())
@@ -69,6 +70,7 @@ public class OnlineEvaluationPersistenceService {
                 || !Integer.valueOf(2).equals(assignment.getBindingSchemaVersion()) || assignment.getExecutionId() == null) { throw conflict(); }
         var existing = prior(assignment.getId(), versionId, key);
         if (existing != null) { return reuse(existing, requestHash); }
+        if (!OnlineRuleContractValidator.onlineOnly(evaluatorKey)) { throw conflict(); }
         var attempt = new OnlineEvaluationAttemptEntity();
         attempt.setId(IdWorker.getId()); attempt.setAssignmentId(assignment.getId()); attempt.setSpaceId(assignment.getSpaceId());
         attempt.setEvaluatorVersionId(versionId); attempt.setAttemptNo(Math.addExact(attempts.lastAttempt(assignment.getId()), 1));
@@ -79,7 +81,9 @@ public class OnlineEvaluationPersistenceService {
         result.setSubjectType(SUBJECT); result.setOnlineAssignmentId(assignment.getId()); result.setOnlineEvaluationAttemptId(attempt.getId());
         result.setTaskId(assignment.getTaskId()); result.setExecutionId(assignment.getExecutionId()); result.setSpaceId(assignment.getSpaceId());
         result.setEvaluatorVersionId(versionId); result.setEvaluationAttemptNo(attempt.getAttemptNo()); result.setStatus(outcome.status().name());
-        result.setSummaryCode(outcome.summaryCode()); result.setDetailsJson(outcome.detailsJson()); result.setImplementationVersion(OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION);
+        result.setSummaryCode(outcome.summaryCode()); result.setDetailsJson(outcome.detailsJson());
+        result.setImplementationVersion(OnlineRuleContractValidator.TEXT.equals(evaluatorKey)
+                ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION : OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION);
         result.setStartedAt(startedAt); result.setFinishedAt(attempt.getFinishedAt()); attempt.setResultId(result.getId());
         EvaluationSubjectValidator.validate(result); attempts.insert(attempt); results.insert(result);
         var referenceIds = new HashMap<String, Long>();
@@ -92,7 +96,7 @@ public class OnlineEvaluationPersistenceService {
             if (referenceIds.put(ref.referenceKey(), row.getId()) != null) { throw conflict(); } evidence.insert(row);
         }
         for (var output : outcome.metrics()) {
-            var value = output.value(); MetricContractValidator.validate(OnlineRuleContractValidator.TEXT, value);
+            var value = output.value(); MetricContractValidator.validate(evaluatorKey, value);
             var row = new EvaluationMetricEntity(); row.setId(IdWorker.getId()); row.setSubjectType(SUBJECT);
             row.setOnlineAssignmentId(assignment.getId()); row.setOnlineEvaluationAttemptId(attempt.getId()); row.setTaskId(assignment.getTaskId());
             row.setExecutionId(assignment.getExecutionId()); row.setSpaceId(assignment.getSpaceId()); row.setEvaluationResultId(result.getId());

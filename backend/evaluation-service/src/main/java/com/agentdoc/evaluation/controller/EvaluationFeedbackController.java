@@ -2,12 +2,17 @@ package com.agentdoc.evaluation.controller;
 
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.evaluation.pojo.dto.EvaluationFeedbackCreateDTO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationFeedbackVO;
 import com.agentdoc.evaluation.service.EvaluationFeedbackService;
+import com.agentdoc.evaluation.service.OnlineQualityFeedbackService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
+import jakarta.validation.Validator;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,11 +27,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class EvaluationFeedbackController {
     private final EvaluationFeedbackService feedbackService;
+    private final OnlineQualityFeedbackService qualityFeedbackService;
+    private final Validator validator;
 
-    @Operation(summary = "提交不可变人工反馈")
+    @Operation(summary = "提交不可变人工反馈", requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            content = @Content(schema = @Schema(implementation = EvaluationFeedbackCreateDTO.class))))
     @PostMapping
-    public Result<EvaluationFeedbackVO> create(@Valid @RequestBody EvaluationFeedbackCreateDTO request) {
-        return Result.ok(feedbackService.create(request));
+    public Result<EvaluationFeedbackVO> create(@RequestBody String json) {
+        var request = EvaluationFeedbackCreateDTO.parse(json);
+        var errors = validator.validate(request);
+        if (!errors.isEmpty()) { throw new BusinessException(ErrorCode.BAD_REQUEST, errors.iterator().next().getMessage()); }
+        return Result.ok(request.onlineQuality() == null ? feedbackService.create(request) : qualityFeedbackService.create(request));
     }
 
     @Operation(summary = "导入 ChangeRequest 最终审批事实快照")

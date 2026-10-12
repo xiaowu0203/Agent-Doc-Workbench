@@ -52,6 +52,7 @@ public class OnlineExperimentEntity extends BaseEntity {
     @Schema(description = "人工决定") private String decision;
     @Schema(description = "决定依据") private String decisionReason;
     @Schema(description = "决定绑定版本") private Integer decisionReportRevision;
+    @Schema(description = "决定绑定的不可变报告摘要") private String decisionReportHash;
     @Schema(description = "决定人") private Long decidedBy;
     @Schema(description = "决定时间") private LocalDateTime decidedAt;
     @Schema(description = "更新时间") private LocalDateTime updatedAt;

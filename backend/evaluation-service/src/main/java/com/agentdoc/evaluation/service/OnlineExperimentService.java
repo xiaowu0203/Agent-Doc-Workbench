@@ -25,6 +25,7 @@ import com.agentdoc.evaluation.convertor.OnlineAssignmentConvertor;
 import com.agentdoc.evaluation.convertor.OnlineExperimentConvertor;
 import com.agentdoc.evaluation.mapper.OnlineExperimentCreateIntentMapper;
 import com.agentdoc.evaluation.metric.MetricDefinitionCatalog;
+import com.agentdoc.evaluation.enums.OnlineReviewExposureSource;
 import com.agentdoc.evaluation.pojo.dto.OnlineExperimentCreateDTO;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.OnlineExperimentEntity;
@@ -76,6 +77,7 @@ public class OnlineExperimentService {
     private final AgentOnlineConfigFeign agentFeign;
     private final DocumentFeign documentFeign;
     private final OnlinePreflightProofService preflightProofs;
+    private final OnlineReviewExposureService reviewExposures;
 
     public OnlineExperimentVO create(OnlineExperimentCreateDTO raw) {
         var request = OnlineExperimentRequestValidator.normalize(raw);
@@ -92,7 +94,7 @@ public class OnlineExperimentService {
         if (intent != null) {
             same(intent.getRequestHash(), requestHash);
             var existing = mapper.selectById(intent.getId());
-            if (existing != null) { requireSchema(existing); return view(existing); }
+            if (existing != null) { requireSchema(existing); return exposedView(existing, actor); }
         } else {
             intent = new OnlineExperimentCreateIntentEntity();
             intent.setId(IdWorker.getId());
@@ -123,6 +125,7 @@ public class OnlineExperimentService {
         payload.put("agentId", request.agentId());
         payload.put("name", request.name());
         payload.put("createdBy", actor.toString());
+        payload.put("reviewTrackingSchemaVersion", 1);
         payload.put("documentIds", request.documentIds());
         payload.put("bucketProtocol", Map.of("schemaVersion", OnlineProtocolUtils.SCHEMA_VERSION,
                 "seed", seed, "weight", request.candidateWeightBps()));
@@ -173,14 +176,16 @@ public class OnlineExperimentService {
             if (concurrent == null) { throw race; }
             same(concurrent.getRequestHash(), requestHash);
             requireSchema(concurrent);
-            return view(concurrent);
+            return exposedView(concurrent, actor);
         }
-        return view(entity);
+        return exposedView(entity, actor);
     }
 
     public OnlineExperimentVO detail(String identity) {
         var entity = require(id(identity));
         read(entity.getSpaceId());
+        reviewExposures.record(entity.getId(), entity.getSpaceId(), AuthUtils.getUserIdOrException(),
+                OnlineReviewExposureSource.EXPERIMENT_DETAIL);
         return view(entity);
     }
 
@@ -197,6 +202,7 @@ public class OnlineExperimentService {
                 .orderByDesc(OnlineExperimentEntity::getId);
         var page = mapper.selectPage(new Page<>(param.getPageNum(), param.getPageSize()), query);
         var ids = page.getRecords().stream().map(OnlineExperimentEntity::getId).toList();
+        reviewExposures.recordAll(spaceId, ids, AuthUtils.getUserIdOrException(), OnlineReviewExposureSource.EXPERIMENT_LIST);
         var counts = ids.isEmpty() ? Map.<Long, Long>of() : assignmentMapper.participation(ids).stream()
                 .collect(Collectors.toMap(value -> value.experimentId(), value -> value.documentCount()));
         return PageVO.of(page.getRecords().stream().map(value -> summary(value, counts.getOrDefault(value.getId(), 0L)))
@@ -208,6 +214,8 @@ public class OnlineExperimentService {
         read(entity.getSpaceId());
         requireSchema(entity);
         param.validate();
+        reviewExposures.record(entity.getId(), entity.getSpaceId(), AuthUtils.getUserIdOrException(),
+                OnlineReviewExposureSource.ASSIGNMENT_LIST);
         var query = new LambdaQueryWrapper<OnlineAssignmentEntity>()
                 .eq(OnlineAssignmentEntity::getExperimentId, entity.getId())
                 .eq(OnlineAssignmentEntity::getSpaceId, entity.getSpaceId())
@@ -224,10 +232,17 @@ public class OnlineExperimentService {
         return PageVO.of(page.getRecords().stream().map(assignmentConvertor::toVO).toList(), page.getTotal(), param);
     }
 
+    private OnlineExperimentVO exposedView(OnlineExperimentEntity entity, Long actor) {
+        reviewExposures.record(entity.getId(), entity.getSpaceId(), actor,
+                OnlineReviewExposureSource.EXPERIMENT_CREATE);
+        return view(entity);
+    }
+
     public OnlineExperimentPreflightVO preflight(String identity) {
         var entity = require(id(identity));
         access.requireOwner(entity.getSpaceId());
         access.requirePermission(entity.getSpaceId(), EVALUATION_READ);
+        reviewExposures.record(entity.getId(), entity.getSpaceId(), AuthUtils.getUserIdOrException(), OnlineReviewExposureSource.EXPERIMENT_PREFLIGHT);
         var issues = new ArrayList<OnlineExperimentPreflightVO.Issue>();
         Instant checked = Instant.now();
         if (!Objects.equals(entity.getManifestSchemaVersion(), OnlineProtocolUtils.SCHEMA_VERSION)) {
@@ -273,8 +288,6 @@ public class OnlineExperimentService {
         if (candidate == 0 || candidate == documents.size()) { issues.add(issue(RANGE_MISSING_VARIANT.name(), "WARNING")); }
         boolean draftEligible = issues.stream().noneMatch(value -> value.severity().equals("ERROR"));
         issues.add(issue(ONLINE_EXECUTION_NOT_READY.name(), "ERROR"));
-        issues.add(issue(ONLINE_RULE_NOT_READY.name(), "ERROR"));
-        issues.add(issue(ONLINE_REPORT_NOT_READY.name(), "ERROR"));
         issues.add(issue(RETENTION_CONFIRMATION_REQUIRED.name(), "WARNING"));
         issues.add(issue(HISTORICAL_ESTIMATE_UNAVAILABLE.name(), "WARNING"));
         Map<String, Object> proof = new TreeMap<>();

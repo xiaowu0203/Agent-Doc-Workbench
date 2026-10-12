@@ -23,6 +23,10 @@ public enum EvaluationEvidenceType {
     DOCUMENT_VERSION,
     /** 审批前捕获的 Agent 原始最终文本 */
     ORIGINAL_TEXT,
+    /** LIVE 审批前原始提案或草稿收尾版本。 */
+    ORIGINAL_CHANGE,
+    /** 单个 LIVE Task 的完整原始变更集合；评分按任务而非产物数计算。 */
+    ORIGINAL_CHANGE_SET,
     /** 审计日志 */
     AUDIT_LOG
 }

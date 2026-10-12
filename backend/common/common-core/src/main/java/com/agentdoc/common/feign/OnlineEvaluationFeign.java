@@ -5,6 +5,7 @@ import com.agentdoc.common.enums.OnlineCapabilityPurpose;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
 import com.agentdoc.common.feign.dto.OnlineTaskBindingDTO;
 import com.agentdoc.common.feign.dto.OnlineAssignmentRequestDTO;
+import com.agentdoc.common.feign.dto.OnlineReviewExposureDTO;
 import com.agentdoc.common.feign.vo.OnlineRouteVO;
 import com.agentdoc.common.feign.vo.OnlineSlotPermitVO;
 import com.agentdoc.common.feign.vo.OnlineAuthorizationProofVO;
@@ -17,6 +18,8 @@ import org.springframework.http.HttpHeaders;
 /** 专用直连 Evaluation 权威只读证明，不通过公共 Gateway。 */
 @FeignClient(name = "online-evaluation", url = "${agent-doc.online.evaluation-url:http://localhost:8085}")
 public interface OnlineEvaluationFeign {
+    @PostMapping("/api/evaluation/internal/online-review/exposures")
+    Result<Void> recordReviewExposure(@RequestBody OnlineReviewExposureDTO request);
     @GetMapping("/api/evaluation/internal/online-authorizations/{experimentId}/resource-scope")
     Result<OnlineResourceScopeVO> resourceScope(@PathVariable String experimentId, @RequestHeader(OnlineCapabilityConstant.HEADER) String control);
     @PostMapping("/api/evaluation/internal/online-authorizations/{experimentId}/scoped-bindings/{purpose}")

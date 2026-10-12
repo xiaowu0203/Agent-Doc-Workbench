@@ -6,6 +6,15 @@ import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.dto.OnlineProposalPreviewBatchDTO;
+import com.agentdoc.common.feign.vo.OnlineChangePreviewVO;
+import com.agentdoc.common.feign.vo.OnlineProposalReviewPreviewVO;
+import com.agentdoc.common.feign.vo.OnlineApprovalSourceVO;
+import com.agentdoc.common.feign.vo.OnlineApprovalDifferenceVO;
+import com.agentdoc.common.utils.OnlineApprovalDifferenceUtils;
+import com.agentdoc.document.enums.DocumentVersionSourceType;
+import com.agentdoc.document.enums.DocumentVersionActorType;
+import com.agentdoc.document.utils.OnlineApprovalDiffUtils;
 import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.dto.MergeRequestDTO;
 import com.agentdoc.common.feign.dto.ApprovalMergeRequestDTO;
@@ -70,6 +79,8 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_EDIT
 import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
 import static com.agentdoc.common.enums.WorkbenchSearchType.DOCUMENT;
+import static com.agentdoc.common.constant.OnlineReviewConstant.MAX_CONTENT_LENGTH;
+import static com.agentdoc.common.constant.OnlineReviewConstant.MAX_TOTAL_LENGTH;
 
 /**
  * 文档核心服务
@@ -85,6 +96,101 @@ public class DocumentService {
     private final DocumentVersionService versionService;
     private final SpacePermissionService permissionService;
     private final AuthFeign authFeign;
+
+    /** 仅比较冻结原始提案与对应的审批合并版本，不读取当前正文来替代历史。 */
+    public OnlineApprovalDifferenceVO compareOnlineApproval(OnlineApprovalSourceVO source) {
+        AuthUtils.getUserIdOrException();
+        var input = source.input();
+        var doc = requireDoc(Long.valueOf(input.documentId()));
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
+        if (!doc.getSpaceId().toString().equals(input.spaceId()) || !"FORMAL".equals(input.documentType())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "审批来源文档归属不一致");
+        }
+        if (source.reason() != null) { return OnlineApprovalDifferenceUtils.signed(source, source.reason(), null, null, null, null, null, null); }
+        var base = checkedFrozenVersion(doc.getId(), input.baseVersion(), input.inputHash());
+        String original;
+        try {
+            validateChanges(source.changes());
+            original = applyChanges(base.getContent(), source.changes());
+        } catch (BusinessException invalid) {
+            if (invalid.getCode() != ErrorCode.BAD_REQUEST.getCode() && invalid.getCode() != ErrorCode.CONFLICT.getCode()) { throw invalid; }
+            return OnlineApprovalDifferenceUtils.signed(source, OnlineApprovalDifferenceUtils.ORIGINAL_INVALID, null, null, null, null, null, null);
+        }
+        String originalHash = StableSnapshotUtils.sha256Utf8(original);
+        var finals = versionService.approvalSnapshots(doc.getId(), Long.valueOf(source.changeRequestId()));
+        if (finals.size() != 1) {
+            return OnlineApprovalDifferenceUtils.signed(source, finals.isEmpty() ? OnlineApprovalDifferenceUtils.MERGED_UNAVAILABLE
+                    : OnlineApprovalDifferenceUtils.MULTIPLE_SOURCES, originalHash, null, null, null, null, null);
+        }
+        var merged = finals.getFirst();
+        if (!Objects.equals(merged.getDocumentId(), doc.getId()) || !Objects.equals(merged.getVersionNo(), source.mergedVersion())
+                || !Objects.equals(merged.getSourceTaskId(), Long.valueOf(input.taskId()))
+                || !Objects.equals(merged.getSourceChangeRequestId(), Long.valueOf(source.changeRequestId()))
+                || !DocumentVersionSourceType.APPROVAL_MERGE.name().equals(merged.getSourceType())
+                || !DocumentVersionActorType.HUMAN.name().equals(merged.getActorType())
+                || !Objects.equals(merged.getActorId(), Long.valueOf(source.mergedBy())) || merged.getContent() == null
+                || !StableSnapshotUtils.sha256Utf8(merged.getContent()).equals(merged.getContentSha256())) {
+            return OnlineApprovalDifferenceUtils.signed(source, OnlineApprovalDifferenceUtils.MERGED_INVALID, originalHash, null, null, null, null, null);
+        }
+        var diff = OnlineApprovalDiffUtils.compare(original, merged.getContent());
+        return diff == null ? OnlineApprovalDifferenceUtils.signed(source, OnlineApprovalDifferenceUtils.DIFF_LIMIT_EXCEEDED,
+                originalHash, merged.getContentSha256(), null, null, null, null)
+                : OnlineApprovalDifferenceUtils.signed(source, null, originalHash, merged.getContentSha256(), diff.addedCharacters(),
+                diff.deletedCharacters(), diff.changedSegments(), diff.humanModificationRatio());
+    }
+
+    /** 在冻结输入上批量校验原始提案；不以审批后的当前版本判断原始质量。 */
+    public List<OnlineChangePreviewVO> previewOnlineChanges(OnlineProposalPreviewBatchDTO request) {
+        return onlinePreview(request, false).items().stream()
+                .map(item -> new OnlineChangePreviewVO(item.evidenceId(), item.valid(), item.contentHash())).toList();
+    }
+
+    /** 完整正文预览仅供受控评审读取；超过上限拒绝整批，不选取或截断产物。 */
+    public OnlineProposalReviewPreviewVO previewOnlineChangesForReview(OnlineProposalPreviewBatchDTO request) {
+        return onlinePreview(request, true);
+    }
+
+    private OnlineProposalReviewPreviewVO onlinePreview(OnlineProposalPreviewBatchDTO request, boolean review) {
+        AuthUtils.getUserIdOrException();
+        if (request == null || request.documentId() == null || request.baseVersion() == null || request.proposals() == null
+                || request.proposals().isEmpty() || request.proposals().stream().anyMatch(value -> value == null || value.evidenceId() == null)
+                || request.proposals().stream().map(value -> value.evidenceId()).distinct().count() != request.proposals().size()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "原始提案预览参数不完整");
+        }
+        var doc = requireDoc(request.documentId());
+        permissionService.requirePermission(doc.getSpaceId(), DOCUMENT_READ);
+        var base = checkedFrozenVersion(doc.getId(), request.baseVersion(), request.baseContentSha256());
+        long total = base.getContent().length();
+        if (review && total > MAX_CONTENT_LENGTH) { throw new BusinessException(ErrorCode.CONFLICT, "评审输入超过完整读取上限"); }
+        var items = new ArrayList<OnlineProposalReviewPreviewVO.Item>();
+        for (var proposal : request.proposals()) {
+            if (!Objects.equals(proposal.baseVersion(), request.baseVersion())) {
+                items.add(new OnlineProposalReviewPreviewVO.Item(proposal.evidenceId(), false, null, null)); continue;
+            }
+            if (review && proposal.changes() != null) {
+                long supplied = proposal.changes().stream().filter(Objects::nonNull).mapToLong(change ->
+                        (change.newText() == null ? 0L : change.newText().length())
+                        + (change.oldText() == null ? 0L : change.oldText().length())).sum();
+                if (supplied > MAX_TOTAL_LENGTH || total + supplied > MAX_TOTAL_LENGTH) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "评审提案超过完整读取上限");
+                }
+            }
+            String content;
+            try {
+                validateChanges(proposal.changes());
+                content = applyChanges(base.getContent(), proposal.changes());
+            } catch (BusinessException invalid) {
+                if (invalid.getCode() != ErrorCode.BAD_REQUEST.getCode() && invalid.getCode() != ErrorCode.CONFLICT.getCode()) { throw invalid; }
+                items.add(new OnlineProposalReviewPreviewVO.Item(proposal.evidenceId(), false, null, null)); continue;
+            }
+            total += content.length();
+            if (review && (content.length() > MAX_CONTENT_LENGTH || total > MAX_TOTAL_LENGTH)) {
+                throw new BusinessException(ErrorCode.CONFLICT, "评审产物超过完整读取上限");
+            }
+            items.add(new OnlineProposalReviewPreviewVO.Item(proposal.evidenceId(), true, StableSnapshotUtils.sha256Utf8(content), content));
+        }
+        return new OnlineProposalReviewPreviewVO(base.getContent(), List.copyOf(items));
+    }
 
     /**
      * 查询工作台全局搜索中的文档结果。

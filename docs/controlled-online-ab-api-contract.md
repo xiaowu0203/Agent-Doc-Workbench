@@ -1,6 +1,6 @@
 # 受控线上 A/B：数据、API 与协议契约
 
-状态：已冻结，2026-10-04；依据 [ADR-0007](adr/0007-controlled-online-ab.md)。下文为完整目标契约；当前源码实现边界见第 11、12 节，不代表已经部署。实施按先数据与只读预检、再分配安全内核、再评价报告、最后页面和受控真实验收推进。
+状态：已冻结，2026-10-04；依据 [ADR-0007](adr/0007-controlled-online-ab.md)。下文为完整目标契约；分批实现边界见第 11～14 节，不代表已经部署。实施按先数据与只读预检、再分配安全内核、再评价报告、最后页面和受控真实验收推进。
 
 ## 1. 基线、版本与限制
 
@@ -209,15 +209,47 @@ Document 在生成/更新 LIVE 提案或草稿时保存不可变原始版本/has
 
 主分析每文档 min acceptedSequence；确定失败/超时或一项有效必需规则失败为 FAIL，无 FAIL 且全部必需有效通过为 PASS，其他 MISSING。报告 PASS/(PASS+FAIL) 与 PASS/全部主体及 MISSING 旁列，不用完成行反推总体。
 
+### 8.1.1 审批差异证据
+
+审批结果是独立证据，不回写原始文本或变更评价。线上审批导入关联当前 Task/Execution/assignment，保留原始提案 payload/身份摘要、冻结基线版本，以及对应 APPROVAL_MERGE 版本/正文摘要、合并人和时间；不导入评审原文或正文。
+
+差异算法固定为 `online-approval-codepoint-lcs-v1`：不裁剪空白、不改换行、不做 Unicode 规范化；按 Unicode code point 计字符。先剥离相同前缀和不重叠的相同后缀，再对中间片段做最长公共子序列，平局先删除。连续增删操作算一个改动片段，遇到相同字符结束片段。新增/删除字符各自计数；人工修改比例 = (新增 + 删除) / (原始正文字符数 + 新增)，分母为零时为 0，保留 10 位小数 HALF_UP。比例只反映编辑幅度，不能代替原始质量或审批接受率。
+
+资源界限也是算法契约：任一正文 UTF-16 长度超过 2,000,000，或剥离后 LCS 矩阵超过 4,000,000 单元，返回 NOT_COMPARABLE / DIFF_LIMIT_EXCEEDED，各差异数值为 null，不能填零。只有单一、完整、身份有效的原始提案和唯一对应合并快照可比较；未合并、多提案、缺原始证据、身份损坏、基线不符、合并快照缺失/来源不符分别保留不可比较原因。当前文档后续编辑不影响这对冻结正文的比较。
+
+`GET /api/document/documents/online-approval-differences/{changeRequestId}` 只读；Document 经 Task 的受控原始审批来源接口取得冻结提案，自行核验版本来源与正文摘要，不能用调用者提供的 changes 伪造证据。两端均复查当前人类 Task/Document/审批读取及 evaluation:run 权限。线上差异信封采用 schema 2、十进制字符串身份和 `online.approval-difference` 域摘要；参与摘要的比例表示为固定 10 位小数的十进制字符串，响应仍为数值。审批导入 sourceHash 对旧审批摘要与差异身份做 `online.approval-feedback` 域摘要。无线上差异的旧导入继续既有哈希协议，不补写历史记录。
+
+原始审批来源路径为 `GET /api/task/change-requests/{id}/online-approval-source`，只供当前具备上述权限的人类读取实际捕获的原始 changes 和合并元数据。身份、完整集合、基线或完成事实不满足时返回原因且不提供 changes；不能读取当前审批 changes/resolvedContent 来填补缺失。它与只返回摘要的原始变更集合接口分开，执行/观察凭证不能使用此入口。
+
 ### 8.2 Feedback 兼容
 
 POST /api/evaluation/feedback 继续 evaluation:run 和原 Task/Document 资源校验。EvaluationFeedbackCreateDTO 增加可选 onlineQuality 字段；原请求不含该字段继续原语义。
 
-OnlineQualityFeedbackDTO：assignmentId、originalEvidenceId/hash、rubricScore（0～4 整数）、blindness（BLINDED/NON_BLINDED/UNKNOWN）、supersedesFeedbackId?、reasonCodes（ASCII 数组≤20）、seriousSafetyEvent（bool）、safetyReason?。taskId/executionId/Space 从实际 assignment 交叉核验，caseRunId 不可混用。
+OnlineQualityFeedbackDTO：assignmentId、originalEvidenceType（ORIGINAL_TEXT/CHANGE_REQUEST/DRAFT_DOCUMENT/ORIGINAL_CHANGE_SET）、originalEvidenceId/hash、rubricScore（0～4 整数）、blindness（BLINDED/NON_BLINDED/UNKNOWN）、supersedesFeedbackId?、reasonCodes（不重复的 ASCII 大写代码数组≤20）、seriousSafetyEvent（bool）、safetyReason?。新增 ID 为规范十进制文本，拒绝重复 JSON 字段、未知字段、浮点 rubric 和标量自动转换。taskId/executionId/Space 从实际 assignment 交叉核验，caseRunId 不可混用。
 
 既有 score 必须等于 rubricScore/4（0、0.25、0.5、0.75、1），服务端生成/校验，历史 0～1 值不改。label 继续现有 ACCEPTED/REJECTED/NEEDS_CHANGES/NOT_APPLICABLE，不把 rubric 直接写 4 到 score。
 
 默认首份有效记录按 createdAt + id 选定；明确更正只能指向同一 Task/原产物及合法前序，理由必需、无环、并发更正只允许一个被选后继；报告选择规则固定。已知分组的评审不能声明 BLINDED，无法确认按 UNKNOWN；首评非盲态不能通过另造首评替换。
+
+当前人工入口每个 assignment 只允许一份首评，更正必须指向当前链尾，comment 或 reasonCodes 至少一项非空。服务端复查已完成 LIVE 冻结输入、实际 assignment 和不可变原始证据；多产物必须使用 ORIGINAL_CHANGE_SET 对整个任务原始变更集合评分，旧单产物类型在多产物场景继续拒绝，避免选择其中最好的一份。证据缺失、未完成或身份损坏不落零分；证据可校验时 rubric=0 是有效反馈。RPC 与求证在事务外，落库时以 assignment 行锁再次核验身份，首评和更正均只追加。
+
+ORIGINAL_CHANGE_SET 的 originalEvidenceId 固定为实际 assignmentId，originalEvidenceHash 为 `online.original-change-set` 域、schema 2 的集合身份摘要。摘要载荷只有 input 与 items；items 按规范十进制 evidenceId 数值升序排列，保留每项完整原始变更身份投影（含 outputType、base/outputVersion、payload/contentHash、structureValid、capturedAt、identityHash）。重复 ID、未知 schema、缺失/未完成/损坏的集合不允许评分；服务端从 Task 的完整原始集合重新计算，客户端不能提供子集或伪造集合。结构不合格或错误基线但捕获身份有效的提案仍在集合中，可整体评 0，不能删除失败项。草稿集合只能包含唯一有效收尾版本。更正必须继续引用同一集合 ID/hash 与 identityHash，不能通过改集合或从旧单产物切换集合抹掉首评历史。集合不增加独立表、不改旧反馈 hash、不会按产物份数扩大样本量。
+
+集合摘要的公开合成测试向量见 [原始变更集合 v2](fixtures/online-original-change-set-v2.json)：完整集合摘要固定为 `593f1dff0db614e8e9204ded9bd3195114673b272b5a38ed9ddc7481aefdf1db`，包含一份失败提案，ID 2 排在 ID 10 前。
+
+BLINDED 必须有第 14 节服务器资格证明；历史实验及缺少证明的声明返回 ONLINE_QUALITY_BLIND_REVIEW_NOT_READY。NON_BLINDED/UNKNOWN 可保存，前序 NON_BLINDED 的更正仍为 NON_BLINDED，另存调用者声明以保留偏差。seriousSafetyEvent=true 必须有原始证据、非空 safetyReason，并复查当前受保护 OWNER；确认事实由保护消费者暂停分配并追加审计，普通低分不触发安全事件。
+
+当前新增 `GET /api/evaluation/online-experiments/{id}/assignments/{assignmentId}/text-review-context`，要求当前人类的 space:read/evaluation:run 及 Task/Document 原资源授权，只返回冻结文档正文、原始最终文本及其身份摘要，不返回 variant、模板/配置、Prompt、成本、延迟或 binding。输入/文本各限 2,000,000 个 UTF-16 单元；拒绝不完整片段、摘要漂移、未完成/缺证据，不能用摘要或当前正文代替原文。
+
+同级 `GET .../change-review-context` 返回完整冻结输入及 originals 全集合：evidenceId/type/hash、baseVersion/outputVersion、structureValid、原始提案 JSON originalChanges、完整 originalContent，并返回 originalSetId（assignmentId）与 originalSetHash，供整体评分引用。正式文档以 V37 不可变原始载荷在冻结输入上只读应用；不按审批状态或成功筛选，多份提案全部返回，无法应用的提案保留原始 JSON、structureValid=false、正文为 null。草稿只读唯一 AGENT_DRAFT 收尾版本，版本身份、正文摘要、完整长度均复查，不读取当前文档或临时草稿。返回前再次核验当前 Task/文档授权和 assignment；不开放 BLINDED。
+
+Task 的 `GET /api/task/tasks/{taskId}/online-original-proposal-payloads?spaceId&executionId` 只提供当前人类可访问的完整 FORMAL 原始载荷集合；Document 的 `POST /api/document/documents/online-change-review-preview` 只在所给冻结输入上批量预览，不证明提案来自原始产物。Evaluation 必须交叉核验完整证据 ID 顺序、每份原始 JSON 摘要、身份摘要、结构状态及生成正文摘要，不能把调用者自行上传的预览当原始证据。三个新增正文接口均 `Cache-Control: no-store`。输入/单份正文上限 2,000,000 个 UTF-16 单元；整个评审正文与原始 JSON 合计上限 8,000,000，超过上限拒绝整批，不截断或选择子集。数据库与历史证据 hash 不变。
+
+V38 追加 online_review_exposure，记录当前用户在实验创建响应、详情或分配查询中的首次已知分组/配置访问；整个实验保守标为知情，重复读取不更新首次来源/时间/hash，权限或记录失败不能返回分组响应。不追溯填充历史访问；缺记录只能是 UNKNOWN。评分与知情记录共用实验锁（实验→assignment），已有记录或前序 NON_BLINDED 均使新反馈为 NON_BLINDED，声明仍保留。普通 Task/执行审计、Token 查询、实验列表/预检/报告与评价查询等入口按第 14 节追加知情记录；只有新实验的完整隐藏评审入口可以产生服务器资格，不能以“未记录”证明历史盲态。
+
+有知情记录的新反馈使用独立 `online.quality-feedback-with-exposure` 域，在既有质量哈希载荷上追加 exposureId/exposureHash；factsJson 追加相同定位。无知情记录继续既有 online.quality-feedback 域，全部历史 sourceHash 不重算。知情记录的 `online.review-exposure` 域冻结 id、experimentId、spaceId、actorId、source、首次 capturedAt（ISO 毫秒时间）。
+
+新增 sourceHash 使用 schema 2 的 `online.quality-feedback` 域，冻结 feedbackId、原输入投影、完整 onlineQuality、原始 identityHash、有效 blindness、label、rubric/4 的规范十进制文本 score、comment（缺省为空文本）和人类 actorId。factsJson 只保留 schema、证据类型/身份摘要、声明 blindness 和不含正文的原输入投影；不写入原始正文、分组或 Prompt。更正保留旧反馈和旧 sourceHash，旧离线与审批导入的摘要规则不变。
 
 报告分盲态/非盲态/未知、首评/更正、未产出/未评。盲态覆盖 = 选定有效 BLINDED 文档 / 全部首 assignment 文档；另列可产物覆盖。非盲态不补门槛，更正不抹原先偏差。严重事件需要授权评审及原始证据，普通低分不自动当安全熔断。
 
@@ -269,7 +301,7 @@ P6-01 提交时模板冻结模型配置/参数/价格、Skill 版本/正文与�
 
 新线上质量规则已注册 expected/config 契约和指标元数据，版本标记 online-contract-v2；旧 text-assertion 仍读取摘要，旧隔离规则仍执行原契约。线上规则不能绑定离线 TestCase，也不能在旧离线引擎执行。真实 LIVE 原始证据评价、报告、启动/分配/启停与窄签名授权留在后续批次。
 
-因此 preflight.startable 固定为 false，并返回 ONLINE_EXECUTION_NOT_READY、ONLINE_RULE_NOT_READY、ONLINE_REPORT_NOT_READY；draftEligible 仅表示本批能检查的结构、范围、版本、依赖和占位条件。历史成本估算不可用时明确为空，不填零。60 秒 preflight proof 目前是只读摘要；后续 start/resume 必须执行完整权威复查，不能将该摘要作为现成启动许可。
+P6-01 当时的 preflight.startable 固定为 false，并返回 ONLINE_EXECUTION_NOT_READY、ONLINE_RULE_NOT_READY、ONLINE_REPORT_NOT_READY；draftEligible 仅表示当时能检查的结构、范围、版本、依赖和占位条件。后续规则、报告能力与部署门禁状态见第14节。历史成本估算不可用时明确为空，不填零。60 秒 preflight proof 是只读摘要；start/resume 必须执行完整权威复查，不能将该摘要作为启动许可。
 
 V31 新增意图/模板/槽/动作请求基础，向前修正占位和操作者幂等唯一键，并用 MySQL 5.7 INSERT/UPDATE trigger 约束 Result/Metric/Evidence 两种主体互斥。历史 schema 1 只读且不能启动，不自动重算 JSON/hash。迁移和事务验证在隔离库完成；此实现边界不授权迁移实际业务库或启动真实实验。
 
@@ -327,8 +359,52 @@ Agent 完成线上执行时追加本 Execution 唯一的原始最终文本，正
 
 原始文本读取为 `GET /api/agent/executions/tasks/{taskId}/online-original-text?spaceId=...`，仅当前人类用户可读，Agent 通过 Task 的 `GET /api/task/tasks/{taskId}/original-evidence-permission?spaceId=...&executionId=...` 复核当前 Task、Execution、文档归属及 task:read/document:read。该入口不接受 CONTROL/OBSERVE/Worker/Task Capability 代替正文授权，也不返回 Prompt 或分组。证据不可用返回 EVIDENCE_UNAVAILABLE，正文仅在这条受控读取链路中传递，不进入普通结果 VO、日志或 Span。
 
-OnlineEvaluationCreateDTO 只含 clientRequestKey、ruleKey（ASCII 规则键），身份由路径定位；发布 EvaluatorVersion、expected 和证据目标从实验 manifest 取得，不接受调用者临时修改。首批仅实现 online-original-text-assertion 的 ORIGINAL_TEXT 证据适配；其他规则拒绝为 ONLINE_RULE_NOT_READY，公开启动依旧关闭。
+OnlineEvaluationCreateDTO 只含 clientRequestKey、ruleKey（ASCII 规则键），身份由路径定位；发布 EvaluatorVersion、expected 和证据目标从实验 manifest 取得，不接受调用者临时修改。支持 online-original-text-assertion 的 ORIGINAL_TEXT 与 online-document-change-validator 的 ORIGINAL_CHANGE 证据适配；完整报告等出口完成前，公开启动依旧关闭。
 
 新建原始文本版本使用实现标识 online-original-text-v1，发布后按既有内容 hash 契约冻结。仅注册契约的历史 online-contract-v2 版本不改写、不冒充已实现引擎；必须新建并发布实际引擎版本，再在新实验 manifest 中冻结。评价入口同时复核实现标识、版本实际内容 hash 和 manifest 引用 hash。
 
 评价求值与 RPC 在事务外；追加尝试、Result、Metric 和 Evidence 在单个短事务保存，ONLINE_TASK 归属与 CASE_ATTEMPT 互斥。请求键在 assignment + evaluatorVersion 下幂等，冲突拒绝；每条冻结 ruleKey 使用递增 attemptNo，失败/缺失尝试也保留。相同请求复用首次结果，不因正文或执行投影后来变化而改写。缺原始证据为 SKIPPED/EVIDENCE_UNAVAILABLE，不生成数值零；断言有效失败则保留 pass-ratio=0 等真实指标。评价不修改原 Task/Execution 终态。
+
+### 13.1 LIVE 原始变更集合
+
+Task 在 Agent 提交线上正式文档提案的同一事务追加原始 changes、基线版本、冻结输入摘要、binding 和捕获身份；任务行锁复核当前执行状态，任务完成后不能补交原始提案。任务最终集合包含该 Task 提交的全部原始提案，按提案 ID 排序，不选最好的一份。无原始记录的历史提案不从审批内容补录。
+
+Agent 草稿复用 Document 在任务收尾时已生成的 AGENT_DRAFT/AGENT 不可变版本，要求 sourceTaskId、actorId、文档及冻结基线完全对应；不读取 Redis 用户草稿、当前正文或临时暂存。只接受基线下一版本的一份收尾快照，不选中间版本。正式提案属于 Task 领域，草稿版本属于 Document 领域。
+
+`GET /api/task/tasks/{taskId}/online-original-changes?spaceId=...&executionId=...` 仅当前人类可读，返回原始变更集合的身份、摘要与校验事实，不返回正文、changes、分组或 Prompt。Task/Document 各自复查当前权限、资源归属和冻结输入；Document 只读预览在冻结版本上应用原始提案，审批后当前文档版本变化不改变原始校验。ONLINE_TASK 评价只接受完成的 LIVE 原始集合。缺失、未完成、产物类型不适用和来源损坏不产生质量零分；完整且可校验的坏结构保留 valid=false，目标正文不匹配保留 accuracy=0。全部提案均须通过，不能靠一份通过掩盖其他失败。
+
+新变更引擎版本为 online-original-change-v1；旧 online-contract-v2 不改写。结构指标与可选内容准确率分别保存，引用每份参与求值的不可变证据；审批接受、人工编辑后的最终正文均不参与这两项原始指标。
+
+## 14. P6-03 服务器评审资格与 ONLINE_V1 接入
+
+新建实验由服务器冻结 reviewTrackingSchemaVersion=1；历史清单不回填。`POST /api/evaluation/online-experiments/{id}/review-assignments/search` 只返回 assignmentId/documentId，按接受顺序分页，不包含组、模板、质量、成本或终态。`GET /api/evaluation/online-experiments/{id}/assignments/{assignmentId}/blind-review-context?target=TEXT|CHANGE_SET` 复用完整原始上下文与当前资源权限，并取得经整体 input snapshot hash 核验的冻结用户指令。响应为 assignmentId、knowledgeStatus、blindedEligible、goal、originalContext，Cache-Control:no-store。
+
+V40 的资格证明只能由这条完整隐藏读取链路创建；证明绑定当前人类、assignment/Task/Execution、整体冻结输入及原始证据类型/身份/摘要。实际完整知情追踪生效的新实验、非实验创建者/非Task创建者、无已知知情记录的评审者可取得服务器资格。没有证明的 BLINDED 拒绝；历史实验仍为 UNKNOWN。站外交流、原文自身透露信息等不能由访问记录证明，评审者仍须如实声明知情，服务器资格不是双盲或因果推断保证。
+
+实验详情、预检、普通分配/实验列表、报告、规则求值、普通 Task 详情/列表/导出/动态/其他只读资源、Agent执行审计/工具调用/成本/回放身份、线上Metric读取均先保守记录当前人类知情；记录失败不返回相关响应。跨服务入口只允许追加当前JWT用户的知情记录，不提供资格写入口，Gateway封禁内部路径。列表使用批量读取和稳定实验锁序，避免逐项RPC。评分、更正、资格证明与知情记录共用实验→assignment锁序；更正前序 NON_BLINDED 或当前知情都使新反馈为 NON_BLINDED。
+
+带服务器证明的新反馈使用 online.quality-feedback-with-review-proof 域，在既有载荷追加 reviewReceiptId/reviewReceiptHash；同时有知情事实时也纳入 exposureId/exposureHash。历史两种域及 sourceHash 不重算。报告以原始字段重建 sourceHash，拒绝损坏链或没有证明的历史 BLINDED，0分有效，首评与更正不重复计主体。
+
+线上报告接口为 `POST /api/evaluation/online-experiments/{id}/reports/recalculate`、`GET /api/evaluation/online-experiments/{id}/reports/{revision}`、`POST /api/evaluation/online-experiments/{id}/decision`。重算请求是 clientRequestKey、十进制文本 assignmentCutoffSequence（允许0）、ISO毫秒 observationCutoffAt；截止不能超过已接受顺序或当前时间。操作者必须是当前OWNER并具备evaluation:manage，跨服务事实另行复核task:read/evaluation:read/usage:read。每批至多100个绑定，各领域只读本领域表，不扩大CONTROL/Worker权限。
+
+返回包装字段为 id/experimentId/revision/reportType/schemaVersion/reportHash/inputHash/state/report；report 是 online.report schema2规范信封，payload 是 ONLINE_V1 schema2正文，包含第9节的窗口、分母、覆盖、诊断和门禁。未知schema或摘要损坏返回安全降级状态、空正文，不能作决定。小数和时间以规范文本进入哈希；原始正文、Prompt、诊断正文和Trace不进入报告冻结输入，相应私有字段只保留摘要。每个冻结ruleKey按截止内最大attemptNo取最近一次尝试，失败/缺失不得回退挑选更好的旧尝试；全部参与事实身份仍冻结。报告是当前读取的事实快照，不能声称从可变状态重建任意历史时刻。
+
+V41 为大型冻结输入追加 online_report_input_chunk，不改 V39/V40。小输入仍直接存 input_json；超过 262,144 个 UTF-16 单元的输入按此上限分块，避免拆开代理对，最多 256 块。报告行存 online.report-input-chunks schema2定位信封和完整逻辑输入 hash，每块存序号与独立 hash；报告、全部块及幂等映射在同一事务提交。读取/决定按序复核连续性、各块 hash、完整输入 hash及逻辑 schema，不用当前业务数据补缺块；损坏或缺块拒绝决定。分块是物理存储形式，不改变逻辑 online.report-input 或报告 hash。
+
+V42 追加 `(experiment_id,binding_schema_version,document_id)` 汇总覆盖索引及 `(experiment_id,space_id,binding_schema_version,id)` 分页索引，避免百万分配规模下参与文档计数的大量回表与分页排序。已有历史迁移不改写。
+
+决定请求包含 clientRequestKey、reportRevision、reportHash、decision、reason，可选 safetyFeedbackId 仅用于安全REJECTED。普通决定要求STOPPED；不合格比较只允许INSUFFICIENT_EVIDENCE。安全REJECTED必须引用该冻结报告内已复核的独立安全确认事实，不能用低分替代。V39保存决定报告摘要；决定与操作者范围请求映射原子保存，不推广生产Agent。
+
+OWNER确认严重安全事件后独立消费不可变事实，暂停新分配并追加SERVICE/原授权人审计；普通低分没有此副作用。消费可重复执行，后台有界补偿反馈提交后中断的窗口；暂停不冒充远端已经取消或停止。已确认安全事件阻止直接恢复该实验。
+
+报告同时保留两组按盲态分层的选定文档数、rubric 平均分和归一化平均分，0 分计入平均。`originalEvidenceRecordedDocumentCount` 只表示已验证反馈或原始文本捕获身份可证明的历史产物记录；`originalEvidenceUnknownDocumentCount` 不推导成未产出。捕获摘要读取不加载正文，不承诺当前正文仍可访问；正文下钻继续复查当前 Task/文档权限。盲态覆盖的决定分母始终是全部首 assignment 文档，另显示相对于已记录原始产物的解释性覆盖。Token 估算状态、按组/币种费用和排队/执行延迟平均值与覆盖分别展示，缺失值不填零。
+
+`ruleOutcomes` 及每组同名字段使用每文档首 assignment；`taskRuleOutcomes` 是全部 Task 的辅助分母。`firstAssignmentResource` 保存首文档账本、币种费用均值及排队/执行/端到端延迟与覆盖；组内总体资源指标仍按全部 Task。费用均值按该币种有效账本文档数计算，不将未知费用填零或跨币种相加。`primaryDifference` 将两组有效主指标比例之差与冻结 MDE 并列，只作描述。
+
+`approvalFeedback` 单独汇总每个 ChangeRequest 截止内最新导入事实，复核差异信封、源 hash 和实际分配身份；较新事实损坏不回退挑选较好旧记录。APPROVED/MERGED、REJECTED、RETURNED、可比较/不可比较与未知分别统计，编辑幅度仅在可比较提案中求均值，不生成原始 rubric 或改写质量规则。无已验证导入事实只表示待审批、无适用提案或尚未导入，不能当作拒绝。
+
+`GET /.../reports/{revision}/summary` 不读取 `input_json`，只校验报告正文和 schema，返回 `SUMMARY_VERIFIED`。该状态与完整输入、正文同时校验的 `SUPPORTED` 不混用；决定入口总是加载完整输入并校验，概要不能绕过决定门禁。百万规模验证测量实际应用服务、MyBatis 和当前用户知情记录，授权 RPC 使用替身；首份聚合、冻结和持久化单独计时，不承诺网络、HTTP、页面或模型调用满足读接口目标。
+
+95%精确比例区间的独立高精度参考向量见[ONLINE_V1区间fixture](fixtures/online-clopper-pearson-v1.json)。完整前端页面和真实部署验收仍按P6-04/P6-05执行，源码就绪不自动授权开启真实实验。
+
+规则与报告不再返回无条件 NOT_READY；规则资产仍逐项校验。公开 start/resume 继续由 ONLINE_EXECUTION_NOT_READY 部署门禁关闭，不能通过普通配置开关绕过。验收证据及性能测量边界见[受控线上 A/B 验证](controlled-online-ab-validation.md)。

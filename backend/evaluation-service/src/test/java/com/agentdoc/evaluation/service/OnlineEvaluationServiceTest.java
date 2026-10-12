@@ -10,6 +10,11 @@ import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.evaluator.DeterministicEvaluationOutcome;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
+import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
+import com.agentdoc.common.feign.vo.OnlineOriginalChangesVO;
+import com.agentdoc.common.utils.OnlineOriginalChangeUtils;
 import com.agentdoc.evaluation.mapper.EvaluatorVersionMapper;
 import com.agentdoc.evaluation.mapper.OnlineAssignmentMapper;
 import com.agentdoc.evaluation.mapper.OnlineExperimentMapper;
@@ -39,7 +44,8 @@ class OnlineEvaluationServiceTest {
     private final AgentFeign agents = mock(AgentFeign.class);
     private final OnlineEvaluationPersistenceService persistence = mock(OnlineEvaluationPersistenceService.class);
     private final OnlineOriginalTextEvaluator evaluator = spy(new OnlineOriginalTextEvaluator());
-    private final OnlineEvaluationService service = new OnlineEvaluationService(experiments, assignments, versions, access, tasks, agents, evaluator, persistence);
+    private final OnlineOriginalChangeEvaluator changeEvaluator = spy(new OnlineOriginalChangeEvaluator());
+    private final OnlineEvaluationService service = new OnlineEvaluationService(experiments, assignments, versions, access, tasks, agents, evaluator, changeEvaluator, persistence, mock(OnlineReviewExposureService.class));
     private final OnlineEvaluationCreateDTO request = new OnlineEvaluationCreateDTO("evaluate-1", "quality");
     private OnlineAssignmentEntity assignment;
     private OnlineExperimentEntity experiment;
@@ -67,7 +73,7 @@ class OnlineEvaluationServiceTest {
     @AfterEach void cleanup() { SecurityContextHolder.clearContext(); }
     @Test void missingCaptureAppendsSkippedAndNoQualityZeroUsingFrozenExpected() {
         service.evaluate("11","51",request); var outcome = ArgumentCaptor.forClass(DeterministicEvaluationOutcome.class);
-        verify(persistence).append(eq(assignment),eq(81L),eq("quality"),eq("evaluate-1"),anyString(),anyString(),eq(501L),any(),outcome.capture());
+        verify(persistence).append(eq(assignment),eq(OnlineRuleContractValidator.TEXT),eq(81L),eq("quality"),eq("evaluate-1"),anyString(),anyString(),eq(501L),any(),outcome.capture());
         assertThat(outcome.getValue().status().name()).isEqualTo("SKIPPED"); assertThat(outcome.getValue().metrics()).isEmpty();
         verify(evaluator).evaluate(eq("{}"),argThat(value -> value.contains("冻结期望")),any());
         verify(access).requirePermission(10L,"evaluation:run");
@@ -82,7 +88,7 @@ class OnlineEvaluationServiceTest {
         when(agents.getOnlineOriginalText(61L,10L)).thenReturn(Result.ok(new AgentOnlineOriginalTextVO(2,"EVIDENCE_UNAVAILABLE",null,"62","71","10","20","11","51",
                 assignment.getBindingHash(),null,null,null,null)));
         assertThatThrownBy(() -> service.evaluate("11","51",request)).isInstanceOf(BusinessException.class);
-        verify(persistence,never()).append(any(),any(),any(),any(),any(),any(),any(),any(),any());
+        verify(persistence,never()).append(any(),any(),any(),any(),any(),any(),any(),any(),any(),any());
     }
     @Test void historicalContractOnlyVersionAndTamperedConfigCannotRunNewEngine() {
         version.setImplementationVersion("online-contract-v2");
@@ -97,7 +103,7 @@ class OnlineEvaluationServiceTest {
     @Test void evaluatorErrorIsAppendedAsErrorWithoutChangingExecution() {
         doThrow(new IllegalStateException("不得进入结果或日志的秘密")).when(evaluator).evaluate(anyString(),anyString(),any());
         service.evaluate("11","51",request); var outcome = ArgumentCaptor.forClass(DeterministicEvaluationOutcome.class);
-        verify(persistence).append(any(),any(),any(),any(),any(),any(),any(),any(),outcome.capture());
+        verify(persistence).append(any(),any(),any(),any(),any(),any(),any(),any(),any(),outcome.capture());
         assertThat(outcome.getValue().status().name()).isEqualTo("ERROR"); assertThat(outcome.getValue().metrics()).isEmpty(); assertThat(outcome.getValue().detailsJson()).isEqualTo("{}");
     }
     @Test void strictCreateRequestCannotSupplyExpectedOrCoerceTypes() {
@@ -107,5 +113,38 @@ class OnlineEvaluationServiceTest {
                 .isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> OnlineEvaluationCreateDTO.parse("{\"clientRequestKey\":\"x\",\"ruleKey\":\"quality\",\"ruleKey\":\"other\"}"))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    private OnlineOriginalInputVO changeRule() {
+        version.setEvaluatorKey(OnlineRuleContractValidator.CHANGE); version.setImplementationVersion(OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION);
+        version.setContentHash(OnlineExperimentService.versionHash(version));
+        experiment.setManifestJson(OnlineProtocolUtils.canonical("online.manifest", Map.of("ruleBindings", List.of(Map.of("evaluatorKey", version.getEvaluatorKey(),
+                "contentHash", version.getContentHash(), "binding", Map.of("ruleKey", "quality", "evaluatorVersionId", "81", "evidenceTarget", "ORIGINAL_CHANGE",
+                "expectedBindings", List.of(Map.of("documentId", "41", "expectedJson", Map.of("requiredOutputType", "CHANGE_REQUEST")))))))));
+        experiment.setManifestHash(StableSnapshotUtils.sha256Utf8(experiment.getManifestJson()));
+        return new OnlineOriginalInputVO("61","71","10","20","11","51",assignment.getBindingHash(),"41","FORMAL",3L,"b".repeat(64),true);
+    }
+    @Test void changeEvaluationUsesFrozenManifestAndCompleteOriginalCollectionWithoutAgentText() {
+        var input = changeRule(); var item = OnlineOriginalChangeUtils.signed(input,"91","CHANGE_REQUEST",3L,null,"c".repeat(64),null,false,"2026-10-10T20:00:00");
+        when(tasks.getOnlineOriginalChanges(61L,10L,71L)).thenReturn(Result.ok(new OnlineOriginalChangesVO(2,"AVAILABLE",input,List.of(item))));
+        clearInvocations(agents);
+        service.evaluate("11","51",request); var outcome = ArgumentCaptor.forClass(DeterministicEvaluationOutcome.class);
+        verify(persistence).append(eq(assignment),eq(OnlineRuleContractValidator.CHANGE),eq(81L),eq("quality"),eq("evaluate-1"),anyString(),anyString(),eq(501L),any(),outcome.capture());
+        assertThat(outcome.getValue().status().name()).isEqualTo("FAILED"); assertThat(outcome.getValue().metrics().getFirst().value().booleanValue()).isFalse();
+        verifyNoInteractions(agents); verify(changeEvaluator).evaluate(eq("{}"),argThat(value -> value.contains("CHANGE_REQUEST")),any());
+    }
+    @Test void changeRetryDoesNotReevaluateAndPlaceholderVersionStillRefused() {
+        changeRule(); var prior = new OnlineEvaluationAttemptEntity(); when(persistence.prior(51L,81L,"evaluate-1")).thenReturn(prior);
+        service.evaluate("11","51",request); verify(persistence).reuse(eq(prior),anyString()); verifyNoInteractions(changeEvaluator);
+        verify(tasks,never()).getOnlineOriginalChanges(any(),any(),any());
+        version.setImplementationVersion("online-contract-v2"); version.setContentHash(OnlineExperimentService.versionHash(version));
+        assertThatThrownBy(() -> service.evaluate("11","51",request)).isInstanceOf(BusinessException.class);
+    }
+    @Test void changeEvidenceCannotSubstituteAnotherDocument() {
+        var input = changeRule();
+        var wrong = new OnlineOriginalInputVO(input.taskId(),input.executionId(),input.spaceId(),input.agentId(),input.experimentId(),input.assignmentId(),
+                input.bindingHash(),"42",input.documentType(),input.baseVersion(),input.inputHash(),true);
+        when(tasks.getOnlineOriginalChanges(61L,10L,71L)).thenReturn(Result.ok(new OnlineOriginalChangesVO(2,"EVIDENCE_UNAVAILABLE",wrong,List.of())));
+        assertThatThrownBy(() -> service.evaluate("11","51",request)).isInstanceOf(BusinessException.class); verifyNoInteractions(changeEvaluator);
     }
 }

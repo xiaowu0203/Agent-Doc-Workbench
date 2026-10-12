@@ -51,4 +51,13 @@ class TaskOriginalEvidenceAccessServiceTest {
         when(documents.getVersionExecutionContext(anyLong(),anyLong(),anyString())).thenReturn(Result.ok(new DocumentVersionExecutionContextVO(41L,3L,"b".repeat(64),1L)));
         assertThatThrownBy(() -> service.require(61L,10L,71L)).isInstanceOf(BusinessException.class);
     }
+    @Test void originalChangeInputRequiresLiveSchemaTwoAndPreservesCompletionFact() {
+        var row = tasks.selectById(61L); row.setAgentId(20L); row.setDocumentType(1); row.setOnlineExperimentId(11L);
+        row.setOnlineBindingSchemaVersion(2); row.setOnlineBindingHash("b".repeat(64)); row.setExecutionMode("ISOLATED"); row.setStatus(2);
+        assertThatThrownBy(() -> service.input(61L,10L,71L)).isInstanceOf(BusinessException.class);
+        row.setExecutionMode("LIVE"); row.setOnlineBindingSchemaVersion(1);
+        assertThatThrownBy(() -> service.input(61L,10L,71L)).isInstanceOf(BusinessException.class);
+        row.setOnlineBindingSchemaVersion(2); assertThat(service.input(61L,10L,71L).completed()).isTrue();
+        row.setStatus(1); assertThat(service.input(61L,10L,71L).completed()).isFalse();
+    }
 }

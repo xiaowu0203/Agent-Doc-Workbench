@@ -5,6 +5,8 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.ChangeRequestFeedbackSnapshotVO;
+import com.agentdoc.common.feign.vo.OnlineApprovalDifferenceVO;
+import com.agentdoc.common.utils.OnlineApprovalDifferenceUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.task.enums.ChangeRequestStatus;
 import com.agentdoc.task.mapper.ChangeRequestMapper;
@@ -14,8 +16,8 @@ import com.agentdoc.task.pojo.entity.TaskEntity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_RUN;
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
@@ -39,6 +41,7 @@ public class ChangeRequestFeedbackProjectionService {
     private final ChangeRequestMapper changeRequestMapper;
     private final TaskMapper taskMapper;
     private final DocumentFeign documentFeign;
+    private final TaskOnlineApprovalSourceService onlineSources;
 
     /**
      * 获取变更请求审批反馈快照
@@ -67,21 +70,40 @@ public class ChangeRequestFeedbackProjectionService {
         // 对评审意见文本计算sha256哈希，不存储原文
         String commentHash = changeRequest.getReviewComment() == null ? null
                 : StableSnapshotUtils.sha256Utf8(changeRequest.getReviewComment());
-        // 生成变更请求整体快照哈希，用于完整性校验
-        String sourceHash = StableSnapshotUtils.snapshotHash(1, Map.ofEntries(
-                Map.entry("changeRequestId", changeRequest.getId()),
-                Map.entry("status", status.name()),
-                Map.entry("resolutionType", value(changeRequest.getResolutionType())),
-                Map.entry("reviewCommentHash", value(commentHash)),
-                Map.entry("reviewedBy", value(changeRequest.getReviewedBy())),
-                Map.entry("reviewedAt", changeRequest.getReviewedAt() == null
-                        ? "" : changeRequest.getReviewedAt().toString()),
-                Map.entry("revisionNo", value(changeRequest.getRevisionNo()))));
-        // 组装快照VO返回
+        OnlineApprovalDifferenceVO difference = null;
+        if (task != null && task.getOnlineAssignmentId() != null && Integer.valueOf(OnlineApprovalDifferenceUtils.SCHEMA_VERSION).equals(task.getOnlineBindingSchemaVersion())) {
+            var source = onlineSources.get(id);
+            if (!status.name().equals(source.status()) || source.input() == null
+                    || !Objects.equals(changeRequest.getSourceTaskId().toString(), source.input().taskId())
+                    || !Objects.equals(changeRequest.getSpaceId().toString(), source.input().spaceId())
+                    || !Objects.equals(task.getAgentExecutionId() == null ? null : task.getAgentExecutionId().toString(), source.input().executionId())
+                    || !Objects.equals(task.getOnlineAssignmentId().toString(), source.input().assignmentId())
+                    || !Objects.equals(changeRequest.getMergedVersion(), source.mergedVersion())
+                    || !Objects.equals(changeRequest.getMergedBy() == null ? null : changeRequest.getMergedBy().toString(), source.mergedBy())
+                    || !Objects.equals(changeRequest.getMergedAt() == null ? null : changeRequest.getMergedAt().toString(), source.mergedAt())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "审批状态已变化，请重新读取");
+            }
+            if (source.reason() != null) {
+                difference = OnlineApprovalDifferenceUtils.signed(source, source.reason(), null, null, null, null, null, null);
+            } else {
+                var response = documentFeign.getOnlineApprovalDifference(id);
+                if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
+                    throw new BusinessException(response == null ? ErrorCode.INTERNAL_ERROR.getCode() : response.code(), "审批差异证据不可访问");
+                }
+                difference = response.data();
+            }
+            if (!OnlineApprovalDifferenceUtils.matches(source, difference)) {
+                throw new BusinessException(ErrorCode.CONFLICT, "审批差异证据身份不一致");
+            }
+        }
+        var unsigned = new ChangeRequestFeedbackSnapshotVO(changeRequest.getId(), changeRequest.getSpaceId(),
+                changeRequest.getSourceTaskId(), task == null ? null : task.getAgentExecutionId(), status.name(),
+                changeRequest.getResolutionType(), commentHash, changeRequest.getReviewedBy(),
+                changeRequest.getReviewedAt(), changeRequest.getRevisionNo(), null, difference);
         return new ChangeRequestFeedbackSnapshotVO(changeRequest.getId(), changeRequest.getSpaceId(),
                 changeRequest.getSourceTaskId(), task == null ? null : task.getAgentExecutionId(), status.name(),
                 changeRequest.getResolutionType(), commentHash, changeRequest.getReviewedBy(),
-                changeRequest.getReviewedAt(), changeRequest.getRevisionNo(), sourceHash);
+                changeRequest.getReviewedAt(), changeRequest.getRevisionNo(), OnlineApprovalDifferenceUtils.feedbackHash(unsigned), difference);
     }
 
     /**
@@ -98,12 +120,4 @@ public class ChangeRequestFeedbackProjectionService {
         }
     }
 
-    /**
-     * 快照哈希辅助方法：null值转为空字符串，保证哈希计算稳定
-     * @param value 原始字段值
-     * @return 原值或空字符串
-     */
-    private Object value(Object value) {
-        return value == null ? "" : value;
-    }
 }

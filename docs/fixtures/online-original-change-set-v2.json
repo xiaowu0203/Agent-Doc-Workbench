@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "state": "AVAILABLE",
+  "input": {
+    "taskId": "61", "executionId": "71", "spaceId": "10", "agentId": "20",
+    "experimentId": "11", "assignmentId": "51", "bindingHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "documentId": "41", "documentType": "FORMAL", "baseVersion": 3,
+    "inputHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "completed": true
+  },
+  "items": [
+    {
+      "evidenceId": "10", "outputType": "CHANGE_REQUEST", "baseVersion": 3, "outputVersion": null,
+      "payloadHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "contentHash": null,
+      "structureValid": false, "capturedAt": "2026-10-12T12:00",
+      "identityHash": "ce944bb98f8cffadb6ae04274c9819c3a3379be1032597253df64fbb51a2ed7f"
+    },
+    {
+      "evidenceId": "2", "outputType": "CHANGE_REQUEST", "baseVersion": 3, "outputVersion": null,
+      "payloadHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "contentHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "structureValid": true, "capturedAt": "2026-10-12T12:00",
+      "identityHash": "d32e4cc046d27ec2498eb3509de1c6217ca99e8245ec7d6e1be8e6bc3d208a70"
+    }
+  ]
+}

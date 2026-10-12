@@ -4,6 +4,8 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.OnlineAssignmentRequestDTO;
 import com.agentdoc.common.feign.vo.OnlineTaskDispatchProofVO;
 import com.agentdoc.common.feign.vo.OnlineTaskFactVO;
+import com.agentdoc.common.feign.vo.OnlineReportTaskFactVO;
+import com.agentdoc.common.feign.dto.OnlineReportFactsQueryDTO;
 import java.util.List;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +15,8 @@ import org.springframework.web.bind.annotation.*;
 /** Task 所有的创建意图证明；实际用户身份由既有拦截器透传。 */
 @FeignClient(name = "online-task", url = "${agent-doc.online.task-url:http://localhost:8083}")
 public interface OnlineTaskFeign {
+    @PostMapping("/api/task/internal/online-report/facts")
+    Result<List<OnlineReportTaskFactVO>> reportFacts(@RequestBody OnlineReportFactsQueryDTO request);
     @PostMapping("/api/task/internal/online-observation/{experimentId}/repair")
     Result<Void> repair(@PathVariable String experimentId,
             @RequestHeader(OnlineCapabilityConstant.HEADER) String control, @RequestBody List<String> taskIds);

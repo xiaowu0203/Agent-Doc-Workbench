@@ -322,6 +322,8 @@ public class OnlineExecutionAuthority {
 
     /** 恢复前在同一实验锁内复核未决、原额度和完整健康窗口，不扩大历史授权。 */
     void requireResumeSafe(OnlineExperimentEntity experiment) {
+        if (events.selectCount(new LambdaQueryWrapper<OnlineExperimentEventEntity>().eq(OnlineExperimentEventEntity::getExperimentId, experiment.getId())
+                .eq(OnlineExperimentEventEntity::getEventType, "CONFIRMED_SAFETY_EVENT")) > 0) { throw conflict(ONLINE_GATE_CLOSED); }
         if (assignments.selectCount(new LambdaQueryWrapper<OnlineAssignmentEntity>()
                 .eq(OnlineAssignmentEntity::getExperimentId, experiment.getId())
                 .eq(OnlineAssignmentEntity::getSettlementStatus, UNKNOWN)) > 0) { throw conflict(ONLINE_FACT_UNKNOWN); }

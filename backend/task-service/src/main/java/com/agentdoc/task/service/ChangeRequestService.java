@@ -8,6 +8,7 @@ import com.agentdoc.common.feign.dto.ChangeItemDTO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.task.convertor.ChangeRequestConvertor;
+import com.agentdoc.task.enums.ActorType;
 import com.agentdoc.task.mapper.ChangeRequestMapper;
 import com.agentdoc.task.pojo.dto.ChangeRequestSubmitDTO;
 import com.agentdoc.task.pojo.entity.ChangeRequestEntity;
@@ -29,6 +30,15 @@ public class ChangeRequestService {
 
     private final ChangeRequestMapper changeRequestMapper;
     private final DocumentFeign documentFeign;
+    private final TaskOnlineOriginalProposalService originals;
+
+    /** 全部 Agent 提案身份；用于核验原始集合完整性，不读审批正文。 */
+    public List<Long> agentProposalIds(Long taskId) {
+        return changeRequestMapper.selectList(new LambdaQueryWrapper<ChangeRequestEntity>()
+                .select(ChangeRequestEntity::getId).eq(ChangeRequestEntity::getSourceTaskId, taskId)
+                .eq(ChangeRequestEntity::getProposedActorType, ActorType.AGENT.getCode()).orderByAsc(ChangeRequestEntity::getId))
+                .stream().map(ChangeRequestEntity::getId).toList();
+    }
 
     /**
      * 提交变更请求（进入审批队列）。
@@ -67,6 +77,7 @@ public class ChangeRequestService {
         ChangeRequestEntity entity = ChangeRequestConvertor.fromAgentSubmission(
                 task, changes, baseVersion, summary, parentRequestId, revisionNo);
         changeRequestMapper.insert(entity);
+        originals.capture(task, entity);
         return entity;
     }
 

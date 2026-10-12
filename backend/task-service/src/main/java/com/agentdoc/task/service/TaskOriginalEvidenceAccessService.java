@@ -4,8 +4,14 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
+import com.agentdoc.common.feign.vo.OnlineReviewGoalVO;
+import com.agentdoc.common.enums.DocType;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.task.mapper.TaskMapper;
+import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.task.enums.TaskStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
@@ -20,7 +26,7 @@ public class TaskOriginalEvidenceAccessService {
     private final TaskMapper tasks;
     private final DocumentFeign documents;
 
-    public void require(Long taskId, Long spaceId, Long executionId) {
+    public TaskEntity require(Long taskId, Long spaceId, Long executionId) {
         AuthUtils.getUserIdOrException();
         var task = tasks.selectById(taskId);
         if (task == null || !Objects.equals(task.getSpaceId(), spaceId) || task.getOnlineAssignmentId() == null
@@ -42,8 +48,28 @@ public class TaskOriginalEvidenceAccessService {
                 || !Objects.equals(frozen.data().contentSha256(), task.getDocumentContentSha256())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "原始输入版本不可访问");
         }
+        return task;
     }
 
+    public OnlineOriginalInputVO input(Long taskId, Long spaceId, Long executionId) {
+        var task = require(taskId, spaceId, executionId);
+        if (!Integer.valueOf(2).equals(task.getOnlineBindingSchemaVersion()) || task.getOnlineExperimentId() == null
+                || !TaskExecutionMode.LIVE.name().equals(task.getExecutionMode())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "原始变更必须属于线上 LIVE 执行");
+        }
+        return new OnlineOriginalInputVO(task.getId().toString(), executionId.toString(), spaceId.toString(), task.getAgentId().toString(),
+                task.getOnlineExperimentId().toString(), task.getOnlineAssignmentId().toString(), task.getOnlineBindingHash(),
+                task.getDocumentId().toString(), DocType.fromCode(task.getDocumentType()).name(), task.getDocumentVersionSnapshot(),
+                task.getDocumentContentSha256(), TaskStatus.COMPLETED.getCodeEquals(task.getStatus()));
+    }
+
+    public OnlineReviewGoalVO goal(Long taskId, Long spaceId, Long executionId) {
+        var row = require(taskId, spaceId, executionId);
+        if (!Integer.valueOf(1).equals(row.getInputSnapshotSchemaVersion()) || !Objects.equals(row.getInputSnapshotHash(), TaskService.calculateInputSnapshotHash(row))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "冻结用户目标身份无效");
+        }
+        return new OnlineReviewGoalVO(taskId.toString(), row.getInputSnapshotHash(), row.getInstruction());
+    }
     private static void permission(Result<?> value) {
         if (value == null || value.code() != ErrorCode.SUCCESS.getCode()) {
             throw new BusinessException(value == null ? ErrorCode.INTERNAL_ERROR.getCode() : value.code(), "原始证据访问被拒绝");

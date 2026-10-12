@@ -7,6 +7,11 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.handler.CommonMetaObjectHandler;
 import com.agentdoc.evaluation.evaluator.DeterministicEvaluationOutcome;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
+import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
+import com.agentdoc.common.feign.vo.OnlineOriginalChangesVO;
+import com.agentdoc.common.utils.OnlineOriginalChangeUtils;
 import com.agentdoc.evaluation.enums.EvaluationResultStatus;
 import com.agentdoc.evaluation.mapper.OnlineAssignmentMapper;
 import com.agentdoc.evaluation.mapper.OnlineEvaluationAttemptMapper;
@@ -95,7 +100,7 @@ class OnlineEvaluationPersistenceMySqlTest {
     @Test void concurrentRetriesAcrossIndependentTransactionsPersistOneZeroResultAndCompleteEvidenceLinks() throws Exception {
         var assignment = assignment(); var output = outcome(assignment);
         try(var pool = Executors.newFixedThreadPool(8)) {
-            var jobs = IntStream.range(0,8).mapToObj(index -> (Callable<String>) () -> service(index).append(assignment,81L,"quality","same-key",
+            var jobs = IntStream.range(0,8).mapToObj(index -> (Callable<String>) () -> service(index).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","same-key",
                     "e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output).id()).toList();
             var ids = pool.invokeAll(jobs); var unique = new HashSet<String>(); for(var id : ids) { unique.add(id.get()); } assertThat(unique).hasSize(1);
         }
@@ -103,26 +108,44 @@ class OnlineEvaluationPersistenceMySqlTest {
         assertThat(count("evaluation_evidence_reference",assignment.getId())).isEqualTo(1);
         assertThat(sql().queryForObject("SELECT numeric_value FROM evaluation_metric WHERE online_assignment_id=?",BigDecimal.class,assignment.getId())).isZero();
         assertThat(sql().queryForObject("SELECT COUNT(*) FROM evaluation_metric_evidence l JOIN evaluation_metric m ON m.id=l.metric_id WHERE m.online_assignment_id=?",Long.class,assignment.getId())).isEqualTo(1);
-        assertThatThrownBy(() -> service(0).append(assignment,81L,"quality","same-key","a".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service(0).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","same-key","a".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output)).isInstanceOf(BusinessException.class);
     }
     @Test void invalidMetricRollsBackAttemptResultAndEvidenceAtomically() {
         var assignment = assignment(); var valid = outcome(assignment);
         var bad = new StandardMetricOutput(StandardMetricValue.number("evaluation.online-original-text.pass-ratio",new BigDecimal("2"),"ratio",HIGHER_IS_BETTER,EVALUATOR),List.of("original-text"));
         var output = new DeterministicEvaluationOutcome(EvaluationResultStatus.FAILED,"BAD_TEST_METRIC","{}",List.of(bad),valid.evidence());
-        assertThatThrownBy(() -> service(0).append(assignment,81L,"quality","rollback","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service(0).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","rollback","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output)).isInstanceOf(BusinessException.class);
         assertThat(service(0).prior(assignment.getId(),81L,"rollback")).isNull(); assertThat(count("evaluation_result",assignment.getId())).isZero();
         assertThat(count("evaluation_evidence_reference",assignment.getId())).isZero();
     }
     @Test void missingEvidencePersistsNoMetricAndDifferentKeyAppendsNextAttempt() {
         var assignment = assignment(); var skipped = new OnlineOriginalTextEvaluator().evaluate("{}","{\"assertions\":[{\"field\":\"originalText\",\"operator\":\"EXACT\",\"value\":\"x\"}]}",null);
-        var firstResult = service(0).append(assignment,81L,"quality","missing","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),skipped);
+        var firstResult = service(0).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","missing","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),skipped);
         assertThat(firstResult.status()).isEqualTo("SKIPPED"); assertThat(count("evaluation_metric",assignment.getId())).isZero();
-        var next = service(1).append(assignment,81L,"quality","later","1".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),outcome(assignment));
+        var next = service(1).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","later","1".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),outcome(assignment));
         assertThat(next.attemptNo()).isEqualTo(2); assertThat(service(0).reuse(service(0).prior(assignment.getId(),81L,"missing"),"e".repeat(64)).status()).isEqualTo("SKIPPED");
+    }
+    @Test void changeEnginePersistsFalseAndZeroWithDistinctImplementationAndFullEvidenceLinks() {
+        var assignment = assignment();
+        var input = new OnlineOriginalInputVO(assignment.getTaskId().toString(),assignment.getExecutionId().toString(),"10","20",
+                assignment.getExperimentId().toString(),assignment.getId().toString(),assignment.getBindingHash(),"41","FORMAL",3L,"a".repeat(64),true);
+        var item = OnlineOriginalChangeUtils.signed(input,"91","CHANGE_REQUEST",3L,null,"b".repeat(64),"c".repeat(64),false,"2026-10-10T20:00:00");
+        var output = new OnlineOriginalChangeEvaluator().evaluate("{}","{\"requiredOutputType\":\"CHANGE_REQUEST\",\"targetContentSha256\":\""+"d".repeat(64)+"\"}",
+                new OnlineOriginalChangesVO(2,"AVAILABLE",input,List.of(item)));
+        var result = service(0).append(assignment,OnlineRuleContractValidator.CHANGE,82L,"change","change-key","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output);
+        assertThat(result.status()).isEqualTo("FAILED"); assertThat(count("evaluation_metric",assignment.getId())).isEqualTo(2);
+        assertThat(sql().queryForObject("SELECT boolean_value FROM evaluation_metric WHERE online_assignment_id=? AND metric_key=?",Boolean.class,
+                assignment.getId(),OnlineOriginalChangeEvaluator.VALID_METRIC)).isFalse();
+        assertThat(sql().queryForObject("SELECT numeric_value FROM evaluation_metric WHERE online_assignment_id=? AND metric_key=?",BigDecimal.class,
+                assignment.getId(),OnlineOriginalChangeEvaluator.ACCURACY_METRIC)).isZero();
+        assertThat(sql().queryForObject("SELECT implementation_version FROM evaluation_result WHERE id=?",String.class,Long.valueOf(result.resultId())))
+                .isEqualTo(OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION);
+        assertThat(sql().queryForObject("SELECT COUNT(*) FROM evaluation_metric_evidence l JOIN evaluation_metric m ON m.id=l.metric_id WHERE m.online_assignment_id=?",Long.class,assignment.getId())).isEqualTo(2);
+        assertThat(service(1).append(assignment,OnlineRuleContractValidator.CHANGE,82L,"change","change-key","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output).id()).isEqualTo(result.id());
     }
     @Test void changedExecutionIdentityCannotAppend() {
         var assignment = assignment(); sql().update("UPDATE online_assignment SET execution_id=execution_id+1 WHERE id=?",assignment.getId());
-        assertThatThrownBy(() -> service(0).append(assignment,81L,"quality","forged","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),outcome(assignment))).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service(0).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","forged","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),outcome(assignment))).isInstanceOf(BusinessException.class);
         assertThat(count("evaluation_result",assignment.getId())).isZero();
     }
 }

@@ -15,6 +15,8 @@ import com.agentdoc.evaluation.convertor.OnlineExperimentConvertor;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
 import com.agentdoc.evaluation.mapper.*;
 import com.agentdoc.evaluation.pojo.entity.*;
+import com.agentdoc.evaluation.enums.OnlineReviewExposureSource;
+import com.agentdoc.evaluation.pojo.param.OnlineAssignmentSearchParam;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.*;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -34,6 +36,7 @@ class OnlineExperimentServiceTest {
     private final OnlineExperimentPersistenceService persistence = mock(OnlineExperimentPersistenceService.class);
     private final EvaluatorVersionMapper versions = mock(EvaluatorVersionMapper.class);
     private final SpaceAccessService access = mock(SpaceAccessService.class);
+    private final OnlineReviewExposureService exposures = mock(OnlineReviewExposureService.class);
     private final AgentOnlineConfigFeign agents = mock(AgentOnlineConfigFeign.class);
     private final DocumentFeign documents = mock(DocumentFeign.class);
     private final AtomicReference<OnlineExperimentEntity> stored = new AtomicReference<>();
@@ -51,7 +54,7 @@ class OnlineExperimentServiceTest {
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         service = new OnlineExperimentService(mapper, assignments, new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, persistence,
-                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class));
+                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), exposures);
         when(intents.selectOne(any())).thenAnswer(call -> intent.get());
         doAnswer(call -> { intent.set(call.getArgument(0)); return null; }).when(persistence).reserve(any());
         doAnswer(call -> { stored.set(call.getArgument(0)); return null; }).when(persistence).complete(any());
@@ -144,7 +147,7 @@ class OnlineExperimentServiceTest {
         assertThat(preflight.plannedUpperTokenBudget()).isEqualTo("10000");
         assertThat(preflight.srm().status()).isEqualTo("NOT_ENOUGH_UNITS");
         assertThat(preflight.issues()).extracting(value -> value.code())
-                .contains("ONLINE_EXECUTION_NOT_READY", "ONLINE_RULE_NOT_READY", "ONLINE_REPORT_NOT_READY");
+                .contains("ONLINE_EXECUTION_NOT_READY").doesNotContain("ONLINE_RULE_NOT_READY", "ONLINE_REPORT_NOT_READY");
     }
 
     @Test
@@ -173,5 +176,24 @@ class OnlineExperimentServiceTest {
         assertThat(checked.startable()).isFalse();
         verifyNoInteractions(agents);
         assertThat(stored.get().getManifestJson()).isEqualTo("legacy-content-kept-verbatim");
+    }
+    @Test void createAndDetailRecordKnowledgeBeforeReturningConfigurationIdentity() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        var id = Long.valueOf(created.summary().id());
+        verify(exposures).record(id, 101L, 501L, OnlineReviewExposureSource.EXPERIMENT_CREATE);
+        service.detail(created.summary().id()); verify(exposures).record(id, 101L, 501L, OnlineReviewExposureSource.EXPERIMENT_DETAIL);
+    }
+    @Test void failedKnowledgeWritePreventsDetailOrFilteredAssignmentDisclosure() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        doThrow(new BusinessException(500, "知情记录不可用")).when(exposures).record(anyLong(), anyLong(), anyLong(), any());
+        assertThatThrownBy(() -> service.detail(created.summary().id())).hasMessageContaining("知情记录不可用");
+        var param = new OnlineAssignmentSearchParam(); param.setVariant("CANDIDATE");
+        assertThatThrownBy(() -> service.assignments(created.summary().id(), param)).hasMessageContaining("知情记录不可用");
+        verify(assignments, never()).selectPage(any(), any());
+    }
+    @Test void deniedDetailDoesNotRecordAnExposureOrReturnConfiguration() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request()); clearInvocations(exposures);
+        doThrow(new BusinessException(403, "权限不足")).when(access).requirePermission(anyLong(), anyString());
+        assertThatThrownBy(() -> service.detail(created.summary().id())).hasMessageContaining("权限不足"); verifyNoInteractions(exposures);
     }
 }

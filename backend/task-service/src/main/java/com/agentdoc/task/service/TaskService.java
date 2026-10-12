@@ -1,4 +1,6 @@
 package com.agentdoc.task.service;
+import com.agentdoc.common.feign.OnlineEvaluationFeign;
+import com.agentdoc.common.feign.dto.OnlineReviewExposureDTO;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
@@ -138,6 +140,7 @@ public class TaskService {
     private final TaskCreationIntentService creationIntents;
     private final TaskOnlineRoutingService onlineRouting;
     private final TaskOnlineDispatchService onlineDispatch;
+    private final OnlineEvaluationFeign onlineEvaluation;
 
     /**
      * 创建Agent任务
@@ -296,6 +299,7 @@ public class TaskService {
                 new LambdaQueryWrapper<TaskEntity>()
                         .eq(TaskEntity::getSpaceId, spaceId)
                         .orderByDesc(TaskEntity::getCreatedAt));
+        recordOnlineExposure(page.getRecords());
         return PageVO.of(page.getRecords().stream().map(TaskVO::from).toList(), page.getTotal(), pageParam);
     }
 
@@ -463,6 +467,7 @@ public class TaskService {
      * @return 任务列表VO
      */
     private List<TaskListItemVO> toListItems(List<TaskEntity> tasks) {
+        recordOnlineExposure(tasks);
         // 批量拉取Agent信息
         Map<Long, AgentRefVO> agents = fetchAgents(tasks.stream()
                 .map(TaskEntity::getAgentId).filter(Objects::nonNull).distinct().toList());
@@ -542,6 +547,7 @@ public class TaskService {
                         .orderByDesc(TaskEntity::getStartTime)
                         .orderByDesc(TaskEntity::getCreatedAt));
         // 批量拉取创建人信息
+        recordOnlineExposure(page.getRecords());
         Map<Long, UserRefVO> users = fetchUsers(page.getRecords().stream()
                 .map(TaskEntity::getCreatedBy)
                 .filter(Objects::nonNull)
@@ -633,6 +639,7 @@ public class TaskService {
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【读取】权限
         requirePermission(entity.getSpaceId(), TASK_READ);
+        recordOnlineExposure(List.of(entity));
         return TaskVO.from(entity);
     }
 
@@ -645,6 +652,7 @@ public class TaskService {
     public TaskEntity requireReadable(Long id) {
         TaskEntity entity = require(id);
         requirePermission(entity.getSpaceId(), TASK_READ);
+        recordOnlineExposure(List.of(entity));
         return entity;
     }
 
@@ -1343,6 +1351,7 @@ public class TaskService {
     public TaskVO run(Long id) {
         TaskEntity entity = require(id);
         requirePermission(entity.getSpaceId(), TASK_CREATE);
+        recordOnlineExposure(List.of(entity));
         // 仅PENDING待运行状态允许手动触发
         if (TaskStatus.fromCode(entity.getStatus()) != TaskStatus.PENDING) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有待运行的任务可以手动触发");
@@ -1379,6 +1388,7 @@ public class TaskService {
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【编辑】权限
         requirePermission(entity.getSpaceId(), TASK_TERMINATE);
+        recordOnlineExposure(List.of(entity));
         // 任务状态转换
         TaskStatus current = TaskStatus.fromCode(entity.getStatus());
         // 若当前任务状态非【待运行】、【运行中】，则禁止【终止】
@@ -1651,7 +1661,7 @@ public class TaskService {
     }
 
     /** 根据任务当前冻结字段重算输入身份，不信任数据库中已有 hash。 */
-    private String calculateInputSnapshotHash(TaskEntity task) {
+    static String calculateInputSnapshotHash(TaskEntity task) {
         int schemaVersion = TaskConstant.INPUT_SNAPSHOT_SCHEMA_VERSION;
         TaskInputSnapshot snapshot = new TaskInputSnapshot(
                 task.getInstruction(), task.getSpaceId(), task.getDocumentId(), task.getDocumentType(),
@@ -1948,10 +1958,23 @@ public class TaskService {
      * @param task 任务实体
      * @return 关注区域列表
      */
-    private List<TaskFocusRegionDTO> focusRegions(TaskEntity task) {
+    private static List<TaskFocusRegionDTO> focusRegions(TaskEntity task) {
         List<TaskFocusRegionDTO> regions = JsonUtils.parse(task.getFocusRegionsJson(),
                 new TypeReference<List<TaskFocusRegionDTO>>() { });
         return regions == null ? List.of() : regions;
+    }
+
+    /** 普通Task元数据含成本、终态等线索；隐藏原始评审走独立入口。 */
+    private void recordOnlineExposure(List<TaskEntity> rows) {
+        if (AuthUtils.getUserId() == null) { return; }
+        var grouped = rows.stream().filter(row -> row.getOnlineExperimentId() != null).collect(Collectors.groupingBy(TaskEntity::getSpaceId));
+        for (var entry : grouped.entrySet()) {
+            var ids = entry.getValue().stream().map(row -> row.getId().toString()).distinct().toList();
+            for (int from = 0; from < ids.size(); from += 100) {
+                var result = onlineEvaluation.recordReviewExposure(new OnlineReviewExposureDTO(entry.getKey().toString(), ids.subList(from, Math.min(from + 100, ids.size())), List.of()));
+                if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) { throw new BusinessException(ErrorCode.CONFLICT, "线上知情记录不可用"); }
+            }
+        }
     }
 
     /**

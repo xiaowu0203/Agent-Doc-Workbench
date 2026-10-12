@@ -5,6 +5,7 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionCreateDTO;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
@@ -107,16 +108,18 @@ class EvaluationCatalogServiceTest {
         verify(spaceAccessService).requirePermission(9L, EVALUATION_MANAGE);
     }
 
-    @Test
-    void newOriginalTextVersionUsesImplementedEngineWithoutChangingPublishedContractOnlyVersion() {
-        var parent = evaluator(false); parent.setEvaluatorKey("online-original-text-assertion");
+    @ParameterizedTest
+    @ValueSource(strings = {"online-original-text-assertion", "online-document-change-validator"})
+    void newOriginalVersionUsesImplementedEngineWithoutChangingPublishedContractOnlyVersion(String key) {
+        var parent = evaluator(false); parent.setEvaluatorKey(key);
         when(evaluatorMapper.selectById(42L)).thenReturn(parent);
         var prior = draftEvaluator(); prior.setStatus("PUBLISHED"); prior.setVersionNo(7); prior.setImplementationVersion("online-contract-v2");
         when(evaluatorVersionMapper.selectOne(any())).thenReturn(prior);
         try (var auth = mockStatic(AuthUtils.class)) {
             auth.when(AuthUtils::getUserIdOrException).thenReturn(501L);
             var result = service.createEvaluatorVersion(new EvaluatorVersionCreateDTO(42L,1,"{}",1));
-            assertThat(result.implementationVersion()).isEqualTo(OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION);
+            assertThat(result.implementationVersion()).isEqualTo("online-original-text-assertion".equals(key)
+                    ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION : OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION);
             assertThat(result.versionNo()).isEqualTo(8); assertThat(prior.getImplementationVersion()).isEqualTo("online-contract-v2");
         }
         verify(evaluatorVersionMapper,never()).updateById(any(EvaluatorVersionEntity.class));

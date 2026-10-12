@@ -10,8 +10,10 @@ import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.evaluator.DeterministicEvaluationOutcome;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
 import com.agentdoc.evaluation.enums.EvaluationResultStatus;
+import com.agentdoc.evaluation.enums.OnlineReviewExposureSource;
 import com.agentdoc.evaluation.mapper.EvaluatorVersionMapper;
 import com.agentdoc.evaluation.mapper.OnlineAssignmentMapper;
 import com.agentdoc.evaluation.mapper.OnlineExperimentMapper;
@@ -40,7 +42,9 @@ public class OnlineEvaluationService {
     private final TaskFeign tasks;
     private final AgentFeign agents;
     private final OnlineOriginalTextEvaluator evaluator;
+    private final OnlineOriginalChangeEvaluator changeEvaluator;
     private final OnlineEvaluationPersistenceService persistence;
+    private final OnlineReviewExposureService exposures;
 
     public OnlineEvaluationVO evaluate(String experimentId, String assignmentId, OnlineEvaluationCreateDTO request) {
         OnlineEvaluationCreateDTO.parse(JsonUtils.toJson(request));
@@ -55,6 +59,7 @@ public class OnlineEvaluationService {
                 || assignment.getExecutionId() == null) { throw invalid(ErrorCode.CONFLICT, ONLINE_EVALUATION_SUBJECT_NOT_READY.name()); }
         var permission = tasks.checkOriginalEvidencePermission(assignment.getTaskId(), assignment.getSpaceId(), assignment.getExecutionId());
         if (permission == null || permission.code() != ErrorCode.SUCCESS.getCode()) { throw invalid(ErrorCode.FORBIDDEN, ACCESS_DENIED.name()); }
+        exposures.record(experiment.getId(), experiment.getSpaceId(), actor, OnlineReviewExposureSource.RELATED_RESOURCE_READ);
         var envelope = OnlineProtocolUtils.object(experiment.getManifestJson());
         if (!"online.manifest".equals(envelope.path("domain").asText()) || envelope.path("schemaVersion").asInt() != 2
                 || !StableSnapshotUtils.sha256Utf8(experiment.getManifestJson()).equals(experiment.getManifestHash())) {
@@ -64,13 +69,17 @@ public class OnlineEvaluationService {
         var matched = StreamSupport.stream(rules.spliterator(), false).filter(rule -> request.ruleKey().equals(rule.path("binding").path("ruleKey").asText())).toList();
         if (matched.size() != 1) { throw invalid(ErrorCode.BAD_REQUEST, ONLINE_RULE_INVALID.name()); }
         JsonNode rule = matched.getFirst(), binding = rule.path("binding");
-        if (!OnlineRuleContractValidator.TEXT.equals(rule.path("evaluatorKey").asText())
-                || !"ORIGINAL_TEXT".equals(binding.path("evidenceTarget").asText())) { throw invalid(ErrorCode.CONFLICT, ONLINE_RULE_NOT_READY.name()); }
+        String evaluatorKey = rule.path("evaluatorKey").asText();
+        boolean textRule = OnlineRuleContractValidator.TEXT.equals(evaluatorKey);
+        if (!OnlineRuleContractValidator.onlineOnly(evaluatorKey)
+                || !(textRule ? "ORIGINAL_TEXT" : "ORIGINAL_CHANGE").equals(binding.path("evidenceTarget").asText())) {
+            throw invalid(ErrorCode.CONFLICT, ONLINE_RULE_NOT_READY.name());
+        }
         Long versionId = OnlineProtocolUtils.id(binding.path("evaluatorVersionId").asText());
         var version = versions.selectById(versionId);
         if (version == null || !"PUBLISHED".equals(version.getStatus()) || !Objects.equals(version.getSpaceId(), experiment.getSpaceId())
-                || !OnlineRuleContractValidator.TEXT.equals(version.getEvaluatorKey()) || !Objects.equals(version.getContentHash(), rule.path("contentHash").asText())
-                || !OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION.equals(version.getImplementationVersion())
+                || !evaluatorKey.equals(version.getEvaluatorKey()) || !Objects.equals(version.getContentHash(), rule.path("contentHash").asText())
+                || !(textRule ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION : OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION).equals(version.getImplementationVersion())
                 || !Objects.equals(version.getContentHash(), OnlineExperimentService.versionHash(version))
                 || !Integer.valueOf(1).equals(version.getConfigSchemaVersion()) || !Integer.valueOf(1).equals(version.getResultSchemaVersion())) {
             throw invalid(ErrorCode.CONFLICT, ONLINE_RULE_NOT_READY.name());
@@ -85,23 +94,40 @@ public class OnlineEvaluationService {
                 "evaluatorVersionId", versionId.toString(), "versionHash", version.getContentHash(), "expectedHash", expectedHash));
         var prior = persistence.prior(assignment.getId(), versionId, request.clientRequestKey());
         if (prior != null) { return persistence.reuse(prior, requestHash); }
-        var response = agents.getOnlineOriginalText(assignment.getTaskId(), assignment.getSpaceId());
-        if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
-            throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_UNAVAILABLE.name());
-        }
-        var original = response.data();
-        if (!assignment.getTaskId().toString().equals(original.taskId()) || !assignment.getExecutionId().toString().equals(original.executionId())
-                || !assignment.getSpaceId().toString().equals(original.spaceId()) || !assignment.getAgentId().toString().equals(original.agentId())
-                || !experimentId.equals(original.experimentId()) || !assignmentId.equals(original.assignmentId()) || !Objects.equals(assignment.getBindingHash(), original.bindingHash())) {
-            throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_INVALID.name());
-        }
         LocalDateTime start = LocalDateTime.now();
         DeterministicEvaluationOutcome outcome;
-        try { outcome = evaluator.evaluate(version.getConfigJson(), JsonUtils.toJson(expected), original); }
-        catch (RuntimeException failed) {
-            outcome = new DeterministicEvaluationOutcome(EvaluationResultStatus.ERROR, ONLINE_RULE_ERROR.name(), "{}", List.of(), List.of());
+        if (textRule) {
+            var response = agents.getOnlineOriginalText(assignment.getTaskId(), assignment.getSpaceId());
+            if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
+                throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_UNAVAILABLE.name());
+            }
+            var original = response.data();
+            if (!assignment.getTaskId().toString().equals(original.taskId()) || !assignment.getExecutionId().toString().equals(original.executionId())
+                    || !assignment.getSpaceId().toString().equals(original.spaceId()) || !assignment.getAgentId().toString().equals(original.agentId())
+                    || !experimentId.equals(original.experimentId()) || !assignmentId.equals(original.assignmentId()) || !Objects.equals(assignment.getBindingHash(), original.bindingHash())) {
+                throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_INVALID.name());
+            }
+            try { outcome = evaluator.evaluate(version.getConfigJson(), JsonUtils.toJson(expected), original); }
+            catch (RuntimeException failed) { outcome = ruleError(); }
+        } else {
+            var response = tasks.getOnlineOriginalChanges(assignment.getTaskId(), assignment.getSpaceId(), assignment.getExecutionId());
+            if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null || response.data().input() == null) {
+                throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_UNAVAILABLE.name());
+            }
+            var original = response.data(); var input = original.input();
+            if (!assignment.getTaskId().toString().equals(input.taskId()) || !assignment.getExecutionId().toString().equals(input.executionId())
+                    || !assignment.getSpaceId().toString().equals(input.spaceId()) || !assignment.getAgentId().toString().equals(input.agentId())
+                    || !experimentId.equals(input.experimentId()) || !assignmentId.equals(input.assignmentId())
+                    || !assignment.getDocumentId().toString().equals(input.documentId()) || !Objects.equals(assignment.getBindingHash(), input.bindingHash())) {
+                throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_INVALID.name());
+            }
+            try { outcome = changeEvaluator.evaluate(version.getConfigJson(), JsonUtils.toJson(expected), original); }
+            catch (RuntimeException failed) { outcome = ruleError(); }
         }
-        return persistence.append(assignment, versionId, request.ruleKey(), request.clientRequestKey(), requestHash, expectedHash, actor, start, outcome);
+        return persistence.append(assignment, evaluatorKey, versionId, request.ruleKey(), request.clientRequestKey(), requestHash, expectedHash, actor, start, outcome);
+    }
+    private static DeterministicEvaluationOutcome ruleError() {
+        return new DeterministicEvaluationOutcome(EvaluationResultStatus.ERROR, ONLINE_RULE_ERROR.name(), "{}", List.of(), List.of());
     }
     private static BusinessException invalid(ErrorCode code, String reason) { return new BusinessException(code, reason); }
 }
