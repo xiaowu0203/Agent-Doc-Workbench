@@ -20,6 +20,7 @@ import com.agentdoc.common.feign.OnlineTaskFeign;
 import com.agentdoc.common.feign.OnlineAuthFeign;
 import com.agentdoc.common.feign.OnlineDocumentFeign;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
+import com.agentdoc.common.utils.JsonUtils;
 import org.junit.jupiter.api.*;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -91,6 +92,30 @@ class AgentOnlineConfigServiceTest {
         agent.setSystemPrompt("changed-current");
         assertThat(service.prepare(request())).isEqualTo(pair);
         verify(capture, times(1)).capture(201L);
+    }
+
+    @Test
+    void promptComparisonReadsTheCompleteFrozenPairWithoutRecapturingCurrentAgent() {
+        var pair = service.prepare(request());
+        agent.setSystemPrompt("changed-current");
+        var comparison = service.promptComparison("901", "101");
+        assertThat(comparison.baseline()).isEqualTo(pair.baseline());
+        assertThat(comparison.candidate()).isEqualTo(pair.candidate());
+        assertThat(comparison.baselineSystemPrompt()).contains("baseline", "platform").doesNotContain("changed-current");
+        assertThat(comparison.candidateSystemPrompt()).contains("candidate", "platform");
+        assertThat(JsonUtils.toJson(comparison)).doesNotContain("nonPromptConfig", "private-ciphertext", "encryptedApiKey");
+        verify(capture, times(1)).capture(201L);
+    }
+
+    @Test
+    void comparisonStillRequiresCurrentOwnerAndRejectsTamperedTemplate() {
+        service.prepare(request());
+        when(documents.checkSpaceOwner(101L)).thenReturn(Result.fail(ErrorCode.FORBIDDEN, "denied"));
+        assertThatThrownBy(() -> service.promptComparison("901", "101")).hasMessageContaining("OWNER_REQUIRED");
+        when(documents.checkSpaceOwner(101L)).thenReturn(Result.ok());
+        stored.getFirst().setTemplateHash("f".repeat(64));
+        assertThatThrownBy(() -> service.promptComparison("901", "101")).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> service.promptComparison("901", "102")).isInstanceOf(BusinessException.class);
     }
 
     @Test

@@ -66,8 +66,8 @@ export function searchAgents(
   )
 }
 
-export function getAgent(agentId: EntityId): Promise<AgentDetail> {
-  return request<AgentDetail>({ method: 'GET', url: `/agent/agents/${agentId}` })
+export function getAgent(agentId: EntityId, signal?: AbortSignal): Promise<AgentDetail> {
+  return request<AgentDetail>({ method: 'GET', url: `/agent/agents/${agentId}`, signal })
 }
 
 export function createAgent(payload: AgentInput): Promise<AgentDetail> {

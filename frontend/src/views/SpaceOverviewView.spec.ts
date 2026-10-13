@@ -21,6 +21,11 @@ vi.mock('@/features/workspace/api/space-overview-api', () => ({
 }))
 
 const allPermissions = Object.values(SPACE_PERMISSIONS)
+vi.mock('@/features/evaluation/online/api', () => ({
+  searchOnlineExperiments: vi
+    .fn()
+    .mockResolvedValue({ records: [], total: 0, pageNum: 1, pageSize: 1 }),
+}))
 
 async function mountOverview(permissions = allPermissions) {
   const pinia = createPinia()

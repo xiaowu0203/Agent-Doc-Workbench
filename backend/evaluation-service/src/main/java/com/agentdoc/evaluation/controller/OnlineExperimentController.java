@@ -17,6 +17,9 @@ import com.agentdoc.evaluation.pojo.vo.OnlineExperimentSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.OnlineExperimentPreflightVO;
 import com.agentdoc.evaluation.service.OnlineExperimentRequestValidator;
 import com.agentdoc.evaluation.service.OnlineExperimentService;
+import com.agentdoc.common.feign.vo.AgentOnlinePromptComparisonVO;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,6 +34,12 @@ import java.util.List;
 @RequestMapping("/api/evaluation/online-experiments")
 public class OnlineExperimentController {
     private final OnlineExperimentService service;
+
+    @Operation(summary = "OWNER读取已核验的完整冻结Prompt对照，先记录知情状态")
+    @GetMapping("/{id}/prompt-comparison")
+    public ResponseEntity<Result<AgentOnlinePromptComparisonVO>> promptComparison(@PathVariable String id) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Result.ok(service.promptComparison(id)));
+    }
 
     @Operation(summary = "分页查询实验内分配，任务事实未接入时显示UNKNOWN")
     @PostMapping("/{id}/assignments/search")

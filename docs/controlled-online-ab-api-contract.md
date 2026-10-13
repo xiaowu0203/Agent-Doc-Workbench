@@ -167,6 +167,8 @@ P6-02 的状态动作返回不可变 `OnlineExperimentActionVO`（experimentId�
 
 Global feature 默认关闭；关闭时普通创建无分配依赖。开启时普通入口使用已有 TaskCreateDTO 增加可选 clientRequestKey；命中线上参与检查时 key 必需，null 返回 REQUEST_KEY_REQUIRED。新前端所有正常创建生成稳定 key；一次表单重试复用。客户端不能提交 variant/template/执行模式。路由查证不可用拒绝有风险创建，不当作不参与。
 
+普通 Task 详情/执行详情的 `TaskVO` 只追加已有 Task 行中的 `onlineExperimentId`、`onlineAssignmentId`、`onlineBindingSchemaVersion`、`onlineBindingHash` 四项只读关联，非参与时为空；不返回 WAIT/执行凭证、槽证明或私有绑定正文。沿用 Task 读取权限和既有曝光记录。页面读取组别/冻结模板时，还需当前 Space 与 Evaluation 读取权限，使用正式实验详情和按 Task 查询的 assignment 接口核对身份；不使用仅创建者可调用的内部 human-binding 接口，不把未知关联展示成 baseline，也不通过当前 Agent 配置推断历史模板。
+
 Task 意图在分配前冻结输入。Evaluation 通过 Task 的内部权威接口复核意图及当前发起者权限，不能仅相信调用方上传的输入 hash。参与和不参与决定均写回意图：`online.route` schema 2 包含 binding、reason；同 key 重试复用该决定。接受响应丢失时先查询同一 Task 的既有 assignment，再检查当前门禁。尚未取得路由决定的意图不得落 Task 或签发普通执行凭证。预算、依赖或查证失败返回拒绝，不能转为普通生产执行；确定不在活动实验范围内才允许普通配置。
 
 V33 向 Task/AgentExecution 增加四项线上身份及槽 generation/hash，Task 另存加密 WAIT 凭证。WAIT 受众只允许读原绑定、取得原 Task 槽和交换原 Task 执行凭证，不建立用户/Agent/Worker 通用上下文。普通任务签发入口不能签发带线上身份的执行凭证；必须经 Auth 的 WAIT 交换，权威复核槽、Task 输入和原文档动作后签发。两种凭证分别存储，不能把 WAIT 当作执行或取消凭证。
@@ -408,3 +410,11 @@ OWNER确认严重安全事件后独立消费不可变事实，暂停新分配并
 95%精确比例区间的独立高精度参考向量见[ONLINE_V1区间fixture](fixtures/online-clopper-pearson-v1.json)。完整前端页面和真实部署验收仍按P6-04/P6-05执行，源码就绪不自动授权开启真实实验。
 
 规则与报告不再返回无条件 NOT_READY；规则资产仍逐项校验。公开 start/resume 继续由 ONLINE_EXECUTION_NOT_READY 部署门禁关闭，不能通过普通配置开关绕过。验收证据及性能测量边界见[受控线上 A/B 验证](controlled-online-ab-validation.md)。
+
+## 15. P6-04 创建与评审只读补充
+
+- `GET /online-experiments/{id}/prompt-comparison`：当前 OWNER + evaluation:read + agent:manage；先持久化知情记录，再由 Agent 领域复核两份冻结模板，返回实验/空间/Agent 身份、模板 ID/schema/hash/nonPromptHash、依赖摘要和两份完整最终 systemPrompt。正文不进入普通详情/报告；设置 Cache-Control: no-store，失败不返回部分正文。停止后仍复查当前权限。
+- `POST /evaluator-versions/published-query`：`{spaceId: 十进制文本, versionIds: 1～50个唯一十进制文本}`，evaluation:read。批量复查版本、父资源、空间、发布状态和内容摘要；任一失效则整批拒绝。线上新草案创建也复用同一父资源可用性检查；历史已创建草案的同 key 重试保持原清单。
+- `POST /online-experiments/{id}/assignments/{assignmentId}/quality-feedback-history/search`：`{target: TEXT或CHANGE_SET, pageNum, pageSize}`。先走与隐藏原始上下文相同的当前 Task/Document/Space/评估权限及冻结来源核验，再验证完整反馈链的业务身份和不可变摘要。只返回分页评分/更正身份、当前链尾及调用者最后一条反馈；没有组别、配置、成本、factsJson或来源正文。自由文本、原因代码和安全理由只对该反馈的作者返回，其他评审的这些字段为空，避免自由文本泄露组别；有效知情状态不隐去。链损坏、原始产物不匹配或当前来源不能核验时拒绝读取，未知不视为没有反馈。设置 no-store。
+
+历史查询是当次权威读，后续更正仍在 assignment 锁下复核当前链尾；不能用页面所见链尾覆盖并发新反馈。写入响应未知时先重新核对，原评分/原因未变化且最后一条自己的反馈与提交载荷一致时只确认已保存，不自动追加更正或重新提交。页面切空间/失权/目标改变时取消旧读并清除正文与确认。

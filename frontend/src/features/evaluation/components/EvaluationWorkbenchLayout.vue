@@ -72,6 +72,12 @@ const groups = [
     section: 'experiments',
     description: '比较 baseline 与 candidate，基于冻结报告和证据作出人工结论。',
   },
+  {
+    key: 'online-experiments',
+    label: '线上实验',
+    section: 'online-experiments',
+    description: '按文档固定分组，观察真实任务的原始质量、预算和运行风险。',
+  },
 ] as const
 const catalogSections = EVALUATION_SECTIONS.filter((section) => section.group === 'catalog')
 const currentGroup = computed(() => {

@@ -680,6 +680,17 @@
       width="520px"
       :close-on-click-modal="false"
     >
+      <OnlineParticipationNotice
+        v-if="taskDialogVisible"
+        :space-id="String(workspaceStore.currentSpaceId)"
+        creation
+      />
+      <el-alert
+        v-if="taskResponseMissing"
+        type="warning"
+        :closable="false"
+        title="未取得任务创建成功响应。保持原内容重试会核对并复用同一次请求；修改内容会发起新任务，上次请求可能已经创建。"
+      />
       <el-form label-position="top" @submit.prevent="createDocumentTask">
         <el-form-item label="目标文档" required>
           <el-tree-select
@@ -780,6 +791,7 @@ import {
   WarningFilled,
 } from '@element-plus/icons-vue'
 import {
+  ElAlert,
   ElButton,
   ElDialog,
   ElForm,
@@ -836,7 +848,8 @@ import type {
   DocumentVersion,
   PageResult,
 } from '@/features/document/types'
-import { createTask } from '@/features/task/api/task-api'
+import { useTaskCreation } from '@/features/task/use-task-creation'
+import OnlineParticipationNotice from '@/features/evaluation/online/OnlineParticipationNotice.vue'
 import type { EntityId } from '@/features/workspace/types'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -897,7 +910,6 @@ const documentInfoDialogVisible = ref(false)
 const taskDialogVisible = ref(false)
 const taskAgentsLoading = ref(false)
 const taskAgentsError = ref('')
-const taskCreating = ref(false)
 const taskAgents = ref<AgentOption[]>([])
 const taskDocumentsLoading = ref(false)
 const taskDocumentsError = ref('')
@@ -941,6 +953,23 @@ const taskForm = reactive<{
   tokenBudget: null,
 })
 const enabledAgents = computed(() => taskAgents.value.filter((agent) => agent.status === 'ENABLED'))
+const {
+  pending: taskCreating,
+  responseMissing: taskResponseMissing,
+  create: createRequestedTask,
+} = useTaskCreation(
+  () => ({
+    spaceId: workspaceStore.currentSpaceId!,
+    agentId: taskForm.agentId!,
+    documentId: taskForm.documentId!,
+    name: taskForm.name.trim(),
+    instruction: taskForm.instruction.trim(),
+    tokenBudget: taskForm.tokenBudget,
+    readScope: 'FULL',
+    focusRegions: [],
+  }),
+  () => taskDialogVisible.value && workspaceStore.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
+)
 const taskDocumentOptions = computed(() => buildTaskDocumentOptions(taskDocuments.value))
 const activityLoading = ref(false)
 const activityError = ref('')
@@ -2335,6 +2364,7 @@ async function openTaskDialog(): Promise<void> {
 }
 
 async function createDocumentTask(): Promise<void> {
+  if (taskCreating.value || !canCreateTask.value) return
   const spaceId = workspaceStore.currentSpaceId
   const documentId = taskForm.documentId
   const agentId = taskForm.agentId
@@ -2361,18 +2391,9 @@ async function createDocumentTask(): Promise<void> {
     return
   }
 
-  taskCreating.value = true
   try {
-    await createTask({
-      spaceId,
-      agentId,
-      documentId,
-      name,
-      instruction,
-      tokenBudget: taskForm.tokenBudget,
-      readScope: 'FULL',
-      focusRegions: [],
-    })
+    const task = await createRequestedTask()
+    if (!task) return
     taskDialogVisible.value = false
     ElMessage.success('Agent 任务已创建')
     if (canReadActivities.value && String(documentId) === String(documentDetail.value?.id)) {
@@ -2383,8 +2404,6 @@ async function createDocumentTask(): Promise<void> {
     }
   } catch (error) {
     ElMessage.error(normalizeApiError(error).message)
-  } finally {
-    taskCreating.value = false
   }
 }
 

@@ -7,6 +7,7 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentOnlineConfigFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentOnlineConfigPairVO;
+import com.agentdoc.common.feign.vo.AgentOnlinePromptComparisonVO;
 import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
@@ -37,6 +38,7 @@ class OnlineExperimentServiceTest {
     private final EvaluatorVersionMapper versions = mock(EvaluatorVersionMapper.class);
     private final SpaceAccessService access = mock(SpaceAccessService.class);
     private final OnlineReviewExposureService exposures = mock(OnlineReviewExposureService.class);
+    private final EvaluationCatalogService catalog = mock(EvaluationCatalogService.class);
     private final AgentOnlineConfigFeign agents = mock(AgentOnlineConfigFeign.class);
     private final DocumentFeign documents = mock(DocumentFeign.class);
     private final AtomicReference<OnlineExperimentEntity> stored = new AtomicReference<>();
@@ -54,7 +56,7 @@ class OnlineExperimentServiceTest {
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         service = new OnlineExperimentService(mapper, assignments, new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, persistence,
-                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), exposures);
+                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), exposures, catalog);
         when(intents.selectOne(any())).thenAnswer(call -> intent.get());
         doAnswer(call -> { intent.set(call.getArgument(0)); return null; }).when(persistence).reserve(any());
         doAnswer(call -> { stored.set(call.getArgument(0)); return null; }).when(persistence).complete(any());
@@ -72,6 +74,7 @@ class OnlineExperimentServiceTest {
         version.setContentHash(StableSnapshotUtils.snapshotHash(1, Map.of("evaluatorKey", version.getEvaluatorKey(),
                 "configSchemaVersion", 1, "config", Map.of(), "resultSchemaVersion", 1, "implementationVersion", "online-contract-v2")));
         when(versions.selectBatchIds(any())).thenReturn(List.of(version));
+        when(catalog.availableEvaluatorVersions(eq(101L), anyList())).thenReturn(List.of(version));
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
@@ -90,6 +93,30 @@ class OnlineExperimentServiceTest {
         assertThat(projection.has("summary")).isFalse();
         verify(agents, times(1)).prepareOnlineConfigs(any());
         verify(persistence, times(1)).complete(any());
+    }
+
+    @Test
+    void promptReadPersistsExposureBeforeReturningMatchingPrivateContent() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        var id = created.summary().id();
+        var response = new AgentOnlinePromptComparisonVO(id, "101", created.summary().agentId(), 2,
+                pair.baseline(), pair.candidate(), pair.dependencyHash(), "complete baseline", "complete candidate");
+        when(agents.promptComparison(id, "101")).thenReturn(Result.ok(response));
+        clearInvocations(exposures, agents);
+        assertThat(service.promptComparison(id)).isEqualTo(response);
+        var order = inOrder(exposures, agents);
+        order.verify(exposures).record(Long.valueOf(id), 101L, 501L, OnlineReviewExposureSource.EXPERIMENT_DETAIL);
+        order.verify(agents).promptComparison(id, "101");
+        when(agents.promptComparison(id, "101")).thenReturn(Result.ok(new AgentOnlinePromptComparisonVO(id, "102", response.agentId(),
+                2, pair.baseline(), pair.candidate(), pair.dependencyHash(), "private baseline", "private candidate")));
+        assertThatThrownBy(() -> service.promptComparison(id)).hasMessageContaining("TEMPLATE_INVALID");
+    }
+
+    @Test
+    void unavailableParentBlocksNewDraftBeforeTemplateCapture() {
+        when(catalog.availableEvaluatorVersions(eq(101L), anyList())).thenThrow(new BusinessException(409, "父资源已归档"));
+        assertThatThrownBy(() -> service.create(OnlineExperimentRequestValidatorTest.request())).hasMessageContaining("已归档");
+        verifyNoInteractions(agents);
     }
 
     @Test

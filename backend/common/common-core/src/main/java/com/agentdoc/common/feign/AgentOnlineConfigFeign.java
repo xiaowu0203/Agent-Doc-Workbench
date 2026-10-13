@@ -4,12 +4,15 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
 import com.agentdoc.common.feign.dto.OnlineAssignmentRequestDTO;
 import com.agentdoc.common.feign.vo.AgentOnlineConfigPairVO;
+import com.agentdoc.common.feign.vo.AgentOnlinePromptComparisonVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
 /** 线上模板直连 Agent；仍透传用户身份并校验 OWNER/动作，不经公共网关。 */
 @FeignClient(name = "agent-online-config", url = "${agent-doc.online.agent-url:http://localhost:8084}")
 public interface AgentOnlineConfigFeign {
+    @GetMapping("/internal/online-configs/{experimentId}/prompt-comparison")
+    Result<AgentOnlinePromptComparisonVO> promptComparison(@PathVariable String experimentId, @RequestParam String spaceId);
     @PostMapping("/api/agent/internal/online-configs/{experimentId}/task-dependency")
     Result<String> taskDependency(@PathVariable String experimentId, @RequestBody OnlineAssignmentRequestDTO request);
     @PostMapping("/internal/online-configs/prepare")

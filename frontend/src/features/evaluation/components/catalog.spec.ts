@@ -142,6 +142,34 @@ async function catalog(detail = true, query = '') {
 }
 
 describe('catalog editing and frozen contracts', () => {
+  it.each(['online-original-text-assertion', 'online-document-change-validator'])(
+    '发布线上规则 %s 后保持全文只读',
+    async (key) => {
+      const onlineDraft = { ...draft, evaluatorKey: key }
+      const onlineParent = { ...evaluator, evaluatorKey: key }
+      vi.mocked(api.getEvaluator).mockResolvedValue(onlineParent)
+      vi.mocked(api.searchEvaluatorVersions).mockResolvedValue(page([onlineDraft]))
+      vi.mocked(api.getEvaluatorVersion).mockResolvedValue(onlineDraft)
+      const { wrapper } = await catalog()
+      const published = {
+        ...onlineDraft,
+        status: 'PUBLISHED' as const,
+        contentHash: 'a'.repeat(64),
+        publishedAt: '2026-10-13T11:00:00',
+      }
+      vi.mocked(api.publishEvaluatorVersion).mockResolvedValue(published)
+      vi.mocked(api.getEvaluatorVersion).mockResolvedValue(published)
+      vi.mocked(api.searchEvaluatorVersions).mockResolvedValue(page([published]))
+      await button(wrapper, '核对并发布').trigger('click')
+      await flushPromises()
+      expect(ElMessageBox.confirm).toHaveBeenCalled()
+      expect(api.publishEvaluatorVersion).toHaveBeenCalledWith('30', expect.any(AbortSignal))
+      expect(wrapper.text()).toContain('此版本只读')
+      expect(wrapper.get('textarea').attributes('readonly')).toBeDefined()
+      expect(button(wrapper, '核对并发布')).toBeUndefined()
+      expect(api.updateEvaluatorVersion).not.toHaveBeenCalled()
+    },
+  )
   it('queries one resource page without per-row version requests', async () => {
     const { wrapper } = await catalog(false)
     expect(api.searchEvaluators).toHaveBeenCalledWith(
@@ -379,6 +407,37 @@ describe('paged source and binding selectors', () => {
     )
     expect(button(wrapper, '已绑定').attributes()).toHaveProperty('disabled')
   })
+  it.each([{ online: false }, { online: true }])(
+    '线上规则只有显式的线上选择器能选择：$online',
+    async ({ online }) => {
+      vi.mocked(api.searchEvaluatorVersions).mockResolvedValue(
+        page([
+          {
+            ...draft,
+            evaluatorKey: 'online-original-text-assertion',
+            status: 'PUBLISHED',
+            contentHash: 'hash',
+          },
+        ]),
+      )
+      const wrapper = mount(PublishedVersionPicker, {
+        props: {
+          open: true,
+          spaceId: '7',
+          kind: 'evaluators',
+          excludeIds: [],
+          ...(online ? { evaluatorKeys: ['online-original-text-assertion'] } : {}),
+        },
+        global: { stubs: { ElDialog: { template: '<div><slot /><slot name="footer" /></div>' } } },
+      })
+      wrappers.push(wrapper)
+      await flushPromises()
+      await wrapper.get('.picker-resources button').trigger('click')
+      await flushPromises()
+      if (online) expect(button(wrapper, '选择').attributes('disabled')).toBeUndefined()
+      else expect(button(wrapper, '契约不可用').attributes('disabled')).toBeDefined()
+    },
+  )
   it('saves complete dataset bindings with reordered entries and disabled cases', async () => {
     vi.mocked(api.getDatasetCases).mockResolvedValue([
       {

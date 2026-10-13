@@ -57,3 +57,33 @@ MySQL 测试只接受 localhost/127.0.0.1 下名称匹配 `agentdoc_p603_{change
 这是单进程、单并发、已预热的服务与数据库测量；绑定用于模拟数据体积，不是有效执行证明。规模样例没有真实模型、跨服务网络或有效质量事实，相关状态保持 UNKNOWN，比较门禁关闭。有效规则、人工评分、更正和审批语义由上述定向测试覆盖；性能数字不代表 HTTP、页面、模型延迟、并发容量或质量改善。
 
 概要只验证报告正文，返回 `SUMMARY_VERIFIED`；完整报告和决定同时验证完整冻结输入，使用 `SUPPORTED`。两种状态不可互换。
+
+## 前端页面与边界验证
+
+线上实验通过既有“评估与实验”入口访问。当前页面包含冻结草案、分页列表/详情、OWNER 预检与启停确认、分配观察、独立隐藏分组原始评价、固定 revision 的报告与人工结论。评估器目录支持发布线上原始文本/变更规则；普通离线版本选择器继续排除这些规则。
+
+| 边界 | 可复查测试 |
+| --- | --- |
+| 长身份/Token 文本、0/false/未知、旧 schema 与部署未就绪 | [presentation.spec.ts](../frontend/src/features/evaluation/online/presentation.spec.ts) |
+| 四项启动确认、预检过期/替换/撤权、正常停止与熔断、幂等重试 | [actions.spec.ts](../frontend/src/features/evaluation/online/actions.spec.ts) |
+| 冻结草案编辑失效、发布版本及父资源重新核验、重复文档拒绝 | [create.spec.ts](../frontend/src/features/evaluation/online/create.spec.ts) |
+| 当前空间权限、管理员不替代 OWNER、轮询退避/后台暂停/离页取消 | [view.spec.ts](../frontend/src/features/evaluation/online/view.spec.ts) |
+| 独立隐藏接口、完整无效产物保留、0 分、更正、未知盲态与撤权清除原文 | [review.spec.ts](../frontend/src/features/evaluation/online/review.spec.ts) |
+| 不兼容报告不展示正文、完整输入核验、固定版本决定、样本/覆盖阻塞、安全例外 | [report.spec.ts](../frontend/src/features/evaluation/online/report.spec.ts) |
+| 线上/离线选择器分离与受限深链接 | [catalog.spec.ts](../frontend/src/features/evaluation/components/catalog.spec.ts)、[routes.spec.ts](../frontend/src/features/evaluation/routes.spec.ts) |
+| 空间占位、暂停/停止中保留占位、当前生产配置与冻结基线的区别、撤权/切空间清除 | [participation.spec.ts](../frontend/src/features/evaluation/online/participation.spec.ts) |
+| 两个普通任务入口复用请求键、阻止重叠提交、编辑与响应丢失说明、取消过期请求 | [use-task-creation.spec.ts](../frontend/src/features/task/use-task-creation.spec.ts)、[TaskCreateView.spec.ts](../frontend/src/views/TaskCreateView.spec.ts)、[DocumentEditorView.spec.ts](../frontend/src/views/DocumentEditorView.spec.ts) |
+| 普通 Task 的实验/分配身份、实际组和冻结模板核对、未知组不推断、权限清除 | [task-online-association.spec.ts](../frontend/src/features/task/components/task-online-association.spec.ts) |
+| Task 只读关联保留长身份、Token 回填保留绑定、不返回 WAIT/执行凭证或槽证明 | [TaskVOTest](../backend/task-service/src/test/java/com/agentdoc/task/pojo/vo/TaskVOTest.java) |
+| 多主/辅助/保护规则、全部文档期望映射、精确十进制与秒级窗口 | [rule-draft.spec.ts](../frontend/src/features/evaluation/online/rule-draft.spec.ts)、[create.spec.ts](../frontend/src/features/evaluation/online/create.spec.ts) |
+| 完整冻结 Prompt 的身份核验、明确读取、授权撤销和迟到响应 | [prompt-comparison.spec.ts](../frontend/src/features/evaluation/online/prompt-comparison.spec.ts)、[AgentOnlineConfigServiceTest](../backend/agent-service/src/test/java/com/agentdoc/agent/service/AgentOnlineConfigServiceTest.java) |
+| 隐藏更正链分页、真实链尾、作者自由文本隔离、未知响应核对与重复阻断 | [quality-history.spec.ts](../frontend/src/features/evaluation/online/quality-history.spec.ts)、[review.spec.ts](../frontend/src/features/evaluation/online/review.spec.ts)、[OnlineQualityHistoryServiceTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/OnlineQualityHistoryServiceTest.java) |
+| 发布版本和父资源批量核验、数字 JSON ID 拒绝、敏感读取 no-store | [EvaluationCatalogServiceTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/EvaluationCatalogServiceTest.java)、[OnlineEngineeringReadControllerTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/controller/OnlineEngineeringReadControllerTest.java) |
+
+2026-10-12 首批前端全量 43 个测试文件、316 项测试通过；窄窗口创建弹窗修正后，9 个文件、117 项定向回归通过。补齐 Task/Space 关联后，全量 46 个文件、337 项通过；最后的请求身份观察修正后，3 个文件、21 项再次通过。全量 lint、类型检查与生产构建通过。Task 只读投影及既有详情/权限/原始证据回归 18 项通过，使用 JDK 21 与隔离构建目录，没有迁移业务数据库。构建仍提示较大的既有公共/用量分包，没有作为本批无关重构处理。
+
+2026-10-13 补齐多角色规则、逐文档期望覆盖、秒级窗口、固定保护说明、完整冻结 Prompt 对照和隐藏反馈更正链。最终前端全量 49 个文件、361 项测试通过，lint、类型检查和生产构建通过；新增读契约及创建/原始评价/报告相关后端 9 类、75 项定向测试通过，无跳过。隔离 MySQL 复测迁移、原始提案捕获、评价更正竞争及报告冻结，共 33 项通过；只创建并清理专属随机名称的验证库，没有迁移业务数据库。
+
+浏览器布局检查使用隔离接口替身和示例数据，覆盖列表、创建、正常停止确认、隐藏原始评审、报告概要、Task 冻结关联、暂停/停止中占位及撤权清除。最后补充实际规则发布确认与发布后只读、已发布版本选择、多规则草案确认、冻结 Prompt 全文与撤权清除、评价响应丢失后的链尾核对和重复阻断，以及完整报告的小样本结论门禁。680px 窄屏下 Prompt 改为单列，正文宽度等于视口内容宽度，创建弹窗输入可见。全部网络请求由本地内存适配器处理，模拟发布/创建/反馈没有业务副作用；未连接真实业务后端或调用模型。
+
+P6-04 的源码、组件/API/权限回归和隔离页面验收已收口。真实服务、消息、模型、审批及页面网络闭环仍需后续部署验收；本结果不证明质量改善、生产容量或真实取消成功，公开 start/resume 部署门禁保持关闭。

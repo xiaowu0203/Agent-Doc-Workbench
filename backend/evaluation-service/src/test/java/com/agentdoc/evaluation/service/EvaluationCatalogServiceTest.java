@@ -27,6 +27,9 @@ import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
+import com.agentdoc.evaluation.pojo.param.EvaluatorPublishedSearchParam;
+import com.agentdoc.common.utils.StableSnapshotUtils;
+import java.util.Map;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -50,6 +53,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
 
 @ExtendWith(MockitoExtension.class)
 class EvaluationCatalogServiceTest {
@@ -67,6 +71,36 @@ class EvaluationCatalogServiceTest {
     @Mock private EvaluatorContractValidator evaluatorContractValidator;
 
     private EvaluationCatalogService service;
+
+    @Test
+    void publishedBatchChecksAllParentsWithTwoQueries() {
+        var version = new EvaluatorVersionEntity();
+        version.setId(41L); version.setEvaluatorId(42L); version.setSpaceId(9L); version.setStatus("PUBLISHED");
+        version.setEvaluatorKey("artifact-contract"); version.setConfigSchemaVersion(1); version.setResultSchemaVersion(1);
+        version.setConfigJson("{}"); version.setImplementationVersion("test-v1");
+        version.setContentHash(StableSnapshotUtils.snapshotHash(1, Map.of("evaluatorKey", "artifact-contract", "configSchemaVersion", 1,
+                "config", Map.of(), "resultSchemaVersion", 1, "implementationVersion", "test-v1")));
+        when(evaluatorVersionMapper.selectBatchIds(any())).thenReturn(List.of(version));
+        when(evaluatorMapper.selectBatchIds(any())).thenReturn(List.of(evaluator(false)));
+        var query = new EvaluatorPublishedSearchParam(); query.setSpaceId("9"); query.setVersionIds(List.of("41"));
+        assertThat(service.publishedEvaluatorVersions(query)).hasSize(1);
+        verify(evaluatorVersionMapper).selectBatchIds(List.of(41L));
+        verify(evaluatorMapper).selectBatchIds(List.of(42L));
+        when(evaluatorMapper.selectBatchIds(any())).thenReturn(List.of(evaluator(true)));
+        assertThatThrownBy(() -> service.publishedEvaluatorVersions(query)).hasMessageContaining("失效");
+    }
+
+    @Test
+    void publishedBatchRejectsDuplicateIdentityBeforeQueryAndDeniedReadBeforeRows() {
+        var query = new EvaluatorPublishedSearchParam(); query.setSpaceId("9"); query.setVersionIds(List.of("41", "41"));
+        assertThatThrownBy(() -> service.publishedEvaluatorVersions(query)).isInstanceOf(BusinessException.class);
+        verify(evaluatorVersionMapper, never()).selectBatchIds(any());
+        query.setVersionIds(List.of("41"));
+        doThrow(new BusinessException(403, "denied")).when(spaceAccessService)
+                .requirePermission(9L, EVALUATION_READ);
+        assertThatThrownBy(() -> service.publishedEvaluatorVersions(query)).hasMessageContaining("denied");
+        verify(evaluatorVersionMapper, never()).selectBatchIds(any());
+    }
 
     @BeforeEach
     void setUp() {

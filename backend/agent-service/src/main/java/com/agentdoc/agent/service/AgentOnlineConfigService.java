@@ -20,6 +20,7 @@ import com.agentdoc.common.feign.dto.OnlineAssignmentRequestDTO;
 import com.agentdoc.common.feign.dto.OnlineTaskBindingDTO;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
 import com.agentdoc.common.feign.vo.AgentOnlineConfigPairVO;
+import com.agentdoc.common.feign.vo.AgentOnlinePromptComparisonVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
@@ -126,6 +127,24 @@ public class AgentOnlineConfigService {
         var pair = rows(experimentId);
         if (pair.size() != 2 || pair.stream().anyMatch(v -> !spaceId.equals(v.getSpaceId()))) { throw invalid(); }
         return material(captureService.capture(pair.getFirst().getAgentId())).dependencyHash();
+    }
+
+    /** 只读原模板；不重新捕获当前 Agent，也不返回私有 nonPromptConfig。 */
+    public AgentOnlinePromptComparisonVO promptComparison(String experimentId, String spaceId) {
+        long space = id(spaceId), experiment = id(experimentId);
+        owner(space);
+        access.requirePermission(space, EVALUATION_READ);
+        access.requirePermission(space, AGENT_MANAGE);
+        var pair = rows(experiment);
+        if (pair.size() != 2 || pair.stream().anyMatch(row -> !Objects.equals(row.getSpaceId(), space)
+                || !Objects.equals(row.getExperimentId(), experiment))) { throw invalid(); }
+        var proof = existing(pair, space, pair.getFirst().getAgentId(), pair.getFirst().getRequestHash());
+        var baseline = pair.stream().filter(row -> "BASELINE".equals(row.getRole())).findFirst().orElseThrow(AgentOnlineConfigService::invalid);
+        var candidate = pair.stream().filter(row -> "CANDIDATE".equals(row.getRole())).findFirst().orElseThrow(AgentOnlineConfigService::invalid);
+        return new AgentOnlinePromptComparisonVO(experimentId, spaceId, baseline.getAgentId().toString(),
+                OnlineProtocolUtils.SCHEMA_VERSION, proof.baseline(), proof.candidate(), proof.dependencyHash(),
+                OnlineProtocolUtils.object(baseline.getTemplateJson()).path("payload").path("systemPrompt").textValue(),
+                OnlineProtocolUtils.object(candidate.getTemplateJson()).path("payload").path("systemPrompt").textValue());
     }
 
     /** 仅供已验签的控制观察应用服务使用；不依赖人类上下文。 */

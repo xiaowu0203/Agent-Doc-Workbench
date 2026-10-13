@@ -7,6 +7,9 @@ import com.agentdoc.evaluation.pojo.dto.OnlineQualityFeedbackDTO;
 import com.agentdoc.evaluation.pojo.entity.EvaluationFeedbackEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -14,6 +17,26 @@ import java.util.Objects;
 /** 从不可变列复核原评分摘要；报告与安全消费都不信任孤立的score或事件标志。 */
 public final class OnlineQualityFeedbackFacts {
     private OnlineQualityFeedbackFacts() { }
+    /** 只校验拓扑并按更正顺序返回；来源摘要与业务身份由各入口另行复核。 */
+    public static List<EvaluationFeedbackEntity> orderedChain(List<EvaluationFeedbackEntity> rows) {
+        if (rows.isEmpty()) { return List.of(); }
+        var byId = new HashMap<Long, EvaluationFeedbackEntity>();
+        var children = new HashMap<Long, EvaluationFeedbackEntity>();
+        EvaluationFeedbackEntity root = null;
+        for (var row : rows) {
+            if (row == null || row.getId() == null || byId.put(row.getId(), row) != null) { return null; }
+            if (row.getSupersedesFeedbackId() == null) {
+                if (root != null) { return null; } root = row;
+            } else if (children.put(row.getSupersedesFeedbackId(), row) != null) { return null; }
+        }
+        var visited = new HashSet<Long>(); var ordered = new ArrayList<EvaluationFeedbackEntity>();
+        var cursor = root;
+        while (cursor != null) {
+            if (!visited.add(cursor.getId())) { return null; }
+            ordered.add(cursor); cursor = children.get(cursor.getId());
+        }
+        return ordered.size() == rows.size() ? List.copyOf(ordered) : null;
+    }
     public static boolean valid(EvaluationFeedbackEntity row) {
         try {
             if (row == null || !"MANUAL".equals(row.getSourceType()) || row.getId() == null || row.getCreatedBy() == null

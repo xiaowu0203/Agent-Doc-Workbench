@@ -9,6 +9,7 @@ import com.agentdoc.common.feign.AgentOnlineConfigFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
 import com.agentdoc.common.feign.vo.AgentOnlineConfigPairVO;
+import com.agentdoc.common.feign.vo.AgentOnlinePromptComparisonVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
@@ -78,6 +79,24 @@ public class OnlineExperimentService {
     private final DocumentFeign documentFeign;
     private final OnlinePreflightProofService preflightProofs;
     private final OnlineReviewExposureService reviewExposures;
+    private final EvaluationCatalogService catalog;
+
+    public AgentOnlinePromptComparisonVO promptComparison(String identity) {
+        var entity = require(id(identity));
+        access.requireOwner(entity.getSpaceId());
+        access.requirePermission(entity.getSpaceId(), EVALUATION_READ);
+        access.requirePermission(entity.getSpaceId(), AGENT_MANAGE);
+        requireSchema(entity);
+        reviewExposures.record(entity.getId(), entity.getSpaceId(), AuthUtils.getUserIdOrException(), OnlineReviewExposureSource.EXPERIMENT_DETAIL);
+        var response = data(agentFeign.promptComparison(identity, entity.getSpaceId().toString()));
+        var expected = view(entity);
+        if (!Objects.equals(identity, response.experimentId()) || !Objects.equals(entity.getSpaceId().toString(), response.spaceId())
+                || !Objects.equals(entity.getAgentId().toString(), response.agentId()) || !Objects.equals(response.schemaVersion(), OnlineProtocolUtils.SCHEMA_VERSION)
+                || !Objects.equals(expected.baseline(), response.baseline()) || !Objects.equals(expected.candidate(), response.candidate())
+                || !Objects.equals(expected.dependencyHash(), response.dependencyHash()) || response.baselineSystemPrompt() == null
+                || response.candidateSystemPrompt() == null) { throw conflict(TEMPLATE_INVALID.name()); }
+        return response;
+    }
 
     public OnlineExperimentVO create(OnlineExperimentCreateDTO raw) {
         var request = OnlineExperimentRequestValidator.normalize(raw);
@@ -307,7 +326,7 @@ public class OnlineExperimentService {
     }
 
     private List<Map<String, Object>> rules(Long spaceId, OnlineExperimentCreateDTO request) {
-        var versions = evaluatorVersionMapper.selectBatchIds(request.rules().stream()
+        var versions = catalog.availableEvaluatorVersions(spaceId, request.rules().stream()
                 .map(rule -> id(rule.evaluatorVersionId())).distinct().toList()).stream()
                 .collect(Collectors.toMap(EvaluatorVersionEntity::getId, Function.identity()));
         return request.rules().stream().map(rule -> {

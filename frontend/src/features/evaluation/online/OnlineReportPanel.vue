@@ -1,0 +1,650 @@
+<template>
+  <section aria-label="线上报告与结论" class="report-panel">
+    <h3>线上报告 · 固定版本</h3>
+    <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
+    <form class="row" @submit.prevent="load(false)">
+      <label
+        >报告 revision<input
+          v-model.number="revision"
+          aria-label="线上报告版本"
+          type="number"
+          min="1"
+          max="2147483647" /></label
+      ><el-button native-type="submit" :disabled="busy || !readable || !validRevision"
+        >读取报告概要</el-button
+      ><el-button :disabled="busy || !readable || !validRevision" @click="load(true)"
+        >核验完整报告</el-button
+      >
+    </form>
+    <p>概要读取核验报告正文；人工决定还需完整输入核验。新反馈不会改写已冻结的旧版本。</p>
+    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="busy" role="status">正在处理报告……</p>
+    <p v-if="report && !payload" role="alert">
+      报告不可用：{{ report.state }}。协议或身份不兼容，正文和决定入口关闭。
+    </p>
+    <template v-if="payload && report">
+      <p>
+        revision {{ report.revision }} · {{ report.state }} · 分配截止序号
+        {{ payload.assignmentCutoffSequence }} · 观察截止 {{ payload.observationCutoffAt }}
+      </p>
+      <p role="status">
+        {{
+          payload.decisionEligibility.comparisonAllowed
+            ? '描述性比较门禁允许；仍由人工判断'
+            : '证据不足或存在阻塞，不能作一般接受或拒绝结论'
+        }}
+      </p>
+      <ul>
+        <li v-for="code in payload.decisionEligibility.reasonCodes" :key="code">
+          {{ onlineIssue(code) }}
+        </li>
+      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>文档级主分析 · 每文档首个接受任务</th>
+              <th>基线</th>
+              <th>候选</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in primaryRows" :key="row[0]">
+              <th>{{ row[1] }}</th>
+              <td v-for="group in groups" :key="group">
+                {{ onlineReportFact(payload.groups[group][row[0]]) }}
+              </td>
+            </tr>
+            <tr>
+              <th>有效比例区间 · 描述性不确定性</th>
+              <td v-for="group in groups" :key="group">
+                {{
+                  onlineReportFact(
+                    reportObject(payload.groups[group].primaryConfidenceInterval).lower,
+                  )
+                }}
+                ～
+                {{
+                  onlineReportFact(
+                    reportObject(payload.groups[group].primaryConfidenceInterval).upper,
+                  )
+                }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        候选减基线有效比例：{{
+          onlineReportFact(payload.primaryDifference?.candidateMinusBaselineRatio)
+        }}；预注册最小有价值差：{{
+          onlineReportFact(payload.primaryDifference?.mdeAbsoluteRatio)
+        }}。{{ payload.analysisPlan?.mdeReason }}
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>原始人工质量 · 与审批分开</th>
+              <th>基线</th>
+              <th>候选</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in qualityRows" :key="row[0]">
+              <th>{{ row[1] }}</th>
+              <td v-for="group in groups" :key="group">
+                {{ onlineReportFact(payload.groups[group][row[0]]) }}
+              </td>
+            </tr>
+            <tr v-for="stratum in blindnessGroups" :key="stratum">
+              <th>{{ stratum }} · 平均等级 / 有效文档数</th>
+              <td v-for="group in groups" :key="group">
+                {{ onlineReportFact(quality(group, stratum).meanRubricScore) }} /
+                {{ onlineReportFact(quality(group, stratum).documentCount) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>审批过程 · 最新已验证导入事实</th>
+              <th>基线</th>
+              <th>候选</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in approvalRows" :key="row[0]">
+              <th>{{ row[1] }}</th>
+              <td v-for="group in groups" :key="group">
+                {{ onlineReportFact(payload.approvalFeedback?.[group]?.[row[0]]) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>尚未导入可能表示待审批或没有适用提案；不等于拒绝，也不覆盖原始质量评分。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>全部 Task 辅助分析 · 重复任务不增加独立样本</th>
+              <th>基线</th>
+              <th>候选</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in taskRows" :key="row[0]">
+              <th>{{ row[1] }}</th>
+              <td v-for="group in groups" :key="group">
+                {{ onlineReportFact(payload.groups[group][row[0]]) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>首 Task 资源 · 缺失不填零</th>
+              <th>基线</th>
+              <th>候选</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in resourceRows" :key="row[0]">
+              <th>{{ row[1] }}</th>
+              <td v-for="group in groups" :key="group">
+                {{
+                  onlineReportFact(
+                    reportObject(payload.groups[group].firstAssignmentResource)[row[0]],
+                  )
+                }}
+              </td>
+            </tr>
+            <tr>
+              <th>首 Task 平均费用 · 按币种分别展示</th>
+              <td v-for="group in groups" :key="group">
+                <span
+                  v-for="(value, currency) in reportObject(
+                    reportObject(payload.groups[group].firstAssignmentResource).meanCostByCurrency,
+                  )"
+                  :key="currency"
+                  >{{ currency }} {{ onlineReportFact(value) }}；</span
+                ><span
+                  v-if="
+                    !Object.keys(
+                      reportObject(
+                        reportObject(payload.groups[group].firstAssignmentResource)
+                          .meanCostByCurrency,
+                      ),
+                    ).length
+                  "
+                  >未知</span
+                >
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        全部 Task 费用：<span v-for="(value, currency) in payload.budgetByCurrency" :key="currency"
+          >{{ currency }} {{ value }}；</span
+        ><span v-if="!Object.keys(payload.budgetByCurrency || {}).length">未知</span
+        >。不同币种不相加；延迟差不能归因为 Prompt。
+      </p>
+      <p v-for="kind in ['range', 'runtime'] as const" :key="kind">
+        {{ kind === 'range' ? '范围' : '参与文档' }} SRM：{{
+          payload.srmDiagnostics?.[kind]?.status || '未知'
+        }}；分配诊断 p={{
+          onlineReportFact(payload.srmDiagnostics?.[kind]?.pValue)
+        }}。小样本未启用不算通过，p 值不用于组间质量证明。
+      </p>
+      <details>
+        <summary>实际窗口、规则分母与异常</summary>
+        <p v-for="(value, key) in payload.actualWindows" :key="key">
+          {{ key }}：{{ onlineReportFact(value) }}
+        </p>
+        <div
+          v-for="[title, rules] in [
+            ['文档规则', payload.ruleOutcomes],
+            ['Task 辅助规则', payload.taskRuleOutcomes],
+          ] as const"
+          :key="title"
+        >
+          <h4>{{ title }}</h4>
+          <p v-for="(outcomes, key) in rules" :key="key">
+            {{ key }}：<span v-for="(value, outcome) in outcomes" :key="outcome"
+              >{{ outcome }} {{ onlineReportFact(value) }}；</span
+            >
+          </p>
+        </div>
+        <p>
+          反馈分层：<span v-for="(value, key) in payload.feedbackStrata" :key="key"
+            >{{ key }} {{ value }}；</span
+          >
+        </p>
+        <ul>
+          <li
+            v-for="code in [...(payload.exceptions || []), ...(payload.limitations || [])]"
+            :key="code"
+          >
+            {{ onlineIssue(code) }}
+          </li>
+        </ul>
+        <p>报告摘要 {{ report.reportHash }} / 输入摘要 {{ report.inputHash }}</p>
+      </details>
+      <form v-if="manageable && !experiment.decision" @submit.prevent="confirmDecision">
+        <h4>人工结论</h4>
+        <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
+        <p>
+          只记录判断，不自动推广配置。普通结论需 STOPPED；安全拒绝仅能引用本报告已确认的安全反馈。
+        </p>
+        <label
+          >结论<select v-model="decision" aria-label="线上人工结论">
+            <option value="INSUFFICIENT_EVIDENCE">证据不足</option>
+            <option value="ACCEPTED">接受候选</option>
+            <option value="REJECTED">拒绝候选</option>
+          </select></label
+        >
+        <label
+          v-if="
+            decision === 'REJECTED' && payload.decisionEligibility.confirmedSafetyFeedbackIds.length
+          "
+          >独立安全依据<select v-model="safetyId" aria-label="拒绝安全反馈">
+            <option value="">普通拒绝</option>
+            <option
+              v-for="id in payload.decisionEligibility.confirmedSafetyFeedbackIds"
+              :key="id"
+              :value="id"
+            >
+              已确认安全反馈 #{{ id }}
+            </option>
+          </select></label
+        >
+        <label
+          >判断理由<textarea
+            v-model="reason"
+            aria-label="线上结论理由"
+            maxlength="2000"
+            rows="3"
+          /></label
+        ><el-button native-type="submit" :disabled="busy || !decisionAllowed || !reason.trim()"
+          >核对结论</el-button
+        >
+      </form>
+      <p v-if="experiment.decision">已记录人工结论：{{ experiment.decision }}。</p>
+    </template>
+    <form
+      v-if="canRecalculate && experiment.manifestSchemaVersion === 2"
+      @submit.prevent="confirmRecalculate"
+    >
+      <h4>显式冻结报告</h4>
+      <p>
+        填写已接受序号及观察截止；不能用 Task 数替代序号。相同输入返回同一报告，新输入追加
+        revision。
+      </p>
+      <label
+        >分配截止序号<input
+          v-model="sequence"
+          aria-label="报告分配截止序号"
+          inputmode="numeric" /></label
+      ><label
+        >观察截止（部署服务本地时间，精确到毫秒）<input
+          v-model="cutoff"
+          aria-label="报告观察截止"
+          placeholder="2026-10-12T16:00:00.000" /></label
+      ><el-button native-type="submit" :disabled="busy">核对重算范围</el-button>
+    </form>
+    <el-dialog
+      :model-value="!!confirmation"
+      :title="confirmation === 'recalculate' ? '确认冻结报告' : '确认人工结论'"
+      width="min(620px, 94vw)"
+      @close="confirmation = null"
+      ><p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
+      <p v-if="confirmation === 'recalculate'">
+        分配序号 ≤ {{ sequence }}，观察截止 {{ cutoff }}。保留全部失败、取消和未知项。
+      </p>
+      <p v-else>
+        引用 revision {{ report?.revision }} / {{ report?.reportHash }}；{{ decision }}，理由：{{
+          reason
+        }}。{{ safetyId ? `独立安全依据 #${safetyId}` : '' }}
+      </p>
+      <template #footer
+        ><el-button :disabled="busy" @click="confirmation = null">返回</el-button
+        ><el-button type="primary" :disabled="busy || !confirmationCurrent" @click="submit"
+          >确认提交</el-button
+        ></template
+      ></el-dialog
+    >
+  </section>
+</template>
+<script setup lang="ts">
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ElButton, ElDialog } from 'element-plus'
+import { normalizeApiError } from '@/api/errors'
+import { decideOnlineExperiment, getOnlineReport, recalculateOnlineReport } from './api'
+import {
+  ONLINE_DESCRIPTIVE_NOTICE,
+  onlineIdentity,
+  onlineIssue,
+  validOnlineId,
+} from './presentation'
+import { onlineReportFact, onlineReportPayload, reportObject } from './report'
+import type {
+  OnlineDecisionRequest,
+  OnlineExperiment,
+  OnlineRecalculateRequest,
+  OnlineReport,
+} from './types'
+const props = defineProps<{
+  experiment: OnlineExperiment
+  readable: boolean
+  manageable: boolean
+  canRecalculate: boolean
+}>()
+const emit = defineEmits<{ decided: [] }>()
+const groups = ['BASELINE', 'CANDIDATE'] as const,
+  blindnessGroups = ['BLINDED', 'NON_BLINDED', 'UNKNOWN']
+const primaryRows = [
+  ['rangeDocumentCount', '范围文档数'],
+  ['participatingDocumentCount', '独立参与文档'],
+  ['primaryPassDocumentCount', '已证实通过文档'],
+  ['primaryFailDocumentCount', '失败文档'],
+  ['primaryMissingDocumentCount', '缺失文档'],
+  ['primaryValidRatio', '通过 / 有效文档'],
+  ['primaryValidCoverage', '有效 / 全部参与文档'],
+  ['provenCoverage', '通过 / 全部参与文档'],
+] as const
+const qualityRows = [
+  ['originalEvidenceRecordedDocumentCount', '已记录原始证据文档'],
+  ['originalEvidenceUnknownDocumentCount', '原始证据未知'],
+  ['originalEvidenceUnratedDocumentCount', '已记录但未评价'],
+  ['blindedDocumentCount', '有效盲态文档'],
+  ['nonBlindedDocumentCount', '非盲态文档'],
+  ['unknownBlindnessDocumentCount', '盲态未知'],
+  ['unratedDocumentCount', '未评分文档'],
+  ['blindedQualityCoverage', '盲态 / 全部首任务文档'],
+  ['blindedQualityRecordedOriginalCoverage', '盲态 / 已记录原产物（解释性覆盖）'],
+] as const
+const approvalRows = [
+  ['selectedRequestCount', '已选择最新导入提案数'],
+  ['status_APPROVED', '已审批'],
+  ['status_MERGED', '已合并'],
+  ['status_REJECTED', '已拒绝'],
+  ['status_RETURNED', '已退回'],
+  ['comparableRequestCount', '可比较原始与审批内容'],
+  ['notComparableRequestCount', '不可比较'],
+  ['unknownRequestCount', '来源不可验证'],
+  ['unrecordedAssignmentCount', '没有已验证导入事实的 Task'],
+  ['meanHumanModificationRatio', '可比较提案的平均人工修改比例'],
+] as const
+const taskRows = [
+  ['assignedTaskCount', '已接受 Task'],
+  ['createdTaskCount', '已落库'],
+  ['startedTaskCount', '已开始'],
+  ['terminalTaskCount', '已终态'],
+  ['completedTaskCount', '已完成'],
+  ['failedTaskCount', '失败'],
+  ['timedOutTaskCount', '超时'],
+  ['userCanceledTaskCount', '取消'],
+  ['pendingTaskCount', '在途'],
+  ['unknownTaskCount', '未知'],
+  ['ledgerUnknownCount', '账本未知'],
+  ['estimatedTokenLedgerCount', '估算账本'],
+  ['tokenEstimationUnknownCount', '估算状态未知'],
+] as const
+const resourceRows = [
+  ['ledgerTokens', 'Token'],
+  ['ledgerCoverage', '账本覆盖'],
+  ['currencyCoverage', '币种覆盖'],
+  ['queueLatencyMeanMillis', '平均排队毫秒'],
+  ['queueLatencyCoverage', '排队覆盖'],
+  ['executionLatencyMeanMillis', '平均执行毫秒'],
+  ['executionLatencyCoverage', '执行覆盖'],
+  ['endToEndLatencyMeanMillis', '平均端到端毫秒'],
+  ['endToEndLatencyCoverage', '端到端覆盖'],
+] as const
+const report = ref<OnlineReport | null>(null),
+  revision = ref(1),
+  busy = ref(false),
+  error = ref(''),
+  sequence = ref(''),
+  cutoff = ref('')
+const decision = ref<OnlineDecisionRequest['decision']>('INSUFFICIENT_EVIDENCE'),
+  reason = ref(''),
+  safetyId = ref('')
+const confirmation = ref<'recalculate' | 'decision' | null>(null),
+  captured = ref('')
+let pending: AbortController | undefined, retry: { fingerprint: string; key: string } | undefined
+const payload = computed(() => onlineReportPayload(report.value, props.experiment))
+const validRevision = computed(
+  () => Number.isInteger(revision.value) && revision.value > 0 && revision.value <= 2147483647,
+)
+const decisionAllowed = computed(
+  () =>
+    props.manageable &&
+    !props.experiment.decision &&
+    report.value?.state === 'SUPPORTED' &&
+    !!payload.value &&
+    (decision.value === 'REJECTED' && !!safetyId.value
+      ? payload.value.decisionEligibility.safetyRejectedAllowed &&
+        payload.value.decisionEligibility.confirmedSafetyFeedbackIds.includes(safetyId.value)
+      : props.experiment.status === 'STOPPED' &&
+        (decision.value === 'INSUFFICIENT_EVIDENCE' ||
+          payload.value.decisionEligibility.comparisonAllowed)),
+)
+const identity = computed(() =>
+  JSON.stringify([
+    onlineIdentity(props.experiment),
+    props.readable,
+    props.manageable,
+    props.canRecalculate,
+    revision.value,
+    report.value?.revision,
+    report.value?.reportHash,
+    report.value?.state,
+    decision.value,
+    reason.value,
+    safetyId.value,
+    sequence.value,
+    cutoff.value,
+  ]),
+)
+const confirmationCurrent = computed(
+  () =>
+    captured.value === identity.value &&
+    (confirmation.value === 'recalculate' ? props.canRecalculate : decisionAllowed.value),
+)
+watch(identity, () => {
+  confirmation.value = null
+})
+watch(revision, (value) => {
+  if (report.value && report.value.revision !== value) report.value = null
+})
+watch(decision, (value) => {
+  if (value !== 'REJECTED') safetyId.value = ''
+})
+watch(
+  [
+    () => props.experiment.id,
+    () => props.experiment.spaceId,
+    () => props.experiment.manifestHash,
+    () => props.readable,
+  ],
+  () => {
+    pending?.abort()
+    busy.value = false
+    report.value = null
+    error.value = ''
+    retry = undefined
+    reason.value = ''
+    safetyId.value = ''
+    sequence.value = ''
+    cutoff.value = ''
+    confirmation.value = null
+  },
+)
+watch([() => props.manageable, () => props.canRecalculate], () => {
+  pending?.abort()
+  busy.value = false
+  confirmation.value = null
+  retry = undefined
+})
+function quality(group: (typeof groups)[number], stratum: string) {
+  return reportObject(reportObject(payload.value?.groups[group].qualityByBlindness)[stratum])
+}
+function store(value: OnlineReport, expectedRevision?: number) {
+  if (
+    value.experimentId !== props.experiment.id ||
+    (expectedRevision !== undefined && value.revision !== expectedRevision)
+  )
+    throw new Error('报告身份或版本不一致')
+  report.value = value
+  revision.value = value.revision
+}
+async function load(full: boolean) {
+  if (!props.readable || !validRevision.value || busy.value) return
+  pending?.abort()
+  const controller = new AbortController(),
+    id = props.experiment.id,
+    selectedRevision = revision.value
+  pending = controller
+  busy.value = true
+  error.value = ''
+  report.value = null
+  try {
+    const value = await getOnlineReport(id, selectedRevision, full, controller.signal)
+    if (!controller.signal.aborted && props.readable && selectedRevision === revision.value)
+      store(value, selectedRevision)
+  } catch (e) {
+    if (!controller.signal.aborted) error.value = normalizeApiError(e).message
+  } finally {
+    if (!controller.signal.aborted) busy.value = false
+  }
+}
+function confirmDecision() {
+  if (!decisionAllowed.value || !reason.value.trim()) return
+  captured.value = identity.value
+  confirmation.value = 'decision'
+}
+function confirmRecalculate() {
+  error.value = ''
+  if (
+    !props.canRecalculate ||
+    !validOnlineId(sequence.value, true) ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?$/.test(cutoff.value) ||
+    !Number.isFinite(Date.parse(`${cutoff.value}Z`))
+  ) {
+    error.value = '请填写规范截止序号与服务部署时区的日期时间（秒或毫秒）'
+    return
+  }
+  captured.value = identity.value
+  confirmation.value = 'recalculate'
+}
+async function submit() {
+  if (!confirmation.value || !confirmationCurrent.value || busy.value) return
+  const action = confirmation.value,
+    id = props.experiment.id,
+    snapshot = identity.value
+  const data =
+    action === 'recalculate'
+      ? { assignmentCutoffSequence: sequence.value, observationCutoffAt: cutoff.value }
+      : {
+          reportRevision: report.value!.revision,
+          reportHash: report.value!.reportHash,
+          decision: decision.value,
+          reason: reason.value.trim(),
+          ...(safetyId.value ? { safetyFeedbackId: safetyId.value } : {}),
+        }
+  const fingerprint = JSON.stringify([id, action, data])
+  if (retry?.fingerprint !== fingerprint) retry = { fingerprint, key: window.crypto.randomUUID() }
+  const controller = new AbortController()
+  pending = controller
+  busy.value = true
+  error.value = ''
+  try {
+    if (action === 'recalculate') {
+      const value = await recalculateOnlineReport(
+        id,
+        { ...data, clientRequestKey: retry.key } as OnlineRecalculateRequest,
+        controller.signal,
+      )
+      if (controller.signal.aborted || !props.canRecalculate || snapshot !== identity.value) return
+      store(value)
+    } else {
+      await decideOnlineExperiment(
+        id,
+        { ...data, clientRequestKey: retry.key } as OnlineDecisionRequest,
+        controller.signal,
+      )
+      if (controller.signal.aborted || !decisionAllowed.value || snapshot !== identity.value) return
+      emit('decided')
+    }
+    retry = undefined
+    confirmation.value = null
+  } catch (e) {
+    if (!controller.signal.aborted) error.value = normalizeApiError(e).message
+  } finally {
+    if (!controller.signal.aborted) busy.value = false
+  }
+}
+onBeforeUnmount(() => pending?.abort())
+</script>
+<style scoped>
+.report-panel {
+  display: grid;
+  gap: 16px;
+}
+.row {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+input,
+select,
+textarea {
+  padding: 8px;
+  font: inherit;
+  border: 1px solid var(--adw-border-color);
+  border-radius: var(--adw-radius-sm);
+}
+.table-wrap {
+  overflow-x: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+th,
+td {
+  padding: 10px;
+  border-bottom: 1px solid var(--adw-border-color-light);
+}
+thead {
+  background: var(--adw-surface-muted);
+}
+p,
+li {
+  color: var(--adw-text-secondary);
+  line-height: 1.6;
+}
+details {
+  overflow-wrap: anywhere;
+}
+[role='alert'] {
+  color: var(--adw-color-danger);
+}
+</style>

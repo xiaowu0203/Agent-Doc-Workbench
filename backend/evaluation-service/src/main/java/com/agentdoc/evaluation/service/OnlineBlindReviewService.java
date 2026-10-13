@@ -33,6 +33,12 @@ public class OnlineBlindReviewService {
     private final OnlineBlindReviewReceiptService receipts;
     private final OnlineExperimentMapper experiments;
     private final SpaceAccessService access;
+    /** 仅在已完成read的当前授权链路内取得Space，不生成普通元数据或曝光记录。 */
+    String spaceId(String experimentId, String assignmentId) {
+        var row = assignments.selectById(OnlineProtocolUtils.id(assignmentId));
+        if (row == null || !Objects.equals(row.getExperimentId().toString(), experimentId)) { throw invalid(); }
+        return row.getSpaceId().toString();
+    }
     public PageVO<OnlineReviewAssignmentVO> assignments(String id, PageParam page) {
         AuthUtils.getUserIdOrException(); page.validate(); var experiment = experiments.selectById(OnlineProtocolUtils.id(id));
         if (experiment == null) { throw invalid(); }

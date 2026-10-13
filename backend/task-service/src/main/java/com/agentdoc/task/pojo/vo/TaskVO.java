@@ -45,13 +45,18 @@ public record TaskVO(
         @Schema(description = "任务结果摘要") String resultSummary,
         @Schema(description = "创建人用户 ID") Long createdBy,
         @Schema(description = "创建时间") LocalDateTime createdAt,
-        @Schema(description = "Task Trace ID；遥测可能未采样或已过期") String traceId) {
+        @Schema(description = "Task Trace ID；遥测可能未采样或已过期") String traceId,
+        @Schema(description = "线上实验 ID，规范十进制字符串；非参与为空") String onlineExperimentId,
+        @Schema(description = "线上分配 ID，规范十进制字符串；非参与为空") String onlineAssignmentId,
+        @Schema(description = "线上不可变绑定协议版本；非参与为空") Integer onlineBindingSchemaVersion,
+        @Schema(description = "线上不可变绑定摘要；不包含凭证或私有绑定正文") String onlineBindingHash) {
 
     public TaskVO withTokenUsage(Long used, Boolean estimated) {
         return new TaskVO(parentTaskId, rootTaskId, lineageType, executionMode,
                 id, taskNo, spaceId, agentId, documentId, documentType, name, instruction, status,
                 tokenBudget, readScope, focusRegions, used, estimated, startTime, dispatchedAt, lastHeartbeatAt,
-                endTime, retryCount, errorMessage, resultSummary, createdBy, createdAt, traceId);
+                endTime, retryCount, errorMessage, resultSummary, createdBy, createdAt, traceId,
+                onlineExperimentId, onlineAssignmentId, onlineBindingSchemaVersion, onlineBindingHash);
     }
 
     public static TaskVO from(TaskEntity entity) {
@@ -63,7 +68,9 @@ public record TaskVO(
                 entity.getTokensUsed(), entity.getTokensEstimated(), entity.getStartTime(), entity.getDispatchedAt(), entity.getLastHeartbeatAt(),
                 entity.getEndTime(), entity.getRetryCount(),
                 entity.getErrorMessage(), entity.getResultSummary(), entity.getCreatedBy(), entity.getCreatedAt(),
-                entity.getTraceId());
+                entity.getTraceId(), entity.getOnlineExperimentId() == null ? null : entity.getOnlineExperimentId().toString(),
+                entity.getOnlineAssignmentId() == null ? null : entity.getOnlineAssignmentId().toString(),
+                entity.getOnlineBindingSchemaVersion(), entity.getOnlineBindingHash());
     }
 
     private static TaskReadScope readScope(TaskEntity entity) {

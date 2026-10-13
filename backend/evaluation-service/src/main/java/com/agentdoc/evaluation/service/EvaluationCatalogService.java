@@ -8,6 +8,8 @@ import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.OnlineProtocolUtils;
+import com.agentdoc.evaluation.pojo.param.EvaluatorPublishedSearchParam;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
@@ -92,6 +94,33 @@ import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_S
 @Service
 @RequiredArgsConstructor
 public class EvaluationCatalogService {
+
+    public List<EvaluatorVersionVO> publishedEvaluatorVersions(EvaluatorPublishedSearchParam param) {
+        param.validate();
+        long spaceId = OnlineProtocolUtils.id(param.getSpaceId());
+        spaceAccessService.requirePermission(spaceId, EVALUATION_READ);
+        return availableEvaluatorVersions(spaceId, param.getVersionIds().stream().map(OnlineProtocolUtils::id).toList())
+                .stream().map(EvaluatorVersionVO::from).toList();
+    }
+
+    /** 同领域新建引用复用；调用者已经检查自身动作权限，历史读取不使用此门禁。 */
+    List<EvaluatorVersionEntity> availableEvaluatorVersions(Long spaceId, List<Long> versionIds) {
+        var ids = versionIds.stream().distinct().toList();
+        var rows = evaluatorVersionMapper.selectBatchIds(ids);
+        var parents = rows.isEmpty() ? Map.<Long, EvaluatorEntity>of() : evaluatorMapper.selectBatchIds(
+                rows.stream().map(EvaluatorVersionEntity::getEvaluatorId).distinct().toList()).stream()
+                .collect(Collectors.toMap(EvaluatorEntity::getId, Function.identity()));
+        if (rows.size() != ids.size() || rows.stream().anyMatch(row -> {
+            var parent = parents.get(row.getEvaluatorId());
+            return parent == null || Boolean.TRUE.equals(parent.getArchived()) || !spaceId.equals(parent.getSpaceId())
+                    || !spaceId.equals(row.getSpaceId()) || !row.getEvaluatorKey().equals(parent.getEvaluatorKey())
+                    || !EvaluationVersionStatus.PUBLISHED.name().equals(row.getStatus()) || row.getContentHash() == null
+                    || !row.getContentHash().equals(StableSnapshotUtils.snapshotHash(CONTENT_HASH_SCHEMA_VERSION,
+                        new EvaluatorHash(row.getEvaluatorKey(), row.getConfigSchemaVersion(), JsonUtils.parse(row.getConfigJson(), Object.class),
+                            row.getResultSchemaVersion(), row.getImplementationVersion())));
+        })) { throw new BusinessException(ErrorCode.CONFLICT, "评估器版本或父资源已失效，请重新选择"); }
+        return rows;
+    }
 
     private final EvaluationDatasetMapper datasetMapper;
     private final EvaluationDatasetVersionMapper datasetVersionMapper;

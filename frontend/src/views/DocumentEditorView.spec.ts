@@ -40,6 +40,11 @@ vi.mock('@/features/document/api/document-api', () => ({
 vi.mock('@/features/task/api/task-api', () => ({
   createTask: vi.fn(),
 }))
+vi.mock('@/features/evaluation/online/api', () => ({
+  searchOnlineExperiments: vi
+    .fn()
+    .mockResolvedValue({ records: [], total: 0, pageNum: 1, pageSize: 1 }),
+}))
 
 const detail = {
   id: 101,
@@ -651,16 +656,20 @@ describe('DocumentEditorView', () => {
       .trigger('click')
     await flushPromises()
 
-    expect(taskApi.createTask).toHaveBeenCalledWith({
-      spaceId: 7,
-      agentId: 301,
-      documentId: 101,
-      name: '产品上线方案',
-      instruction: '请检查文档结构',
-      tokenBudget: null,
-      readScope: 'FULL',
-      focusRegions: [],
-    })
+    expect(taskApi.createTask).toHaveBeenCalledWith(
+      {
+        spaceId: 7,
+        agentId: 301,
+        documentId: 101,
+        name: '产品上线方案',
+        instruction: '请检查文档结构',
+        tokenBudget: null,
+        readScope: 'FULL',
+        focusRegions: [],
+        clientRequestKey: expect.any(String),
+      },
+      expect.any(AbortSignal),
+    )
     expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe(route)
   })
 

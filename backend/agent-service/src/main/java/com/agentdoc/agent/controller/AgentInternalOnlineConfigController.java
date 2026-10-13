@@ -5,6 +5,9 @@ import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentOnlineConfigPrepareDTO;
 import com.agentdoc.common.feign.vo.AgentOnlineConfigPairVO;
+import com.agentdoc.common.feign.vo.AgentOnlinePromptComparisonVO;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +19,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/internal/online-configs")
 public class AgentInternalOnlineConfigController {
     private final AgentOnlineConfigService service;
+
+    @GetMapping("/{experimentId}/prompt-comparison")
+    public ResponseEntity<Result<AgentOnlinePromptComparisonVO>> promptComparison(@PathVariable String experimentId, @RequestParam String spaceId) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(Result.ok(service.promptComparison(experimentId, spaceId)));
+    }
 
     @PostMapping("/prepare")
     public Result<AgentOnlineConfigPairVO> prepare(@RequestBody AgentOnlineConfigPrepareDTO request) {

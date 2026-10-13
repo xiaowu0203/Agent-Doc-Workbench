@@ -274,18 +274,12 @@ public final class OnlineReportCalculator {
 
     private static EvaluationFeedbackEntity qualityTail(OnlineAssignmentEntity assignment, List<EvaluationFeedbackEntity> rows) {
         if (rows.isEmpty()) { return null; }
-        var children = new HashMap<Long, EvaluationFeedbackEntity>(); EvaluationFeedbackEntity root = null;
         for (var row : rows) {
             if (!OnlineQualityFeedbackFacts.valid(row) || !Objects.equals(row.getTaskId(), assignment.getTaskId())
                     || !Objects.equals(row.getExecutionId(), assignment.getExecutionId())) { return null; }
-            if (row.getSupersedesFeedbackId() == null) { if (root != null) { return null; } root = row; }
-            else if (children.put(row.getSupersedesFeedbackId(), row) != null) { return null; }
         }
-        var seen = new HashSet<Long>(); var tail = root;
-        while (tail != null && children.containsKey(tail.getId())) {
-            if (!seen.add(tail.getId())) { return null; } tail = children.get(tail.getId());
-        }
-        return tail != null && seen.size() + 1 == rows.size() ? tail : null;
+        var chain = OnlineQualityFeedbackFacts.orderedChain(rows);
+        return chain == null || chain.isEmpty() ? null : chain.getLast();
     }
 
     private static void resource(ObjectNode group, OnlineReportTaskFactVO task, OnlineReportExecutionFactVO execution,

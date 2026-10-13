@@ -21,8 +21,6 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.LinkedHashMap;
@@ -65,8 +63,6 @@ public class OnlineQualityFeedbackPersistenceService {
             if ((request.comment() == null || request.comment().isBlank()) && quality.reasonCodes().isEmpty()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "显式更正必须提供理由");
             }
-            var byId = new HashMap<Long, EvaluationFeedbackEntity>(); var children = new HashMap<Long, EvaluationFeedbackEntity>();
-            EvaluationFeedbackEntity root = null;
             for (var row : rows) {
                 if (!Objects.equals(row.getSpaceId(), assignment.getSpaceId()) || !Objects.equals(row.getTaskId(), assignment.getTaskId())
                         || !Objects.equals(row.getExecutionId(), assignment.getExecutionId()) || row.getRunId() != null || row.getCaseRunId() != null
@@ -76,18 +72,11 @@ public class OnlineQualityFeedbackPersistenceService {
                 if (facts == null || !Objects.equals(facts.path("originalEvidenceType").asText(), quality.originalEvidenceType())
                         || !Objects.equals(facts.path("originalIdentityHash").asText(), identityHash)
                         || !Objects.equals(facts.path("input"), JsonUtils.parse(JsonUtils.toJson(input), JsonNode.class))) { throw conflict(); }
-                if (byId.put(row.getId(), row) != null) { throw conflict(); }
-                if (row.getSupersedesFeedbackId() == null) {
-                    if (root != null) { throw conflict(); } root = row;
-                } else if (children.put(row.getSupersedesFeedbackId(), row) != null) { throw conflict(); }
             }
-            var visited = new HashSet<Long>(); var cursor = root;
-            while (cursor != null) {
-                if (!visited.add(cursor.getId())) { throw conflict(); }
-                predecessor = cursor; cursor = children.get(cursor.getId());
-            }
-            if (visited.size() != rows.size() || predecessor == null
-                    || !Objects.equals(predecessor.getId(), OnlineProtocolUtils.id(quality.supersedesFeedbackId()))) { throw conflict(); }
+            var chain = OnlineQualityFeedbackFacts.orderedChain(rows);
+            if (chain == null || chain.isEmpty()) { throw conflict(); }
+            predecessor = chain.getLast();
+            if (!Objects.equals(predecessor.getId(), OnlineProtocolUtils.id(quality.supersedesFeedbackId()))) { throw conflict(); }
         }
         var entity = new EvaluationFeedbackEntity(); entity.setId(IdWorker.getId());
         entity.setSpaceId(assignment.getSpaceId()); entity.setTaskId(assignment.getTaskId()); entity.setExecutionId(assignment.getExecutionId());

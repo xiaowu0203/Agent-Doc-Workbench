@@ -107,9 +107,11 @@ class OnlineExperimentMySqlTest {
                     new AgentOnlineConfigPairVO.TemplateIdentity("602", 2, "c".repeat(64), "b".repeat(64)), "d".repeat(64), 600, 1048576);
             when(agents.prepareOnlineConfigs(any())).thenReturn(Result.ok(pair));
             when(agents.onlineDependency(anyLong(), eq(101L))).thenReturn(Result.ok(pair.dependencyHash()));
+            var catalog = mock(EvaluationCatalogService.class);
+            when(catalog.availableEvaluatorVersions(eq(101L), anyList())).thenAnswer(call -> versions.selectBatchIds(call.getArgument(1)));
             var service = new OnlineExperimentService(experiments, context.getBean(OnlineAssignmentMapper.class),
                     new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, context.getBean(OnlineExperimentPersistenceService.class),
-                    versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), mock(OnlineReviewExposureService.class));
+                    versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), mock(OnlineReviewExposureService.class), catalog);
             var created = service.create(OnlineExperimentRequestValidatorTest.request());
             assertThat(service.create(OnlineExperimentRequestValidatorTest.request()).summary().id()).isEqualTo(created.summary().id());
             assertThat(created.summary().createdAt()).isNotNull();

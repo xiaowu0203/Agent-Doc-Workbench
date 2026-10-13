@@ -76,7 +76,7 @@ class TaskExecutionQueryServiceTest {
                 11L, "T-11", 7L, 9L, 13L, type, "审计任务", "检查文档", status,
                 5000L, TaskReadScope.FULL, List.of(), 120L, true,
                 LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(),
-                0, null, resultSummary, 2L, LocalDateTime.now(), null);
+                0, null, resultSummary, 2L, LocalDateTime.now(), null, null, null, null, null);
     }
 
     private AgentExecutionAuditVO audit(String agentName) {
