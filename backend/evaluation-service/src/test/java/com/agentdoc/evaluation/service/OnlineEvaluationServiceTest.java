@@ -12,6 +12,7 @@ import com.agentdoc.evaluation.evaluator.DeterministicEvaluationOutcome;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
+import com.agentdoc.evaluation.enums.EvaluationResultStatus;
 import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
 import com.agentdoc.common.feign.vo.OnlineOriginalChangesVO;
 import com.agentdoc.common.utils.OnlineOriginalChangeUtils;
@@ -45,7 +46,8 @@ class OnlineEvaluationServiceTest {
     private final OnlineEvaluationPersistenceService persistence = mock(OnlineEvaluationPersistenceService.class);
     private final OnlineOriginalTextEvaluator evaluator = spy(new OnlineOriginalTextEvaluator());
     private final OnlineOriginalChangeEvaluator changeEvaluator = spy(new OnlineOriginalChangeEvaluator());
-    private final OnlineEvaluationService service = new OnlineEvaluationService(experiments, assignments, versions, access, tasks, agents, evaluator, changeEvaluator, persistence, mock(OnlineReviewExposureService.class));
+    private final OnlineFactEvaluationService factEvaluator = mock(OnlineFactEvaluationService.class);
+    private final OnlineEvaluationService service = new OnlineEvaluationService(experiments, assignments, versions, access, tasks, agents, evaluator, changeEvaluator, factEvaluator, persistence, mock(OnlineReviewExposureService.class));
     private final OnlineEvaluationCreateDTO request = new OnlineEvaluationCreateDTO("evaluate-1", "quality");
     private OnlineAssignmentEntity assignment;
     private OnlineExperimentEntity experiment;
@@ -71,6 +73,20 @@ class OnlineEvaluationServiceTest {
                 assignment.getBindingHash(),null,null,null,null)));
     }
     @AfterEach void cleanup() { SecurityContextHolder.clearContext(); }
+    @Test void frozenTaskFactRuleUsesExistingImplementationAndDoesNotReadOriginalBodies() {
+        version.setEvaluatorKey("task-terminal-status"); version.setImplementationVersion("phase3-v1");
+        version.setContentHash(OnlineExperimentService.versionHash(version));
+        experiment.setManifestJson(OnlineProtocolUtils.canonical("online.manifest", Map.of("ruleBindings", List.of(Map.of("evaluatorKey", version.getEvaluatorKey(),
+                "contentHash", version.getContentHash(), "binding", Map.of("ruleKey", "quality", "evaluatorVersionId", "81", "evidenceTarget", "TASK_FACTS",
+                        "expectedBindings", List.of(Map.of("documentId", "41", "expectedJson", Map.of()))))))));
+        experiment.setManifestHash(StableSnapshotUtils.sha256Utf8(experiment.getManifestJson()));
+        var outcome = new DeterministicEvaluationOutcome(EvaluationResultStatus.PASSED,"TASK_TERMINAL_PASSED","{}",List.of(),List.of());
+        when(factEvaluator.evaluate("task-terminal-status","{}","{}",assignment)).thenReturn(outcome);
+        service.evaluate("11","51",request);
+        verify(persistence).append(eq(assignment),eq("task-terminal-status"),eq(81L),eq("quality"),eq("evaluate-1"),anyString(),anyString(),eq(501L),any(),eq(outcome));
+        verifyNoInteractions(agents, evaluator, changeEvaluator);
+        verify(tasks,never()).getOnlineOriginalChanges(any(),any(),any());
+    }
     @Test void missingCaptureAppendsSkippedAndNoQualityZeroUsingFrozenExpected() {
         service.evaluate("11","51",request); var outcome = ArgumentCaptor.forClass(DeterministicEvaluationOutcome.class);
         verify(persistence).append(eq(assignment),eq(OnlineRuleContractValidator.TEXT),eq(81L),eq("quality"),eq("evaluate-1"),anyString(),anyString(),eq(501L),any(),outcome.capture());

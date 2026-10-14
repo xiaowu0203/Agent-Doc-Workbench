@@ -35,10 +35,10 @@ class OnlineTaskCapabilityIssuanceServiceTest {
     private final OnlineCapabilityVerifier verifier = new OnlineCapabilityVerifier(decoder, properties);
     private final OnlineTaskCapabilityIssuanceService service = new OnlineTaskCapabilityIssuanceService(signer, properties, verifier, tasks, evaluation);
     private final OnlineTaskBindingDTO binding = new OnlineTaskBindingDTO("61", "11", "a".repeat(64), "1", "BASELINE", 9000,
-            "50", "10", "20", "30", "40", "1", "b".repeat(64), 1, "c".repeat(64), "71", 2, "d".repeat(64),
+            "50", "10", "20", "30", "40", "0", "b".repeat(64), 1, "c".repeat(64), "71", 2, "d".repeat(64),
             "e".repeat(64), "f".repeat(64), "100", 600, "LIVE", "ORIGINAL", 2);
     private final OnlineAssignmentRequestDTO request = new OnlineAssignmentRequestDTO("10", "20", "30", "40", "50", "original-key",
-            "a".repeat(64), "c".repeat(64), "1", "b".repeat(64), "100", 1);
+            "a".repeat(64), "c".repeat(64), "0", "b".repeat(64), "100", 1);
     private final OnlineTaskDispatchProofVO proof = new OnlineTaskDispatchProofVO(request, binding, "PENDING", List.of(JwtConstant.ACTION_READ_FRAGMENT), "f".repeat(64));
     @BeforeEach void setup() {
         properties.setOnlineCapabilityEnabled(true);
@@ -59,6 +59,7 @@ class OnlineTaskCapabilityIssuanceServiceTest {
         assertThat(capability.getClaimAsString(EXPERIMENT_ID)).isEqualTo("11"); assertThat(capability.getClaimAsString(ASSIGNMENT_ID)).isEqualTo("61");
         assertThat(capability.getClaimAsString(BINDING_HASH)).isEqualTo(OnlineProtocolUtils.hash("online.binding", binding));
         assertThat(capability.getClaimAsString(SLOT_PERMIT_HASH)).isEqualTo("9".repeat(64));
+        assertThat(String.valueOf((Object) capability.getClaim(JwtConstant.CLAIM_DOCUMENT_VERSION_SNAPSHOT))).isEqualTo("0");
         assertThat(String.valueOf((Object) capability.getClaim(SLOT_GENERATION))).isEqualTo("3");
         assertThatThrownBy(() -> verifier.verifyWait(capability.getTokenValue(), "10")).isInstanceOf(JwtException.class);
     }

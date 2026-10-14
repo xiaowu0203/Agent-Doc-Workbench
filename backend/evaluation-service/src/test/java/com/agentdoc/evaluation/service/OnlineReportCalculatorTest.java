@@ -31,7 +31,7 @@ class OnlineReportCalculatorTest {
                 {"documentIds":["41","42"],"bucketProtocol":{"seed":"00000000000000000000000000000000","weight":5000},
                  "analysisPlan":{"mode":"%s","humanQualityRequired":%s},"ruleBindings":[{"binding":{"ruleKey":"quality",
                   "role":"PRIMARY","evaluatorVersionId":"21","metricKey":"text.assertion.pass-ratio","valueType":"NUMBER","unit":"ratio",
-                  "comparison":"GE","threshold":1,"expectedBindings":[{"documentId":"41","expectedJson":{}},{"documentId":"42","expectedJson":{}}]}}]}
+                  "comparison":"GE","threshold":"1","expectedBindings":[{"documentId":"41","expectedJson":{}},{"documentId":"42","expectedJson":{}}]}}]}
                 """.formatted(mode, human), JsonNode.class);
     }
     private OnlineAssignmentEntity assignment(long id, long document, long sequence) {
@@ -61,6 +61,23 @@ class OnlineReportCalculatorTest {
                 row.getExecutionId().toString(), status, TIME.toString(), TIME.plusSeconds(1).toString(), TIME.plusSeconds(2).toString(), null, null, null)).toList();
         return OnlineReportCalculator.calculate(experiment, manifest, 100, TIME.plusHours(1), snapshot, List.of(), executions, List.of());
     }
+    @Test void numericThresholdUsesCanonicalTextAndDecimalComparisonWithoutCoercion() {
+        var manifest = manifest(false,"ENGINEERING");
+        var rule = (ObjectNode) manifest.path("ruleBindings").get(0).path("binding"); rule.put("threshold","0.5");
+        assertThat(report(manifest,snapshot(List.of(assignment(1,41,1)),new BigDecimal("0.5")),"COMPLETED")
+                .path("groups").path("BASELINE").path("primaryPassDocumentCount").asInt()).isEqualTo(1);
+        assertThat(report(manifest,snapshot(List.of(assignment(1,41,1)),new BigDecimal("0.49")),"COMPLETED")
+                .path("groups").path("BASELINE").path("primaryFailDocumentCount").asInt()).isEqualTo(1);
+        for (String malformed : List.of("01","1.0","1e0"," 1","+1")) {
+            rule.put("threshold",malformed);
+            assertThat(report(manifest,snapshot(List.of(assignment(1,41,1)),BigDecimal.ONE),"COMPLETED")
+                    .path("groups").path("BASELINE").path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+        }
+        rule.put("threshold",1);
+        assertThat(report(manifest,snapshot(List.of(assignment(1,41,1)),BigDecimal.ONE),"COMPLETED")
+                .path("groups").path("BASELINE").path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+    }
+
     @Test void validZeroIsFailureAndMissingTaskAndLedgerAreNotRemovedOrInventedZero() {
         var data = report(manifest(false, "ENGINEERING"), snapshot(List.of(assignment(1, 41, 1)), BigDecimal.ZERO), "COMPLETED");
         var group = data.path("groups").path("BASELINE");

@@ -46,8 +46,12 @@ const frozen: OnlineReport = {
         },
       },
       approvalFeedback: {
-        BASELINE: { status_APPROVED: 1, meanHumanModificationRatio: '0.5' },
-        CANDIDATE: {},
+        groups: {
+          BASELINE: { status_APPROVED: 1, meanHumanModificationRatio: '0.5' },
+          CANDIDATE: {},
+        },
+        unit: 'LATEST_IMPORTED_CHANGE_REQUEST',
+        unrecordedMeaning: 'PENDING_OR_NOT_APPLICABLE_OR_NOT_IMPORTED',
       },
       actualWindows: {},
       analysisPlan: experiment.analysisPlan,
@@ -136,6 +140,8 @@ describe('固定线上报告和人工决定', () => {
     expect(wrapper.text()).toContain('CNY 0.00')
     expect(wrapper.text()).toContain('USD 1.25')
     expect(wrapper.text()).toContain('平均人工修改比例')
+    const approvalRatio = wrapper.findAll('tr').find((row) => row.text().includes('可比较提案的平均人工修改比例'))!
+    expect(approvalRatio.findAll('td').map((cell) => cell.text())).toEqual(['0.5', '未知'])
     expect(wrapper.text()).toContain('证据不足或存在阻塞')
     expect(button(wrapper, '核对结论').attributes('disabled')).toBeDefined()
     expect(api.getOnlineReport).toHaveBeenCalledWith(

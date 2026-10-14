@@ -172,6 +172,20 @@ class OnlineExecutionAuthorityMySqlTest {
         }
     }
 
+    @Test void initialDocumentVersionCanAllocateAndRetryWithoutChangingFrozenBinding() {
+        var experiment = experiment(1000, 100);
+        var source = request(experiment, "301", 20);
+        var initial = new OnlineAssignmentRequestDTO(source.taskId(), source.spaceId(), source.agentId(), source.documentId(), source.actorId(),
+                source.requestKey(), source.requestHash(), source.inputHash(), "0", source.documentContentHash(), source.tokenBudget(), source.inputSchemaVersion());
+        var accepted = authority(0).allocate(experiment.getId(), initial).binding();
+        assertThat(accepted.documentVersion()).isEqualTo("0");
+        assertThat(authority(1).allocate(experiment.getId(), initial).binding()).isEqualTo(accepted);
+        assertThat(experiments().selectById(experiment.getId()).getAssignedTaskCount()).isEqualTo(1);
+        assertThat(assignment(initial.taskId()).getBindingHash()).isEqualTo(OnlineProtocolUtils.hash("online.binding", accepted));
+        var permit = authority(0).claim(experiment.getId(), Long.valueOf(initial.taskId()), assignment(initial.taskId()).getBindingHash());
+        assertThat(authority(1).begin(experiment.getId(), Long.valueOf(initial.taskId()), permit.generation(), permit.permitHash()).started()).isTrue();
+    }
+
     @Test void concurrentBudgetReservationPausesWithoutRollingBackTheGate() throws Exception {
         var experiment = experiment(100, 100);
         var jobs = new ArrayList<Callable<OnlineExecutionAuthority.Allocation>>();

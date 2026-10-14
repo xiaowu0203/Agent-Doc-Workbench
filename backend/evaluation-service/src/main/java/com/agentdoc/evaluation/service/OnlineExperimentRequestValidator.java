@@ -123,7 +123,7 @@ public final class OnlineExperimentRequestValidator {
         if (value == null || !value.isTextual()) { throw invalid(ID_INVALID.name()); }
     }
 
-    private static String decimal(String value) {
+    static String decimal(String value) {
         if (value == null || value.length() > 64 || !value.matches("-?(0|[1-9][0-9]*)(\\.[0-9]+)?")) { throw invalid(MANIFEST_INVALID.name()); }
         var number = new BigDecimal(value).stripTrailingZeros();
         return number.signum() == 0 ? "0" : number.toPlainString();

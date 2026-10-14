@@ -44,7 +44,7 @@ public class OnlineTaskCapabilityIssuanceService {
                 permit.bindingHash(), permit.generation(), permit.permitHash());
         return jwt.createTaskCapabilityToken(OnlineProtocolUtils.id(taskId), OnlineProtocolUtils.id(binding.agentId()),
                 OnlineProtocolUtils.id(binding.spaceId()), OnlineProtocolUtils.id(binding.documentId()), binding.executionMode(),
-                OnlineProtocolUtils.id(request.documentVersion()), request.documentContentHash(), request.inputSchemaVersion(), request.inputHash(),
+                OnlineProtocolUtils.documentVersion(request.documentVersion()), request.documentContentHash(), request.inputSchemaVersion(), request.inputHash(),
                 null, proof.actions(), identity);
     }
     /** 只能用尚未过期的 WAIT 延续同一排队证明；源到期后必须回到原创建者的人类入口。 */

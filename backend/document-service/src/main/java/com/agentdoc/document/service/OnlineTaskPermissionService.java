@@ -52,7 +52,7 @@ public class OnlineTaskPermissionService {
         var document = documents.requireDoc(OnlineProtocolUtils.id(binding.documentId()));
         if (!Long.valueOf(spaceId).equals(document.getSpaceId()) || !Integer.valueOf(DocStatus.NORMAL.getCode()).equals(document.getStatus())
                 || DocType.fromCode(document.getDocType()) == null) { throw denied(); }
-        documents.requireOnlineFrozenVersion(document.getId(), OnlineProtocolUtils.id(binding.documentVersion()), binding.documentContentHash());
+        documents.requireOnlineFrozenVersion(document.getId(), OnlineProtocolUtils.documentVersion(binding.documentVersion()), binding.documentContentHash());
         return document.getDocType().equals(DocType.DRAFT.getCode())
                 ? List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_WRITE_DRAFT)
                 : List.of(JwtConstant.ACTION_READ_FRAGMENT, JwtConstant.ACTION_CREATE_CHANGE_REQUEST);

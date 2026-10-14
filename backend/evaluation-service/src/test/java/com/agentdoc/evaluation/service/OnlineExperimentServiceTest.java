@@ -2,6 +2,7 @@ package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentOnlineConfigFeign;
@@ -13,6 +14,7 @@ import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.convertor.OnlineAssignmentConvertor;
 import com.agentdoc.evaluation.convertor.OnlineExperimentConvertor;
+import com.agentdoc.evaluation.config.OnlineReconciliationProperties;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
 import com.agentdoc.evaluation.mapper.*;
 import com.agentdoc.evaluation.pojo.entity.*;
@@ -41,6 +43,8 @@ class OnlineExperimentServiceTest {
     private final EvaluationCatalogService catalog = mock(EvaluationCatalogService.class);
     private final AgentOnlineConfigFeign agents = mock(AgentOnlineConfigFeign.class);
     private final DocumentFeign documents = mock(DocumentFeign.class);
+    private final OnlineReconciliationProperties deployment = new OnlineReconciliationProperties();
+    private final SecurityVerifyProperties security = new SecurityVerifyProperties();
     private final AtomicReference<OnlineExperimentEntity> stored = new AtomicReference<>();
     private final AtomicReference<OnlineExperimentCreateIntentEntity> intent = new AtomicReference<>();
     private OnlineExperimentService service;
@@ -56,7 +60,7 @@ class OnlineExperimentServiceTest {
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         service = new OnlineExperimentService(mapper, assignments, new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, persistence,
-                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), exposures, catalog);
+                versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), exposures, catalog, deployment, security);
         when(intents.selectOne(any())).thenAnswer(call -> intent.get());
         doAnswer(call -> { intent.set(call.getArgument(0)); return null; }).when(persistence).reserve(any());
         doAnswer(call -> { stored.set(call.getArgument(0)); return null; }).when(persistence).complete(any());
@@ -166,7 +170,7 @@ class OnlineExperimentServiceTest {
     }
 
     @Test
-    void preflightShowsDraftValidButNeverStartableAndUsesBigIntegerPlannedBudget() {
+    void preflightKeepsDefaultDeploymentClosedAndUsesBigIntegerPlannedBudget() {
         var created = service.create(OnlineExperimentRequestValidatorTest.request());
         var preflight = service.preflight(created.summary().id());
         assertThat(preflight.draftEligible()).isTrue();
@@ -175,6 +179,41 @@ class OnlineExperimentServiceTest {
         assertThat(preflight.srm().status()).isEqualTo("NOT_ENOUGH_UNITS");
         assertThat(preflight.issues()).extracting(value -> value.code())
                 .contains("ONLINE_EXECUTION_NOT_READY").doesNotContain("ONLINE_RULE_NOT_READY", "ONLINE_REPORT_NOT_READY");
+    }
+
+    @Test
+    void enabledDeploymentAllowsValidEngineeringDraftWithoutClaimingStatisticalSufficiency() {
+        deployment.setEnabled(true); security.setOnlineCapabilityEnabled(true);
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        var checked = service.preflight(created.summary().id());
+        assertThat(checked.draftEligible()).isTrue(); assertThat(checked.startable()).isTrue();
+        assertThat(checked.issues()).extracting(value -> value.code()).doesNotContain("ONLINE_EXECUTION_NOT_READY")
+                .contains("SRM_NOT_ENOUGH_UNITS", "RETENTION_CONFIRMATION_REQUIRED");
+    }
+
+    @Test
+    void eitherMissingDeploymentConditionKeepsStartClosed() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        deployment.setEnabled(true);
+        assertThat(service.preflight(created.summary().id()).startable()).isFalse();
+        deployment.setEnabled(false); security.setOnlineCapabilityEnabled(true);
+        assertThat(service.preflight(created.summary().id()).startable()).isFalse();
+    }
+
+    @Test
+    void deploymentCannotBypassResourceRuleDependencyOrSpaceSlotChecks() {
+        deployment.setEnabled(true); security.setOnlineCapabilityEnabled(true);
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        String frozen = stored.get().getManifestJson();
+        when(agents.onlineDependency(anyLong(), eq(101L))).thenReturn(Result.ok("e".repeat(64)));
+        version.setContentHash("f".repeat(64));
+        when(mapper.selectCount(any())).thenReturn(1L);
+        when(documents.getDocumentRefs(anyList())).thenReturn(Result.ok(List.of(new DocumentRefVO(301L, 999L, "foreign"))));
+        var checked = service.preflight(created.summary().id());
+        assertThat(checked.draftEligible()).isFalse(); assertThat(checked.startable()).isFalse();
+        assertThat(checked.issues()).extracting(value -> value.code())
+                .contains("SCOPE_DRIFT", "DEPENDENCY_DRIFT", "ONLINE_RULE_NOT_READY", "SPACE_SLOT_OCCUPIED");
+        assertThat(stored.get().getManifestJson()).isEqualTo(frozen);
     }
 
     @Test

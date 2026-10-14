@@ -10,6 +10,17 @@ import static org.assertj.core.api.Assertions.*;
 
 class OnlineProtocolUtilsTest {
     @Test
+    void documentVersionAcceptsInitialZeroWithoutRelaxingIdsOrDecimalValidation() {
+        assertThat(OnlineProtocolUtils.documentVersion("0")).isZero();
+        assertThat(OnlineProtocolUtils.documentVersion("1")).isEqualTo(1L);
+        assertThat(OnlineProtocolUtils.documentVersion("9223372036854775807")).isEqualTo(Long.MAX_VALUE);
+        for (String value : new String[]{null, "", "00", "01", "-1", "+0", " 0", "0.0", "9223372036854775808"}) {
+            assertThatThrownBy(() -> OnlineProtocolUtils.documentVersion(value)).isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThatThrownBy(() -> OnlineProtocolUtils.id("0")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void internalTemplateIdsRejectNumericCoercionAndPreserveLargeStrings() {
         String body = "{\"experimentId\":\"9223372036854775807\",\"spaceId\":\"101\",\"agentId\":\"201\",\"requestHash\":\"hash\",\"candidateAgentPrompt\":\"candidate\"}";
         assertThat(JsonUtils.parseStrict(body, AgentOnlineConfigPrepareDTO.class).experimentId()).isEqualTo("9223372036854775807");

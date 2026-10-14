@@ -19,6 +19,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/document/internal/online-authorizations")
 public class OnlineProtectionPermissionController {
     private final OnlineProtectionPermissionService service;
+    @RequireLogin
+    @GetMapping("/tasks/{taskId}/no-draft-staging")
+    public Result<Void> noDraftStaging(@PathVariable String taskId) {
+        service.requireNoDraftStaging(taskId); return Result.ok();
+    }
     @GetMapping("/{experimentId}/resources")
     public Result<Void> resources(@PathVariable String experimentId,
             @RequestHeader(value = OnlineCapabilityConstant.HEADER, required = false) String token) { service.resources(experimentId, token); return Result.ok(); }

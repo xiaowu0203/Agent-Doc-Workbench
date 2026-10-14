@@ -73,6 +73,7 @@ import java.util.stream.Collectors;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_EVALUATORS;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_SCHEMA_VERSION;
 
 /**
@@ -740,7 +741,7 @@ public class EvaluationCatalogService {
         entity.setResultSchemaVersion(dto.resultSchemaVersion());
         entity.setImplementationVersion(OnlineRuleContractValidator.TEXT.equals(evaluator.getEvaluatorKey())
                 ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION
-                : OnlineRuleContractValidator.CHANGE.equals(evaluator.getEvaluatorKey()) ? OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION : "phase3-v1");
+                : OnlineRuleContractValidator.CHANGE.equals(evaluator.getEvaluatorKey()) ? OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION : BUILT_IN_IMPLEMENTATION_VERSION);
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         evaluatorVersionMapper.insert(entity);
         return EvaluatorVersionVO.from(entity);

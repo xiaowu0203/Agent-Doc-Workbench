@@ -11,6 +11,9 @@ import org.springframework.http.HttpHeaders;
 /** Document 对签名授权人的当前权限复查，不建立人类身份。 */
 @FeignClient(name = "online-document", url = "${agent-doc.online.document-url:http://localhost:8082}")
 public interface OnlineDocumentFeign {
+    /** 当前原操作者核验线上草稿不存在暂存；不返回正文，也不修改文档。 */
+    @GetMapping("/api/document/internal/online-authorizations/tasks/{taskId}/no-draft-staging")
+    Result<Void> requireNoDraftStaging(@PathVariable String taskId);
     @GetMapping("/api/document/internal/online-authorizations/{experimentId}/resources")
     Result<Void> requireResources(@PathVariable String experimentId, @RequestHeader(OnlineCapabilityConstant.HEADER) String control);
     @PostMapping("/api/document/internal/online-authorizations/{experimentId}/scoped-permission/{purpose}")

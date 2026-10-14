@@ -6,17 +6,35 @@ import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.agentdoc.evaluation.constant.EvaluationConstant;
 import java.util.Set;
 
 /** 线上规则的冻结配置/期望契约；各原始证据适配分别通过执行就绪门禁。 */
 public final class OnlineRuleContractValidator {
     public static final String TEXT = "online-original-text-assertion";
     public static final String CHANGE = "online-document-change-validator";
+    public static final String TASK = "task-terminal-status";
+    public static final String AUDIT = "audit-ledger-integrity";
     private static final int MAX_ASSERTIONS = 50;
     private static final int MAX_VALUE_CODE_POINTS = 2000;
 
     private OnlineRuleContractValidator() { }
     public static boolean onlineOnly(String key) { return TEXT.equals(key) || CHANGE.equals(key); }
+    public static boolean factBased(String key) { return TASK.equals(key) || AUDIT.equals(key); }
+    public static boolean onlineExecutable(String key) { return onlineOnly(key) || factBased(key); }
+    public static String evidenceTarget(String key) {
+        return switch (key) {
+            case TEXT -> "ORIGINAL_TEXT";
+            case CHANGE -> "ORIGINAL_CHANGE";
+            case TASK -> "TASK_FACTS";
+            case AUDIT -> "AUDIT_FACTS";
+            default -> null;
+        };
+    }
+    public static String implementationVersion(String key) {
+        return TEXT.equals(key) ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION
+                : CHANGE.equals(key) ? OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION : EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
+    }
 
     public static void validate(String key, String json, boolean expected) {
         JsonNode value;

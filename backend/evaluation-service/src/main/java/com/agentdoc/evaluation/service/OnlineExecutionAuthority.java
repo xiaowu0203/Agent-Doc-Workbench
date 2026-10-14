@@ -450,7 +450,8 @@ public class OnlineExecutionAuthority {
                 || request.inputSchemaVersion() != INPUT_SCHEMA_VERSION) { throw conflict(MANIFEST_INVALID); }
         try {
             for (String value : new String[]{request.taskId(), request.spaceId(), request.agentId(), request.documentId(), request.actorId(),
-                    request.documentVersion(), request.tokenBudget()}) { OnlineProtocolUtils.id(value); }
+                    request.tokenBudget()}) { OnlineProtocolUtils.id(value); }
+            OnlineProtocolUtils.documentVersion(request.documentVersion());
         } catch (IllegalArgumentException invalid) { throw conflict(MANIFEST_INVALID); }
         for (String value : new String[]{request.requestHash(), request.inputHash(), request.documentContentHash()}) {
             if (value == null || !value.matches("[0-9a-f]{64}")) { throw conflict(MANIFEST_INVALID); }

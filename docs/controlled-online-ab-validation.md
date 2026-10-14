@@ -87,3 +87,27 @@ MySQL 测试只接受 localhost/127.0.0.1 下名称匹配 `agentdoc_p603_{change
 浏览器布局检查使用隔离接口替身和示例数据，覆盖列表、创建、正常停止确认、隐藏原始评审、报告概要、Task 冻结关联、暂停/停止中占位及撤权清除。最后补充实际规则发布确认与发布后只读、已发布版本选择、多规则草案确认、冻结 Prompt 全文与撤权清除、评价响应丢失后的链尾核对和重复阻断，以及完整报告的小样本结论门禁。680px 窄屏下 Prompt 改为单列，正文宽度等于视口内容宽度，创建弹窗输入可见。全部网络请求由本地内存适配器处理，模拟发布/创建/反馈没有业务副作用；未连接真实业务后端或调用模型。
 
 P6-04 的源码、组件/API/权限回归和隔离页面验收已收口。真实服务、消息、模型、审批及页面网络闭环仍需后续部署验收；本结果不证明质量改善、生产容量或真实取消成功，公开 start/resume 部署门禁保持关闭。
+
+## 启动就绪判定与部署前置
+
+2026-10-14 真实专用合成样本的工程闭环已完成：两组均有至少两份独立文档，覆盖重复 ORIGINAL、正式审批合并、草稿落地、原始评价/非盲态更正、带任务停止/紧急停止、停止后普通回退、迟到终态核验、报告冻结及结论门禁。失败、超额和缺失均保留；报告结论为 INSUFFICIENT_EVIDENCE，样本和盲态覆盖不足，不证明候选质量改善，也不推广配置。真实负面检查与既有协议/隔离数据库/双实例证据分层，不宣称在业务部署注入过全部历史故障。
+
+运行总预算使用实际权威账本核对，停止后无未结算预留、执行占槽或结算未知；已批准合并内容保留原文，草稿没有暂存遗留。未投递任务没有 AgentExecution 或 Token 账本，运行保护可独立确证零调用，但报告继续保留执行/账本投影缺失，不伪造零费用记录。新报告修订的概要/完整身份和决定引用一致，同创建请求及终态恢复幂等，旧报告不可改写。历史原始失败评价也没有被后来的成功求值替换。
+
+MCP注解扫描器公布枚举常量名，未遵循 ChangeOp 的小写 `@JsonValue`，导致模型按工具 schema 提交大写操作码失败。[WorkbenchMcpSchemaTest](../backend/task-service/src/test/java/com/agentdoc/task/mcp/WorkbenchMcpSchemaTest.java) 使用实际生成器验证两种写工具、两种操作码与载荷往返，非法编码仍拒绝；[McpChangeProposal](../backend/task-service/src/main/java/com/agentdoc/task/mcp/McpChangeProposal.java) 只覆盖 schema 描述，不改变业务 DTO、操作解析或权限。最终 MCP应用/schema/恢复4类24项定向回归通过；维护者加载 Task 后，真实初始化和 `tools/list` 确认两种写工具均公布小写 `replace/append`。该复核为元数据读取，未调用工具、模型或修改文档，自己的MCP会话已清理。
+
+停止后的人工窄核验最终复用当前人类权限下的独立 Agent 事实及原有效 Task 凭证只读 A2A；不在 STOPPED 新签 CONTROL，不改变原凭证过期恢复政策。Task 6类38项回归覆盖过期/非法证明仍走原恢复策略、A2A身份冲突、来源未知/权限撤销/暂存/锁丢失拒绝；更新部署后的实际终态恢复与重复请求已核验。报告审批展示错误层级修复先复现页面字段缺失，随后3文件28项前端回归、lint和类型检查通过；真实页面已能显示已合并及人工修改比例，服务端事实没有修改。
+
+2026-10-13 P6-05 真实服务验收发现并修复了两项评估问题：冻结 TASK_FACTS/AUDIT_FACTS 规则此前仍被求值入口拒绝；NUMBER 阈值按规范冻结为十进制字符串，但报告错误要求数字 JSON，导致已完成的文本指标显示缺失。修复复用既有确定性引擎，并为参与事实生成稳定证据摘要；未知账本仍拒绝求值。评估 9 类 64 项定向测试、专属随机隔离 MySQL 的评价持久化 6 项全部通过，无跳过，隔离库已清理。旧报告不重写，新修订的真实服务核验须在更新部署后进行。
+
+停止后迟到的 Agent 终态可能因执行槽已释放而无法走普通草稿写入收尾。本批增加当前原操作者/受保护 OWNER 的人工无暂存核验路径，仅在当前人类授权的独立执行事实、原有效任务凭证只读 A2A、完整冻结账本、远端身份和当前文档授权一致时条件同步本地 Task。Document 3 类 16 项、Task 6 类 38 项定向回归通过；包含暂存存在、账本缺失、仍在运行、权限撤销、清单/授权人漂移、锁丢失及A2A身份冲突拒绝，以及迟到取消的真实终态映射、重复恢复不重复写回、原凭证过期/非法仍走原策略。更新部署后的真实核验已完成；不在 STOPPED 新签 CONTROL，不扩大文档写权限，不放宽原凭证过期策略。
+
+预检不再无条件拒绝所有启动：Evaluation 的 `agent-doc.online.enabled` 和 `agent-doc.security.online-capability-enabled` 均为 true，且原有范围/当前权限、冻结规则、依赖和占位检查通过时，才返回 startable=true。两个部署条件默认 false；缺少任一条件仍返回 ONLINE_EXECUTION_NOT_READY。Auth 签发、Evaluation 验签及授权人/实验/Space/manifest一致性仍在实际 start/resume 状态写入之前校验，配置不能代替这些步骤。
+
+[OnlineExperimentServiceTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/OnlineExperimentServiceTest.java) 覆盖默认关闭、缺少任一部署条件、有效工程草案允许启动、部署配置不能绕过范围/依赖/规则/占位错误，且保留小样本警告。[OnlineExperimentLifecycleServiceTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/OnlineExperimentLifecycleServiceTest.java) 覆盖保护授权先于状态写入、签发失败及授权人不符时禁止写入。2026-10-13 定向回归跨 Auth/Task/Agent/Evaluation 共 14 类、65 项通过，无跳过；真实签名/安全过滤链使用隔离测试配置和 RPC 替身。隔离 MySQL 的迁移、真实Mapper预检与双模板事务共 7 项通过，无跳过，5个专属随机验证库已清理；API/模板验证库先升级到当前 V42，没有改动业务数据库。
+
+部署时 Auth、Document、Task、Agent、Evaluation 均需设置 `--agent-doc.security.online-capability-enabled=true`，并保持与 Auth 一致的 issuer（默认 agent-doc-workbench）；Task 和 Evaluation 还须分别设置 `--agent-doc.online.enabled=true`：前者开启 ORIGINAL 创建时的权威线上路由，后者开启权威对账。Task 的路由开关默认 false，此时创建仍走普通执行，不会进入线上账本；Evaluation 的预检不能证明 Task 进程已加载该开关。参数是 Spring Boot Program arguments，保留既有密钥和其他服务配置；不要关闭验签、修改数据库状态或把普通 JWT 当作线上窄凭证。运行进程须加载当前代码与配置后，才进行真实 HTTP/消息/模型/审批/报告验收。上述源码与隔离结果不等同于实际部署已启用或模型闭环已完成。
+
+真实验收先创建一个专用任务，立即核对返回的 `onlineExperimentId`、`onlineAssignmentId` 及实验接受记录，再扩大样本；未绑定时停止新建并核查配置。所有专用任务消耗都纳入验收总预算，普通任务不进入线上实验账本不能解释为零消耗。工具白名单与任务指令必须让模型能够获知文档类型和冻结基线版本；需要时提供 `workbench_get_task_context`，不能让模型猜版本或反复调用错误写工具。预算超限、工具失败和未产生交付均按实际失败记录。
+
+真实新建文档的初始版本为0，线上分配曾错误地使用正数资源ID解析器而拒绝该版本；Auth签发和Document冻结版本核验也存在同类问题。已增加统一的文档版本解析，资源ID规则保持严格。Auth真实签名测试先复现零版本交换错误；修复后9类41项定向测试通过，另3项隔离MySQL验证零版本分配/重试、同请求跨实例幂等及每组执行槽限制，均无失败或跳过，独占数据库已清理。这些结果证明代码修复；运行服务仍需重新加载后验证真实Task/模型/交付闭环。

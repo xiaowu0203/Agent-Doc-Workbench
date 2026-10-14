@@ -130,7 +130,7 @@
             </header>
 
             <el-alert
-              v-if="detail.conflicted"
+              v-if="detail.conflicted && (detail.status === 'PENDING' || detail.status === 'APPROVED')"
               type="error"
               :closable="false"
               show-icon

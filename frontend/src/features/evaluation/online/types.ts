@@ -253,7 +253,11 @@ export interface OnlineReportPayload {
   assignmentCutoffSequence: string
   observationCutoffAt: string
   groups: Record<'BASELINE' | 'CANDIDATE', Record<string, unknown>>
-  approvalFeedback: Record<'BASELINE' | 'CANDIDATE', Record<string, unknown>>
+  approvalFeedback: {
+    groups: Record<'BASELINE' | 'CANDIDATE', Record<string, unknown>>
+    unit: 'LATEST_IMPORTED_CHANGE_REQUEST'
+    unrecordedMeaning: 'PENDING_OR_NOT_APPLICABLE_OR_NOT_IMPORTED'
+  }
   actualWindows: Record<string, string | null>
   analysisPlan: OnlineExperiment['analysisPlan']
   primaryDifference: {

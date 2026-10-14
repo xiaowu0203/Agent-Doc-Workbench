@@ -67,6 +67,11 @@ public final class OnlineProtocolUtils {
         catch (NumberFormatException invalid) { throw new IllegalArgumentException(ID_INVALID.name()); }
     }
 
+    /** 文档版本从 0 开始；其余版本遵循规范十进制和 long 范围，不放宽资源 ID。 */
+    public static long documentVersion(String value) {
+        return "0".equals(value) ? 0L : id(value);
+    }
+
     public static int bucket(String experimentId, String documentId, String seed) {
         id(experimentId);
         id(documentId);

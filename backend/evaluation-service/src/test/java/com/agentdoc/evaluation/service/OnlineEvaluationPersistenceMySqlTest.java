@@ -9,6 +9,9 @@ import com.agentdoc.evaluation.evaluator.DeterministicEvaluationOutcome;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
+import com.agentdoc.evaluation.evaluator.DeterministicEvaluatorEngine;
+import com.agentdoc.evaluation.constant.EvaluationConstant;
+import com.agentdoc.common.feign.vo.EvaluationEvidenceBundleVO;
 import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
 import com.agentdoc.common.feign.vo.OnlineOriginalChangesVO;
 import com.agentdoc.common.utils.OnlineOriginalChangeUtils;
@@ -143,6 +146,23 @@ class OnlineEvaluationPersistenceMySqlTest {
         assertThat(sql().queryForObject("SELECT COUNT(*) FROM evaluation_metric_evidence l JOIN evaluation_metric m ON m.id=l.metric_id WHERE m.online_assignment_id=?",Long.class,assignment.getId())).isEqualTo(2);
         assertThat(service(1).append(assignment,OnlineRuleContractValidator.CHANGE,82L,"change","change-key","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),output).id()).isEqualTo(result.id());
     }
+    @Test void existingFactRulesKeepImplementationVersionMetricIdentityAndIdempotency() {
+        var assignment = assignment(); var now = LocalDateTime.now();
+        var bundle = new EvaluationEvidenceBundleVO(assignment.getTaskId(),assignment.getSpaceId(),4,"FAILED",null,assignment.getExecutionId(),"FAILED",
+                "trace","span",now.minusSeconds(1),now,7L,null,3L,null,"CNY",0,0,0,0,0,List.of());
+        var engine = new DeterministicEvaluatorEngine();
+        for (String key : List.of(OnlineRuleContractValidator.TASK,OnlineRuleContractValidator.AUDIT)) {
+            var output = engine.evaluate(key,"{}","{}",bundle);
+            var result = service(0).append(assignment,key,83L,key,key,"e".repeat(64),"f".repeat(64),501L,now,output);
+            assertThat(sql().queryForObject("SELECT implementation_version FROM evaluation_result WHERE id=?",String.class,Long.valueOf(result.resultId())))
+                    .isEqualTo(EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION);
+            assertThat(service(1).append(assignment,key,83L,key,key,"e".repeat(64),"f".repeat(64),501L,now,output).id()).isEqualTo(result.id());
+        }
+        assertThat(count("evaluation_metric",assignment.getId())).isEqualTo(2);
+        assertThat(sql().queryForObject("SELECT boolean_value FROM evaluation_metric WHERE online_assignment_id=? AND metric_key='evaluation.task-terminal.success'",Boolean.class,assignment.getId())).isFalse();
+        assertThat(sql().queryForObject("SELECT boolean_value FROM evaluation_metric WHERE online_assignment_id=? AND metric_key='evaluation.audit-ledger-integrity.success'",Boolean.class,assignment.getId())).isTrue();
+    }
+
     @Test void changedExecutionIdentityCannotAppend() {
         var assignment = assignment(); sql().update("UPDATE online_assignment SET execution_id=execution_id+1 WHERE id=?",assignment.getId());
         assertThatThrownBy(() -> service(0).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","forged","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),outcome(assignment))).isInstanceOf(BusinessException.class);

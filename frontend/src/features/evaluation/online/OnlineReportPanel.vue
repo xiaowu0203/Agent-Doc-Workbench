@@ -120,7 +120,7 @@
             <tr v-for="row in approvalRows" :key="row[0]">
               <th>{{ row[1] }}</th>
               <td v-for="group in groups" :key="group">
-                {{ onlineReportFact(payload.approvalFeedback?.[group]?.[row[0]]) }}
+                {{ onlineReportFact(payload.approvalFeedback?.groups?.[group]?.[row[0]]) }}
               </td>
             </tr>
           </tbody>

@@ -3,6 +3,7 @@ package com.agentdoc.evaluation.service;
 import static com.agentdoc.common.enums.OnlineReasonCode.*;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentOnlineConfigFeign;
@@ -24,6 +25,7 @@ import com.agentdoc.evaluation.pojo.param.OnlineAssignmentSearchParam;
 import com.agentdoc.evaluation.pojo.vo.OnlineAssignmentVO;
 import com.agentdoc.evaluation.convertor.OnlineAssignmentConvertor;
 import com.agentdoc.evaluation.convertor.OnlineExperimentConvertor;
+import com.agentdoc.evaluation.config.OnlineReconciliationProperties;
 import com.agentdoc.evaluation.mapper.OnlineExperimentCreateIntentMapper;
 import com.agentdoc.evaluation.metric.MetricDefinitionCatalog;
 import com.agentdoc.evaluation.enums.OnlineReviewExposureSource;
@@ -62,7 +64,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.*;
 import static com.agentdoc.evaluation.constant.OnlineExperimentConstant.*;
 import static com.agentdoc.evaluation.service.OnlineExperimentRequestValidator.id;
 
-/** P6-01 创建与只读预检；不提供启动、分配、写结果或模型入口。 */
+/** 创建与预检；启动、分配和模型执行仍由各自应用服务裁决。 */
 @Service
 @RequiredArgsConstructor
 public class OnlineExperimentService {
@@ -80,6 +82,8 @@ public class OnlineExperimentService {
     private final OnlinePreflightProofService preflightProofs;
     private final OnlineReviewExposureService reviewExposures;
     private final EvaluationCatalogService catalog;
+    private final OnlineReconciliationProperties onlineDeployment;
+    private final SecurityVerifyProperties security;
 
     public AgentOnlinePromptComparisonVO promptComparison(String identity) {
         var entity = require(id(identity));
@@ -306,7 +310,8 @@ public class OnlineExperimentService {
         else if ("NOT_ENOUGH_UNITS".equals(srm.status())) { issues.add(issue(SRM_NOT_ENOUGH_UNITS.name(), "WARNING")); }
         if (candidate == 0 || candidate == documents.size()) { issues.add(issue(RANGE_MISSING_VARIANT.name(), "WARNING")); }
         boolean draftEligible = issues.stream().noneMatch(value -> value.severity().equals("ERROR"));
-        issues.add(issue(ONLINE_EXECUTION_NOT_READY.name(), "ERROR"));
+        boolean deploymentReady = onlineDeployment.isEnabled() && security.isOnlineCapabilityEnabled();
+        if (!deploymentReady) { issues.add(issue(ONLINE_EXECUTION_NOT_READY.name(), "ERROR")); }
         issues.add(issue(RETENTION_CONFIRMATION_REQUIRED.name(), "WARNING"));
         issues.add(issue(HISTORICAL_ESTIMATE_UNAVAILABLE.name(), "WARNING"));
         Map<String, Object> proof = new TreeMap<>();
@@ -322,7 +327,7 @@ public class OnlineExperimentService {
         preflightProofs.save(entity, currentDependency, proofHash, checked.plusSeconds(PREFLIGHT_SECONDS));
         return new OnlineExperimentPreflightVO(identity, entity.getManifestHash(), checked.toString(),
                 proofHash, checked.plusSeconds(PREFLIGHT_SECONDS).toString(),
-                draftEligible, false, documents.size() - candidate, candidate, srm, upper, null, List.copyOf(issues));
+                draftEligible, draftEligible && deploymentReady, documents.size() - candidate, candidate, srm, upper, null, List.copyOf(issues));
     }
 
     private List<Map<String, Object>> rules(Long spaceId, OnlineExperimentCreateDTO request) {

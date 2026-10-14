@@ -43,6 +43,7 @@ public class OnlineEvaluationService {
     private final AgentFeign agents;
     private final OnlineOriginalTextEvaluator evaluator;
     private final OnlineOriginalChangeEvaluator changeEvaluator;
+    private final OnlineFactEvaluationService factEvaluator;
     private final OnlineEvaluationPersistenceService persistence;
     private final OnlineReviewExposureService exposures;
 
@@ -71,15 +72,15 @@ public class OnlineEvaluationService {
         JsonNode rule = matched.getFirst(), binding = rule.path("binding");
         String evaluatorKey = rule.path("evaluatorKey").asText();
         boolean textRule = OnlineRuleContractValidator.TEXT.equals(evaluatorKey);
-        if (!OnlineRuleContractValidator.onlineOnly(evaluatorKey)
-                || !(textRule ? "ORIGINAL_TEXT" : "ORIGINAL_CHANGE").equals(binding.path("evidenceTarget").asText())) {
+        if (!OnlineRuleContractValidator.onlineExecutable(evaluatorKey)
+                || !OnlineRuleContractValidator.evidenceTarget(evaluatorKey).equals(binding.path("evidenceTarget").asText())) {
             throw invalid(ErrorCode.CONFLICT, ONLINE_RULE_NOT_READY.name());
         }
         Long versionId = OnlineProtocolUtils.id(binding.path("evaluatorVersionId").asText());
         var version = versions.selectById(versionId);
         if (version == null || !"PUBLISHED".equals(version.getStatus()) || !Objects.equals(version.getSpaceId(), experiment.getSpaceId())
                 || !evaluatorKey.equals(version.getEvaluatorKey()) || !Objects.equals(version.getContentHash(), rule.path("contentHash").asText())
-                || !(textRule ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION : OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION).equals(version.getImplementationVersion())
+                || !OnlineRuleContractValidator.implementationVersion(evaluatorKey).equals(version.getImplementationVersion())
                 || !Objects.equals(version.getContentHash(), OnlineExperimentService.versionHash(version))
                 || !Integer.valueOf(1).equals(version.getConfigSchemaVersion()) || !Integer.valueOf(1).equals(version.getResultSchemaVersion())) {
             throw invalid(ErrorCode.CONFLICT, ONLINE_RULE_NOT_READY.name());
@@ -96,7 +97,9 @@ public class OnlineEvaluationService {
         if (prior != null) { return persistence.reuse(prior, requestHash); }
         LocalDateTime start = LocalDateTime.now();
         DeterministicEvaluationOutcome outcome;
-        if (textRule) {
+        if (OnlineRuleContractValidator.factBased(evaluatorKey)) {
+            outcome = factEvaluator.evaluate(evaluatorKey, version.getConfigJson(), JsonUtils.toJson(expected), assignment);
+        } else if (textRule) {
             var response = agents.getOnlineOriginalText(assignment.getTaskId(), assignment.getSpaceId());
             if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
                 throw invalid(ErrorCode.CONFLICT, ORIGINAL_EVIDENCE_UNAVAILABLE.name());

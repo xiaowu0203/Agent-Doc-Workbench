@@ -149,7 +149,7 @@ V31 新装/升级须先查重复 Space 占位/请求键、旧 schema/活跃数�
 
 ## 6. Binding、派发与内部权限
 
-OnlineTaskBindingDTO 的 schema 固定 2，包含 assignmentId、experimentId、manifestHash、acceptedSequence、variant、bucket、actorId、taskId、spaceId、agentId、documentId、documentVersion、documentContentHash、inputSchemaVersion=1、inputHash、templateId、templateSchemaVersion=2、templateHash、nonPromptHash、dependencyHash、tokenBudget、executionTimeoutSeconds、executionMode=LIVE、lineageType=ORIGINAL、schemaVersion。
+OnlineTaskBindingDTO 的 schema 固定 2，包含 assignmentId、experimentId、manifestHash、acceptedSequence、variant、bucket、actorId、taskId、spaceId、agentId、documentId、documentVersion、documentContentHash、inputSchemaVersion=1、inputHash、templateId、templateSchemaVersion=2、templateHash、nonPromptHash、dependencyHash、tokenBudget、executionTimeoutSeconds、executionMode=LIVE、lineageType=ORIGINAL、schemaVersion。documentVersion 是从 0 开始的文档版本，使用规范非负十进制字符串并限制在 long 范围；资源 ID 仍必须大于 0。分配、执行能力签发和冻结版本权限核验均接受初始版本 `"0"`，不接受负数、前导零、空白或溢出；既有 schema 和哈希格式不变。
 
 bindingHash 使用第 2 节 domain。扩展 TaskCapabilityIssueDTO、AgentTaskInputDTO、恢复身份的 onlineBindingSchemaVersion/hash；执行派发再绑定 onlineSlotPermitHash/generation，普通非参与任务四项为空，参与派发必须完整。Task 签发/派发前先取得槽证明，JWT 同时签入 bindingHash 与 permitHash/generation；重投复用同一证明，不先发模型再补槽。终态恢复携带原执行 permit 身份，只能查证/收尾，不能以已释放的槽启动新执行。
 
@@ -409,9 +409,17 @@ OWNER确认严重安全事件后独立消费不可变事实，暂停新分配并
 
 95%精确比例区间的独立高精度参考向量见[ONLINE_V1区间fixture](fixtures/online-clopper-pearson-v1.json)。完整前端页面和真实部署验收仍按P6-04/P6-05执行，源码就绪不自动授权开启真实实验。
 
-规则与报告不再返回无条件 NOT_READY；规则资产仍逐项校验。公开 start/resume 继续由 ONLINE_EXECUTION_NOT_READY 部署门禁关闭，不能通过普通配置开关绕过。验收证据及性能测量边界见[受控线上 A/B 验证](controlled-online-ab-validation.md)。
+规则与报告不再返回无条件 NOT_READY；规则资产仍逐项校验。公开 start/resume 的部署条件默认关闭：Evaluation 的 `agent-doc.online.enabled`（线上权威对账）和 `agent-doc.security.online-capability-enabled`（窄凭证接收）均须启用；任一关闭仍返回 ONLINE_EXECUTION_NOT_READY。两项均开启只移除开发期的无条件阻塞，不能绕过当前范围/权限、规则版本摘要、依赖漂移、Space占位等既有预检。`startable = draftEligible && 两项部署条件满足`，小样本WARNING仍不能解释为质量比较充分。实际参与还要求 Task 独立启用 `agent-doc.online.enabled`；默认关闭时 Task 按普通路径创建，不进入线上分配。Evaluation 预检不提供跨进程配置证明，部署验收必须核对首个专用 Task 的线上身份与接受记录。
+
+实际 start/resume 继续检查当前OWNER/EVALUATION_RUN、四项启动确认、固定manifest/状态版本和预检证明；Auth签发保护CONTROL后，Evaluation须验签并核对授权人/实验/Space/manifest才更新状态。Auth或下游线上窄凭证未配置时调用失败，不放宽验证或降级为普通用户/Task凭证。部署启用需同时配置Auth/Document/Task/Agent/Evaluation的既有窄凭证接收及一致issuer；Gateway继续拒绝公共转发内部保护入口。配置不替代真实跨服务验收。证据及性能测量边界见[受控线上 A/B 验证](controlled-online-ab-validation.md)。
 
 ## 15. P6-04 创建与评审只读补充
+
+Workbench MCP 的 `changes[].op` 公布小写 `replace/append`，与既有 `ChangeOp` 的 JSON 编码一致。Task 层只覆盖 MCP schema 的枚举描述，实际载荷仍使用 `ChangeItemDTO`，不增加大小写兼容分支，也不改变审批、草稿权限或冻结输入。生成器公布的每个取值必须能通过实际载荷反序列化与序列化往返验证。
+
+P6-05 停止后的人工终态核验复用无载荷 `POST /api/task/tasks/{id}/recovery`。仅处理已有线上 `CANCELING` Task：当前原操作者必须仍为受保护 OWNER，并具备 Task 读取/终止、Evaluation 执行和草稿编辑权限。复用当前人类授权的独立 Agent 事实和完整冻结账本；同一原任务的有效执行凭证只用于既有 A2A 只读查询，核对远端身份/终态与 Agent 事实。Document 再核对当前资源和冻结版本，并只证明没有草稿暂存。该路径不读取或写入文档正文、不签发新 CONTROL/执行/文档写能力、不改变取消意图；存在任何暂存、事实未知、身份漂移、原凭证过期或权限变化均拒绝收尾。确认后使用既有 Task 终态/账本短事务和锁完成条件写回，迟到取消以真实 Agent 终态为准。原凭证过期恢复路径保持原策略。
+
+线上规则求值同时支持冻结的 `task-terminal-status`（TASK_FACTS）和 `audit-ledger-integrity`（AUDIT_FACTS），沿用既有 `phase3-v1` 确定性实现。先由 Task/Agent 来源复核当前权限和冻结身份，再加载脱敏 Trace 事实；账本未知不补零，不生成失败指标代替来源缺失。参与指标的事实形成带版本/域的稳定摘要，引用不携带 Trace 或正文。NUMBER 判定阈值继续使用 schema 2 的规范十进制字符串；报告以同一规范解析比较，非规范文本或数字 JSON 不静默兼容。旧报告保持不可变，只能追加新的冻结修订。
 
 - `GET /online-experiments/{id}/prompt-comparison`：当前 OWNER + evaluation:read + agent:manage；先持久化知情记录，再由 Agent 领域复核两份冻结模板，返回实验/空间/Agent 身份、模板 ID/schema/hash/nonPromptHash、依赖摘要和两份完整最终 systemPrompt。正文不进入普通详情/报告；设置 Cache-Control: no-store，失败不返回部分正文。停止后仍复查当前权限。
 - `POST /evaluator-versions/published-query`：`{spaceId: 十进制文本, versionIds: 1～50个唯一十进制文本}`，evaluation:read。批量复查版本、父资源、空间、发布状态和内容摘要；任一失效则整批拒绝。线上新草案创建也复用同一父资源可用性检查；历史已创建草案的同 key 重试保持原清单。

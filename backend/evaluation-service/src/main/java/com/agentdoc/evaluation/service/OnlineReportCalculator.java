@@ -9,6 +9,7 @@ import com.agentdoc.common.feign.vo.OnlineApprovalDifferenceVO;
 import com.agentdoc.common.utils.OnlineApprovalDifferenceUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
+import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.evaluation.pojo.entity.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -260,8 +261,14 @@ public final class OnlineReportCalculator {
         }
         int comparison;
         switch (value.getValueType()) {
-            case "NUMBER" -> { if (value.getNumericValue() == null || !rule.path("threshold").isNumber()) { return "MISSING"; }
-                comparison = value.getNumericValue().compareTo(rule.path("threshold").decimalValue()); }
+            case "NUMBER" -> {
+                if (value.getNumericValue() == null || !rule.path("threshold").isTextual()) { return "MISSING"; }
+                try {
+                    String threshold = OnlineExperimentRequestValidator.decimal(rule.path("threshold").textValue());
+                    if (!threshold.equals(rule.path("threshold").textValue())) { return "MISSING"; }
+                    comparison = value.getNumericValue().compareTo(new BigDecimal(threshold));
+                } catch (BusinessException invalid) { return "MISSING"; }
+            }
             case "BOOLEAN" -> { if (value.getBooleanValue() == null || !rule.path("threshold").isBoolean()) { return "MISSING"; }
                 comparison = Boolean.compare(value.getBooleanValue(), rule.path("threshold").booleanValue()); }
             case "STRING" -> { if (value.getStringValue() == null || !rule.path("threshold").isTextual()) { return "MISSING"; }

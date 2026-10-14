@@ -1,6 +1,8 @@
 package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.config.SecurityVerifyProperties;
+import com.agentdoc.evaluation.config.OnlineReconciliationProperties;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.handler.CommonMetaObjectHandler;
 import com.agentdoc.common.feign.AgentOnlineConfigFeign;
@@ -109,13 +111,20 @@ class OnlineExperimentMySqlTest {
             when(agents.onlineDependency(anyLong(), eq(101L))).thenReturn(Result.ok(pair.dependencyHash()));
             var catalog = mock(EvaluationCatalogService.class);
             when(catalog.availableEvaluatorVersions(eq(101L), anyList())).thenAnswer(call -> versions.selectBatchIds(call.getArgument(1)));
+            var deployment = new OnlineReconciliationProperties();
+            var security = new SecurityVerifyProperties();
             var service = new OnlineExperimentService(experiments, context.getBean(OnlineAssignmentMapper.class),
                     new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, context.getBean(OnlineExperimentPersistenceService.class),
-                    versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), mock(OnlineReviewExposureService.class), catalog);
+                    versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), mock(OnlineReviewExposureService.class), catalog,
+                    deployment, security);
             var created = service.create(OnlineExperimentRequestValidatorTest.request());
             assertThat(service.create(OnlineExperimentRequestValidatorTest.request()).summary().id()).isEqualTo(created.summary().id());
             assertThat(created.summary().createdAt()).isNotNull();
             assertThat(service.preflight(created.summary().id()).startable()).isFalse();
+            deployment.setEnabled(true); security.setOnlineCapabilityEnabled(true);
+            var ready = service.preflight(created.summary().id());
+            assertThat(ready.draftEligible()).isTrue(); assertThat(ready.startable()).isTrue();
+            assertThat(ready.manifestHash()).isEqualTo(created.summary().manifestHash());
             var search = new OnlineExperimentSearchParam();
             search.setSpaceId("101");
             assertThat(service.search(search).records()).hasSize(1);
