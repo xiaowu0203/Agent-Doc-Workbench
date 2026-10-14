@@ -1,6 +1,6 @@
 # 受控线上 A/B 验证
 
-本文记录 P6-03 原始评价、服务器盲态资格与 ONLINE_V1 后端验收。接口与分析口径以[正式契约](controlled-online-ab-api-contract.md)及[ADR-0007](adr/0007-controlled-online-ab.md)为准。完整页面属于 P6-04，真实服务、消息、模型及页面闭环属于 P6-05；公开 start/resume 的部署门禁仍关闭。
+本文记录受控线上 A/B 的后端、页面与分层工程验收。接口与分析口径以[正式契约](controlled-online-ab-api-contract.md)及[ADR-0007](adr/0007-controlled-online-ab.md)为准。下文各批历史结果保留当时的验证边界；部署开关默认关闭，实际启动条件见“启动就绪判定与部署前置”。
 
 本批实现及测试对应提交 [e678ca6](https://github.com/xiaowu0203/Agent-Doc-Workbench/commit/e678ca6c16c4f3778d5d306701539e4d0fd826a6)。该提交的说明因终端编码显示为问号，源码内容及验收结果保持完整；此记录向前补充可复查的实现关联，不改写已推送历史。
 
@@ -111,3 +111,25 @@ MCP注解扫描器公布枚举常量名，未遵循 ChangeOp 的小写 `@JsonVal
 真实验收先创建一个专用任务，立即核对返回的 `onlineExperimentId`、`onlineAssignmentId` 及实验接受记录，再扩大样本；未绑定时停止新建并核查配置。所有专用任务消耗都纳入验收总预算，普通任务不进入线上实验账本不能解释为零消耗。工具白名单与任务指令必须让模型能够获知文档类型和冻结基线版本；需要时提供 `workbench_get_task_context`，不能让模型猜版本或反复调用错误写工具。预算超限、工具失败和未产生交付均按实际失败记录。
 
 真实新建文档的初始版本为0，线上分配曾错误地使用正数资源ID解析器而拒绝该版本；Auth签发和Document冻结版本核验也存在同类问题。已增加统一的文档版本解析，资源ID规则保持严格。Auth真实签名测试先复现零版本交换错误；修复后9类41项定向测试通过，另3项隔离MySQL验证零版本分配/重试、同请求跨实例幂等及每组执行槽限制，均无失败或跳过，独占数据库已清理。这些结果证明代码修复；运行服务仍需重新加载后验证真实Task/模型/交付闭环。
+
+## 终态边界修复与页面时延补证
+
+2026-10-14 收口复查发现两个遗漏：线上终态规则把未收敛 Task 求值为 FAILED；报告只用 AgentExecution 状态，可能把仍为 CANCELING 的 Task 记为已完成及主指标通过。新增测试先复现失败，修复仅在 Evaluation 的线上事实适配和报告计算生效，既有 phase3-v1 引擎、已发布版本和历史评价不改。
+
+[OnlineFactEvaluationServiceTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/OnlineFactEvaluationServiceTest.java) 覆盖运行、待授权、取消、未知状态、明确失败和独立账本审计；[OnlineReportCalculatorTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/OnlineReportCalculatorTest.java) 覆盖双方终态、观察截止、Task 缺失、历史未就绪 false、最新缺失不回退，以及两组各 50 文档仍未完成时关闭比较门禁。[OnlineEvaluationPersistenceMySqlTest](../backend/evaluation-service/src/test/java/com/agentdoc/evaluation/service/OnlineEvaluationPersistenceMySqlTest.java) 验证 SKIPPED 不生成 false、跨实例重试复用、后续完成追加及旧失败不改写。新报告计算版本为 online-report-v2，旧 revision 和决定引用保持不变。
+
+相关后端回归 527 项通过，另 33 项环境跳过不计通过；最终定向 40 项通过，隔离 MySQL 迁移/原始产物/评价/报告事务 35 项通过，无跳过。隔离测试只创建和清理专属随机名称的验证库，没有修改业务数据库。维护者重新编译并重启 Evaluation 后，实际 HTTP 求值、报告和页面核验已通过。
+
+部署补验 44 项检查通过：四项已有执行的冻结事实求值为 3 PASSED / 1 FAILED，失败执行的账本完整性仍独立通过；同请求复用原尝试。无执行身份的请求拒绝且没有尝试或失败指标，VIEWER 请求仍为 403。追加的报告 revision 5 使用 online-report-v2，Task 取消为 1、运行状态未知为 0；缺少 AgentExecution 和账本的来源仍保留未知，不伪造零值。新旧报告请求幂等，历史 revision 1～4 的 reportHash/inputHash 不变，24 条历史评价的身份/状态/原因码不变。当前决定仍引用原 revision 4，新的报告没有改写旧决定。
+
+真实页面显示 revision 5 / SUPPORTED，取消、完成及失败计数与本地权威状态一致，工程比较门禁保持关闭。只读账本复核仍为 12 Task、11 Execution、11 条唯一账本、48 次模型调用与 107,787 Token；STOPPED、0 占槽/预留/结算未知，8 份文档版本及无暂存状态不变。本次补验只追加确定性评价和不可变报告，没有新任务、模型调用或文档写入。未收敛状态与足量样本门禁由上述单元/隔离数据库验证，没有为了复现而改写业务任务状态。
+
+真实 localhost 页面使用既有专用合成样本，预热 3 次后，每个动作测量 20 次，失败数均为 0。列表完成标志为全部三行及实际任务数可见；详情为真实分配行与停止状态可见；完整报告为指定 revision 的 SUPPORTED 状态及已记录结论可见。每轮重新进入页面，避免把上一次已显示的报告当成加载完成。
+
+| 页面动作 | 样本数 | p50（毫秒） | p95（毫秒） | 最大（毫秒） |
+| --- | ---: | ---: | ---: | ---: |
+| 返回列表至业务行可见 | 20 | 175 | 189 | 190 |
+| 进入详情至分配行可见 | 20 | 178 | 186 | 278 |
+| 核验完整报告至正文和结论可见 | 20 | 302 | 312 | 320 |
+
+上述为自动化端记录的点击至浏览器业务内容可见耗时，包含浏览器工具往返开销；不是浏览器原生绘制指标、首次冷启动或生产容量基准。完整报告测量读取历史固定报告，不重算或改变结论。独立 HTTP 小样本测量每入口预热 10 次、测量 100 次：实验列表 p95 82.906 ms，assignment 每页 10/100 条为 74.630/64.946 ms，报告概要为 54.079 ms，失败数均为 0；HTTP 时间与上述页面时间、历史百万行服务/MySQL 时间分别记录。补证没有新建任务、调用模型或写文档。

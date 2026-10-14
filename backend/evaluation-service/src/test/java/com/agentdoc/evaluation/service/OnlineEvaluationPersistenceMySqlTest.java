@@ -168,4 +168,24 @@ class OnlineEvaluationPersistenceMySqlTest {
         assertThatThrownBy(() -> service(0).append(assignment,OnlineRuleContractValidator.TEXT,81L,"quality","forged","e".repeat(64),"f".repeat(64),501L,LocalDateTime.now(),outcome(assignment))).isInstanceOf(BusinessException.class);
         assertThat(count("evaluation_result",assignment.getId())).isZero();
     }
+    @Test void pendingFactAttemptPersistsWithoutFailureMetricAndLaterCompletionKeepsHistory() {
+        var assignment = assignment(); var now = LocalDateTime.now(); var engine = new DeterministicEvaluatorEngine();
+        var failed = new EvaluationEvidenceBundleVO(assignment.getTaskId(),assignment.getSpaceId(),4,"FAILED",null,assignment.getExecutionId(),"FAILED",
+                "trace","span",now.minusSeconds(1),now,7L,null,3L,null,"CNY",0,0,0,0,0,List.of());
+        var firstResult = service(0).append(assignment,OnlineRuleContractValidator.TASK,83L,"terminal","old-failure","a".repeat(64),"f".repeat(64),501L,now,
+                engine.evaluate(OnlineRuleContractValidator.TASK,"{}","{}",failed));
+        var skipped = new DeterministicEvaluationOutcome(EvaluationResultStatus.SKIPPED,"ONLINE_EVALUATION_SUBJECT_NOT_READY","{}",List.of(),List.of());
+        var pending = service(1).append(assignment,OnlineRuleContractValidator.TASK,83L,"terminal","pending","b".repeat(64),"f".repeat(64),501L,now,skipped);
+        assertThat(pending.status()).isEqualTo("SKIPPED"); assertThat(pending.attemptNo()).isEqualTo(2);
+        assertThat(count("evaluation_metric",assignment.getId())).isEqualTo(1);
+        assertThat(service(0).append(assignment,OnlineRuleContractValidator.TASK,83L,"terminal","pending","b".repeat(64),"f".repeat(64),501L,now,skipped).id()).isEqualTo(pending.id());
+        var completed = new EvaluationEvidenceBundleVO(assignment.getTaskId(),assignment.getSpaceId(),2,"COMPLETED",null,assignment.getExecutionId(),"COMPLETED",
+                "trace","span",now.minusSeconds(1),now,7L,null,3L,null,"CNY",0,0,0,0,0,List.of());
+        var later = service(0).append(assignment,OnlineRuleContractValidator.TASK,83L,"terminal","complete","c".repeat(64),"f".repeat(64),501L,now,
+                engine.evaluate(OnlineRuleContractValidator.TASK,"{}","{}",completed));
+        assertThat(later.status()).isEqualTo("PASSED"); assertThat(later.attemptNo()).isEqualTo(3);
+        assertThat(count("evaluation_metric",assignment.getId())).isEqualTo(2);
+        assertThat(sql().queryForObject("SELECT status FROM evaluation_result WHERE id=?",String.class,Long.valueOf(firstResult.resultId()))).isEqualTo("FAILED");
+        assertThat(sql().queryForObject("SELECT COUNT(*) FROM evaluation_metric WHERE evaluation_result_id=?",Long.class,Long.valueOf(pending.resultId()))).isZero();
+    }
 }

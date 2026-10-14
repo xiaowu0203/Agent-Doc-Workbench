@@ -80,4 +80,38 @@ class OnlineFactEvaluationServiceTest {
         assertThatThrownBy(() -> service.evaluate(OnlineRuleContractValidator.AUDIT,"{}","{}",assignment)).hasMessageContaining("ONLINE_FACT_UNKNOWN");
         assertThat(service.evaluate(OnlineRuleContractValidator.TASK,"{}","{}",assignment).status().name()).isEqualTo("PASSED");
     }
+    @Test void unfinishedOrCanceledTaskProducesNoFailureMetricForEitherOnlineFactRule() {
+        for (String status : List.of("PENDING","DISPATCHED","RUNNING","WAITING_INPUT","WAITING_AUTH","CANCELING","UNKNOWN")) {
+            when(tasks.reportFacts(any())).thenReturn(Result.ok(List.of(task(status,usage))));
+            for (String key : List.of(OnlineRuleContractValidator.TASK,OnlineRuleContractValidator.AUDIT)) {
+                var result = service.evaluate(key,"{}","{}",assignment);
+                assertThat(result.status().name()).as(status + ":" + key).isEqualTo("SKIPPED");
+                assertThat(result.summaryCode()).isEqualTo("ONLINE_EVALUATION_SUBJECT_NOT_READY");
+                assertThat(result.metrics()).isEmpty();
+            }
+        }
+    }
+    @Test void completedLocalTaskCannotHideUnfinishedOrCanceledExecution() {
+        for (String status : List.of("SUBMITTED","WORKING","INPUT_REQUIRED","AUTH_REQUIRED","CANCELED","UNKNOWN")) {
+            when(onlineAgents.reportFacts(any())).thenReturn(Result.ok(List.of(execution("71",status))));
+            when(agents.queryEvaluationEvidence(any())).thenReturn(Result.ok(List.of(audit(status))));
+            var result = service.evaluate(OnlineRuleContractValidator.TASK,"{}","{}",assignment);
+            assertThat(result.status().name()).as(status).isEqualTo("SKIPPED");
+            assertThat(result.metrics()).isEmpty();
+        }
+    }
+    @Test void definiteExecutionFailureIsRetainedEvenBeforeLocalTaskWriteback() {
+        when(tasks.reportFacts(any())).thenReturn(Result.ok(List.of(task("CANCELING",usage))));
+        when(onlineAgents.reportFacts(any())).thenReturn(Result.ok(List.of(execution("71","FAILED"))));
+        when(agents.queryEvaluationEvidence(any())).thenReturn(Result.ok(List.of(audit("FAILED"))));
+        assertThat(service.evaluate(OnlineRuleContractValidator.TASK,"{}","{}",assignment).status().name()).isEqualTo("FAILED");
+        assertThat(service.evaluate(OnlineRuleContractValidator.AUDIT,"{}","{}",assignment).metrics()).isEmpty();
+    }
+    @Test void confirmedCancellationIsMissingForDeliveryButCanHaveAHealthyAuditLedger() {
+        when(tasks.reportFacts(any())).thenReturn(Result.ok(List.of(task("TERMINATED",usage))));
+        when(onlineAgents.reportFacts(any())).thenReturn(Result.ok(List.of(execution("71","CANCELED"))));
+        when(agents.queryEvaluationEvidence(any())).thenReturn(Result.ok(List.of(audit("CANCELED"))));
+        assertThat(service.evaluate(OnlineRuleContractValidator.TASK,"{}","{}",assignment).metrics()).isEmpty();
+        assertThat(service.evaluate(OnlineRuleContractValidator.AUDIT,"{}","{}",assignment).status().name()).isEqualTo("PASSED");
+    }
 }

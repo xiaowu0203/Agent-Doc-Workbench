@@ -59,7 +59,85 @@ class OnlineReportCalculatorTest {
     private JsonNode report(JsonNode manifest, OnlineReportSnapshotService.Snapshot snapshot, String status) {
         var executions = snapshot.assignments().stream().map(row -> new OnlineReportExecutionFactVO(row.getTaskId().toString(), row.getId().toString(), row.getBindingHash(), "AVAILABLE",
                 row.getExecutionId().toString(), status, TIME.toString(), TIME.plusSeconds(1).toString(), TIME.plusSeconds(2).toString(), null, null, null)).toList();
-        return OnlineReportCalculator.calculate(experiment, manifest, 100, TIME.plusHours(1), snapshot, List.of(), executions, List.of());
+        var tasks = snapshot.assignments().stream().map(row -> new OnlineReportTaskFactVO(row.getTaskId().toString(),row.getId().toString(),row.getBindingHash(),"AVAILABLE",
+                "CANCELED".equals(status) ? "TERMINATED" : status,row.getExecutionId().toString(),TIME.toString(),TIME.plusSeconds(1).toString(),TIME.plusSeconds(2).toString(),null,null,null,null)).toList();
+        return OnlineReportCalculator.calculate(experiment, manifest, 100, TIME.plusHours(1), snapshot, tasks, executions, List.of());
+    }
+    private JsonNode lifecycleReport(String taskStatus, String executionStatus, LocalDateTime taskEnd, LocalDateTime executionEnd, BigDecimal quality) {
+        var row = assignment(1,41,1);
+        var task = new OnlineReportTaskFactVO("101","1",row.getBindingHash(),"AVAILABLE",taskStatus,"201",TIME.toString(),TIME.plusSeconds(1).toString(),
+                taskEnd == null ? null : taskEnd.toString(),null,null,null,null);
+        var execution = new OnlineReportExecutionFactVO("101","1",row.getBindingHash(),"AVAILABLE","201",executionStatus,TIME.toString(),TIME.plusSeconds(1).toString(),
+                executionEnd == null ? null : executionEnd.toString(),null,null,null);
+        return OnlineReportCalculator.calculate(experiment,manifest(false,"ENGINEERING"),100,TIME.plusHours(1),snapshot(List.of(row),quality),List.of(task),List.of(execution),List.of());
+    }
+    @Test void activeTaskRemainsPendingAndMissingDespiteCompletedExecutionAndPassingQuality() {
+        for (String status : List.of("PENDING","DISPATCHED","RUNNING","WAITING_INPUT","WAITING_AUTH","CANCELING")) {
+            var group = lifecycleReport(status,"COMPLETED",null,TIME.plusSeconds(2),BigDecimal.ONE).path("groups").path("BASELINE");
+            assertThat(group.path("completedTaskCount").asInt()).as(status).isZero();
+            assertThat(group.path("terminalTaskCount").asInt()).isZero();
+            assertThat(group.path("pendingTaskCount").asInt()).isEqualTo(1);
+            assertThat(group.path("primaryPassDocumentCount").asInt()).isZero();
+            assertThat(group.path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+        }
+    }
+    @Test void bothCompletionFactsMustFallWithinCutoffAndCancellationIsNotFailure() {
+        for (var ends : List.of(new LocalDateTime[]{null,TIME.plusSeconds(2)},new LocalDateTime[]{TIME.plusHours(2),TIME.plusSeconds(2)},
+                new LocalDateTime[]{TIME.plusSeconds(2),null},new LocalDateTime[]{TIME.plusSeconds(2),TIME.plusHours(2)})) {
+            var group = lifecycleReport("COMPLETED","COMPLETED",ends[0],ends[1],BigDecimal.ONE).path("groups").path("BASELINE");
+            assertThat(group.path("primaryPassDocumentCount").asInt()).isZero();
+            assertThat(group.path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+        }
+        var canceled = lifecycleReport("TERMINATED","CANCELED",TIME.plusSeconds(2),TIME.plusSeconds(2),BigDecimal.ONE).path("groups").path("BASELINE");
+        assertThat(canceled.path("userCanceledTaskCount").asInt()).isEqualTo(1);
+        assertThat(canceled.path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+        assertThat(canceled.path("primaryFailDocumentCount").asInt()).isZero();
+        assertThat(lifecycleReport("COMPLETED","COMPLETED",TIME.plusSeconds(2),TIME.plusSeconds(2),BigDecimal.ONE)
+                .path("groups").path("BASELINE").path("primaryPassDocumentCount").asInt()).isEqualTo(1);
+    }
+    @Test void definiteFailureIsRetainedAlongsideIncompleteLocalWritebackOrQualityEvidence() {
+        assertThat(lifecycleReport("CANCELING","FAILED",null,TIME.plusSeconds(2),null).path("groups").path("BASELINE").path("primaryFailDocumentCount").asInt()).isEqualTo(1);
+        assertThat(lifecycleReport("FAILED","WORKING",TIME.plusSeconds(2),null,null).path("groups").path("BASELINE").path("primaryFailDocumentCount").asInt()).isEqualTo(1);
+        assertThat(lifecycleReport("CANCELING","COMPLETED",null,TIME.plusSeconds(2),BigDecimal.ZERO).path("groups").path("BASELINE").path("primaryFailDocumentCount").asInt()).isEqualTo(1);
+    }
+    @Test void latestUnreadyEvaluationIsMissingWithoutFallingBackToPriorSuccess() {
+        var source = snapshot(List.of(assignment(1,41,1)),BigDecimal.ONE);
+        var previous = source.attempts().getFirst(); var latest = new OnlineEvaluationAttemptEntity();
+        latest.setId(9001L); latest.setAssignmentId(previous.getAssignmentId()); latest.setRuleKey(previous.getRuleKey()); latest.setAttemptNo(2);
+        latest.setEvaluatorVersionId(previous.getEvaluatorVersionId()); latest.setExpectedHash(previous.getExpectedHash()); latest.setResultId(9002L);
+        var skipped = new EvaluationResultEntity(); skipped.setId(9002L); skipped.setOnlineAssignmentId(1L); skipped.setOnlineEvaluationAttemptId(9001L);
+        skipped.setTaskId(101L); skipped.setExecutionId(201L); skipped.setStatus("SKIPPED"); skipped.setSummaryCode("ONLINE_EVALUATION_SUBJECT_NOT_READY");
+        source.attempts().add(latest); source.results().add(skipped);
+        var data = report(manifest(false,"ENGINEERING"),source,"COMPLETED");
+        assertThat(data.path("ruleOutcomes").path("quality").path("MISSING").asInt()).isEqualTo(1);
+        assertThat(data.path("ruleOutcomes").path("quality").has("FAIL")).isFalse();
+        assertThat(data.path("ruleOutcomes").path("quality").has("PASS")).isFalse();
+        assertThat(source.results().getFirst().getStatus()).isEqualTo("PASSED");
+    }
+    @Test void missingLocalTaskFactCannotProduceDeliveryPass() {
+        var row = assignment(1,41,1);
+        var execution = new OnlineReportExecutionFactVO("101","1",row.getBindingHash(),"AVAILABLE","201","COMPLETED",TIME.toString(),TIME.plusSeconds(1).toString(),TIME.plusSeconds(2).toString(),null,null,null);
+        var data = OnlineReportCalculator.calculate(experiment,manifest(false,"ENGINEERING"),100,TIME.plusHours(1),snapshot(List.of(row),BigDecimal.ONE),List.of(),List.of(execution),List.of());
+        assertThat(data.path("groups").path("BASELINE").path("primaryPassDocumentCount").asInt()).isZero();
+        assertThat(data.path("groups").path("BASELINE").path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+        assertThat(data.path("decisionEligibility").path("reasonCodes").toString()).contains("TASK_FACT_MISSING");
+    }
+    @Test void oldFailureMetricFromUnreadyFactRuleDoesNotTurnPendingDeliveryIntoFailure() {
+        var row = assignment(1,41,1); var source = snapshot(List.of(row),null);
+        var manifest = manifest(false,"ENGINEERING"); var binding = (ObjectNode) manifest.path("ruleBindings").get(0).path("binding");
+        binding.put("valueType","BOOLEAN"); binding.put("threshold",true);
+        source.metrics().getFirst().setValueType("BOOLEAN"); source.metrics().getFirst().setBooleanValue(false); source.results().getFirst().setStatus("FAILED");
+        var task = new OnlineReportTaskFactVO("101","1",row.getBindingHash(),"AVAILABLE","CANCELING","201",TIME.toString(),TIME.plusSeconds(1).toString(),null,null,null,null,null);
+        var execution = new OnlineReportExecutionFactVO("101","1",row.getBindingHash(),"AVAILABLE","201","COMPLETED",TIME.toString(),TIME.plusSeconds(1).toString(),TIME.plusSeconds(2).toString(),null,null,null);
+        for (String target : List.of("TASK_FACTS","AUDIT_FACTS")) {
+            binding.put("evidenceTarget",target);
+            var data = OnlineReportCalculator.calculate(experiment,manifest,100,TIME.plusHours(1),source,List.of(task),List.of(execution),List.of());
+            assertThat(data.path("ruleOutcomes").path("quality").path("MISSING").asInt()).isEqualTo(1);
+            assertThat(data.path("groups").path("BASELINE").path("primaryFailDocumentCount").asInt()).isZero();
+            assertThat(data.path("groups").path("BASELINE").path("primaryMissingDocumentCount").asInt()).isEqualTo(1);
+        }
+        assertThat(source.results().getFirst().getStatus()).isEqualTo("FAILED");
+        assertThat(source.metrics().getFirst().getBooleanValue()).isFalse();
     }
     @Test void numericThresholdUsesCanonicalTextAndDecimalComparisonWithoutCoercion() {
         var manifest = manifest(false,"ENGINEERING");
@@ -128,6 +206,9 @@ class OnlineReportCalculatorTest {
         return largeReport(human, missingPerGroup, mode, 0, false);
     }
     private JsonNode largeReport(boolean human, int missingPerGroup, String mode, int blindedPerGroup, boolean correctToNonBlinded) {
+        return largeReport(human,missingPerGroup,mode,blindedPerGroup,correctToNonBlinded,"COMPLETED");
+    }
+    private JsonNode largeReport(boolean human, int missingPerGroup, String mode, int blindedPerGroup, boolean correctToNonBlinded, String taskStatus) {
         var rows = new ArrayList<OnlineAssignmentEntity>();
         for (int i = 1; i <= 100; i++) { var row = assignment(i, 1000 + i, i); row.setVariant(i <= 50 ? "BASELINE" : "CANDIDATE"); rows.add(row); }
         var manifest = (ObjectNode) manifest(human, mode); manifest.set("documentIds", JsonUtils.parse(JsonUtils.toJson(rows.stream().map(row -> row.getDocumentId().toString()).toList()), JsonNode.class));
@@ -142,8 +223,20 @@ class OnlineReportCalculatorTest {
         snapshot = new OnlineReportSnapshotService.Snapshot(snapshot.assignments(), snapshot.attempts(), snapshot.results(), snapshot.metrics(), snapshot.evidence(), snapshot.links(), feedback, snapshot.events());
         for (int i = 0; i < 100; i++) { if (i % 50 < missingPerGroup) { snapshot.metrics().get(i).setNumericValue(null); } }
         var executions = rows.stream().map(row -> new OnlineReportExecutionFactVO(row.getTaskId().toString(), row.getId().toString(), row.getBindingHash(), "AVAILABLE", row.getExecutionId().toString(), "COMPLETED", TIME.toString(), TIME.plusSeconds(1).toString(), TIME.plusSeconds(2).toString(), null, null, null)).toList();
-        var tasks = rows.stream().map(row -> new OnlineReportTaskFactVO(row.getTaskId().toString(), row.getId().toString(), row.getBindingHash(), "AVAILABLE", "COMPLETED", row.getExecutionId().toString(), TIME.toString(), TIME.plusSeconds(1).toString(), TIME.plusSeconds(2).toString(), null, null, null, null)).toList();
+        var tasks = rows.stream().map(row -> new OnlineReportTaskFactVO(row.getTaskId().toString(), row.getId().toString(), row.getBindingHash(), "AVAILABLE", taskStatus, row.getExecutionId().toString(), TIME.toString(), TIME.plusSeconds(1).toString(), "COMPLETED".equals(taskStatus) ? TIME.plusSeconds(2).toString() : null, null, null, null, null)).toList();
         return OnlineReportCalculator.calculate(experiment, manifest, 100, TIME.plusHours(1), snapshot, tasks, executions, List.of());
+    }
+    @Test void sufficientSamplesAndPassingQualityCannotOpenDecisionGateBeforeTaskCompletion() {
+        var data = largeReport(false,0,"DESCRIPTIVE",0,false,"CANCELING");
+        for (String variant : List.of("BASELINE","CANDIDATE")) {
+            var group = data.path("groups").path(variant);
+            assertThat(group.path("participatingDocumentCount").asInt()).isEqualTo(50);
+            assertThat(group.path("primaryPassDocumentCount").asInt()).isZero();
+            assertThat(group.path("primaryMissingDocumentCount").asInt()).isEqualTo(50);
+            assertThat(group.path("pendingTaskCount").asInt()).isEqualTo(50);
+            assertThat(group.path("completedTaskCount").asInt()).isZero();
+        }
+        assertThat(data.path("decisionEligibility").path("comparisonAllowed").asBoolean()).isFalse();
     }
     private EvaluationFeedbackEntity quality(OnlineAssignmentEntity assignment, long id, String blindness, int rubric, Long predecessor) {
         var input = new OnlineOriginalInputVO(assignment.getTaskId().toString(), assignment.getExecutionId().toString(), "10", "20", "11", assignment.getId().toString(), assignment.getBindingHash(), assignment.getDocumentId().toString(), "FORMAL", 3L, "b".repeat(64), true);

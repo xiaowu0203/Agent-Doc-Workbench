@@ -211,6 +211,10 @@ Document 在生成/更新 LIVE 提案或草稿时保存不可变原始版本/has
 
 主分析每文档 min acceptedSequence；确定失败/超时或一项有效必需规则失败为 FAIL，无 FAIL 且全部必需有效通过为 PASS，其他 MISSING。报告 PASS/(PASS+FAIL) 与 PASS/全部主体及 MISSING 旁列，不用完成行反推总体。
 
+线上事实适配先检查求值就绪：`task-terminal-status` 只有 Task 与 AgentExecution 均为 COMPLETED 才通过；任一权威来源确定失败/超时仍保留失败。运行中、取消中、用户取消或未知状态返回 SKIPPED / ONLINE_EVALUATION_SUBJECT_NOT_READY，不生成 false 指标，报告将该原因映射为 MISSING。审计规则在双方终态前同样跳过，已完成的失败或取消执行仍可独立验证账本完整性；既有 phase3-v1 引擎语义不改。
+
+报告计算版本 `online-report-v2` 的 Task 运行计数读取 Task 权威状态；主指标通过要求 Task 和 AgentExecution 的完成时间均不晚于观察截止。CANCELING 计入待定，TERMINATED 计入取消，缺少或迟到的终态不补成完成；明确执行失败或有效原始质量失败仍保留 FAIL。旧计算版本、报告正文、摘要和决定引用保持不可变，重新计算只能追加 revision。
+
 ### 8.1.1 审批差异证据
 
 审批结果是独立证据，不回写原始文本或变更评价。线上审批导入关联当前 Task/Execution/assignment，保留原始提案 payload/身份摘要、冻结基线版本，以及对应 APPROVAL_MERGE 版本/正文摘要、合并人和时间；不导入评审原文或正文。

@@ -10,6 +10,7 @@ import com.agentdoc.common.utils.OnlineApprovalDifferenceUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.enums.OnlineReasonCode;
 import com.agentdoc.evaluation.pojo.entity.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -23,8 +24,10 @@ import java.util.stream.Collectors;
 
 /** ONLINE_V1纯计算；独立文档与运行Task分母分别统计，不挑选最好一次结果。 */
 public final class OnlineReportCalculator {
-    public static final String IMPLEMENTATION = "online-report-v1";
-    private static final Set<String> TERMINAL = Set.of("COMPLETED", "FAILED", "TIMED_OUT", "CANCELED");
+    public static final String IMPLEMENTATION = "online-report-v2";
+    private static final Set<String> TERMINAL = Set.of("COMPLETED", "FAILED", "TIMED_OUT", "CANCELED", "TERMINATED");
+    private static final Set<String> FAILURE = Set.of("FAILED", "TIMED_OUT");
+    private static final Set<String> PENDING_TASK = Set.of("RUNNING", "PENDING", "DISPATCHED", "WAITING_INPUT", "WAITING_AUTH", "CANCELING");
     private OnlineReportCalculator() { }
 
     static JsonNode calculate(OnlineExperimentEntity experiment, JsonNode manifest, long sequence, LocalDateTime cutoff,
@@ -68,21 +71,30 @@ public final class OnlineReportCalculator {
             if (group == null || !Integer.valueOf(2).equals(assignment.getBindingSchemaVersion())) { exceptions.add("ASSIGNMENT_IDENTITY_INVALID"); continue; }
             increment(group, "assignedTaskCount"); var task = taskMap.get(assignment.getTaskId().toString()); var execution = executionMap.get(assignment.getTaskId().toString());
             if (task != null && "AVAILABLE".equals(task.state()) && task.createdAt() != null && !time(task.createdAt()).isAfter(cutoff)) { increment(group, "createdTaskCount"); }
-            String status = executionStatus(execution, cutoff);
+            String status = taskStatus(task, cutoff);
             if (execution != null && execution.startedAt() != null && !time(execution.startedAt()).isAfter(cutoff)) { increment(group, "startedTaskCount"); }
             if (TERMINAL.contains(status)) { increment(group, "terminalTaskCount"); }
             String statusKey = switch (status) { case "COMPLETED" -> "completedTaskCount"; case "FAILED" -> "failedTaskCount";
-                case "TIMED_OUT" -> "timedOutTaskCount"; case "CANCELED" -> "userCanceledTaskCount";
-                case "RUNNING", "PENDING", "CREATED" -> "pendingTaskCount"; default -> "unknownTaskCount"; };
+                case "TIMED_OUT" -> "timedOutTaskCount"; case "TERMINATED" -> "userCanceledTaskCount";
+                case "RUNNING", "PENDING", "DISPATCHED", "WAITING_INPUT", "WAITING_AUTH", "CANCELING" -> "pendingTaskCount"; default -> "unknownTaskCount"; };
             increment(group, statusKey);
             if (task == null || !"AVAILABLE".equals(task.state())) { increment(group, "taskFactMissingCount"); exceptions.add("TASK_FACT_MISSING"); }
-            if (status.equals("UNKNOWN")) { exceptions.add("EXECUTION_UNKNOWN"); }
+            if (status.equals("UNKNOWN")) { exceptions.add("TASK_FACT_MISSING"); }
+            if (executionStatus(execution, cutoff).equals("UNKNOWN")) { exceptions.add("EXECUTION_UNKNOWN"); }
             resource(group, task, execution, cutoff, budgets);
             var outcomes = new LinkedHashMap<String, String>();
             for (var frozen : manifest.path("ruleBindings")) {
                 var binding = frozen.path("binding"); String rule = binding.path("ruleKey").asText();
                 var attempt = attempts.get(assignment.getId() + ":" + rule);
                 String outcome = ruleOutcome(assignment, binding, attempt, results, metrics, evidence, links);
+                String executionState = executionStatus(execution, cutoff);
+                // 新修订不把历史未就绪求值产生的 false 当成当前有效的终态或审计失败。
+                boolean taskRuleUnready = "TASK_FACTS".equals(binding.path("evidenceTarget").asText())
+                        && !FAILURE.contains(status) && !FAILURE.contains(executionState)
+                        && !("COMPLETED".equals(status) && "COMPLETED".equals(executionState));
+                boolean auditRuleUnready = "AUDIT_FACTS".equals(binding.path("evidenceTarget").asText())
+                        && !(TERMINAL.contains(status) && TERMINAL.contains(executionState));
+                if (taskRuleUnready || auditRuleUnready) { outcome = "MISSING"; }
                 outcomes.put(rule, outcome); ruleCounts.get(rule).merge(outcome, 1L, Long::sum);
             }
             assignmentRuleOutcomes.put(assignment.getId(), outcomes);
@@ -92,7 +104,9 @@ public final class OnlineReportCalculator {
             var group = groupRows.get(assignment.getVariant()); if (group == null) { continue; }
             increment(group, "participatingDocumentCount");
             String status = executionStatus(executionMap.get(assignment.getTaskId().toString()), cutoff);
-            boolean failed = Set.of("FAILED", "TIMED_OUT").contains(status), missing = !"COMPLETED".equals(status);
+            String localStatus = taskStatus(taskMap.get(assignment.getTaskId().toString()), cutoff);
+            boolean failed = FAILURE.contains(status) || FAILURE.contains(localStatus);
+            boolean missing = !("COMPLETED".equals(status) && "COMPLETED".equals(localStatus));
             var outcomes = assignmentRuleOutcomes.get(assignment.getId());
             if (outcomes == null) { outcomes = Map.of(); }
             for (var frozen : manifest.path("ruleBindings")) {
@@ -242,7 +256,9 @@ public final class OnlineReportCalculator {
         var result = results.get(attempt.getResultId());
         if (result == null || !Objects.equals(result.getOnlineAssignmentId(), assignment.getId()) || !Objects.equals(result.getOnlineEvaluationAttemptId(), attempt.getId())
                 || !Objects.equals(result.getTaskId(), assignment.getTaskId()) || !Objects.equals(result.getExecutionId(), assignment.getExecutionId())) { return "MISSING"; }
-        if ("SKIPPED".equals(result.getStatus())) { return "NOT_APPLICABLE"; }
+        if ("SKIPPED".equals(result.getStatus())) {
+            return OnlineReasonCode.ONLINE_EVALUATION_SUBJECT_NOT_READY.name().equals(result.getSummaryCode()) ? "MISSING" : "NOT_APPLICABLE";
+        }
         if (!Set.of("PASSED", "FAILED").contains(result.getStatus())) { return "MISSING"; }
         var values = metrics.getOrDefault(attempt.getId(), List.of()).stream().filter(item -> rule.path("metricKey").asText().equals(item.getMetricKey())).toList();
         if (values.size() != 1) { return "MISSING"; } var value = values.getFirst();
@@ -390,6 +406,13 @@ public final class OnlineReportCalculator {
         var result = node(); result.set("groups", JsonUtils.parse(JsonUtils.toJson(groups), JsonNode.class));
         result.put("unit", "LATEST_IMPORTED_CHANGE_REQUEST"); result.put("unrecordedMeaning", "PENDING_OR_NOT_APPLICABLE_OR_NOT_IMPORTED");
         return result;
+    }
+    private static String taskStatus(OnlineReportTaskFactVO fact, LocalDateTime cutoff) {
+        if (fact == null || !"AVAILABLE".equals(fact.state()) || fact.createdAt() == null || time(fact.createdAt()).isAfter(cutoff)) { return "UNKNOWN"; }
+        if (TERMINAL.contains(Objects.toString(fact.status(), ""))) {
+            return fact.finishedAt() != null && !time(fact.finishedAt()).isAfter(cutoff) ? fact.status() : "UNKNOWN";
+        }
+        return PENDING_TASK.contains(Objects.toString(fact.status(), "")) ? fact.status() : "UNKNOWN";
     }
     private static String executionStatus(OnlineReportExecutionFactVO fact, LocalDateTime cutoff) {
         if (fact == null || !"AVAILABLE".equals(fact.state()) || fact.createdAt() != null && time(fact.createdAt()).isAfter(cutoff)) { return "UNKNOWN"; }

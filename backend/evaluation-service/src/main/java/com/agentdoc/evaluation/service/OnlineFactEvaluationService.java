@@ -15,6 +15,7 @@ import com.agentdoc.evaluation.evaluator.DeterministicEvaluatorEngine;
 import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
 import com.agentdoc.evaluation.pojo.entity.OnlineAssignmentEntity;
 import com.agentdoc.evaluation.metric.EvidenceReferenceValue;
+import com.agentdoc.evaluation.enums.EvaluationResultStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,14 +23,19 @@ import java.util.List;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.Map;
+import java.util.Set;
 
 import static com.agentdoc.common.enums.OnlineReasonCode.ONLINE_EVALUATION_IDENTITY_CONFLICT;
 import static com.agentdoc.common.enums.OnlineReasonCode.ONLINE_FACT_UNKNOWN;
+import static com.agentdoc.common.enums.OnlineReasonCode.ONLINE_EVALUATION_SUBJECT_NOT_READY;
 
 /** 复用既有确定性规则；先求证当前权限与冻结绑定，不读取正文或模型配置。 */
 @Service
 @RequiredArgsConstructor
 public class OnlineFactEvaluationService {
+    private static final Set<String> TASK_TERMINAL = Set.of("COMPLETED", "FAILED", "TERMINATED", "TIMED_OUT");
+    private static final Set<String> EXECUTION_TERMINAL = Set.of("COMPLETED", "FAILED", "CANCELED", "TIMED_OUT");
+    private static final Set<String> FAILURE = Set.of("FAILED", "TIMED_OUT");
     private final OnlineExecutionAuthority authority;
     private final OnlineTaskFeign tasks;
     private final AgentFeign agents;
@@ -50,6 +56,14 @@ public class OnlineFactEvaluationService {
                 || !assignment.getExecutionId().toString().equals(task.executionId())
                 || !assignment.getExecutionId().toString().equals(agent.executionId())) { throw conflict(); }
         if (!"AVAILABLE".equals(task.state()) || !"AVAILABLE".equals(agent.state())) { throw unavailable(); }
+        // 旧引擎的 false 是有效规则失败；未收敛或取消不能交给它生成失败指标。
+        boolean definiteFailure = FAILURE.contains(Objects.toString(task.status(), "")) || FAILURE.contains(Objects.toString(agent.status(), ""));
+        boolean ready = OnlineRuleContractValidator.TASK.equals(key)
+                ? definiteFailure || "COMPLETED".equals(task.status()) && "COMPLETED".equals(agent.status())
+                : TASK_TERMINAL.contains(Objects.toString(task.status(), "")) && EXECUTION_TERMINAL.contains(Objects.toString(agent.status(), ""));
+        if (!ready) {
+            return new DeterministicEvaluationOutcome(EvaluationResultStatus.SKIPPED, ONLINE_EVALUATION_SUBJECT_NOT_READY.name(), "{}", List.of(), List.of());
+        }
         // 批量投影仅含运行事实；先经过上面两个带当前权限/绑定核验的来源，再读取 Trace 元数据。
         var auditRows = data(agents.queryEvaluationEvidence(new AgentEvaluationEvidenceQueryDTO(List.of(assignment.getTaskId()))));
         if (auditRows.size() != 1) { throw conflict(); }
