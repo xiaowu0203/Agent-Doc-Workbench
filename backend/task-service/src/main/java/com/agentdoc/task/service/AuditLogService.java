@@ -76,6 +76,13 @@ public class AuditLogService {
     private final AuthFeign authFeign;
     private final AgentFeign agentFeign;
 
+    /** 只补偿原已接受身份，不以原创建人身份写审计。 */
+    public void recordOnlineCompensation(Long spaceId, Long taskId, Long authorizedBy, String bindingHash) {
+        record(spaceId, taskId, ActorType.SERVICE, TaskRecoveryConstant.SERVICE_ACTOR_ID, AuditAction.TASK_CREATED,
+                AuditTargetType.TASK, taskId, JsonUtils.toJson(Map.of("authorizedBy", authorizedBy.toString(), "bindingHash", bindingHash,
+                        "reason", "ONLINE_ACCEPTED_TASK_REPAIRED")));
+    }
+
     public void recordHuman(Long spaceId, AuditAction action, AuditTargetType targetType,
                             Long targetId, String detail) {
         record(spaceId, null, ActorType.HUMAN, AuthUtils.getUserIdOrException(),

@@ -7,6 +7,7 @@ import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
+import com.agentdoc.common.feign.dto.OnlineDispatchIdentityDTO;
 import com.agentdoc.common.feign.dto.TaskRecoveryIdentityDTO;
 import com.agentdoc.common.feign.vo.TaskRecoveryRemoteVO;
 import com.agentdoc.common.security.TaskRecoveryVerifier;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 import java.util.Base64;
 import java.nio.charset.StandardCharsets;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -55,9 +57,15 @@ public class A2aTaskRecoveryService {
         if (!Objects.equals(execution.getWorkbenchTaskId(), input.workbenchTaskId())
                 || !Objects.equals(execution.getAgentId(), input.agentId())
                 || !Objects.equals(execution.getSpaceId(), input.spaceId())) { throw mismatch(); }
+        boolean online = Stream.of(execution.getOnlineExperimentId(), execution.getOnlineAssignmentId(), execution.getOnlineBindingSchemaVersion(),
+                execution.getOnlineBindingHash(), execution.getOnlineSlotGeneration(), execution.getOnlineSlotPermitHash()).anyMatch(Objects::nonNull);
+        var dispatch = online ? new OnlineDispatchIdentityDTO(String.valueOf(execution.getOnlineExperimentId()),
+                String.valueOf(execution.getOnlineAssignmentId()), execution.getOnlineBindingSchemaVersion(), execution.getOnlineBindingHash(),
+                execution.getOnlineSlotGeneration(), execution.getOnlineSlotPermitHash()) : null;
+        if (!Objects.equals(dispatch, input.onlineIdentity())) { throw mismatch(); }
         verifier.requireIdentity(jwt, new TaskRecoveryIdentityDTO(input.workbenchTaskId(), input.agentId(), input.spaceId(),
                 input.documentId(), input.executionMode(), input.documentVersionSnapshot(), input.documentContentSha256(),
-                input.inputSnapshotSchemaVersion(), input.inputSnapshotHash(), input.derivationRequestHash()));
+                input.inputSnapshotSchemaVersion(), input.inputSnapshotHash(), input.derivationRequestHash(), input.onlineIdentity()));
         requireSourceJti(jwt, input.taskCapability());
         if (cancel && !remote.status().state().isFinal()) {
             remote = requestHandler.onCancelTask(new CancelTaskParams(a2aId),

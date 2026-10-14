@@ -137,6 +137,14 @@ public class TaskEntity extends BaseLogicDeleteEntity {
     @Schema(description = "加密保存的任务能力令牌")
     private String capabilityToken;
 
+    @Schema(description = "线上实验身份；非参与为空") private Long onlineExperimentId;
+    @Schema(description = "线上分配身份；非参与为空") private Long onlineAssignmentId;
+    @Schema(description = "线上绑定协议版本") private Integer onlineBindingSchemaVersion;
+    @Schema(description = "线上不可变绑定摘要") private String onlineBindingHash;
+    @Schema(description = "执行槽代次") private Long onlineSlotGeneration;
+    @Schema(description = "执行槽准入证明摘要") private String onlineSlotPermitHash;
+    @Schema(description = "加密 WAIT 凭证；不允许模型与文档动作") private String onlineWaitCapability;
+
     @Schema(description = "创建人用户 ID")
     private Long createdBy;
 }

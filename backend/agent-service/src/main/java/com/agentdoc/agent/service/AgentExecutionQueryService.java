@@ -1,4 +1,7 @@
 package com.agentdoc.agent.service;
+import com.agentdoc.common.feign.OnlineEvaluationFeign;
+import com.agentdoc.common.feign.dto.OnlineReviewExposureDTO;
+import com.agentdoc.common.utils.AuthUtils;
 
 import com.agentdoc.agent.enums.AgentExecutionStatus;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
@@ -58,6 +61,7 @@ public class AgentExecutionQueryService {
     private final AgentExecutionModelCallMapper modelCallMapper;
     private final AgentExecutionToolCallMapper toolCallMapper;
     private final SpaceAccessService spaceAccessService;
+    private final OnlineEvaluationFeign onlineEvaluation;
 
     /**
      * 根据工作台任务ID查询单次Agent完整执行审计信息
@@ -87,6 +91,7 @@ public class AgentExecutionQueryService {
         }
 
         // 查询该执行下全部模型调用，按执行序号升序
+        recordOnlineExposure(List.of(execution));
         List<AgentExecutionModelCallEntity> modelCalls = modelCallMapper.selectList(
                 new LambdaQueryWrapper<AgentExecutionModelCallEntity>()
                         .eq(AgentExecutionModelCallEntity::getExecutionId, execution.getId())
@@ -133,6 +138,7 @@ public class AgentExecutionQueryService {
         Map<Long, Long> taskIdsByExecutionId = executions.stream()
                 .collect(Collectors.toMap(AgentExecutionEntity::getId,
                         AgentExecutionEntity::getWorkbenchTaskId));
+        recordOnlineExposure(executions);
         Page<AgentExecutionToolCallEntity> page = toolCallMapper.selectPage(
                 new Page<>(pageParam.getPageNum(), pageParam.getPageSize()),
                 new LambdaQueryWrapper<AgentExecutionToolCallEntity>()
@@ -159,6 +165,11 @@ public class AgentExecutionQueryService {
         if (execution == null) {
             return null;
         }
+        recordOnlineExposure(List.of(execution)); return tokenUsageOf(execution);
+    }
+
+    /** 调用方已批量取得同领域权威记录，复用冻结价格投影而不逐条查询数据库。 */
+    public AgentExecutionTokenUsageVO tokenUsageOf(AgentExecutionEntity execution) {
         // 将模型快照信息转为Map
         Map<String, Object> model = map(execution.getModelSnapshot());
         // 组装Token用量VO返回
@@ -193,8 +204,9 @@ public class AgentExecutionQueryService {
         }
 
         // 批量查询执行记录，映射为批量Token用量VO
-        return executionMapper.selectList(new LambdaQueryWrapper<AgentExecutionEntity>()
-                        .in(AgentExecutionEntity::getWorkbenchTaskId, taskIds)).stream()
+        var rows = executionMapper.selectList(new LambdaQueryWrapper<AgentExecutionEntity>()
+                        .in(AgentExecutionEntity::getWorkbenchTaskId, taskIds)); recordOnlineExposure(rows);
+        return rows.stream()
                 .map(execution -> new AgentExecutionTokenUsageBatchVO(
                         execution.getWorkbenchTaskId(), execution.getInputTokens(),
                         execution.getInputTokensEstimated(), execution.getCachedInputTokens(),
@@ -514,6 +526,7 @@ public class AgentExecutionQueryService {
         }
         // 仅有唯一一条执行记录，取出该执行实体
         AgentExecutionEntity execution = executions.getFirst();
+        recordOnlineExposure(List.of(execution));
         // 快照有效性校验：schema=V3、快照JSON、哈希存在，并且重新规范化哈希比对一致
         boolean valid = execution.getExecutionSnapshotSchemaVersion() != null
                 && execution.getExecutionSnapshotSchemaVersion() == 3
@@ -531,10 +544,19 @@ public class AgentExecutionQueryService {
                 externalMcpPresent);
     }
 
-    /**
-     * 工具调用计数临时内部类，用于聚合统计单次执行的工具调用指标
-     * <p>仅在getEvaluationEvidence内使用，存储总调用数、失败调用数、外部MCP调用数量。</p>
-     */
+    private void recordOnlineExposure(List<AgentExecutionEntity> rows) {
+        if (AuthUtils.getUserId() == null) { return; }
+        var grouped = rows.stream().filter(row -> row.getOnlineExperimentId() != null).collect(Collectors.groupingBy(AgentExecutionEntity::getSpaceId));
+        for (var entry : grouped.entrySet()) {
+            var ids = entry.getValue().stream().map(row -> row.getWorkbenchTaskId().toString()).distinct().toList();
+            for (int from = 0; from < ids.size(); from += 100) {
+                var result = onlineEvaluation.recordReviewExposure(new OnlineReviewExposureDTO(entry.getKey().toString(), ids.subList(from, Math.min(from + 100, ids.size())), List.of()));
+                if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) { throw new BusinessException(ErrorCode.CONFLICT, "线上知情记录不可用"); }
+            }
+        }
+    }
+
+    /** 工具调用计数临时内部类，用于getEvaluationEvidence的执行指标聚合。 */
     private static final class ToolCounts {
         /** 工具调用总次数 */
         private long total;

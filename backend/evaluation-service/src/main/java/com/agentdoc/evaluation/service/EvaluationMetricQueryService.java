@@ -74,6 +74,7 @@ public class EvaluationMetricQueryService {
     private final EvaluationEvidenceReferenceMapper evidenceMapper;
     private final EvaluationRunMapper runMapper;
     private final SpaceAccessService spaceAccessService;
+    private final OnlineRelatedExposureService onlineExposures;
 
     /**
      * 分页搜索指标
@@ -289,6 +290,7 @@ public class EvaluationMetricQueryService {
                 .in(notEmpty(sources), EvaluationMetricEntity::getSource, sources)
                 .last("LIMIT " + MAX_METRIC_QUERY_ROWS);
         List<EvaluationMetricEntity> metrics = metricMapper.selectList(query);
+        onlineExposures.recordAssignments(spaceId, metrics.stream().map(EvaluationMetricEntity::getOnlineAssignmentId).filter(Objects::nonNull).distinct().toList());
         // 达到阈值，判定可能存在数据爆炸，拒绝查询
         if (metrics.size() >= MAX_METRIC_QUERY_ROWS) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Metric 查询结果过多，请缩小过滤范围");

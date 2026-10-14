@@ -2,6 +2,8 @@ package com.agentdoc.agent.a2a.service;
 
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
+import com.agentdoc.agent.service.OnlineAgentAdmissionService;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.enums.ErrorCode;
@@ -33,6 +35,7 @@ public class A2aRequestAuthorizationService {
 
     private final ObjectMapper objectMapper;
     private final AgentExecutionMapper executionMapper;
+    private final OnlineAgentAdmissionService onlineAdmission;
 
     /**
      * 校验A2A消息发送的任务作用域
@@ -61,6 +64,7 @@ public class A2aRequestAuthorizationService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "A2A 请求能力令牌不一致");
         }
         Jwt jwt = currentCapabilityJwt();
+        OnlineIdentityUtils.requireJwt(jwt, input.onlineIdentity());
 
         /**
          * 校验：
@@ -88,6 +92,7 @@ public class A2aRequestAuthorizationService {
                 input.derivationRequestHash())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "A2A 请求能力令牌范围不匹配");
         }
+        onlineAdmission.accept(input);
     }
 
     /**

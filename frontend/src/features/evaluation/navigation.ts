@@ -4,6 +4,7 @@ export const EVALUATION_SECTIONS = [
   { key: 'evaluators', label: '评估器', group: 'catalog' },
   { key: 'runs', label: '评估运行', group: 'runs' },
   { key: 'experiments', label: '离线实验', group: 'experiments' },
+  { key: 'online-experiments', label: '线上实验', group: 'online-experiments' },
 ] as const
 
 export type EvaluationSection = (typeof EVALUATION_SECTIONS)[number]['key']

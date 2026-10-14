@@ -69,6 +69,6 @@ class TaskTraceQueryServiceTest {
         return new TaskVO(null, 11L, TaskLineageType.ORIGINAL, TaskExecutionMode.LIVE,
                 11L, "T-11", 7L, 9L, 13L, DocType.FORMAL, "任务", "业务指令", TaskStatus.COMPLETED,
                 1000L, TaskReadScope.FULL, List.of(), null, false, time, time, time, time,
-                0, null, null, 2L, time, traceId);
+                0, null, null, 2L, time, traceId, null, null, null, null);
     }
 }

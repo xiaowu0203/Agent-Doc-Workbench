@@ -41,13 +41,14 @@ class EvaluationMetricQueryServiceTest {
     @Mock private EvaluationEvidenceReferenceMapper evidenceMapper;
     @Mock private EvaluationRunMapper runMapper;
     @Mock private SpaceAccessService spaceAccessService;
+    @Mock private OnlineRelatedExposureService onlineExposures;
 
     private EvaluationMetricQueryService service;
 
     @BeforeEach
     void setUp() {
         service = new EvaluationMetricQueryService(metricMapper, caseRunMapper, attemptMapper, resultMapper,
-                metricEvidenceMapper, evidenceMapper, runMapper, spaceAccessService);
+                metricEvidenceMapper, evidenceMapper, runMapper, spaceAccessService, onlineExposures);
         when(runMapper.selectBatchIds(any())).thenReturn(List.of(run(1L), run(2L)));
         when(metricEvidenceMapper.selectList(any())).thenReturn(List.of());
     }

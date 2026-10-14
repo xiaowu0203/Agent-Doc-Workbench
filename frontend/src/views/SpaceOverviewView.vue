@@ -12,6 +12,7 @@
       </template>
     </PageHeader>
 
+    <OnlineParticipationNotice :space-id="String(route.params.spaceId)" />
     <DataState :loading="loading" :error="errorMessage" @retry="loadOverview">
       <template v-if="!loading">
         <div class="overview-stats">
@@ -320,6 +321,7 @@ import {
   type TaskStats,
 } from '@/features/workspace/api/space-overview-api'
 import PageHeader from '@/shared/components/PageHeader.vue'
+import OnlineParticipationNotice from '@/features/evaluation/online/OnlineParticipationNotice.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import DataState from '@/shared/components/DataState.vue'
 import { useWorkspaceStore } from '@/stores/workspace'

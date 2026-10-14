@@ -41,6 +41,7 @@
         </div>
 
         <el-alert v-if="refreshError" type="warning" :closable="false" :title="refreshError" />
+        <TaskOnlineAssociation :task="task" />
         <p v-if="canSeedTestCase" class="seed-reason" role="status">{{ seedReason }}</p>
         <nav class="detail-tabs" aria-label="任务详情导航">
           <button
@@ -298,6 +299,7 @@ import {
 } from '@/features/task/api/task-api'
 import TaskEvidencePanel from '@/features/task/components/TaskEvidencePanel.vue'
 import TaskTracePanel from '@/features/task/components/TaskTracePanel.vue'
+import TaskOnlineAssociation from '@/features/task/components/TaskOnlineAssociation.vue'
 import type { ReplayEligibility } from '@/features/task/engineering-types'
 import type { TaskExecutionDetail, TaskStatus } from '@/features/task/types'
 import DataState from '@/shared/components/DataState.vue'

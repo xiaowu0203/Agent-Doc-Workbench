@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
  * @param reviewedAt      审批时间
  * @param revisionNo      变更请求修订版本号
  * @param sourceHash      上游关联上下文哈希，用于链路溯源与一致性校验
+ * @param onlineApprovalDifference 线上原始提案与审批合并版本的独立差异；旧反馈为空
  */
 public record ChangeRequestFeedbackSnapshotVO(
         Long changeRequestId,
@@ -31,5 +32,6 @@ public record ChangeRequestFeedbackSnapshotVO(
         Long reviewedBy,
         LocalDateTime reviewedAt,
         Integer revisionNo,
-        String sourceHash) {
+        String sourceHash,
+        OnlineApprovalDifferenceVO onlineApprovalDifference) {
 }

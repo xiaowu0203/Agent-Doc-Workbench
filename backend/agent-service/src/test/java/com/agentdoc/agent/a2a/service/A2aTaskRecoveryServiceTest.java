@@ -15,6 +15,7 @@ import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
+import com.agentdoc.common.feign.dto.OnlineDispatchIdentityDTO;
 import com.agentdoc.common.feign.dto.TaskRecoveryIdentityDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageVO;
 import com.agentdoc.common.security.TaskRecoveryVerifier;
@@ -85,7 +86,7 @@ class A2aTaskRecoveryServiceTest {
     private final SecurityVerifyProperties properties = new SecurityVerifyProperties();
     private final TaskRecoveryVerifier verifier = new TaskRecoveryVerifier(decoder, properties);
     private final A2aTaskRecoveryService service = new A2aTaskRecoveryService(verifier, executions, store, handler, query);
-    private final TaskRecoveryIdentityDTO identity = new TaskRecoveryIdentityDTO(1L, 2L, 3L, 4L, "LIVE", 1L, "a".repeat(64), 1, "b".repeat(64), null);
+    private final TaskRecoveryIdentityDTO identity = new TaskRecoveryIdentityDTO(1L, 2L, 3L, 4L, "LIVE", 1L, "a".repeat(64), 1, "b".repeat(64), null, null);
     private AgentExecutionEntity execution;
 
     @BeforeEach
@@ -103,6 +104,23 @@ class A2aTaskRecoveryServiceTest {
         when(store.get("remote")).thenReturn(remote(TaskState.TASK_STATE_COMPLETED));
         when(query.getTokenUsageByWorkbenchTask(1L)).thenReturn(new AgentExecutionTokenUsageVO(5L, 6L, 1L,
                 BigDecimal.ZERO, BigDecimal.ZERO, "CNY", 1, LocalDateTime.now(), 10L, false, 0L, false, 20L, false));
+    }
+
+    private OnlineDispatchIdentityDTO onlineIdentity;
+
+    @Test
+    void onlineRecoveryMatchesPersistedGenerationAndCannotStripHistoricalIdentity() throws A2AError {
+        onlineIdentity = new OnlineDispatchIdentityDTO("11", "61", 2, "c".repeat(64), 3L, "d".repeat(64));
+        execution.setOnlineExperimentId(11L); execution.setOnlineAssignmentId(61L); execution.setOnlineBindingSchemaVersion(2);
+        execution.setOnlineBindingHash(onlineIdentity.bindingHash()); execution.setOnlineSlotGeneration(3L); execution.setOnlineSlotPermitHash(onlineIdentity.permitHash());
+        when(store.get("remote")).thenReturn(remote(TaskState.TASK_STATE_COMPLETED)); when(decoder.decode("recovery")).thenReturn(capability(false));
+        assertThat(service.recover("remote", "recovery", false).tokenUsage().executionId()).isEqualTo(5L);
+        execution.setOnlineSlotGeneration(4L);
+        assertThatThrownBy(() -> service.recover("remote", "recovery", false)).hasMessage("RECOVERY_IDENTITY_MISMATCH");
+        execution.setOnlineSlotGeneration(3L); onlineIdentity = null;
+        when(store.get("remote")).thenReturn(remote(TaskState.TASK_STATE_COMPLETED));
+        assertThatThrownBy(() -> service.recover("remote", "recovery", false)).hasMessage("RECOVERY_IDENTITY_MISMATCH");
+        verifyNoInteractions(handler);
     }
 
     @Test
@@ -300,7 +318,7 @@ class A2aTaskRecoveryServiceTest {
 
     private Message initialMessage() {
         AgentTaskInputDTO input = new AgentTaskInputDTO(1L, 2L, 3L, 4L, 1000L, "LIVE", 1L, "a".repeat(64), 1,
-                "b".repeat(64), null, null, null, null, null, null, null, null, "http://localhost:8083/mcp", originalProof());
+                "b".repeat(64), null, null, null, null, null, null, null, null, "http://localhost:8083/mcp", originalProof(), onlineIdentity);
         return Message.builder().messageId("input").role(Message.Role.ROLE_USER).parts(new TextPart("baseline"), new DataPart(input)).build();
     }
 
@@ -313,7 +331,9 @@ class A2aTaskRecoveryServiceTest {
                 .subject("task-service").issuedAt(Instant.now().minusSeconds(10)).notBefore(Instant.now().minusSeconds(10))
                 .expiresAt(Instant.now().plusSeconds(100)).audience(List.of(TaskRecoveryConstant.A2A_AUDIENCE))
                 .claims(claims -> {
-                    identity.toClaims().forEach((field, value) -> { if (value != null) { claims.put(field, value); } });
+                    var frozen = new TaskRecoveryIdentityDTO(identity.taskId(), identity.agentId(), identity.spaceId(), identity.documentId(), identity.executionMode(),
+                            identity.documentVersionSnapshot(), identity.documentContentSha256(), identity.inputSnapshotSchemaVersion(), identity.inputSnapshotHash(), identity.derivationRequestHash(), onlineIdentity);
+                    frozen.toClaims().forEach((field, value) -> { if (value != null) { claims.put(field, value); } });
                     claims.put(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_SERVICE);
                     claims.put(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_SERVICE);
                     claims.put(JwtConstant.CLAIM_SERVICE, TaskRecoveryConstant.SERVICE);

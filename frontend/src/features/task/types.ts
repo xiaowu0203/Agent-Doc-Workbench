@@ -77,6 +77,8 @@ export interface TaskCreateOptions {
 }
 
 export interface CreateTaskRequest {
+  /** 同一创建内容重试时复用；空间与发起人共同限定幂等范围。 */
+  clientRequestKey?: string
   spaceId: EntityId
   agentId: EntityId
   documentId: EntityId
@@ -93,6 +95,11 @@ export interface CreatedTask {
 }
 
 export interface TaskDetail {
+  /** 服务端不可变关联；旧部署可能未返回，禁止推断组别。 */
+  onlineExperimentId?: string | null
+  onlineAssignmentId?: string | null
+  onlineBindingSchemaVersion?: number | null
+  onlineBindingHash?: string | null
   traceId: string | null
   id: EntityId
   parentTaskId: EntityId | null

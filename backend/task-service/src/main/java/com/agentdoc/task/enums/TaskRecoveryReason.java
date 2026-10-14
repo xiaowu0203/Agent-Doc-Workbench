@@ -4,6 +4,7 @@ package com.agentdoc.task.enums;
 public enum TaskRecoveryReason {
     /** 本地 Task 不需要恢复。 */ NOT_REQUIRED,
     /** 原能力证明已经过期，正在核验。 */ CAPABILITY_EXPIRED,
+    /** 线上取消后需要独立核验远端终态与草稿收尾事实。 */ ONLINE_TERMINAL_FINALIZATION_PENDING,
     /** 恢复依赖未配置。 */ RECOVERY_SERVICE_UNCONFIGURED,
     /** 原签名证明非法。 */ SOURCE_CAPABILITY_INVALID,
     /** 冻结身份或执行关联不匹配。 */ RECOVERY_IDENTITY_MISMATCH,

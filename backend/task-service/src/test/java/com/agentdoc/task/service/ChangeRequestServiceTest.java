@@ -48,12 +48,14 @@ class ChangeRequestServiceTest {
     private ChangeRequestMapper changeRequestMapper;
     @Mock
     private DocumentFeign documentFeign;
+    @Mock
+    private TaskOnlineOriginalProposalService originals;
 
     private ChangeRequestService service;
 
     @BeforeEach
     void setUp() {
-        service = new ChangeRequestService(changeRequestMapper, documentFeign);
+        service = new ChangeRequestService(changeRequestMapper, documentFeign, originals);
         // 模拟已登录：SecurityContext 放入以 Jwt 为 principal 的认证信息
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")

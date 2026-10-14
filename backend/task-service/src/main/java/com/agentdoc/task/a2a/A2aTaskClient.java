@@ -5,6 +5,7 @@ import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.feign.dto.AgentTaskInputDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionReplayIdentityVO;
 import com.agentdoc.task.pojo.entity.TaskEntity;
+import com.agentdoc.task.service.TaskOnlineDispatchService;
 import org.a2aproject.sdk.spec.AuthenticationInfo;
 import org.a2aproject.sdk.spec.DataPart;
 import org.a2aproject.sdk.spec.Message;
@@ -102,7 +103,7 @@ public class A2aTaskClient {
                 sourceExecution == null ? null : sourceExecution.executionSnapshotHash(),
                 task.getCandidateConfigId(), task.getCandidateSnapshotSchemaVersion(),
                 task.getCandidateSnapshotHash(),
-                properties.getMcpServerUrl(), capability);
+                properties.getMcpServerUrl(), capability, TaskOnlineDispatchService.identity(task));
         // 构建A2A消息：用户指令文本 + 结构化任务输入数据Part
         Message message = Message.builder()
                 .role(Message.Role.ROLE_USER)

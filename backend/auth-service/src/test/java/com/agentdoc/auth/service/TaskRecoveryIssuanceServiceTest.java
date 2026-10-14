@@ -44,7 +44,7 @@ class TaskRecoveryIssuanceServiceTest {
     // 测试身份在运行时生成，仓库不保存密钥。
     private final String machineKey = UUID.randomUUID() + UUID.randomUUID().toString();
     private final TaskRecoveryIdentityDTO identity = new TaskRecoveryIdentityDTO(
-            10L, 20L, 30L, 40L, "LIVE", 5L, "a".repeat(64), 1, "b".repeat(64), null);
+            10L, 20L, 30L, 40L, "LIVE", 5L, "a".repeat(64), 1, "b".repeat(64), null, null);
 
     @BeforeAll
     static void keys() throws Exception {
@@ -147,7 +147,7 @@ class TaskRecoveryIssuanceServiceTest {
         assertThatThrownBy(() -> service.issue(machineKey, request(proof(b -> { }), false, "RUNNING"), true))
                 .isInstanceOf(BusinessException.class);
         TaskRecoveryIdentityDTO isolated = new TaskRecoveryIdentityDTO(10L, 20L, 30L, 40L, "ISOLATED",
-                5L, "a".repeat(64), 1, "b".repeat(64), null);
+                5L, "a".repeat(64), 1, "b".repeat(64), null, null);
         TaskRecoveryIssueDTO request = new TaskRecoveryIssueDTO(proof(b -> b.claim(
                 JwtConstant.CLAIM_EXECUTION_MODE, "ISOLATED")), isolated, "existing-a2a", UUID.randomUUID().toString(),
                 false, "COMPLETED");

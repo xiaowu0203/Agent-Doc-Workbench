@@ -8,7 +8,7 @@
           ? '选择已发布数据集版本'
           : '选择已发布测试用例版本'
     "
-    width="760px"
+    :width="dialogWidth || '760px'"
     @close="$emit('close')"
   >
     <form class="picker-search" @submit.prevent="searchParents(1)">
@@ -123,6 +123,8 @@ const props = defineProps<{
   spaceId: string
   kind: 'evaluators' | 'test-cases' | 'datasets'
   excludeIds: string[]
+  evaluatorKeys?: readonly string[]
+  dialogWidth?: string
 }>()
 const emit = defineEmits<{
   close: []
@@ -152,7 +154,9 @@ function validVersion(value: EvaluatorVersion | TestCaseVersion | DatasetVersion
     return false
   if ('evaluatorKey' in value) {
     if (
-      !EVALUATOR_GUIDES.some((item) => item.key === value.evaluatorKey) ||
+      !(props.evaluatorKeys
+        ? props.evaluatorKeys.includes(value.evaluatorKey || '')
+        : EVALUATOR_GUIDES.some((item) => item.key === value.evaluatorKey)) ||
       value.configSchemaVersion !== 1 ||
       value.resultSchemaVersion !== 1
     )

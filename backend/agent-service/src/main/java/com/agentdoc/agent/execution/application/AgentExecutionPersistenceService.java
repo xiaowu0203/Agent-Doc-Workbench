@@ -5,6 +5,8 @@ import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
 import com.agentdoc.agent.execution.runtime.AgentRuntimeResult;
 import com.agentdoc.agent.execution.model.TokenUsage;
+import com.agentdoc.agent.service.AgentOnlineOriginalTextService;
+import lombok.extern.slf4j.Slf4j;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,10 +22,12 @@ import static com.agentdoc.agent.constant.AgentConstant.EXECUTION_SNAPSHOT_SCHEM
  * </p>
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class AgentExecutionPersistenceService {
 
     private final AgentExecutionMapper executionMapper;
+    private final AgentOnlineOriginalTextService originalTexts;
 
     /**
      * 插入已提交状态的Agent执行记录
@@ -74,6 +78,13 @@ public class AgentExecutionPersistenceService {
     public void markCompleted(AgentExecutionEntity execution, AgentRuntimeResult result) {
         AgentExecutionConvertor.complete(execution, result);
         executionMapper.updateById(execution);
+        if (execution.getOnlineAssignmentId() != null) {
+            try { originalTexts.capture(execution, result.summary()); }
+            catch (RuntimeException unavailable) {
+                log.warn("线上原始文本捕获失败 taskId={} executionId={} failureType={}", execution.getWorkbenchTaskId(),
+                        execution.getId(), unavailable.getClass().getSimpleName());
+            }
+        }
     }
 
     /**

@@ -5,6 +5,13 @@ import com.agentdoc.auth.constant.AuthConstant;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
+import com.agentdoc.common.constant.OnlineCapabilityConstant;
+import com.agentdoc.common.enums.OnlineCapabilityPurpose;
+import com.agentdoc.common.feign.vo.OnlineAuthorizationProofVO;
+import com.agentdoc.common.feign.vo.OnlineTaskDispatchProofVO;
+import com.agentdoc.common.feign.dto.OnlineDispatchIdentityDTO;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
+import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.common.feign.dto.TaskRecoveryIssueDTO;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -210,7 +217,7 @@ public class JwtService {
                                             Long documentVersionSnapshot, String documentContentSha256,
                                             Integer inputSnapshotSchemaVersion, String inputSnapshotHash,
                                             String derivationRequestHash,
-                                            List<String> actions) {
+                                            List<String> actions, OnlineDispatchIdentityDTO onlineIdentity) {
         // 获取当前UTC时间，用于iat签发时间
         Instant now = Instant.now();
         // 构建JWT声明集合
@@ -254,8 +261,36 @@ public class JwtService {
         if (derivationRequestHash != null) {
             builder.claim(JwtConstant.CLAIM_DERIVATION_REQUEST_HASH, derivationRequestHash);
         }
+        if (onlineIdentity != null) {
+            OnlineIdentityUtils.requireComplete(onlineIdentity);
+            builder.claim(OnlineCapabilityConstant.EXPERIMENT_ID, onlineIdentity.experimentId())
+                    .claim(OnlineCapabilityConstant.ASSIGNMENT_ID, onlineIdentity.assignmentId())
+                    .claim(OnlineCapabilityConstant.BINDING_SCHEMA, onlineIdentity.bindingSchemaVersion())
+                    .claim(OnlineCapabilityConstant.BINDING_HASH, onlineIdentity.bindingHash())
+                    .claim(OnlineCapabilityConstant.SLOT_GENERATION, onlineIdentity.generation())
+                    .claim(OnlineCapabilityConstant.SLOT_PERMIT_HASH, onlineIdentity.permitHash());
+        }
         JwtClaimsSet claims = builder.build();
         // 使用JwtEncoder签名，返回JWT原始字符串
+        return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+    }
+
+    /** WAIT 没有 Agent 动作，不可通过普通受众执行。 */
+    String createOnlineWait(OnlineTaskDispatchProofVO proof) {
+        var binding = proof.binding(); Instant now = Instant.now();
+        var claims = JwtClaimsSet.builder().issuer(props.issuer()).issuedAt(now).notBefore(now)
+                .expiresAt(now.plusSeconds(OnlineCapabilityConstant.TTL_SECONDS)).subject(binding.taskId())
+                .audience(List.of(OnlineCapabilityConstant.WAIT_AUDIENCE)).id(UUID.randomUUID().toString())
+                .claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_SERVICE)
+                .claim(JwtConstant.CLAIM_SERVICE, OnlineCapabilityConstant.TASK_SERVICE)
+                .claim(JwtConstant.CLAIM_SCOPE, OnlineCapabilityConstant.WAIT_SCOPE)
+                .claim(JwtConstant.CLAIM_TASK_ID, binding.taskId()).claim(JwtConstant.CLAIM_SPACE_ID, binding.spaceId())
+                .claim(OnlineCapabilityConstant.PURPOSE, OnlineCapabilityConstant.WAIT_PURPOSE)
+                .claim(OnlineCapabilityConstant.EXPERIMENT_ID, binding.experimentId())
+                .claim(OnlineCapabilityConstant.ASSIGNMENT_ID, binding.assignmentId())
+                .claim(OnlineCapabilityConstant.MANIFEST_HASH, binding.manifestHash())
+                .claim(OnlineCapabilityConstant.BINDING_SCHEMA, binding.schemaVersion())
+                .claim(OnlineCapabilityConstant.BINDING_HASH, OnlineProtocolUtils.hash("online.binding", binding)).build();
         return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
     }
 
@@ -356,6 +391,33 @@ public class JwtService {
                 .claim(TaskRecoveryConstant.RECOVERY_ID, request.recoveryId());
         request.identity().toClaims().forEach((key, value) -> { if (value != null) { builder.claim(key, value); } });
         if (draft) { builder.claim(TaskRecoveryConstant.REMOTE_STATUS, request.remoteTerminalStatus()); }
+        return encoder.encode(JwtEncoderParameters.from(builder.build())).getTokenValue();
+    }
+
+    /** 仅供已核验当前 OWNER/冻结身份的线上签发服务调用。 */
+    String createOnlineCapability(OnlineAuthorizationProofVO proof, String authorizedBy,
+                                  OnlineCapabilityPurpose purpose, String taskSetHash, Instant sourceExpiresAt) {
+        Instant now = Instant.now();
+        if (sourceExpiresAt != null && !sourceExpiresAt.isAfter(now)) {
+            throw new IllegalArgumentException("线上源授权已过期");
+        }
+        Instant expiry = now.plusSeconds(OnlineCapabilityConstant.TTL_SECONDS);
+        if (purpose != OnlineCapabilityPurpose.ONLINE_CONTROL && sourceExpiresAt != null && sourceExpiresAt.isBefore(expiry)) {
+            expiry = sourceExpiresAt;
+        }
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder().issuer(props.issuer()).issuedAt(now).notBefore(now)
+                .expiresAt(expiry).subject(JwtConstant.EVALUATION_SERVICE).id(UUID.randomUUID().toString())
+                .audience(List.of(purpose.audience()))
+                .claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_SERVICE)
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_SERVICE)
+                .claim(JwtConstant.CLAIM_SERVICE, JwtConstant.EVALUATION_SERVICE)
+                .claim(JwtConstant.CLAIM_SPACE_ID, proof.spaceId())
+                .claim(OnlineCapabilityConstant.EXPERIMENT_ID, proof.experimentId())
+                .claim(OnlineCapabilityConstant.MANIFEST_HASH, proof.manifestHash())
+                .claim(OnlineCapabilityConstant.AUTHORIZED_BY, authorizedBy)
+                .claim(OnlineCapabilityConstant.SCHEMA, OnlineProtocolUtils.SCHEMA_VERSION)
+                .claim(OnlineCapabilityConstant.PURPOSE, purpose.name());
+        if (taskSetHash != null) { builder.claim(OnlineCapabilityConstant.TASK_SET_HASH, taskSetHash); }
         return encoder.encode(JwtEncoderParameters.from(builder.build())).getTokenValue();
     }
 

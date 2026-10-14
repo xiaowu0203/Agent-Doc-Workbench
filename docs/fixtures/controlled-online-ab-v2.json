@@ -1,0 +1,719 @@
+{
+  "schemaVersion": 2,
+  "canonical": [
+    {
+      "name": "utf8-order-and-null",
+      "value": {
+        "domain": "online.fixture",
+        "schemaVersion": 2,
+        "payload": {
+          "": "私有区",
+          "𐀀": "补充字符",
+          "中文": "原始\n产物",
+          "decimal": "0.8",
+          "null": null,
+          "emptyArray": [],
+          "emptyObject": {}
+        }
+      },
+      "canonical": "{\"domain\":\"online.fixture\",\"payload\":{\"decimal\":\"0.8\",\"emptyArray\":[],\"emptyObject\":{},\"null\":null,\"中文\":\"原始\\n产物\",\"\":\"私有区\",\"𐀀\":\"补充字符\"},\"schemaVersion\":2}",
+      "hash": "b285c968f180127879f588f24128d3aec1a0c2c84114bf4c8d9b1e012e1cee1a"
+    },
+    {
+      "name": "null-vs-empty",
+      "value": {
+        "domain": "online.fixture",
+        "schemaVersion": 2,
+        "payload": {
+          "a": null,
+          "b": [],
+          "c": {},
+          "d": "0"
+        }
+      },
+      "canonical": "{\"domain\":\"online.fixture\",\"payload\":{\"a\":null,\"b\":[],\"c\":{},\"d\":\"0\"},\"schemaVersion\":2}",
+      "hash": "20042b542ed58187c05e2f09b345b11624b4232e0d8d4595ff043b2c5235cc21"
+    },
+    {
+      "name": "complete-binding-long-id",
+      "value": {
+        "domain": "online.binding",
+        "schemaVersion": 2,
+        "payload": {
+          "schemaVersion": 2,
+          "assignmentId": "1",
+          "experimentId": "2",
+          "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "acceptedSequence": 1,
+          "variant": "BASELINE",
+          "bucket": 5000,
+          "actorId": "3",
+          "taskId": "4",
+          "spaceId": "5",
+          "agentId": "6",
+          "documentId": "9223372036854775807",
+          "documentVersion": "1",
+          "documentContentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "inputSchemaVersion": 1,
+          "inputHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "templateId": "7",
+          "templateSchemaVersion": 2,
+          "templateHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "nonPromptHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "dependencyHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "tokenBudget": 4096,
+          "executionTimeoutSeconds": 600,
+          "executionMode": "LIVE",
+          "lineageType": "ORIGINAL"
+        }
+      },
+      "canonical": "{\"domain\":\"online.binding\",\"payload\":{\"acceptedSequence\":1,\"actorId\":\"3\",\"agentId\":\"6\",\"assignmentId\":\"1\",\"bucket\":5000,\"dependencyHash\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"documentContentHash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"documentId\":\"9223372036854775807\",\"documentVersion\":\"1\",\"executionMode\":\"LIVE\",\"executionTimeoutSeconds\":600,\"experimentId\":\"2\",\"inputHash\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"inputSchemaVersion\":1,\"lineageType\":\"ORIGINAL\",\"manifestHash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"nonPromptHash\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"schemaVersion\":2,\"spaceId\":\"5\",\"taskId\":\"4\",\"templateHash\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"templateId\":\"7\",\"templateSchemaVersion\":2,\"tokenBudget\":4096,\"variant\":\"BASELINE\"},\"schemaVersion\":2}",
+      "hash": "9dd568c9cb6fec4d6e2f529679caf602ec650add649592e0b4dc8bda6f8f398a"
+    }
+  ],
+  "buckets": [
+    {
+      "name": "minimum-id-zero-seed",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "1",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000
+      },
+      "canonical": "{\"domain\":\"online.bucket\",\"payload\":{\"documentId\":\"1\",\"experimentId\":\"1\",\"seed\":\"00000000000000000000000000000000\"},\"schemaVersion\":2}",
+      "hash": "8222391110af4003751dd5b6efe8ce8ebc62e9432d187774c09da4493c68992d",
+      "bucket": 4589,
+      "variant": "CANDIDATE"
+    },
+    {
+      "name": "long-id-max-seed",
+      "input": {
+        "experiment_id": "9223372036854775807",
+        "document_id": "9223372036854775807",
+        "seed": "ffffffffffffffffffffffffffffffff",
+        "weight": 2000
+      },
+      "canonical": "{\"domain\":\"online.bucket\",\"payload\":{\"documentId\":\"9223372036854775807\",\"experimentId\":\"9223372036854775807\",\"seed\":\"ffffffffffffffffffffffffffffffff\"},\"schemaVersion\":2}",
+      "hash": "1c88863fb4187cdf6ae169c3bf5e403322ea04c74cc4166fa421d8f086e1a481",
+      "bucket": 6609,
+      "variant": "BASELINE"
+    },
+    {
+      "name": "different-document",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "2",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000
+      },
+      "canonical": "{\"domain\":\"online.bucket\",\"payload\":{\"documentId\":\"2\",\"experimentId\":\"1\",\"seed\":\"00000000000000000000000000000000\"},\"schemaVersion\":2}",
+      "hash": "1df5952cb330f1c88869745e3376295d8e63d70f12cf3cfbf17d27e49f88eb43",
+      "bucket": 2451,
+      "variant": "CANDIDATE"
+    },
+    {
+      "name": "minimum-weight",
+      "input": {
+        "experiment_id": "1234567890123456789",
+        "document_id": "9007199254740993",
+        "seed": "0123456789abcdef0123456789abcdef",
+        "weight": 1
+      },
+      "canonical": "{\"domain\":\"online.bucket\",\"payload\":{\"documentId\":\"9007199254740993\",\"experimentId\":\"1234567890123456789\",\"seed\":\"0123456789abcdef0123456789abcdef\"},\"schemaVersion\":2}",
+      "hash": "c627b21111b66063d0eb2840e7dad1bfa5eb31ce6a83c272823cf69a0b5ddc3a",
+      "bucket": 2554,
+      "variant": "BASELINE"
+    },
+    {
+      "name": "maximum-weight",
+      "input": {
+        "experiment_id": "1234567890123456789",
+        "document_id": "9007199254740993",
+        "seed": "0123456789abcdef0123456789abcdef",
+        "weight": 9999
+      },
+      "canonical": "{\"domain\":\"online.bucket\",\"payload\":{\"documentId\":\"9007199254740993\",\"experimentId\":\"1234567890123456789\",\"seed\":\"0123456789abcdef0123456789abcdef\"},\"schemaVersion\":2}",
+      "hash": "c627b21111b66063d0eb2840e7dad1bfa5eb31ce6a83c272823cf69a0b5ddc3a",
+      "bucket": 2554,
+      "variant": "CANDIDATE"
+    }
+  ],
+  "invalidBuckets": [
+    {
+      "name": "leading-zero",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "01",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "zero-id",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "0",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "overflow-id",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "9223372036854775808",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "spaced-id",
+      "input": {
+        "experiment_id": "1",
+        "document_id": " 1",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "short-seed",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "1",
+        "seed": "0000000000000000000000000000000",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "upper-seed",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "1",
+        "seed": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "weight-zero",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "1",
+        "seed": "00000000000000000000000000000000",
+        "weight": 0
+      }
+    },
+    {
+      "name": "weight-full",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "1",
+        "seed": "00000000000000000000000000000000",
+        "weight": 10000
+      }
+    },
+    {
+      "name": "fractional-weight",
+      "input": {
+        "experiment_id": "1",
+        "document_id": "1",
+        "seed": "00000000000000000000000000000000",
+        "weight": 5000.1
+      }
+    }
+  ],
+  "srm": [
+    {
+      "name": "empty",
+      "input": {
+        "n": 0,
+        "observed": 0,
+        "weight": 5000
+      },
+      "status": "NOT_ENOUGH_UNITS",
+      "probability": null
+    },
+    {
+      "name": "below-sample-gate",
+      "input": {
+        "n": 99,
+        "observed": 49,
+        "weight": 5000
+      },
+      "status": "NOT_ENOUGH_UNITS",
+      "probability": null
+    },
+    {
+      "name": "below-expected-gate",
+      "input": {
+        "n": 100,
+        "observed": 1,
+        "weight": 999
+      },
+      "status": "NOT_ENOUGH_UNITS",
+      "probability": null
+    },
+    {
+      "name": "balanced",
+      "input": {
+        "n": 100,
+        "observed": 50,
+        "weight": 5000
+      },
+      "status": "PASS",
+      "probability": "0.99999999999999999999999999999999999999999999999999999999999999999999999999999998"
+    },
+    {
+      "name": "extreme",
+      "input": {
+        "n": 100,
+        "observed": 0,
+        "weight": 5000
+      },
+      "status": "DETECTED",
+      "probability": "1.5777218104420236108234571305655724593464128702180460095405578613281250E-30"
+    },
+    {
+      "name": "asymmetric-balanced",
+      "input": {
+        "n": 100,
+        "observed": 10,
+        "weight": 1000
+      },
+      "status": "PASS",
+      "probability": "1.0000000000000000000000000000000000000000000000000000000000000000000000000000001"
+    },
+    {
+      "name": "asymmetric-mismatch",
+      "input": {
+        "n": 100,
+        "observed": 30,
+        "weight": 1000
+      },
+      "status": "DETECTED",
+      "probability": "2.4451122393909659295433089181866732050010266637153408725967532913339578713661539E-8"
+    }
+  ],
+  "confidenceIntervals": [
+    {
+      "name": "0-of-0",
+      "input": {
+        "success": 0,
+        "count": 0
+      },
+      "lower": null,
+      "upper": null
+    },
+    {
+      "name": "0-of-30",
+      "input": {
+        "success": 0,
+        "count": 30
+      },
+      "lower": "0.000000000000",
+      "upper": "0.115703308222"
+    },
+    {
+      "name": "1-of-30",
+      "input": {
+        "success": 1,
+        "count": 30
+      },
+      "lower": "0.000843570927",
+      "upper": "0.172169455633"
+    },
+    {
+      "name": "15-of-30",
+      "input": {
+        "success": 15,
+        "count": 30
+      },
+      "lower": "0.312970285868",
+      "upper": "0.687029714132"
+    },
+    {
+      "name": "29-of-30",
+      "input": {
+        "success": 29,
+        "count": 30
+      },
+      "lower": "0.827830544367",
+      "upper": "0.999156429073"
+    },
+    {
+      "name": "30-of-30",
+      "input": {
+        "success": 30,
+        "count": 30
+      },
+      "lower": "0.884296691778",
+      "upper": "1.000000000000"
+    },
+    {
+      "name": "1-of-1",
+      "input": {
+        "success": 1,
+        "count": 1
+      },
+      "lower": "0.025000000000",
+      "upper": "1.000000000000"
+    }
+  ],
+  "primaryStatuses": [
+    {
+      "name": "all-pass",
+      "input": {
+        "terminal": "COMPLETED",
+        "rules": [
+          "PASS",
+          "PASS"
+        ]
+      },
+      "status": "PASS"
+    },
+    {
+      "name": "false-or-zero",
+      "input": {
+        "terminal": "COMPLETED",
+        "rules": [
+          "PASS",
+          "FAIL"
+        ]
+      },
+      "status": "FAIL"
+    },
+    {
+      "name": "missing-evidence",
+      "input": {
+        "terminal": "COMPLETED",
+        "rules": [
+          "PASS",
+          "MISSING"
+        ]
+      },
+      "status": "MISSING"
+    },
+    {
+      "name": "failed-no-artifact",
+      "input": {
+        "terminal": "FAILED",
+        "rules": []
+      },
+      "status": "FAIL"
+    },
+    {
+      "name": "cancelled",
+      "input": {
+        "terminal": "USER_CANCELED",
+        "rules": []
+      },
+      "status": "MISSING"
+    },
+    {
+      "name": "failure-and-missing",
+      "input": {
+        "terminal": "COMPLETED",
+        "rules": [
+          "FAIL",
+          "MISSING"
+        ]
+      },
+      "status": "FAIL"
+    }
+  ],
+  "comparisonGates": [
+    {
+      "name": "exact-80-percent",
+      "input": {
+        "mode": "DESCRIPTIVE",
+        "unresolvedIntegrity": false,
+        "srmEnabled": true,
+        "humanQualityRequired": true,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": true
+    },
+    {
+      "name": "engineering",
+      "input": {
+        "mode": "ENGINEERING",
+        "unresolvedIntegrity": false,
+        "srmEnabled": true,
+        "humanQualityRequired": true,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": false
+    },
+    {
+      "name": "unresolved",
+      "input": {
+        "mode": "DESCRIPTIVE",
+        "unresolvedIntegrity": true,
+        "srmEnabled": true,
+        "humanQualityRequired": true,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": false
+    },
+    {
+      "name": "srm-disabled",
+      "input": {
+        "mode": "DESCRIPTIVE",
+        "unresolvedIntegrity": false,
+        "srmEnabled": false,
+        "humanQualityRequired": true,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": false
+    },
+    {
+      "name": "blind-79-percent",
+      "input": {
+        "mode": "DESCRIPTIVE",
+        "unresolvedIntegrity": false,
+        "srmEnabled": true,
+        "humanQualityRequired": true,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 79
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": false
+    },
+    {
+      "name": "quality-79-percent",
+      "input": {
+        "mode": "DESCRIPTIVE",
+        "unresolvedIntegrity": false,
+        "srmEnabled": true,
+        "humanQualityRequired": true,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 79,
+            "blinded": 80
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": false
+    },
+    {
+      "name": "manual-not-required",
+      "input": {
+        "mode": "DESCRIPTIVE",
+        "unresolvedIntegrity": false,
+        "srmEnabled": true,
+        "humanQualityRequired": false,
+        "groups": [
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 0
+          },
+          {
+            "documents": 100,
+            "valid": 80,
+            "blinded": 80
+          }
+        ]
+      },
+      "eligible": true
+    }
+  ],
+  "healthWindows": [
+    {
+      "name": "19-terminal-even-all-failed",
+      "states": [
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED"
+      ],
+      "paused": false
+    },
+    {
+      "name": "20-terminal-5-failed",
+      "states": [
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED"
+      ],
+      "paused": false
+    },
+    {
+      "name": "20-terminal-6-failed",
+      "states": [
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED"
+      ],
+      "paused": true
+    },
+    {
+      "name": "user-cancel-does-not-fill-window",
+      "states": [
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "FAILED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED",
+        "USER_CANCELED"
+      ],
+      "paused": false
+    },
+    {
+      "name": "timeout-counts-as-failure",
+      "states": [
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "COMPLETED",
+        "TIMED_OUT",
+        "TIMED_OUT",
+        "TIMED_OUT",
+        "TIMED_OUT",
+        "TIMED_OUT",
+        "TIMED_OUT"
+      ],
+      "paused": true
+    }
+  ]
+}

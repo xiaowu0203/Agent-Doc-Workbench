@@ -51,7 +51,10 @@ public record EvaluationFeedbackVO(
         Long createdBy,
 
         @Schema(description = "创建时间")
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        @Schema(description = "线上原始质量反馈；历史及审批过程反馈为空")
+        OnlineQualityFeedbackVO onlineQuality
 ) {
     /**
      * 实体转VO
@@ -62,6 +65,6 @@ public record EvaluationFeedbackVO(
         return new EvaluationFeedbackVO(value.getId(), value.getSpaceId(), value.getRunId(), value.getCaseRunId(),
                 value.getTaskId(), value.getExecutionId(), value.getSourceType(), value.getSourceBusinessId(),
                 value.getSourceHash(), value.getLabel(), value.getScore(), value.getComment(), value.getFactsJson(),
-                value.getCreatedBy(), value.getCreatedAt());
+                value.getCreatedBy(), value.getCreatedAt(), OnlineQualityFeedbackVO.from(value));
     }
 }

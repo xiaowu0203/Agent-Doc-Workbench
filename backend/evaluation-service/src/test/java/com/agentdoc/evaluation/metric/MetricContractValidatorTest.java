@@ -16,7 +16,11 @@ class MetricContractValidatorTest {
 
     @Test
     void catalogUsesStableKeysAndExplicitSemantics() {
-        assertThat(MetricDefinitionCatalog.definitions()).hasSize(15).allSatisfy(definition -> {
+        assertThat(MetricDefinitionCatalog.require("evaluation.online-original-text.pass-ratio").evaluatorKey())
+                .isEqualTo("online-original-text-assertion");
+        assertThat(MetricDefinitionCatalog.require("evaluation.text-assertion.pass-ratio").evaluatorKey())
+                .isEqualTo("text-assertion");
+        assertThat(MetricDefinitionCatalog.definitions()).hasSize(18).allSatisfy(definition -> {
             assertThat(definition.metricKey()).matches("[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*");
             assertThat(definition.valueType()).isNotNull();
             assertThat(definition.unit()).isNotBlank();

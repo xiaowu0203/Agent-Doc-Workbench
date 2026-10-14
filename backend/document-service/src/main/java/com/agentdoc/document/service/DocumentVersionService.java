@@ -53,6 +53,22 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ
 @RequiredArgsConstructor
 public class DocumentVersionService {
 
+    /** 完整审批来源集合，用于识别重复或多来源合并证据，不挑选最近版本。 */
+    public List<DocumentVersionEntity> approvalSnapshots(Long documentId, Long changeRequestId) {
+        return versionMapper.selectList(new LambdaQueryWrapper<DocumentVersionEntity>()
+                .eq(DocumentVersionEntity::getDocumentId, documentId)
+                .eq(DocumentVersionEntity::getSourceChangeRequestId, changeRequestId)
+                .orderByAsc(DocumentVersionEntity::getVersionNo));
+    }
+
+    /** 完整 Agent 收尾集合，不取最高分或中间暂存正文。 */
+    public List<DocumentVersionEntity> agentDraftSnapshots(Long documentId, Long taskId) {
+        return versionMapper.selectList(new LambdaQueryWrapper<DocumentVersionEntity>()
+                .eq(DocumentVersionEntity::getDocumentId, documentId).eq(DocumentVersionEntity::getSourceTaskId, taskId)
+                .eq(DocumentVersionEntity::getSourceType, DocumentVersionSourceType.AGENT_DRAFT.name())
+                .orderByAsc(DocumentVersionEntity::getVersionNo));
+    }
+
     /** 草稿终态收尾专用幂等查询，不加载正文或调用跨服务引用。 */
     public DocumentVersionEntity findAgentDraftSnapshot(Long documentId, Long taskId) {
         return versionMapper.selectOne(new LambdaQueryWrapper<DocumentVersionEntity>()

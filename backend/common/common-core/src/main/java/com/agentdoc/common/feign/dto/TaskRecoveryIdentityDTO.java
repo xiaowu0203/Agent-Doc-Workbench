@@ -1,6 +1,9 @@
 package com.agentdoc.common.feign.dto;
 
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.constant.OnlineCapabilityConstant;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,7 +24,8 @@ import java.util.Map;
 public record TaskRecoveryIdentityDTO(Long taskId, Long agentId, Long spaceId, Long documentId,
                                       String executionMode, Long documentVersionSnapshot,
                                       String documentContentSha256, Integer inputSnapshotSchemaVersion,
-                                      String inputSnapshotHash, String derivationRequestHash) {
+                                      String inputSnapshotHash, String derivationRequestHash,
+                                      @JsonInclude(JsonInclude.Include.NON_NULL) OnlineDispatchIdentityDTO onlineIdentity) {
 
     /** 固定声明映射，用于签发与两端逐字段核验；不包含正文或秘密。 */
     public Map<String, Object> toClaims() {
@@ -36,6 +40,15 @@ public record TaskRecoveryIdentityDTO(Long taskId, Long agentId, Long spaceId, L
         claims.put(JwtConstant.CLAIM_INPUT_SNAPSHOT_SCHEMA_VERSION, inputSnapshotSchemaVersion);
         claims.put(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, inputSnapshotHash);
         claims.put(JwtConstant.CLAIM_DERIVATION_REQUEST_HASH, derivationRequestHash);
+        if (onlineIdentity != null) {
+            OnlineIdentityUtils.requireComplete(onlineIdentity);
+            claims.put(OnlineCapabilityConstant.EXPERIMENT_ID, onlineIdentity.experimentId());
+            claims.put(OnlineCapabilityConstant.ASSIGNMENT_ID, onlineIdentity.assignmentId());
+            claims.put(OnlineCapabilityConstant.BINDING_SCHEMA, onlineIdentity.bindingSchemaVersion());
+            claims.put(OnlineCapabilityConstant.BINDING_HASH, onlineIdentity.bindingHash());
+            claims.put(OnlineCapabilityConstant.SLOT_GENERATION, onlineIdentity.generation());
+            claims.put(OnlineCapabilityConstant.SLOT_PERMIT_HASH, onlineIdentity.permitHash());
+        }
         return claims;
     }
 }

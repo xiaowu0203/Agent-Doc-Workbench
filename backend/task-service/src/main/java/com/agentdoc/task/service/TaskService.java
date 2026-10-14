@@ -1,10 +1,13 @@
 package com.agentdoc.task.service;
+import com.agentdoc.common.feign.OnlineEvaluationFeign;
+import com.agentdoc.common.feign.dto.OnlineReviewExposureDTO;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.WorkbenchSearchConstant;
 import com.agentdoc.common.context.TraceContext;
 import com.agentdoc.common.enums.DocType;
+import com.agentdoc.common.utils.OnlineIdentityUtils;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
@@ -134,6 +137,10 @@ public class TaskService {
     private final ObjectMapper objectMapper;
     private final TaskCapabilityVerifier taskCapabilityVerifier;
     private final ReplayProperties replayProperties;
+    private final TaskCreationIntentService creationIntents;
+    private final TaskOnlineRoutingService onlineRouting;
+    private final TaskOnlineDispatchService onlineDispatch;
+    private final OnlineEvaluationFeign onlineEvaluation;
 
     /**
      * 创建Agent任务
@@ -154,6 +161,39 @@ public class TaskService {
     public TaskVO create(TaskCreateDTO dto) {
         // 获取当前操作用户ID
         Long userId = AuthUtils.getUserIdOrException();
+        if (dto.clientRequestKey() != null) {
+            requirePermission(dto.spaceId(), TASK_CREATE);
+            return TaskVO.from(creationIntents.create(dto, userId,
+                    identity -> prepareOriginal(dto, userId, identity), this::authorizeCreationRetry, this::issueEncryptedCapability, onlineRouting::route));
+        }
+        TaskEntity entity = prepareOriginal(dto, userId, IdWorker.getId());
+        onlineRouting.requireKeyWhenParticipating(entity);
+        taskMapper.insert(entity);
+
+        // 生成任务能力令牌，并更新任务记录
+        try {
+            // 令牌加密存储，不在数据库留存明文
+            entity.setCapabilityToken(issueEncryptedCapability(entity));
+            // 更新任务
+            taskMapper.updateById(entity);
+            // 投递MQ，触发异步任务消费执行
+            messagePublisher.publish(entity.getId());
+            // 记录创建审计日志
+            auditLogService.recordHuman(entity.getSpaceId(), AuditAction.TASK_CREATED,
+                    AuditTargetType.TASK, entity.getId(), null);
+        } catch (RuntimeException e) {
+            // 申请令牌或发消息失败，任务置失败状态，记录错误信息
+            entity.setStatus(TaskStatus.FAILED.getCode());
+            entity.setErrorMessage("任务能力令牌签发或消息发布失败：" + e.getMessage());
+            entity.setEndTime(LocalDateTime.now());
+            taskMapper.updateById(entity);
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "任务能力令牌签发或消息发布失败");
+        }
+        return TaskVO.from(entity);
+    }
+
+    /** 复用原创建校验，只构建首次冻结输入，不落库、不签发、不投递。 */
+    private TaskEntity prepareOriginal(TaskCreateDTO dto, Long userId, Long taskId) {
         // 根据文档Id查询文档相关信息（所属空间Id、文档类型、状态、版本等等）
         DocumentExecutionContextVO document = requireData(documentFeign.getExecutionContext(dto.documentId()));
         // 校验任务入参空间与文档所属空间必须一致
@@ -192,32 +232,32 @@ public class TaskService {
         // 任务落库，构建任务实体
         TaskEntity entity = dto.toEntity(document.spaceId(), documentType.getCode(), budget, agent.configVersion(),
                 focusRegions.scope(), focusRegions.json(), userId);
-        entity.setId(IdWorker.getId());
+        entity.setId(taskId);
         entity.setTaskNo(buildTaskNo(entity.getId()));
         initializeExecutionSemantics(entity, entity.getId(), TaskLineageType.ORIGINAL, TaskExecutionMode.LIVE);
         freezeInputSnapshot(entity, document.version(), document.contentSha256());
-        taskMapper.insert(entity);
+        return entity;
+    }
 
-        // 生成任务能力令牌，并更新任务记录
-        try {
-            // 令牌加密存储，不在数据库留存明文
-            entity.setCapabilityToken(issueEncryptedCapability(entity));
-            // 更新任务
-            taskMapper.updateById(entity);
-            // 投递MQ，触发异步任务消费执行
-            messagePublisher.publish(entity.getId());
-            // 记录创建审计日志
-            auditLogService.recordHuman(entity.getSpaceId(), AuditAction.TASK_CREATED,
-                    AuditTargetType.TASK, entity.getId(), null);
-        } catch (RuntimeException e) {
-            // 申请令牌或发消息失败，任务置失败状态，记录错误信息
-            entity.setStatus(TaskStatus.FAILED.getCode());
-            entity.setErrorMessage("任务能力令牌签发或消息发布失败：" + e.getMessage());
-            entity.setEndTime(LocalDateTime.now());
-            taskMapper.updateById(entity);
-            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "任务能力令牌签发或消息发布失败");
+    /** 重试仅复核当前权限/归属及原版本，不用当前版本或预算重新构建输入。 */
+    private void authorizeCreationRetry(TaskEntity task) {
+        requirePermission(task.getSpaceId(), TASK_CREATE);
+        var current = requireData(documentFeign.getExecutionContext(task.getDocumentId()));
+        if (!task.getSpaceId().equals(current.spaceId()) || !current.normal()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "原任务文档当前不可访问");
         }
-        return TaskVO.from(entity);
+        var frozen = requireData(documentFeign.getVersionExecutionContext(task.getDocumentId(), task.getDocumentVersionSnapshot(), task.getDocumentContentSha256()));
+        if (!task.getDocumentId().equals(frozen.documentId()) || !task.getDocumentVersionSnapshot().equals(frozen.version())
+                || !task.getDocumentContentSha256().equals(frozen.contentSha256()) || !task.getInputSnapshotHash().equals(calculateInputSnapshotHash(task))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "原任务冻结输入不可复用");
+        }
+        var agent = requireData(agentFeign.getExecutionProfile(task.getAgentId()));
+        if (!agent.enabled() || !task.getSpaceId().equals(agent.spaceId())) { throw new BusinessException(ErrorCode.FORBIDDEN, "原任务Agent当前不可访问"); }
+        requireDocumentScope(agent, task.getDocumentId());
+    }
+
+    public void authorizeOnlineCreationProof(Long taskId) {
+        authorizeCreationRetry(onlineRouting.frozenProof(taskId.toString()));
     }
 
     /**
@@ -259,6 +299,7 @@ public class TaskService {
                 new LambdaQueryWrapper<TaskEntity>()
                         .eq(TaskEntity::getSpaceId, spaceId)
                         .orderByDesc(TaskEntity::getCreatedAt));
+        recordOnlineExposure(page.getRecords());
         return PageVO.of(page.getRecords().stream().map(TaskVO::from).toList(), page.getTotal(), pageParam);
     }
 
@@ -426,6 +467,7 @@ public class TaskService {
      * @return 任务列表VO
      */
     private List<TaskListItemVO> toListItems(List<TaskEntity> tasks) {
+        recordOnlineExposure(tasks);
         // 批量拉取Agent信息
         Map<Long, AgentRefVO> agents = fetchAgents(tasks.stream()
                 .map(TaskEntity::getAgentId).filter(Objects::nonNull).distinct().toList());
@@ -505,6 +547,7 @@ public class TaskService {
                         .orderByDesc(TaskEntity::getStartTime)
                         .orderByDesc(TaskEntity::getCreatedAt));
         // 批量拉取创建人信息
+        recordOnlineExposure(page.getRecords());
         Map<Long, UserRefVO> users = fetchUsers(page.getRecords().stream()
                 .map(TaskEntity::getCreatedBy)
                 .filter(Objects::nonNull)
@@ -596,6 +639,7 @@ public class TaskService {
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【读取】权限
         requirePermission(entity.getSpaceId(), TASK_READ);
+        recordOnlineExposure(List.of(entity));
         return TaskVO.from(entity);
     }
 
@@ -608,6 +652,7 @@ public class TaskService {
     public TaskEntity requireReadable(Long id) {
         TaskEntity entity = require(id);
         requirePermission(entity.getSpaceId(), TASK_READ);
+        recordOnlineExposure(List.of(entity));
         return entity;
     }
 
@@ -1306,12 +1351,18 @@ public class TaskService {
     public TaskVO run(Long id) {
         TaskEntity entity = require(id);
         requirePermission(entity.getSpaceId(), TASK_CREATE);
+        recordOnlineExposure(List.of(entity));
         // 仅PENDING待运行状态允许手动触发
         if (TaskStatus.fromCode(entity.getStatus()) != TaskStatus.PENDING) {
             throw new BusinessException(ErrorCode.CONFLICT, "只有待运行的任务可以手动触发");
         }
         // 必须存在能力令牌才能执行
-        if (entity.getCapabilityToken() == null || entity.getCapabilityToken().isBlank()) {
+        if (entity.getOnlineAssignmentId() != null && (entity.getCapabilityToken() == null || entity.getCapabilityToken().isBlank())) {
+            authorizeCreationRetry(entity);
+            String wait = onlineDispatch.initialWait(entity);
+            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>().eq(TaskEntity::getId, id).eq(TaskEntity::getStatus, TaskStatus.PENDING.getCode())
+                    .isNull(TaskEntity::getCapabilityToken).set(TaskEntity::getOnlineWaitCapability, wait));
+        } else if (entity.getCapabilityToken() == null || entity.getCapabilityToken().isBlank()) {
             throw new BusinessException(ErrorCode.CONFLICT, "任务缺少执行能力令牌，请重新创建任务");
         }
         TaskExecutionPolicy.requireSupported(entity);
@@ -1337,6 +1388,7 @@ public class TaskService {
         TaskEntity entity = require(id);
         // Feign校验当前用户在该空间具备【编辑】权限
         requirePermission(entity.getSpaceId(), TASK_TERMINATE);
+        recordOnlineExposure(List.of(entity));
         // 任务状态转换
         TaskStatus current = TaskStatus.fromCode(entity.getStatus());
         // 若当前任务状态非【待运行】、【运行中】，则禁止【终止】
@@ -1609,7 +1661,7 @@ public class TaskService {
     }
 
     /** 根据任务当前冻结字段重算输入身份，不信任数据库中已有 hash。 */
-    private String calculateInputSnapshotHash(TaskEntity task) {
+    static String calculateInputSnapshotHash(TaskEntity task) {
         int schemaVersion = TaskConstant.INPUT_SNAPSHOT_SCHEMA_VERSION;
         TaskInputSnapshot snapshot = new TaskInputSnapshot(
                 task.getInstruction(), task.getSpaceId(), task.getDocumentId(), task.getDocumentType(),
@@ -1624,6 +1676,7 @@ public class TaskService {
      * @return 加密后的capabilityToken
      */
     private String issueEncryptedCapability(TaskEntity task) {
+        if (task.getOnlineAssignmentId() != null) { return onlineDispatch.initialWait(task); }
         return cryptoService.encrypt(issueCapability(task));
     }
 
@@ -1658,7 +1711,7 @@ public class TaskService {
                 new TaskCapabilityIssueDTO(task.getId(), task.getAgentId(), task.getSpaceId(),
                         task.getDocumentId(), task.getExecutionMode(), task.getDocumentVersionSnapshot(),
                         task.getDocumentContentSha256(), task.getInputSnapshotSchemaVersion(),
-                        task.getInputSnapshotHash(), task.getDerivationRequestHash(), actions)));
+                        task.getInputSnapshotHash(), task.getDerivationRequestHash(), actions, null)));
     }
 
     /**
@@ -1765,6 +1818,15 @@ public class TaskService {
 
     /** 校验任务能力令牌及指定动作。 */
     public void checkCapability(Long taskId, String token, String requiredAction) {
+        verifyCapability(taskId, token, requiredAction, true);
+    }
+
+    public String verifyExecutionIdentity(Long taskId, String token) {
+        verifyCapability(taskId, token, null, false);
+        return TaskStatus.fromCode(require(taskId).getStatus()).name();
+    }
+
+    private void verifyCapability(Long taskId, String token, String requiredAction, boolean requireActive) {
         // token不允许为空
         if (token == null || token.isBlank()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "缺少任务能力令牌");
@@ -1777,8 +1839,10 @@ public class TaskService {
         }
         // 获取任务信息
         TaskEntity task = require(taskId);
+        OnlineIdentityUtils.requireJwt(claims, TaskOnlineDispatchService.identity(task));
         // 校验当前任务状态设置不允许访问文档(已分发、运行中、等待输入、等待授权)
-        if (!TaskStatus.fromCode(task.getStatus()).allowsCapabilityAccess()) {
+        if (task.getOnlineAssignmentId() != null) { onlineDispatch.requireCurrentResourceAccess(task, token); }
+        if (requireActive && !TaskStatus.fromCode(task.getStatus()).allowsCapabilityAccess()) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "任务当前不允许访问文档");
         }
         // 校验agentId、spaceId、documentId，和数据库任务记录完全匹配
@@ -1894,10 +1958,23 @@ public class TaskService {
      * @param task 任务实体
      * @return 关注区域列表
      */
-    private List<TaskFocusRegionDTO> focusRegions(TaskEntity task) {
+    private static List<TaskFocusRegionDTO> focusRegions(TaskEntity task) {
         List<TaskFocusRegionDTO> regions = JsonUtils.parse(task.getFocusRegionsJson(),
                 new TypeReference<List<TaskFocusRegionDTO>>() { });
         return regions == null ? List.of() : regions;
+    }
+
+    /** 普通Task元数据含成本、终态等线索；隐藏原始评审走独立入口。 */
+    private void recordOnlineExposure(List<TaskEntity> rows) {
+        if (AuthUtils.getUserId() == null) { return; }
+        var grouped = rows.stream().filter(row -> row.getOnlineExperimentId() != null).collect(Collectors.groupingBy(TaskEntity::getSpaceId));
+        for (var entry : grouped.entrySet()) {
+            var ids = entry.getValue().stream().map(row -> row.getId().toString()).distinct().toList();
+            for (int from = 0; from < ids.size(); from += 100) {
+                var result = onlineEvaluation.recordReviewExposure(new OnlineReviewExposureDTO(entry.getKey().toString(), ids.subList(from, Math.min(from + 100, ids.size())), List.of()));
+                if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) { throw new BusinessException(ErrorCode.CONFLICT, "线上知情记录不可用"); }
+            }
+        }
     }
 
     /**

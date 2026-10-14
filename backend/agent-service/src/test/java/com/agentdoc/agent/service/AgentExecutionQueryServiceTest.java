@@ -1,4 +1,5 @@
 package com.agentdoc.agent.service;
+import com.agentdoc.common.feign.OnlineEvaluationFeign;
 
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.mapper.AgentExecutionModelCallMapper;
@@ -31,7 +32,7 @@ class AgentExecutionQueryServiceTest {
     private final AgentExecutionToolCallMapper toolCallMapper = mock(AgentExecutionToolCallMapper.class);
     private final SpaceAccessService spaceAccessService = mock(SpaceAccessService.class);
     private final AgentExecutionQueryService service = new AgentExecutionQueryService(
-            executionMapper, modelCallMapper, toolCallMapper, spaceAccessService);
+            executionMapper, modelCallMapper, toolCallMapper, spaceAccessService, mock(OnlineEvaluationFeign.class));
 
     @Test
     void returnsNullBeforeAgentExecutionIsCreated() {

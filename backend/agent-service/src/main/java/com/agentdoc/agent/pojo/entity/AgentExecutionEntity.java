@@ -98,4 +98,10 @@ public class AgentExecutionEntity extends BaseEntity {
     private LocalDateTime startedAt;
     @Schema(description = "结束时间")
     private LocalDateTime finishedAt;
+    @Schema(description = "线上实验身份") private Long onlineExperimentId;
+    @Schema(description = "线上分配身份") private Long onlineAssignmentId;
+    @Schema(description = "线上绑定版本") private Integer onlineBindingSchemaVersion;
+    @Schema(description = "线上绑定摘要") private String onlineBindingHash;
+    @Schema(description = "执行槽代次") private Long onlineSlotGeneration;
+    @Schema(description = "执行槽证明摘要") private String onlineSlotPermitHash;
 }

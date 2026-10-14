@@ -4,6 +4,8 @@ import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.feign.dto.TaskRecoveryIdentityDTO;
+import com.agentdoc.common.feign.dto.OnlineDispatchIdentityDTO;
+import static com.agentdoc.common.constant.OnlineCapabilityConstant.*;
 import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -26,7 +28,23 @@ class TaskRecoveryVerifierTest {
     private final JwtDecoder decoder = mock(JwtDecoder.class);
     private final TaskRecoveryVerifier verifier = new TaskRecoveryVerifier(decoder, properties);
     private final TaskRecoveryIdentityDTO identity = new TaskRecoveryIdentityDTO(1L, 2L, 3L, 4L, "LIVE", 1L,
-            "a".repeat(64), 1, "b".repeat(64), null);
+            "a".repeat(64), 1, "b".repeat(64), null, null);
+
+    @Test
+    void recoveryRetainsAllOnlineFieldsAndRejectsStrippedOrChangedGeneration() {
+        var dispatch = new OnlineDispatchIdentityDTO("11", "61", 2, "c".repeat(64), 3L, "d".repeat(64));
+        var online = new TaskRecoveryIdentityDTO(1L, 2L, 3L, 4L, "LIVE", 1L, "a".repeat(64), 1, "b".repeat(64), null, dispatch);
+        var jwt = token(false, claims -> online.toClaims().forEach((key, value) -> { if (value != null) { claims.put(key, value); } }));
+        verifier.requireIdentity(jwt, online);
+        assertThatThrownBy(() -> verifier.requireIdentity(jwt, identity)).isInstanceOf(JwtException.class);
+        for (String field : List.of(EXPERIMENT_ID, ASSIGNMENT_ID, BINDING_SCHEMA, BINDING_HASH, SLOT_GENERATION, SLOT_PERMIT_HASH)) {
+            var changed = token(false, claims -> {
+                online.toClaims().forEach((key, value) -> { if (value != null) { claims.put(key, value); } });
+                claims.remove(field);
+            });
+            assertThatThrownBy(() -> verifier.requireIdentity(changed, online)).isInstanceOf(JwtException.class);
+        }
+    }
 
     @Test
     void defaultsDisabledAndEmergencySwitchRejectsAnOtherwiseValidCapability() {

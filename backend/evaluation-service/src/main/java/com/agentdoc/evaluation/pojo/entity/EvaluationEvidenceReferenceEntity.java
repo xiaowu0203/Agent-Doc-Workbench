@@ -11,6 +11,11 @@ import lombok.EqualsAndHashCode;
 @TableName("evaluation_evidence_reference")
 @Schema(description = "评估证据最小引用")
 public class EvaluationEvidenceReferenceEntity extends BaseEntity {
+    @Schema(description = "主体类型 CASE_ATTEMPT/ONLINE_TASK") private String subjectType = "CASE_ATTEMPT";
+    @Schema(description = "线上分配身份，离线为空") private Long onlineAssignmentId;
+    @Schema(description = "线上评价尝试身份，离线为空") private Long onlineEvaluationAttemptId;
+    @Schema(description = "线上 Task 身份，离线为空") private Long taskId;
+    @Schema(description = "线上 Execution 身份，离线为空") private Long executionId;
     @Schema(description = "CaseAttempt ID") private Long caseAttemptId;
     @Schema(description = "EvaluationResult ID；执行型证据可为空") private Long resultId;
     @Schema(description = "所属空间 ID") private Long spaceId;

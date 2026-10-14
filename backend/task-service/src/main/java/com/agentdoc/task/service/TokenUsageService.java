@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -109,7 +110,8 @@ public class TokenUsageService {
         // 终态恢复仍须为该 execution 留下完整价格/身份账本；全缺失用量保留 NULL，不跳过或伪装成 0。
 
         // 计算本次总消耗token：输入+输出；任一为null则总消耗为null，不强行填充0
-        Long used = input == null || output == null ? null : input + output;
+        BigInteger actual = input == null || output == null ? null : BigInteger.valueOf(input).add(BigInteger.valueOf(output));
+        Long used = actual == null || actual.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0 ? null : actual.longValueExact();
 
         // 估算本次调用成本，输入输出任意为空则成本为null
         BigDecimal cost = input == null || output == null
@@ -138,7 +140,7 @@ public class TokenUsageService {
         task.setTokensEstimated(estimated);
 
         // 仅当任务配置了预算、且本次总消耗token不为null，才执行预算判断
-        if (task.getTokenBudget() != null && used != null && used > task.getTokenBudget()) {
+        if (task.getTokenBudget() != null && actual != null && actual.compareTo(BigInteger.valueOf(task.getTokenBudget())) > 0) {
             // 预算超限：修改任务状态为终止，写入错误提示、记录结束时间
             int terminated = taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
                     .eq(TaskEntity::getId, task.getId())

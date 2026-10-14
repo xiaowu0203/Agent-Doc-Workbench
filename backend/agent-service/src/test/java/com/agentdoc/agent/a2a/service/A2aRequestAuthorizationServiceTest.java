@@ -1,5 +1,6 @@
 package com.agentdoc.agent.a2a.service;
 
+import com.agentdoc.agent.service.OnlineAgentAdmissionService;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.context.TaskCapabilityContext;
@@ -34,7 +35,7 @@ class A2aRequestAuthorizationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new A2aRequestAuthorizationService(new ObjectMapper(), mock(AgentExecutionMapper.class));
+        service = new A2aRequestAuthorizationService(new ObjectMapper(), mock(AgentExecutionMapper.class), mock(OnlineAgentAdmissionService.class));
         TaskCapabilityContext.set(CAPABILITY);
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(capabilityJwt()));
     }
@@ -97,7 +98,7 @@ class A2aRequestAuthorizationServiceTest {
                 TaskExecutionMode.LIVE.name(), 5L, "a".repeat(64), 1, "b".repeat(64),
                 derivationRequestHash, null, null, null, null,
                 null, null, null,
-                "http://task-service/mcp", capability);
+                "http://task-service/mcp", capability, null);
     }
 
     private MessageSendParams params(AgentTaskInputDTO input) {

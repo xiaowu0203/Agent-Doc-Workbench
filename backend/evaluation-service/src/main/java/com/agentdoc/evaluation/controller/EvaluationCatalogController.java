@@ -2,6 +2,10 @@ package com.agentdoc.evaluation.controller;
 
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.evaluation.pojo.dto.DatasetCaseBindingsDTO;
 import com.agentdoc.evaluation.pojo.dto.DatasetVersionCreateDTO;
@@ -15,6 +19,7 @@ import com.agentdoc.evaluation.pojo.dto.TestCaseVersionCreateDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.param.EvaluationResourceSearchParam;
 import com.agentdoc.evaluation.pojo.param.EvaluationVersionSearchParam;
+import com.agentdoc.evaluation.pojo.param.EvaluatorPublishedSearchParam;
 import com.agentdoc.evaluation.pojo.vo.DatasetVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationDatasetVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVO;
@@ -34,6 +39,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
 
 @Tag(name = "评估资源版本管理")
 @RequireLogin
@@ -42,6 +48,25 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class EvaluationCatalogController {
     private final EvaluationCatalogService catalogService;
+
+    @Operation(summary = "批量核验同空间已发布版本及父资源，任一不可用则拒绝")
+    @PostMapping("/evaluator-versions/published-query")
+    public Result<List<EvaluatorVersionVO>> publishedEvaluatorVersions(@RequestBody String json) {
+        try {
+            var node = OnlineProtocolUtils.object(json);
+            if (!node.path("spaceId").isTextual() || !node.path("versionIds").isArray()) {
+                throw new IllegalArgumentException();
+            }
+            for (var value : node.path("versionIds")) {
+                if (!value.isTextual()) {
+                    throw new IllegalArgumentException();
+                }
+            }
+            return Result.ok(catalogService.publishedEvaluatorVersions(JsonUtils.parseStrict(json, EvaluatorPublishedSearchParam.class)));
+        } catch (IllegalArgumentException invalid) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "发布版本ID须为十进制文本");
+        }
+    }
 
     @Operation(summary = "数据集分页搜索", description = "按名称、标签、空间等条件检索数据集列表，返回分页结果")
     @PostMapping("/datasets/search")

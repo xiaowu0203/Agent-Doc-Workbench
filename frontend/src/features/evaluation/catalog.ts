@@ -22,6 +22,13 @@ export const EVALUATOR_GUIDES = [
   { key: 'audit-ledger-integrity', label: '审计与账本完整性', example: '{}' },
 ] as const
 
+/** 线上评估器发布空配置，文档 expected 随实验冻结；不进入离线绑定候选。 */
+export const ONLINE_EVALUATOR_GUIDES = [
+  { key: 'online-original-text-assertion', label: '线上原始文本断言', example: '{}' },
+  { key: 'online-document-change-validator', label: '线上原始变更校验', example: '{}' },
+] as const
+export const ALL_EVALUATOR_GUIDES = [...EVALUATOR_GUIDES, ...ONLINE_EVALUATOR_GUIDES]
+
 export function formatJson(value: string): string {
   return JSON.stringify(JSON.parse(value), null, 2)
 }

@@ -8,6 +8,9 @@ import com.agentdoc.common.feign.vo.ChangeRequestFeedbackSnapshotVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
+import com.agentdoc.common.utils.OnlineApprovalDifferenceUtils;
+import com.agentdoc.common.utils.OnlineProtocolUtils;
+import com.agentdoc.evaluation.mapper.OnlineAssignmentMapper;
 import com.agentdoc.evaluation.enums.EvaluationEvidenceType;
 import com.agentdoc.evaluation.enums.EvaluationFeedbackLabel;
 import com.agentdoc.evaluation.enums.EvaluationFeedbackSourceType;
@@ -30,6 +33,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.Objects;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_RUN;
@@ -49,6 +53,7 @@ public class EvaluationFeedbackService {
     private final EvaluationResultMapper resultMapper;
     private final SpaceAccessService spaceAccessService;
     private final TaskFeign taskFeign;
+    private final OnlineAssignmentMapper onlineAssignments;
 
     /**
      * 创建人工评估反馈
@@ -56,6 +61,7 @@ public class EvaluationFeedbackService {
      */
     @Transactional
     public EvaluationFeedbackVO create(EvaluationFeedbackCreateDTO request) {
+        if (request.onlineQuality() != null) { throw new BusinessException(ErrorCode.BAD_REQUEST, "线上质量反馈须经原始证据校验入口"); }
         spaceAccessService.requirePermission(request.spaceId(), EVALUATION_RUN);
         FeedbackTarget target = resolveTarget(request);
         EvaluationFeedbackEntity entity = new EvaluationFeedbackEntity();
@@ -88,6 +94,7 @@ public class EvaluationFeedbackService {
         ChangeRequestFeedbackSnapshotVO snapshot = requireData(
                 taskFeign.getChangeRequestFeedbackSnapshot(changeRequestId));
         spaceAccessService.requirePermission(snapshot.spaceId(), EVALUATION_RUN);
+        requireOnlineApproval(snapshot);
         EvaluationFeedbackEntity existing = feedbackMapper.selectOne(
                 new LambdaQueryWrapper<EvaluationFeedbackEntity>()
                         .eq(EvaluationFeedbackEntity::getSourceType,
@@ -98,7 +105,8 @@ public class EvaluationFeedbackService {
         if (existing != null) {
             return EvaluationFeedbackVO.from(existing);
         }
-        FeedbackTarget target = resolveTaskTarget(snapshot.spaceId(), snapshot.taskId(), snapshot.executionId(), false);
+        FeedbackTarget target = snapshot.onlineApprovalDifference() == null
+                ? resolveTaskTarget(snapshot.spaceId(), snapshot.taskId(), snapshot.executionId(), false) : null;
         EvaluationFeedbackEntity entity = new EvaluationFeedbackEntity();
         entity.setId(IdWorker.getId());
         entity.setSpaceId(snapshot.spaceId());
@@ -110,16 +118,47 @@ public class EvaluationFeedbackService {
         entity.setSourceBusinessId(String.valueOf(changeRequestId));
         entity.setSourceHash(snapshot.sourceHash());
         entity.setLabel(label(snapshot.status()).name());
-        entity.setFactsJson(JsonUtils.toJson(Map.of(
+        var facts = new LinkedHashMap<String, Object>(Map.of(
                 "status", snapshot.status(),
                 "resolutionType", value(snapshot.resolutionType()),
                 "reviewCommentHash", value(snapshot.reviewCommentHash()),
                 "reviewedBy", value(snapshot.reviewedBy()),
                 "reviewedAt", snapshot.reviewedAt() == null ? "" : snapshot.reviewedAt().toString(),
-                "revisionNo", value(snapshot.revisionNo()))));
+                "revisionNo", value(snapshot.revisionNo())));
+        if (snapshot.onlineApprovalDifference() != null) {
+            var difference = snapshot.onlineApprovalDifference();
+            entity.setOnlineAssignmentId(OnlineProtocolUtils.id(difference.input().assignmentId()));
+            entity.setOriginalEvidenceId(snapshot.changeRequestId());
+            entity.setOriginalEvidenceHash(difference.originalEvidenceHash());
+            facts.put("onlineApprovalDifference", difference);
+        }
+        entity.setFactsJson(JsonUtils.toJson(facts));
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         feedbackMapper.insert(entity);
         return EvaluationFeedbackVO.from(entity);
+    }
+
+    /** 审批只是独立过程证据；不会生成 rubric/盲态分数或覆盖原始规则评价。 */
+    private void requireOnlineApproval(ChangeRequestFeedbackSnapshotVO snapshot) {
+        var difference = snapshot.onlineApprovalDifference();
+        if (difference == null) { return; }
+        if (!OnlineApprovalDifferenceUtils.valid(difference) || !Objects.equals(snapshot.sourceHash(), OnlineApprovalDifferenceUtils.feedbackHash(snapshot))
+                || !Objects.equals(snapshot.changeRequestId().toString(), difference.changeRequestId())
+                || !Objects.equals(snapshot.spaceId().toString(), difference.input().spaceId())
+                || snapshot.taskId() == null || !Objects.equals(snapshot.taskId().toString(), difference.input().taskId())
+                || snapshot.executionId() == null || !Objects.equals(snapshot.executionId().toString(), difference.input().executionId())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "线上审批反馈身份不一致");
+        }
+        var input = difference.input();
+        var assignment = onlineAssignments.selectById(OnlineProtocolUtils.id(input.assignmentId()));
+        if (assignment == null || !Integer.valueOf(OnlineProtocolUtils.SCHEMA_VERSION).equals(assignment.getBindingSchemaVersion())
+                || !Objects.equals(assignment.getSpaceId(), snapshot.spaceId()) || !Objects.equals(assignment.getTaskId(), snapshot.taskId())
+                || !Objects.equals(assignment.getExecutionId(), snapshot.executionId()) || !Objects.equals(assignment.getBindingHash(), input.bindingHash())
+                || !Objects.equals(assignment.getExperimentId(), OnlineProtocolUtils.id(input.experimentId()))
+                || !Objects.equals(assignment.getAgentId(), OnlineProtocolUtils.id(input.agentId()))
+                || !Objects.equals(assignment.getDocumentId(), OnlineProtocolUtils.id(input.documentId()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "线上审批反馈分配不一致");
+        }
     }
 
     /**

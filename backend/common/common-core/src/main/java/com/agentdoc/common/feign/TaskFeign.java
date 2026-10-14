@@ -1,6 +1,8 @@
 package com.agentdoc.common.feign;
+import com.agentdoc.common.feign.vo.OnlineReviewGoalVO;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.feign.vo.OnlineApprovalSourceVO;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.feign.dto.DocumentVersionRollbackAuditDTO;
 import com.agentdoc.common.feign.dto.DocumentVersionSourceQueryDTO;
@@ -31,11 +33,40 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.http.HttpHeaders;
+import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
+import com.agentdoc.common.feign.vo.OnlineOriginalChangesVO;
+import com.agentdoc.common.feign.vo.OnlineOriginalProposalPayloadVO;
 
 import java.util.List;
 
 @FeignClient(name = "task-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface TaskFeign {
+    @GetMapping("/api/task/tasks/{taskId}/online-review-goal")
+    Result<OnlineReviewGoalVO> getOnlineReviewGoal(@PathVariable Long taskId, @RequestParam Long spaceId, @RequestParam Long executionId);
+
+    /** 当前人类授权后的全部原始提案 JSON；不读取审批编辑载荷。 */
+    @GetMapping("/api/task/tasks/{taskId}/online-original-proposal-payloads")
+    Result<OnlineOriginalProposalPayloadVO> getOnlineOriginalProposalPayloads(@PathVariable Long taskId,
+            @RequestParam Long spaceId, @RequestParam Long executionId);
+
+    /** 当前人类可读的真实原始审批来源，不从当前 changes 回填。 */
+    @GetMapping("/api/task/change-requests/{id}/online-approval-source")
+    Result<OnlineApprovalSourceVO> getOnlineApprovalSource(@PathVariable Long id);
+
+    /** 当前人类授权后的原始变更冻结输入；不返回正文或分组。 */
+    @GetMapping("/api/task/tasks/{taskId}/online-original-input")
+    Result<OnlineOriginalInputVO> getOnlineOriginalInput(@PathVariable Long taskId,
+            @RequestParam Long spaceId, @RequestParam Long executionId);
+
+    /** 当前人类授权后的完整 LIVE 原始变更集合。 */
+    @GetMapping("/api/task/tasks/{taskId}/online-original-changes")
+    Result<OnlineOriginalChangesVO> getOnlineOriginalChanges(@PathVariable Long taskId,
+            @RequestParam Long spaceId, @RequestParam Long executionId);
+
+    /** 当前人类原始证据授权；只返回允许/拒绝，不返回正文。 */
+    @GetMapping("/api/task/tasks/{taskId}/original-evidence-permission")
+    Result<Void> checkOriginalEvidencePermission(@PathVariable Long taskId,
+            @RequestParam Long spaceId, @RequestParam Long executionId);
 
     /**
      * 检查任务是否具备执行能力。

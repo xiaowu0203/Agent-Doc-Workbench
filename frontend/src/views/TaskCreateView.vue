@@ -6,8 +6,15 @@
         ><el-button :loading="saving" @click="saveDraft">保存草稿</el-button></template
       ></PageHeader
     >
+    <OnlineParticipationNotice :space-id="spaceId" creation />
+    <el-alert
+      v-if="responseMissing"
+      type="warning"
+      :closable="false"
+      title="未取得任务创建成功响应。保持原内容重试会核对并复用同一次请求；修改内容会发起新任务，上次请求可能已经创建。"
+    />
     <div class="create-layout">
-      <el-form class="create-form" label-position="top">
+      <el-form class="create-form" label-position="top" :disabled="creating">
         <article class="form-section surface-card">
           <h2><b>1</b>任务目标</h2>
           <el-form-item label="任务名称" required
@@ -273,12 +280,13 @@ import { normalizeApiError } from '@/api/errors'
 import { getDocument, listDocumentTree } from '@/features/document/api/document-api'
 import type { DocumentTreeNode } from '@/features/document/types'
 import {
-  createTask,
   getTaskCreateOptions,
   getTaskDraft,
   saveTaskDraft,
   updateTaskDraft,
 } from '@/features/task/api/task-api'
+import { useTaskCreation } from '@/features/task/use-task-creation'
+import OnlineParticipationNotice from '@/features/evaluation/online/OnlineParticipationNotice.vue'
 import type {
   TaskCreateOptions,
   TaskDraft,
@@ -289,6 +297,7 @@ import type { EntityId } from '@/features/workspace/types'
 import DataState from '@/shared/components/DataState.vue'
 import PageHeader from '@/shared/components/PageHeader.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 
 const route = useRoute(),
   router = useRouter(),
@@ -315,7 +324,6 @@ const documents = ref<DocumentTreeNode[]>([]),
   options = ref<TaskCreateOptions | null>(null),
   optionsLoading = ref(false),
   optionsError = ref(''),
-  creating = ref(false),
   saving = ref(false),
   draftId = ref<EntityId | null>(null),
   documentContent = ref(''),
@@ -329,6 +337,20 @@ const documents = ref<DocumentTreeNode[]>([]),
   pendingInstruction = ref(''),
   showAllFocusRegions = ref(false)
 let controller: AbortController | null = null
+const {
+  pending: creating,
+  responseMissing,
+  create: createRequestedTask,
+} = useTaskCreation(
+  () => ({
+    ...payload(),
+    agentId: form.agentId!,
+    documentId: form.documentId!,
+  }),
+  () =>
+    String(workspace.currentSpaceId) === spaceId.value &&
+    workspace.hasPermission(SPACE_PERMISSIONS.TASK_CREATE),
+)
 const selectedDocument = computed(() =>
     documents.value.find((x) => String(x.id) === String(form.documentId)),
   ),
@@ -508,6 +530,7 @@ function payload() {
   }
 }
 async function submit() {
+  if (creating.value) return
   if (!form.documentId || !form.agentId || !form.name.trim() || !form.instruction.trim()) {
     ElMessage.warning('请完整填写任务名称、目标文档、Agent 和目标描述')
     return
@@ -516,15 +539,13 @@ async function submit() {
     ElMessage.warning('请至少添加一个可读取区域')
     return
   }
-  creating.value = true
   try {
-    const task = await createTask(payload() as Parameters<typeof createTask>[0])
+    const task = await createRequestedTask()
+    if (!task) return
     ElMessage.success(`任务 ${task.taskNo} 已创建`)
     await router.push(`/spaces/${spaceId.value}/tasks/${task.id}`)
   } catch (e) {
     ElMessage.error(normalizeApiError(e).message)
-  } finally {
-    creating.value = false
   }
 }
 async function saveDraft() {

@@ -13,6 +13,7 @@ import com.agentdoc.evaluation.mapper.EvaluationEvidenceReferenceMapper;
 import com.agentdoc.evaluation.mapper.EvaluationMetricEvidenceMapper;
 import com.agentdoc.evaluation.mapper.EvaluationMetricMapper;
 import com.agentdoc.evaluation.metric.EvaluationMetricFactory;
+import com.agentdoc.evaluation.metric.EvaluationSubjectValidator;
 import com.agentdoc.evaluation.metric.MetricWriteContext;
 import com.agentdoc.evaluation.metric.StandardMetricValue;
 import com.agentdoc.evaluation.pojo.entity.EvaluationCaseAttemptEntity;
@@ -71,6 +72,7 @@ public class ExecutionMetricWriteService {
         List<EvaluationMetricEntity> existing = metricMapper.selectList(
                 new LambdaQueryWrapper<EvaluationMetricEntity>()
                         .eq(EvaluationMetricEntity::getSource, EvaluationMetricSource.EXECUTION.name())
+                        .eq(EvaluationMetricEntity::getSubjectType, "CASE_ATTEMPT")
                         .eq(EvaluationMetricEntity::getProducerId, attempt.getId()));
         if (!existing.isEmpty()) {
             return existing.stream().map(EvaluationMetricEntity::getId).toList();
@@ -89,6 +91,8 @@ public class ExecutionMetricWriteService {
                 .map(value -> EvaluationMetricFactory.create(context, value.value())).toList();
 
         // 3. 入库：证据引用、指标、指标与证据关联表
+        evidence.values().forEach(EvaluationSubjectValidator::validate);
+        metrics.forEach(EvaluationSubjectValidator::validate);
         if (!evidence.isEmpty()) {
             evidenceMapper.insertBatch(List.copyOf(evidence.values()));
         }

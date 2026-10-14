@@ -64,6 +64,14 @@
         </dependency>
         <dependency>
             <groupId>com.agentdoc</groupId>
+            <artifactId>agent-doc-common-security-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.agentdoc</groupId>
+            <artifactId>agent-doc-common-feign-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.agentdoc</groupId>
             <artifactId>agent-doc-common-springdoc-spring-boot-starter</artifactId>
         </dependency>
         <dependency>

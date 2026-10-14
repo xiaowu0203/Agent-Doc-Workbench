@@ -8,6 +8,12 @@ import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.OnlineProtocolUtils;
+import com.agentdoc.evaluation.pojo.param.EvaluatorPublishedSearchParam;
+import com.agentdoc.evaluation.evaluator.OnlineRuleContractValidator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
+import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
+import com.agentdoc.common.enums.OnlineReasonCode;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
@@ -67,6 +73,7 @@ import java.util.stream.Collectors;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_EVALUATORS;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_SCHEMA_VERSION;
 
 /**
@@ -88,6 +95,33 @@ import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_S
 @Service
 @RequiredArgsConstructor
 public class EvaluationCatalogService {
+
+    public List<EvaluatorVersionVO> publishedEvaluatorVersions(EvaluatorPublishedSearchParam param) {
+        param.validate();
+        long spaceId = OnlineProtocolUtils.id(param.getSpaceId());
+        spaceAccessService.requirePermission(spaceId, EVALUATION_READ);
+        return availableEvaluatorVersions(spaceId, param.getVersionIds().stream().map(OnlineProtocolUtils::id).toList())
+                .stream().map(EvaluatorVersionVO::from).toList();
+    }
+
+    /** 同领域新建引用复用；调用者已经检查自身动作权限，历史读取不使用此门禁。 */
+    List<EvaluatorVersionEntity> availableEvaluatorVersions(Long spaceId, List<Long> versionIds) {
+        var ids = versionIds.stream().distinct().toList();
+        var rows = evaluatorVersionMapper.selectBatchIds(ids);
+        var parents = rows.isEmpty() ? Map.<Long, EvaluatorEntity>of() : evaluatorMapper.selectBatchIds(
+                rows.stream().map(EvaluatorVersionEntity::getEvaluatorId).distinct().toList()).stream()
+                .collect(Collectors.toMap(EvaluatorEntity::getId, Function.identity()));
+        if (rows.size() != ids.size() || rows.stream().anyMatch(row -> {
+            var parent = parents.get(row.getEvaluatorId());
+            return parent == null || Boolean.TRUE.equals(parent.getArchived()) || !spaceId.equals(parent.getSpaceId())
+                    || !spaceId.equals(row.getSpaceId()) || !row.getEvaluatorKey().equals(parent.getEvaluatorKey())
+                    || !EvaluationVersionStatus.PUBLISHED.name().equals(row.getStatus()) || row.getContentHash() == null
+                    || !row.getContentHash().equals(StableSnapshotUtils.snapshotHash(CONTENT_HASH_SCHEMA_VERSION,
+                        new EvaluatorHash(row.getEvaluatorKey(), row.getConfigSchemaVersion(), JsonUtils.parse(row.getConfigJson(), Object.class),
+                            row.getResultSchemaVersion(), row.getImplementationVersion())));
+        })) { throw new BusinessException(ErrorCode.CONFLICT, "评估器版本或父资源已失效，请重新选择"); }
+        return rows;
+    }
 
     private final EvaluationDatasetMapper datasetMapper;
     private final EvaluationDatasetVersionMapper datasetVersionMapper;
@@ -634,6 +668,9 @@ public class EvaluationCatalogService {
             // 优先取绑定行上的预期；为空则回退到用例版本全局 expectedJson
             String expectedJson = binding.getExpectedJson() == null || binding.getExpectedJson().isBlank()
                     ? version.getExpectedJson() : binding.getExpectedJson();
+            if (OnlineRuleContractValidator.onlineOnly(evaluatorVersion.getEvaluatorKey())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, OnlineReasonCode.ONLINE_RULE_NOT_OFFLINE_COMPATIBLE.name());
+            }
             evaluatorContractValidator.validateExpected(evaluatorVersion.getEvaluatorKey(), expectedJson);
         }
         Object expected = JsonUtils.parse(version.getExpectedJson(), Object.class);
@@ -702,7 +739,9 @@ public class EvaluationCatalogService {
         entity.setConfigSchemaVersion(dto.configSchemaVersion());
         entity.setConfigJson(dto.configJson());
         entity.setResultSchemaVersion(dto.resultSchemaVersion());
-        entity.setImplementationVersion("phase3-v1");
+        entity.setImplementationVersion(OnlineRuleContractValidator.TEXT.equals(evaluator.getEvaluatorKey())
+                ? OnlineOriginalTextEvaluator.IMPLEMENTATION_VERSION
+                : OnlineRuleContractValidator.CHANGE.equals(evaluator.getEvaluatorKey()) ? OnlineOriginalChangeEvaluator.IMPLEMENTATION_VERSION : BUILT_IN_IMPLEMENTATION_VERSION);
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         evaluatorVersionMapper.insert(entity);
         return EvaluatorVersionVO.from(entity);

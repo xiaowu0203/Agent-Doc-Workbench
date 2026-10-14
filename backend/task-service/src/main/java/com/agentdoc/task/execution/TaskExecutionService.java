@@ -19,6 +19,7 @@ import com.agentdoc.task.pojo.entity.TaskEntity;
 import com.agentdoc.task.service.AuditLogService;
 import com.agentdoc.task.service.TaskMessagePublisher;
 import com.agentdoc.task.service.TaskService;
+import com.agentdoc.task.service.TaskOnlineDispatchService;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.rabbitmq.client.Channel;
 import lombok.RequiredArgsConstructor;
@@ -52,6 +53,7 @@ public class TaskExecutionService {
     private final TaskMessagePublisher messagePublisher;
     private final RedisUtils redisUtils;
     private final AuditLogService auditLogService;
+    private final TaskOnlineDispatchService onlineDispatch;
 
     /**
      * RabbitMQ任务队列消费入口
@@ -107,6 +109,8 @@ public class TaskExecutionService {
         }
 
         try {
+            // 同组等待不改变 Task 状态、不消耗失败重试次数。取槽 RPC 不持数据库事务。
+            if (task.getOnlineAssignmentId() != null && !onlineDispatch.prepareDispatch(task)) { channel.basicAck(tag, false); return; }
             // 数据库乐观锁：将任务状态由 PENDING 更新为 DISPATCHED，并记录开始时间
             if (!markDispatched(task)) {
                 channel.basicAck(tag, false);
@@ -167,14 +171,30 @@ public class TaskExecutionService {
         // 将remoteTask信息回填到task中
         A2aTaskConvertor.apply(task, remoteTask);
         // 更新任务
-        taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>()
+        var update = new LambdaUpdateWrapper<TaskEntity>()
                 .eq(TaskEntity::getId, task.getId())
                 .isNull(TaskEntity::getA2aTaskId)
                 .set(TaskEntity::getA2aTaskId, task.getA2aTaskId())
                 .set(TaskEntity::getA2aContextId, task.getA2aContextId())
-                .set(TaskEntity::getStatus, task.getStatus())
                 .set(TaskEntity::getDispatchedAt, LocalDateTime.now())
-                .set(TaskEntity::getLastHeartbeatAt, task.getLastHeartbeatAt()));
+                .set(TaskEntity::getLastHeartbeatAt, task.getLastHeartbeatAt());
+        if (task.getOnlineAssignmentId() == null) {
+            update.set(TaskEntity::getStatus, task.getStatus());
+        }
+        taskMapper.update(null, update);
+        if (task.getOnlineAssignmentId() != null) {
+            // 迟到的派发响应不得覆盖并发取消/终态；远端状态仍由既有同步链路收敛。
+            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>().eq(TaskEntity::getId, task.getId())
+                    .eq(TaskEntity::getA2aTaskId, task.getA2aTaskId()).eq(TaskEntity::getStatus, TaskStatus.DISPATCHED.getCode())
+                    .set(TaskEntity::getStatus, task.getStatus()));
+        }
+    }
+
+    /** 补发原 DISPATCHED 身份，Agent 唯一 Workbench Task 去重；不重置状态或重建 Task。 */
+    public void repairOnlineDispatch(Long taskId) {
+        var task = taskService.require(taskId);
+        if (task.getOnlineAssignmentId() == null || !TaskStatus.DISPATCHED.getCodeEquals(task.getStatus()) || task.getA2aTaskId() != null) { return; }
+        if (onlineDispatch.prepareDispatch(task)) { execute(taskService.require(taskId), null); }
     }
 
     /**
@@ -215,6 +235,13 @@ public class TaskExecutionService {
         if (TaskStatus.fromCode(task.getStatus()) == TaskStatus.TERMINATED) {
             channel.basicAck(tag, false);
             return;
+        }
+        // 线上协议查证/授权失败不是一次新执行失败；不把缺失事实改成终态或释放槽。
+        if (task.getOnlineAssignmentId() != null) {
+            taskMapper.update(null, new LambdaUpdateWrapper<TaskEntity>().eq(TaskEntity::getId, taskId)
+                    .set(TaskEntity::getErrorMessage, "ONLINE_FACT_UNKNOWN"));
+            log.warn("线上 Task 派发待权威查证，taskId={} failureType={}", taskId, ex.getClass().getSimpleName());
+            channel.basicAck(tag, false); return;
         }
         int retries = task.getRetryCount() == null ? 0 : task.getRetryCount();
 

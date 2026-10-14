@@ -13,12 +13,18 @@ import { useAuthStore } from '@/stores/auth'
 import { useWorkspaceStore } from '@/stores/workspace'
 
 const spaceId = '2104855879319314433'
-const paths = ['evaluators', 'test-cases', 'datasets', 'runs', 'experiments'].flatMap(
-  (resource) => [
-    `/spaces/${spaceId}/evaluation/${resource}`,
-    `/spaces/${spaceId}/evaluation/${resource}/2104902086192304129`,
-  ],
-)
+const paths = [
+  'evaluators',
+  'test-cases',
+  'datasets',
+  'runs',
+  'experiments',
+  'online-experiments',
+].flatMap((resource) => [
+  `/spaces/${spaceId}/evaluation/${resource}`,
+  `/spaces/${spaceId}/evaluation/${resource}/2104902086192304129`,
+])
+paths.push(`/spaces/${spaceId}/evaluation/online-experiments/2104902086192304129/review`)
 
 function testRouter(guarded = true) {
   const router = createRouter({

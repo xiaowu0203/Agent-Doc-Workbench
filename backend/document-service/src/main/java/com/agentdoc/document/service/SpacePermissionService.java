@@ -1,4 +1,5 @@
 package com.agentdoc.document.service;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
@@ -34,6 +35,11 @@ import java.util.List;
 import java.util.Set;
 
 import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_RUN;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_CREATE;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_TERMINATE;
+import static com.agentdoc.common.enums.OnlineReasonCode.OWNER_REQUIRED;
+import static com.agentdoc.common.enums.OnlineReasonCode.RESOURCE_FORBIDDEN;
 import static com.agentdoc.document.constant.DefaultSpaceRoleConstant.OWNER;
 
 /**
@@ -201,6 +207,27 @@ public class SpacePermissionService {
         SpaceRoleEntity role = requireMemberRole(spaceId);
         if (!OWNER.equals(role.getRoleKey())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "需要空间所有者权限");
+        }
+    }
+
+    /** 线上保护复查签名授权人的真实成员权限；不模拟当前用户、不采用平台超管兜底。 */
+    public void requireOnlineProtectionPermission(Long spaceId, Long authorizedBy) {
+        SpaceRoleEntity role = getMemberRole(spaceId, authorizedBy);
+        if (role == null || !spaceId.equals(role.getSpaceId()) || !OWNER.equals(role.getRoleKey())
+                || !Boolean.TRUE.equals(role.getProtectedRole())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, OWNER_REQUIRED.name());
+        }
+        List<String> permissions = loadRolePermissions(role.getId());
+        if (!permissions.containsAll(List.of(EVALUATION_RUN, TASK_TERMINATE))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, RESOURCE_FORBIDDEN.name());
+        }
+    }
+
+    /** 凭证中的原操作者仍须是当前成员；不设置或模拟 SecurityContext。 */
+    public void requireOnlineTaskCreatePermission(Long spaceId, Long actorId) {
+        var role = getMemberRole(spaceId, actorId);
+        if (role == null || !spaceId.equals(role.getSpaceId()) || !loadRolePermissions(role.getId()).containsAll(List.of(TASK_CREATE, DOCUMENT_READ))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, RESOURCE_FORBIDDEN.name());
         }
     }
 

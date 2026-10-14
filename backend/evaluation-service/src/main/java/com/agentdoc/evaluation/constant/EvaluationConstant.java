@@ -21,6 +21,9 @@ public final class EvaluationConstant {
      */
     public static final int METRIC_CONTRACT_VERSION = 1;
 
+    /** 已发布的六类内置确定性规则实现版本。 */
+    public static final String BUILT_IN_IMPLEMENTATION_VERSION = "phase3-v1";
+
     /**
      * 数据集最大用例数量上限，限制单次评估数据集规模
      */
@@ -51,7 +54,8 @@ public final class EvaluationConstant {
      */
     public static final Set<String> BUILT_IN_EVALUATORS = Set.of(
             "task-terminal-status", "artifact-contract", "text-assertion",
-            "document-change-validator", "isolation-invariant", "audit-ledger-integrity");
+            "document-change-validator", "isolation-invariant", "audit-ledger-integrity",
+            "online-original-text-assertion", "online-document-change-validator");
 
     /**
      * 私有构造，禁止实例化常量类

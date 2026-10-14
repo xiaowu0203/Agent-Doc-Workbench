@@ -1,4 +1,5 @@
 package com.agentdoc.task.service;
+import com.agentdoc.common.feign.OnlineEvaluationFeign;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
@@ -110,7 +111,7 @@ class TaskServiceReplayTest {
         replayProperties = new ReplayProperties();
         service = new TaskService(taskMapper, tokenUsageDetailMapper, a2aTaskClient, agentFeign, documentFeign,
                 messagePublisher, cryptoService, authFeign, auditLogService,
-                new ObjectMapper(), taskCapabilityVerifier, replayProperties);
+                new ObjectMapper(), taskCapabilityVerifier, replayProperties, null, mock(TaskOnlineRoutingService.class), mock(TaskOnlineDispatchService.class), mock(OnlineEvaluationFeign.class));
         Jwt jwt = Jwt.withTokenValue("token").header("alg", "RS256").subject("501")
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
@@ -207,7 +208,7 @@ class TaskServiceReplayTest {
             assertThat(properties.getHeaders()).isEmpty();
         }
         TaskExecutionService consumer = new TaskExecutionService(service, taskMapper, a2aTaskClient,
-                messagePublisher, redis, auditLogService);
+                messagePublisher, redis, auditLogService, null);
 
         consumer.consume(replay.getId(), new Message(new byte[0], properties), channel);
 

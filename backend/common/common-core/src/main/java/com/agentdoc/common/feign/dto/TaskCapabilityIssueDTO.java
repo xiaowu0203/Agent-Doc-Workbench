@@ -19,6 +19,7 @@ import java.util.List;
  * @param inputSnapshotHash           输入上下文快照哈希，核心防篡改校验字段
  * @param derivationRequestHash       派生请求哈希，绑定 Replay/Experiment 的冻结派生身份
  * @param actions                     允许的细粒度操作动作集合，最小权限控制
+ * @param onlineIdentity              专用 WAIT 交换产生的线上身份；通用签发入口只接受空值
  */
 public record TaskCapabilityIssueDTO(
         Long taskId,
@@ -31,5 +32,6 @@ public record TaskCapabilityIssueDTO(
         Integer inputSnapshotSchemaVersion,
         String inputSnapshotHash,
         String derivationRequestHash,
-        List<String> actions) {
+        List<String> actions,
+        OnlineDispatchIdentityDTO onlineIdentity) {
 }

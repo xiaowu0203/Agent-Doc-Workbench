@@ -1,5 +1,7 @@
 package com.agentdoc.agent.execution.application;
 
+import com.agentdoc.agent.service.OnlineAgentAdmissionService;
+import com.agentdoc.agent.service.AgentOnlineConfigService;
 import com.agentdoc.agent.config.SkillPackageProperties;
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.convertor.AgentExecutionConvertor;
@@ -47,7 +49,7 @@ class ExecutionPreparationReplayTest {
                 transactionService, persistenceService, mock(SkillSnapshotService.class),
                 mock(SkillSelectionStrategyRegistry.class), mock(PromptService.class),
                 mock(SkillPackageProperties.class), new AgentTelemetry(), executionMapper,
-                mock(AgentCandidateConfigService.class));
+                mock(AgentCandidateConfigService.class), mock(AgentOnlineConfigService.class), mock(OnlineAgentAdmissionService.class));
 
         AgentTaskInputDTO replayInput = input(11L, TaskExecutionMode.ISOLATED.name(), 10L, 9L,
                 source.getExecutionSnapshotHash());
@@ -92,11 +94,11 @@ class ExecutionPreparationReplayTest {
         ExecutionPreparationService service = new ExecutionPreparationService(
                 transactionService, persistenceService, mock(SkillSnapshotService.class),
                 mock(SkillSelectionStrategyRegistry.class), promptService,
-                mock(SkillPackageProperties.class), new AgentTelemetry(), executionMapper, candidateService);
+                mock(SkillPackageProperties.class), new AgentTelemetry(), executionMapper, candidateService, mock(AgentOnlineConfigService.class), mock(OnlineAgentAdmissionService.class));
         AgentTaskInputDTO input = new AgentTaskInputDTO(11L, 1L, 30L, 40L, 1000L,
                 TaskExecutionMode.ISOLATED.name(), 5L, "a".repeat(64), 1, "b".repeat(64),
                 "f".repeat(64), 10L, 9L, 3, source.getExecutionSnapshotHash(), 77L, 3, candidateHash,
-                "http://task-service/mcp", "capability");
+                "http://task-service/mcp", "capability", null);
 
         ExecutionPreparationService.PreparedExecution prepared = service.prepare(
                 "experiment-a2a", "experiment-context", input, "frozen instruction");
@@ -152,6 +154,6 @@ class ExecutionPreparationReplayTest {
                 "a".repeat(64), 1, "b".repeat(64), null, sourceTaskId, sourceExecutionId,
                 sourceHash == null ? null : 3, sourceHash,
                 null, null, null,
-                "http://task-service/mcp", "capability");
+                "http://task-service/mcp", "capability", null);
     }
 }

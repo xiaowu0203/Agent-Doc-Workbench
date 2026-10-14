@@ -8,6 +8,7 @@ import TaskCreateView from './TaskCreateView.vue'
 import * as documentApi from '@/features/document/api/document-api'
 import * as taskApi from '@/features/task/api/task-api'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 
 vi.mock('element-plus', async (importOriginal) => {
   const original = await importOriginal<typeof import('element-plus')>()
@@ -32,6 +33,12 @@ async function mountView() {
   setActivePinia(pinia)
   const workspaceStore = useWorkspaceStore()
   workspaceStore.setCurrentSpace(7)
+  workspaceStore.setEffectivePermissions({
+    spaceId: 7,
+    platformSuperAdmin: false,
+    role: null,
+    permissions: [SPACE_PERMISSIONS.TASK_CREATE],
+  })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -110,16 +117,20 @@ describe('TaskCreateView', () => {
       ?.trigger('click')
     await flushPromises()
 
-    expect(taskApi.createTask).toHaveBeenCalledWith({
-      spaceId: '7',
-      agentId: 23,
-      documentId: 101,
-      name: '系统能力任务回归',
-      instruction: '验证系统模板安装后的空间 Agent 可以创建任务。',
-      tokenBudget: null,
-      readScope: 'FULL',
-      focusRegions: [],
-    })
+    expect(taskApi.createTask).toHaveBeenCalledWith(
+      {
+        spaceId: '7',
+        agentId: 23,
+        documentId: 101,
+        name: '系统能力任务回归',
+        instruction: '验证系统模板安装后的空间 Agent 可以创建任务。',
+        tokenBudget: null,
+        readScope: 'FULL',
+        focusRegions: [],
+        clientRequestKey: expect.any(String),
+      },
+      expect.any(AbortSignal),
+    )
     expect(router.currentRoute.value.path).toBe('/spaces/7/tasks/501')
   })
 })

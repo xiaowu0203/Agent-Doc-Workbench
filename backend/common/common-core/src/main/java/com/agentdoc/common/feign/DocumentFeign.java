@@ -15,6 +15,11 @@ import com.agentdoc.common.feign.vo.DocumentVersionExecutionContextVO;
 import com.agentdoc.common.feign.vo.MergeResultVO;
 import com.agentdoc.common.feign.vo.SpaceBudgetVO;
 import com.agentdoc.common.feign.vo.SpaceUsageBudgetVO;
+import com.agentdoc.common.feign.vo.OnlineChangePreviewVO;
+import com.agentdoc.common.feign.vo.OnlineApprovalDifferenceVO;
+import com.agentdoc.common.feign.vo.OnlineOriginalChangesVO;
+import com.agentdoc.common.feign.vo.OnlineProposalReviewPreviewVO;
+import com.agentdoc.common.feign.dto.OnlineProposalPreviewBatchDTO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +28,27 @@ import java.util.List;
 @FeignClient(name = "document-service",
         url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface DocumentFeign {
+
+    /** 完整冻结输入上的全部提案正文预览；不写入文档，不证明提案来源。 */
+    @PostMapping("/api/document/documents/online-change-review-preview")
+    Result<OnlineProposalReviewPreviewVO> previewOnlineChangesForReview(@RequestBody OnlineProposalPreviewBatchDTO request);
+
+    /** 从实际原始提案与唯一审批合并快照取得独立差异。 */
+    @GetMapping("/api/document/documents/online-approval-differences/{changeRequestId}")
+    Result<OnlineApprovalDifferenceVO> getOnlineApprovalDifference(@PathVariable Long changeRequestId);
+
+    /** 当前人类对冻结输入的只读变更预览，不返回正文。 */
+    @PostMapping("/api/document/documents/online-change-preview")
+    Result<List<OnlineChangePreviewVO>> previewOnlineChanges(@RequestBody OnlineProposalPreviewBatchDTO request);
+
+    /** 从不可变 AGENT_DRAFT 版本取得原始收尾证据，复核当前 Task/文档权限。 */
+    @GetMapping("/api/document/documents/online-original-drafts/tasks/{taskId}")
+    Result<OnlineOriginalChangesVO> getOnlineOriginalDraft(@PathVariable Long taskId,
+            @RequestParam Long spaceId, @RequestParam Long executionId);
+
+    /** 校验实际空间 OWNER；不采用平台超管兜底。 */
+    @GetMapping("/api/document/spaces/{spaceId}/owner-permission")
+    Result<Void> checkSpaceOwner(@PathVariable Long spaceId);
 
     /**
      * 应用变更并合并至正式文档（校验基线版本，防并发覆盖；自动生成新版本快照）。

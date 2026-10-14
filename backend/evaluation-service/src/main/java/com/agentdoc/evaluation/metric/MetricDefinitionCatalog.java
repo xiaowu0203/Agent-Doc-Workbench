@@ -38,6 +38,12 @@ public final class MetricDefinitionCatalog {
     private static final Map<String, MetricDefinition> DEFINITIONS = List.of(
             evaluator("evaluation.task-terminal.success", BOOLEAN, "boolean", HIGHER_IS_BETTER,
                     "task-terminal-status"),
+            evaluator("evaluation.online-original-text.pass-ratio", NUMBER, "ratio", HIGHER_IS_BETTER,
+                    "online-original-text-assertion"),
+            evaluator("evaluation.online-document-change.valid", BOOLEAN, "boolean", HIGHER_IS_BETTER,
+                    "online-document-change-validator"),
+            evaluator("evaluation.online-document-change.accuracy", NUMBER, "ratio", HIGHER_IS_BETTER,
+                    "online-document-change-validator"),
             evaluator("evaluation.artifact-contract.valid", BOOLEAN, "boolean", HIGHER_IS_BETTER,
                     "artifact-contract"),
             evaluator("evaluation.text-assertion.pass-ratio", NUMBER, "ratio", HIGHER_IS_BETTER,

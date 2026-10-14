@@ -283,7 +283,7 @@ public class TaskRecoveryService {
     private TaskRecoveryIdentityDTO identity(TaskEntity task) {
         return new TaskRecoveryIdentityDTO(task.getId(), task.getAgentId(), task.getSpaceId(), task.getDocumentId(),
                 task.getExecutionMode(), task.getDocumentVersionSnapshot(), task.getDocumentContentSha256(),
-                task.getInputSnapshotSchemaVersion(), task.getInputSnapshotHash(), task.getDerivationRequestHash());
+                task.getInputSnapshotSchemaVersion(), task.getInputSnapshotHash(), task.getDerivationRequestHash(), TaskOnlineDispatchService.identity(task));
     }
 
     private boolean needsDraft(TaskEntity task) {

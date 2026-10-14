@@ -40,6 +40,11 @@ vi.mock('@/features/document/api/document-api', () => ({
 vi.mock('@/features/task/api/task-api', () => ({
   createTask: vi.fn(),
 }))
+vi.mock('@/features/evaluation/online/api', () => ({
+  searchOnlineExperiments: vi
+    .fn()
+    .mockResolvedValue({ records: [], total: 0, pageNum: 1, pageSize: 1 }),
+}))
 
 const detail = {
   id: 101,
@@ -437,6 +442,51 @@ describe('DocumentEditorView', () => {
     expect(wrapper.find('.markdown-preview__body').text()).toContain('文档')
   })
 
+  it('preserves backslashes and pipes in table text and inline code after visual editing', async () => {
+    vi.mocked(documentApi.getDocument).mockResolvedValue({
+      ...detail,
+      content: '| 名称 | 状态 |\n| --- | --- |\n| 文档 | 正常 |',
+    })
+    const wrapper = await mountDocument()
+    await wrapper.get('button[aria-label="编辑模式"]').trigger('click')
+    await nextTick()
+    const editor = wrapper.get('[aria-label="Markdown 可视化编辑器"]')
+    const cells = editor.findAll('td')
+    const text = String.raw`C:\docs\file \| \\| | <img src=x onerror=alert(1)>`
+    const codeText = String.raw`C:\docs\file \| \\| |`
+    cells[0]!.element.textContent = text
+    const code = document.createElement('code')
+    code.textContent = codeText
+    cells[1]!.element.replaceChildren(code)
+    await editor.trigger('input')
+    await wrapper.get('button[aria-label="预览模式"]').trigger('click')
+    await nextTick()
+
+    const preview = wrapper.get('.markdown-editor__preview')
+    expect(preview.findAll('td')).toHaveLength(2)
+    expect(preview.findAll('td')[0]!.text()).toBe(text)
+    expect(preview.get('td code').text()).toBe(codeText)
+    expect(preview.find('img').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not resolve DOM image URLs outside document assets', async () => {
+    vi.mocked(documentApi.readDocumentImage).mockClear()
+    vi.mocked(documentApi.getDocument).mockResolvedValue({
+      ...detail,
+      content: '![外部图](https://example.com/image.png)\n\n![本地图](blob:existing-image)',
+    })
+    const wrapper = await mountDocument()
+    await wrapper.get('button[aria-label="编辑模式"]').trigger('click')
+    await flushPromises()
+
+    expect(documentApi.readDocumentImage).not.toHaveBeenCalled()
+    expect(wrapper.get('[aria-label="Markdown 可视化编辑器"] img').attributes('src')).toBe(
+      'https://example.com/image.png',
+    )
+    wrapper.unmount()
+  })
+
   it('opens the single-column visual Markdown editor for document editing', async () => {
     vi.mocked(documentApi.getDocument).mockResolvedValue({
       ...detail,
@@ -651,16 +701,20 @@ describe('DocumentEditorView', () => {
       .trigger('click')
     await flushPromises()
 
-    expect(taskApi.createTask).toHaveBeenCalledWith({
-      spaceId: 7,
-      agentId: 301,
-      documentId: 101,
-      name: '产品上线方案',
-      instruction: '请检查文档结构',
-      tokenBudget: null,
-      readScope: 'FULL',
-      focusRegions: [],
-    })
+    expect(taskApi.createTask).toHaveBeenCalledWith(
+      {
+        spaceId: 7,
+        agentId: 301,
+        documentId: 101,
+        name: '产品上线方案',
+        instruction: '请检查文档结构',
+        tokenBudget: null,
+        readScope: 'FULL',
+        focusRegions: [],
+        clientRequestKey: expect.any(String),
+      },
+      expect.any(AbortSignal),
+    )
     expect(wrapper.vm.$router.currentRoute.value.fullPath).toBe(route)
   })
 

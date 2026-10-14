@@ -14,6 +14,7 @@ import com.agentdoc.evaluation.mapper.EvaluationMetricMapper;
 import com.agentdoc.evaluation.mapper.EvaluationResultMapper;
 import com.agentdoc.evaluation.mapper.EvaluatorVersionMapper;
 import com.agentdoc.evaluation.metric.EvaluationMetricFactory;
+import com.agentdoc.evaluation.metric.EvaluationSubjectValidator;
 import com.agentdoc.evaluation.metric.EvaluatorResultWriteCommand;
 import com.agentdoc.evaluation.metric.EvidenceReferenceValue;
 import com.agentdoc.evaluation.metric.MetricWriteContext;
@@ -97,6 +98,9 @@ public class EvaluationResultWriteService {
         List<EvaluationMetricEntity> metrics = buildMetrics(command, identity, result.getId(), evidence.keySet());
 
         // 主记录先入库，生成result主键ID，供子记录外键使用
+        EvaluationSubjectValidator.validate(result);
+        evidence.values().forEach(EvaluationSubjectValidator::validate);
+        metrics.forEach(EvaluationSubjectValidator::validate);
         resultMapper.insert(result);
         // 批量插入证据引用记录
         if (!evidence.isEmpty()) {

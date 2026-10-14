@@ -1,3 +1,4 @@
 com.agentdoc.common.config.CommonSecurityAutoConfiguration
 com.agentdoc.common.config.TaskCapabilitySecurityAutoConfiguration
 com.agentdoc.common.config.TaskRecoverySecurityAutoConfiguration
+com.agentdoc.common.config.OnlineCapabilitySecurityAutoConfiguration
