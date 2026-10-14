@@ -1204,11 +1204,16 @@ function renderMarkdown(markdown: string): string {
   )
 }
 
-function serializeInlineMarkdown(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent || ''
+function serializeInlineMarkdown(node: Node, escapeBackslashes = false): string {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent || ''
+    return escapeBackslashes ? text.replace(/\\/g, '\\\\') : text
+  }
   if (node.nodeType !== Node.ELEMENT_NODE) return ''
   const element = node as HTMLElement
-  const content = Array.from(element.childNodes).map(serializeInlineMarkdown).join('')
+  const content = Array.from(element.childNodes)
+    .map((child) => serializeInlineMarkdown(child, escapeBackslashes))
+    .join('')
   switch (element.tagName) {
     case 'BR':
       return '\n'
@@ -1219,7 +1224,7 @@ function serializeInlineMarkdown(node: Node): string {
     case 'I':
       return `*${content}*`
     case 'CODE':
-      return `\`${content}\``
+      return `\`${escapeBackslashes ? element.textContent || '' : content}\``
     case 'A': {
       const href = element.getAttribute('href') || ''
       return href ? `[${content}](${href})` : content
@@ -1238,7 +1243,8 @@ function serializeInlineMarkdown(node: Node): string {
 function serializeTable(table: HTMLTableElement): string {
   const rows = Array.from(table.querySelectorAll('tr')).map((row) =>
     Array.from(row.querySelectorAll('th, td')).map((cell) =>
-      serializeInlineMarkdown(cell).replace(/\|/g, '\\|').replace(/\n/g, ' ').trim(),
+      // 普通文本先转义反斜杠；行内代码保留原文，表格分隔符统一转义。
+      serializeInlineMarkdown(cell, true).split('|').join('\\|').replace(/\n/g, ' ').trim(),
     ),
   )
   if (!rows.length || !rows[0].length) return ''
@@ -2277,7 +2283,6 @@ function parseDocumentImageUrl(sourceUrl: string): {
 }
 
 async function resolveDocumentImageUrl(sourceUrl: string): Promise<string | null> {
-  if (sourceUrl.startsWith('blob:')) return sourceUrl
   const cachedUrl = resolvedImageUrls.get(sourceUrl)
   if (cachedUrl) return cachedUrl
   const pendingRequest = imageResolutionPromises.get(sourceUrl)
