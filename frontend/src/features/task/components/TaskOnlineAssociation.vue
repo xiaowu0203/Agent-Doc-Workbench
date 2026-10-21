@@ -1,46 +1,58 @@
 <template>
-  <section v-if="associated && canReadTask" class="online-association surface-card" aria-label="任务线上实验关联">
+  <section
+    v-if="associated && canReadTask"
+    class="online-association surface-card"
+    aria-label="任务线上实验关联"
+  >
     <h2>线上实验关联</h2>
     <p>当前为普通任务详情，组别和执行配置可能已经展示；评审时不能据此声明 BLINDED。</p>
-    <dl>
-      <div>
-        <dt>实验 / 分配</dt>
-        <dd>
-          {{ onlineFact(task.onlineExperimentId) }} / {{ onlineFact(task.onlineAssignmentId) }}
-        </dd>
-      </div>
-      <div>
-        <dt>绑定协议 / 摘要</dt>
-        <dd>
-          {{ onlineFact(task.onlineBindingSchemaVersion) }} /
-          {{ onlineFact(task.onlineBindingHash) }}
-        </dd>
-      </div>
-    </dl>
+    <details>
+      <summary>实验绑定与协议身份</summary>
+      <dl>
+        <div>
+          <dt>实验 / 分配</dt>
+          <dd>
+            {{ onlineFact(task.onlineExperimentId) }} / {{ onlineFact(task.onlineAssignmentId) }}
+          </dd>
+        </div>
+        <div>
+          <dt>绑定协议 / 摘要</dt>
+          <dd>
+            {{ onlineFact(task.onlineBindingSchemaVersion) }} /
+            {{ onlineFact(task.onlineBindingHash) }}
+          </dd>
+        </div>
+      </dl>
+    </details>
     <p v-if="!canRead">当前权限无法读取实验组和冻结模板，不推断历史配置。</p>
     <template v-else>
       <el-button size="small" :loading="loading" @click="refresh">核对冻结关联</el-button>
       <p v-if="error" role="alert">实验关联未知：{{ error }}</p>
-      <dl v-if="facts">
-        <div>
+      <template v-if="facts">
+        <dl>
           <dt>实际分组</dt>
           <dd>
             {{ facts.variant === 'BASELINE' ? 'Baseline（冻结基线）' : 'Candidate（冻结候选）' }}
           </dd>
-        </div>
-        <div>
-          <dt>冻结模板 ID / 摘要</dt>
-          <dd>{{ facts.template.id }} / {{ facts.template.hash }}</dd>
-        </div>
-        <div>
-          <dt>非 Prompt 配置摘要</dt>
-          <dd>{{ facts.template.nonPromptHash }}</dd>
-        </div>
-        <div>
-          <dt>清单摘要 / 状态</dt>
-          <dd>{{ facts.manifestHash }} / {{ onlineStatus(facts.status) }}</dd>
-        </div>
-      </dl>
+        </dl>
+        <details>
+          <summary>冻结模板与依赖摘要</summary>
+          <dl>
+            <div>
+              <dt>冻结模板 ID / 摘要</dt>
+              <dd>{{ facts.template.id }} / {{ facts.template.hash }}</dd>
+            </div>
+            <div>
+              <dt>非 Prompt 配置摘要</dt>
+              <dd>{{ facts.template.nonPromptHash }}</dd>
+            </div>
+            <div>
+              <dt>清单摘要 / 状态</dt>
+              <dd>{{ facts.manifestHash }} / {{ onlineStatus(facts.status) }}</dd>
+            </div>
+          </dl>
+        </details>
+      </template>
       <RouterLink
         v-if="facts"
         :to="`/spaces/${task.spaceId}/evaluation/online-experiments/${task.onlineExperimentId}`"
@@ -183,6 +195,11 @@ onBeforeUnmount(() => controller?.abort())
 <style scoped>
 .online-association {
   padding: 20px;
+}
+summary {
+  cursor: pointer;
+  margin-block: 8px;
+  color: var(--adw-text-secondary);
 }
 .online-association h2 {
   margin-top: 0;

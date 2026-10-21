@@ -25,7 +25,7 @@
           <dt>评估时间</dt>
           <dd>{{ detail.startedAt || '不可用' }} ～ {{ detail.finishedAt || '不可用' }}</dd>
         </dl>
-        <h4>标准 Metric</h4>
+        <h4>标准指标</h4>
         <p v-if="!detail.metrics.length">
           缺失：此结果没有标准指标。异常、跳过和证据缺失不计为 0。
         </p>
@@ -34,7 +34,7 @@
             <thead>
               <tr>
                 <th>指标 / 身份</th>
-                <th>原值</th>
+                <th>数值（悬停查看原值）</th>
                 <th>来源 / 方向</th>
                 <th>证据引用</th>
               </tr>
@@ -42,8 +42,11 @@
             <tbody>
               <tr v-for="metric in detail.metrics" :key="String(metric.id)">
                 <td>
-                  {{ metric.metricKey
-                  }}<small>#{{ metric.id }} · 契约 {{ metric.contractVersion ?? '不可用' }}</small>
+                  {{ metricLabel(metric.metricKey)
+                  }}<small
+                    >{{ metric.metricKey }} · #{{ metric.id }} · 契约
+                    {{ metric.contractVersion ?? '不可用' }}</small
+                  >
                 </td>
                 <td>
                   <EvaluationMetricValue
@@ -122,6 +125,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { metricLabel } from '../display'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import DataState from '@/shared/components/DataState.vue'
@@ -139,13 +143,17 @@ const props = defineProps<{
   taskId: string | null
   canReadTask: boolean
   revision: number
+  returnPath?: string
 }>()
 const detail = ref<EvaluationResultDetail | null>(null),
   loading = ref(false),
   error = ref('')
 let request: AbortController | undefined
 function taskPath(type: string) {
-  return `/spaces/${props.spaceId}/tasks/${props.taskId}?tab=${type === 'TRACE' ? 'audit' : type === 'EXECUTION_ARTIFACT' ? 'artifacts' : 'evidence'}`
+  return {
+    path: `/spaces/${props.spaceId}/tasks/${props.taskId}`,
+    query: { tab: type === 'TRACE' ? 'trace' : 'evidence', evaluationReturn: props.returnPath },
+  }
 }
 async function load() {
   request?.abort()

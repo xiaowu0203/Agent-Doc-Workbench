@@ -49,8 +49,21 @@
                   >
                     <strong>{{ row.name }}</strong
                     ><small>{{ row.taskNo }}</small>
-                  </button></template
-                ></el-table-column
+                  </button>
+                  <el-tag
+                    size="small"
+                    :type="row.executionMode === 'ISOLATED' ? 'warning' : 'info'"
+                    >{{
+                      row.lineageType === 'LEGACY_UNKNOWN'
+                        ? '来源未确认'
+                        : row.lineageType === 'EXPERIMENT'
+                          ? '离线实验'
+                          : row.executionMode === 'ISOLATED'
+                            ? '隔离回放'
+                            : '正式业务'
+                    }}</el-tag
+                  >
+                </template></el-table-column
               >
               <el-table-column label="状态" width="120"
                 ><template #default="{ row }"

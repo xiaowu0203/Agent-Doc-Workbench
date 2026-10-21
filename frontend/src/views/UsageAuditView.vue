@@ -88,7 +88,7 @@
             <Money />
           </UsageMetricCard>
           <UsageMetricCard
-            title="执行任务"
+            title="有执行记录的任务"
             :value="formatInteger(dashboard.summary.executedTasks)"
             :change="
               changeLabel(dashboard.summary.executedTasks, dashboard.previousSummary.executedTasks)
@@ -227,12 +227,12 @@
             <el-tab-pane label="工具调用" name="tools">
               <div v-if="dashboard.summary.toolCalls" class="tool-usage-panel">
                 <div class="tool-usage-panel__summary">
-                  <span>当前周期共</span>
+                  <span>全部筛选范围共</span>
                   <strong>{{ formatInteger(dashboard.summary.toolCalls) }}</strong>
                   <span>次工具调用</span>
                 </div>
                 <p class="tool-usage-panel__hint">
-                  下方展示当前执行记录页对应的脱敏工具调用明细，可点击“查看审计”查看完整执行上下文。
+                  下方仅展示当前执行记录页对应的工具明细，明细条数可能少于上方总调用数。切换执行记录分页可查看其他任务；点击“查看审计”查看对应执行上下文。
                 </p>
                 <DataState
                   :loading="toolCallsLoading"
@@ -292,13 +292,25 @@
               <div v-else class="panel-empty">当前筛选范围没有工具调用</div>
             </el-tab-pane>
             <el-tab-pane v-if="canReadAudit" label="审计事件" name="audit">
-              <el-table :data="auditPage.records" stripe>
+              <el-table :data="auditRows" stripe>
                 <el-table-column prop="actorName" label="主体" min-width="130" />
                 <el-table-column prop="actionName" label="操作" min-width="190" />
                 <el-table-column prop="targetTypeName" label="目标类型" min-width="150" />
-                <el-table-column prop="targetId" label="目标 ID" min-width="130" />
+                <el-table-column prop="targetId" label="目标 ID" min-width="150">
+                  <template #default="{ row }"
+                    ><RouterLink v-if="row.targetPath" :to="row.targetPath">{{
+                      row.targetId
+                    }}</RouterLink
+                    ><span v-else>{{ row.targetId ?? '未提供' }}</span></template
+                  >
+                </el-table-column>
                 <el-table-column prop="traceId" label="Trace ID" min-width="180">
-                  <template #default="{ row }">{{ row.traceId || '—' }}</template>
+                  <template #default="{ row }"
+                    >{{ row.traceId || '—'
+                    }}<el-button v-if="row.traceId" link @click="copyTrace(row.traceId)"
+                      >复制</el-button
+                    ></template
+                  >
                 </el-table-column>
                 <el-table-column prop="createdAt" label="时间" min-width="170">
                   <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
@@ -412,7 +424,7 @@ import {
   ElTag,
 } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 import { normalizeApiError } from '@/api/errors'
 import { listAgents, listModels, type AgentOption } from '@/features/agent/api/agent-api'
@@ -424,7 +436,7 @@ import {
   queryAuditLogs,
   queryUsageDashboard,
 } from '@/features/usage/api/usage-api'
-import type { AuditLogPage, ToolSource, UsageDashboard } from '@/features/usage/types'
+import type { AuditLogItem, AuditLogPage, ToolSource, UsageDashboard } from '@/features/usage/types'
 import EChartCanvas from '@/features/usage/components/EChartCanvas.vue'
 import UsageMetricCard, { type MetricChange } from '@/features/usage/components/UsageMetricCard.vue'
 import { buildUsageChartData } from '@/features/usage/usage-chart'
@@ -445,6 +457,32 @@ interface UsageToolCallRow extends ToolCallItem {
 
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
+function auditTarget(row: AuditLogItem) {
+  if (
+    String(row.spaceId) !== String(workspaceStore.currentSpaceId) ||
+    !/^[1-9]\d{0,18}$/.test(String(row.targetId))
+  )
+    return null
+  const base = `/spaces/${row.spaceId}`
+  if (row.targetType === 'task' && workspaceStore.hasPermission(SPACE_PERMISSIONS.TASK_READ))
+    return `${base}/tasks/${row.targetId}`
+  if (row.targetType === 'agent' && workspaceStore.hasPermission(SPACE_PERMISSIONS.AGENT_READ))
+    return `${base}/agents?agentId=${row.targetId}`
+  if (
+    row.targetType === 'change_request' &&
+    workspaceStore.hasPermission(SPACE_PERMISSIONS.CHANGE_REQUEST_READ)
+  )
+    return `${base}/approvals?changeRequestId=${row.targetId}`
+  return null
+}
+async function copyTrace(value: string) {
+  try {
+    await window.navigator.clipboard.writeText(value)
+    ElMessage.success('Trace ID 已复制')
+  } catch {
+    ElMessage.info('无法自动复制，请选中 Trace ID 复制。')
+  }
+}
 const dashboard = ref<UsageDashboard | null>(null)
 const loading = ref(false)
 const exporting = ref(false)
@@ -460,6 +498,9 @@ const filters = reactive<{
 }>({})
 const taskPage = ref<TaskPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
 const auditPage = ref<AuditLogPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
+const auditRows = computed(() =>
+  auditPage.value.records.map((row) => ({ ...row, targetPath: auditTarget(row) })),
+)
 const toolPage = reactive({ total: 0, pageNum: 1, pageSize: 10 })
 const activeTab = ref('executions')
 const drawerVisible = ref(false)

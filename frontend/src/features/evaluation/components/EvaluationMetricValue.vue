@@ -1,7 +1,10 @@
 <template>
   <span v-if="missingReason" class="metric-value--missing">缺失 · {{ missingReason }}</span>
-  <span v-else-if="numericValue !== null && numericValue !== undefined">
-    {{ `${numericValue}${unit ? ` ${unit}` : ''}` }}
+  <span
+    v-else-if="numericValue !== null && numericValue !== undefined"
+    :title="`原值：${numericValue}${unit ? ` ${unit}` : ''}`"
+  >
+    {{ formatMetricNumber(numericValue, unit) }}
   </span>
   <span v-else-if="booleanValue !== null && booleanValue !== undefined">{{
     String(booleanValue)
@@ -13,6 +16,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatMetricNumber } from '../display'
 withDefaults(
   defineProps<{
     numericValue?: number | null

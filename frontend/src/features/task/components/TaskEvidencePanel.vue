@@ -1,6 +1,101 @@
 <template>
   <section class="evidence-layout" aria-label="执行证据">
     <div class="evidence-main">
+      <article v-if="isolated" class="surface-card evidence-card" aria-label="冻结候选产物正文">
+        <header class="artifact-heading">
+          <div>
+            <h2>隔离候选产物</h2>
+            <p>仅核对本次捕获内容，不修改文档；追加内容是片段，不代表完整新正文。</p>
+          </div>
+          <el-button :loading="artifactLoading" @click="loadArtifacts">刷新产物</el-button>
+        </header>
+        <DataState
+          :loading="artifactLoading && !artifacts.length"
+          :error="artifactError"
+          @retry="loadArtifacts"
+        >
+          <p v-if="!canReadDocument">需要文档读取权限才能展开候选正文；产物身份仍可核对。</p>
+          <section
+            v-for="entry in artifactEntries"
+            :key="entry.artifact.id"
+            class="artifact-content"
+          >
+            <h3>
+              {{ artifactLabels[entry.artifact.artifactType] || entry.artifact.artifactType }} #{{
+                entry.artifact.sequenceNo
+              }}
+            </h3>
+            <p>{{ artifactPreview(entry.artifact) }}</p>
+            <template v-if="canReadDocument">
+              <p v-if="entry.content.kind === 'unavailable'" role="status">
+                {{ entry.content.reason }}
+              </p>
+              <template v-else-if="entry.content.kind === 'summary'">
+                <pre>{{ entry.content.summary }}</pre>
+                <p v-if="entry.content.summary === ''">来源记录了空摘要。</p></template
+              >
+              <template v-else>
+                <p>冻结基线 v{{ entry.content.baseVersion }}；不读取当前文档来补写历史原文。</p>
+                <p>{{ entry.content.summary ?? '来源未提供变更摘要。' }}</p>
+                <p v-if="!entry.content.changes.length">候选变更列表为空，不表示已完成业务交付。</p>
+                <section
+                  v-for="(change, index) in entry.content.changes"
+                  :key="index"
+                  class="artifact-change"
+                >
+                  <h4>
+                    变更 {{ index + 1 }} ·
+                    {{ change ? operationLabel(change.operation) : '结构不可用' }}
+                  </h4>
+                  <p v-if="!change">此项文本字段结构无效，保留其位置，不用其他成功项代替。</p>
+                  <p v-else-if="!['append', 'replace'].includes(change.operation || '')">
+                    操作码未通过当前协议识别。以下仅展示捕获文本，不认定变更有效或已经应用。
+                  </p>
+                  <div v-if="change" class="artifact-diff">
+                    <div>
+                      <h5>
+                        {{ change.operation === 'replace' ? '替换前' : '捕获的原文（可选）' }}
+                      </h5>
+                      <pre v-if="change.oldText !== null">{{ change.oldText }}</pre>
+                      <p v-else>未捕获原文，无法重建完整前后差异。</p>
+                      <p v-if="change.oldText === ''">空文本</p>
+                    </div>
+                    <div>
+                      <h5>
+                        {{
+                          change.operation === 'append'
+                            ? '追加片段'
+                            : change.operation === 'replace'
+                              ? '替换后'
+                              : '捕获的新文本'
+                        }}
+                      </h5>
+                      <pre>{{ change.newText }}</pre>
+                      <p v-if="change.newText === ''">空文本</p>
+                    </div>
+                  </div>
+                </section>
+              </template>
+            </template>
+            <details>
+              <summary>产物冻结身份</summary>
+              <dl>
+                <dt>Artifact ID</dt>
+                <dd>{{ entry.artifact.id }}</dd>
+                <dt>内容 hash</dt>
+                <dd>{{ entry.artifact.payloadSha256 }}</dd>
+                <dt>JSON 大小</dt>
+                <dd>{{ payloadSize(entry.artifact.payloadJson) }}</dd>
+                <dt>schema</dt>
+                <dd>{{ entry.artifact.schemaVersion }}</dd>
+                <dt>生成时间</dt>
+                <dd>{{ entry.artifact.createdAt }}</dd>
+              </dl>
+            </details>
+          </section>
+          <p v-if="!artifacts.length">暂无候选产物；空列表不表示执行成功。</p>
+        </DataState>
+      </article>
       <article class="surface-card evidence-card">
         <header>
           <h2>执行证据链</h2>
@@ -171,44 +266,6 @@
           历史血缘未能可靠识别，根节点仅是确定性 anchor。
         </p>
       </article>
-      <article v-if="isolated" class="surface-card evidence-card">
-        <header class="artifact-heading">
-          <div>
-            <h2>Artifact 只读预览</h2>
-            <p>隔离执行捕获的候选产物</p>
-          </div>
-          <el-button :loading="artifactLoading" @click="loadArtifacts">刷新</el-button>
-        </header>
-        <DataState
-          :loading="artifactLoading && !artifacts.length"
-          :error="artifactError"
-          @retry="loadArtifacts"
-        >
-          <div v-if="artifacts.length" class="artifact-list">
-            <section v-for="artifact in artifacts" :key="artifact.id">
-              <h3>
-                {{ artifactLabels[artifact.artifactType] || artifact.artifactType }} #{{
-                  artifact.sequenceNo
-                }}
-              </h3>
-              <p>{{ artifactPreview(artifact) }}</p>
-              <dl>
-                <dt>Artifact ID</dt>
-                <dd>{{ artifact.id }}</dd>
-                <dt>内容 hash</dt>
-                <dd>{{ artifact.payloadSha256 }}</dd>
-                <dt>JSON 大小</dt>
-                <dd>{{ payloadSize(artifact.payloadJson) }}</dd>
-                <dt>schema</dt>
-                <dd>{{ artifact.schemaVersion }}</dd>
-                <dt>生成时间</dt>
-                <dd>{{ artifact.createdAt }}</dd>
-              </dl>
-            </section>
-          </div>
-          <p v-else>暂无候选产物；空列表不表示执行成功。</p>
-        </DataState>
-      </article>
     </aside>
   </section>
 </template>
@@ -220,7 +277,7 @@ import { RouterLink } from 'vue-router'
 import { normalizeApiError } from '@/api/errors'
 import { getEvaluationTaskLink } from '@/features/evaluation/api/evaluation-api'
 import { getTaskArtifacts } from '@/features/task/api/task-api'
-import { artifactPreview } from '@/features/task/artifact-preview'
+import { artifactPreview, artifactContent } from '@/features/task/artifact-preview'
 import type { EvaluationTaskLink, ExecutionArtifact } from '@/features/task/engineering-types'
 import type { TaskExecutionDetail, TaskLineageType } from '@/features/task/types'
 import type { EntityId } from '@/features/workspace/types'
@@ -268,6 +325,14 @@ const artifactLabels = {
 const artifacts = ref<ExecutionArtifact[]>([]),
   artifactLoading = ref(false),
   artifactError = ref('')
+const artifactEntries = computed(() =>
+  artifacts.value.map((artifact) => ({
+    artifact,
+    content: canReadDocument.value
+      ? artifactContent(artifact)
+      : { kind: 'unavailable' as const, reason: '需要文档读取权限' },
+  })),
+)
 const links = ref<EvaluationTaskLink | null>(null),
   linkLoading = ref(false),
   linkError = ref('')
@@ -279,6 +344,13 @@ function taskPath(id: EntityId) {
 function payloadSize(payload: string) {
   const size = new window.Blob([payload]).size
   return size < 1024 ? `${size} B` : `${(size / 1024).toFixed(1)} KB`
+}
+function operationLabel(operation: string | null) {
+  return operation === 'append'
+    ? '末尾追加'
+    : operation === 'replace'
+      ? '全文替换'
+      : `未识别操作（${operation ?? '未提供'}）`
 }
 async function loadArtifacts() {
   artifactController?.abort()
@@ -475,16 +547,46 @@ a:hover {
   justify-content: space-between;
   gap: 12px;
 }
-.artifact-list {
-  display: grid;
-  gap: 18px;
-}
-.artifact-list section + section {
+.artifact-content + .artifact-content {
   border-top: 1px solid var(--adw-border-color-light);
   padding-top: 18px;
 }
-.artifact-list p {
+.artifact-content {
+  margin-top: 18px;
+  overflow-wrap: anywhere;
+}
+.artifact-change {
+  border-left: 3px solid var(--adw-color-primary);
+  padding-left: 12px;
+  margin: 16px 0;
+}
+.artifact-diff {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.artifact-diff > div {
+  min-width: 0;
+  padding: 12px;
+  background: var(--adw-surface-muted);
+  border: 1px solid var(--adw-border-color-light);
+}
+.artifact-content pre {
+  margin: 8px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow-y: auto;
+  font: inherit;
+}
+.artifact-diff h5 {
+  margin: 0;
   font-size: 13px;
+}
+@media (max-width: 1100px) {
+  .artifact-diff {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 @media (max-width: 1100px) {
   .evidence-layout {

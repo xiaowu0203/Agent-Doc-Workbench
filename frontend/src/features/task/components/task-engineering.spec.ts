@@ -279,6 +279,66 @@ describe('execution evidence', () => {
     await flushPromises()
     expect(taskApi.getTaskArtifacts).toHaveBeenCalledTimes(1)
   })
+  it.each(['CHANGE_PROPOSAL', 'DRAFT_CHANGES'] as const)(
+    '按已知 schema 核对 %s 正文，隐藏未知字段并响应文档权限撤销',
+    async (artifactType) => {
+      const data = detail()
+      data.task.executionMode = 'ISOLATED'
+      data.task.lineageType = 'REPLAY'
+      vi.mocked(taskApi.getTaskArtifacts).mockResolvedValue([
+        {
+          id: '1',
+          taskId: '100',
+          executionId: '200',
+          sourceTaskId: '80',
+          sequenceNo: 1,
+          sourceToolCallId: null,
+          artifactType,
+          schemaVersion: 1,
+          payloadSha256: 'artifact-hash',
+          createdAt: '2026-10-03',
+          payloadJson: JSON.stringify({
+            token: 'SECRET',
+            proposal: {
+              baseVersion: 0,
+              summary: '冻结变更摘要',
+              changes: [
+                {
+                  op: 'replace',
+                  oldText: '冻结原文',
+                  newText: '<script>候选文本</script>',
+                  extra: 'PRIVATE',
+                },
+                { op: 'append', newText: '追加片段' },
+                { op: 'unknown', newText: 'INVALID_ITEM' },
+                { op: 'append', newText: 7 },
+              ],
+            },
+          }),
+        },
+      ])
+      const { wrapper, workspace } = await mountPage(TaskEvidencePanel, data)
+      expect(wrapper.text()).toContain('冻结基线 v0')
+      expect(wrapper.text()).toContain('冻结原文')
+      expect(wrapper.text()).toContain('<script>候选文本</script>')
+      expect(wrapper.text()).toContain('未捕获原文')
+      expect(wrapper.text()).toContain('结构不可用')
+      expect(wrapper.text()).not.toContain('SECRET')
+      expect(wrapper.text()).not.toContain('PRIVATE')
+      expect(wrapper.text()).toContain('未识别操作（unknown）')
+      expect(wrapper.text()).toContain('INVALID_ITEM')
+      expect(wrapper.find('script').exists()).toBe(false)
+      workspace.setEffectivePermissions({
+        spaceId: '7',
+        platformSuperAdmin: false,
+        role: null,
+        permissions: [SPACE_PERMISSIONS.TASK_READ],
+      })
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('冻结原文')
+      expect(wrapper.text()).toContain('需要文档读取权限')
+    },
+  )
   it('returns to formal frozen case/run/experiment IDs instead of lineage root and obeys resource read permissions', async () => {
     const data = detail()
     data.task.lineageType = 'EXPERIMENT'
@@ -397,7 +457,9 @@ describe('technical Trace and authoritative facts', () => {
         retryCount: null,
       })
       const { wrapper } = await mountPage(TaskTracePanel)
-      expect(wrapper.find('.trace-summary').text()).toContain('不可用 / 不可用 / 不可用')
+      expect(wrapper.find('.trace-summary').text()).toContain('不可用')
+      expect(wrapper.find('.trace-summary').text()).not.toContain('端到端遥测耗时')
+      expect(wrapper.text()).toContain(availabilityCode)
       expect(wrapper.find('.trace-facts').text()).toContain('1200')
       expect(wrapper.find('.trace-facts').text()).toContain('snapshot-hash')
       expect(wrapper.findAll('.span-row')).toHaveLength(0)
@@ -415,6 +477,34 @@ describe('technical Trace and authoritative facts', () => {
   })
 })
 describe('Task detail integration', () => {
+  it('返回评估保留用例和结果身份，拒绝跨空间与外部返回目标', async () => {
+    const target = '/spaces/7/evaluation/runs/10?caseRunId=20&attemptId=40&resultId=80'
+    const { wrapper, router } = await mountPage(
+      TaskDetailView,
+      detail(),
+      permissions,
+      `evidence&evaluationReturn=${encodeURIComponent(target)}`,
+    )
+    const back = wrapper.findAll('button').find((button) => button.text() === '返回评估运行')!
+    expect(back.exists()).toBe(true)
+    await back.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe(target)
+    await router.push('/spaces/7/tasks/100?evaluationReturn=https%3A%2F%2Fexample.com')
+    await flushPromises()
+    expect(wrapper.findAll('button').some((button) => button.text() === '返回评估运行')).toBe(false)
+    await router.push('/spaces/7/tasks/100?evaluationReturn=%2Fspaces%2F8%2Fevaluation%2Fruns%2F10')
+    await flushPromises()
+    expect(wrapper.findAll('button').some((button) => button.text() === '返回评估运行')).toBe(false)
+  })
+  it('执行终态缺少产物时不再提示等待完成', async () => {
+    const data = detail()
+    data.task.resultSummary = null
+    vi.mocked(taskApi.getTaskExecutionDetail).mockResolvedValue(data)
+    const { wrapper } = await mountPage(TaskDetailView, data)
+    expect(wrapper.text()).toContain('执行已结束，本次未生成业务产物')
+    expect(wrapper.text()).not.toContain('执行完成后将在这里显示结果引用')
+  })
   it('shows isolated candidates without claiming a document write even when the legacy output projection returns a draft', async () => {
     const isolated = detail()
     isolated.task.executionMode = 'ISOLATED'
@@ -433,7 +523,7 @@ describe('Task detail integration', () => {
       .find((button) => button.text() === '查看候选产物')!
       .trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Artifact 只读预览')
+    expect(wrapper.text()).toContain('隔离候选产物')
   })
   it('does not show a change request action for a draft output when document read is missing', async () => {
     const data = detail()

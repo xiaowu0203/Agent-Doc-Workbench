@@ -34,7 +34,7 @@
           >运行状态<select v-model="statusFilter" aria-label="运行状态">
             <option value="">全部状态</option>
             <option v-for="status in RUN_STATUSES" :key="status" :value="status">
-              {{ status }}
+              {{ evaluationStatus('run', status).label }}
             </option>
           </select></label
         >
@@ -45,9 +45,17 @@
             <option value="singleTestCaseVersionId">测试用例版本</option>
           </select></label
         >
-        <label v-if="sourceKind"
-          >来源版本 ID<input v-model="sourceId" aria-label="筛选来源版本 ID" placeholder="版本 ID"
-        /></label>
+        <div v-if="sourceKind" class="source-filter">
+          <el-button @click="sourcePicker = true">按名称选择来源版本</el-button>
+          <small v-if="sourceLabel">{{ sourceLabel }}</small>
+          <label
+            >来源版本 ID<input
+              v-model="sourceId"
+              aria-label="筛选来源版本 ID"
+              placeholder="版本 ID"
+              @input="sourceLabel = ''"
+          /></label>
+        </div>
         <label
           >创建起始<input
             v-model="createdFrom"
@@ -78,14 +86,14 @@
             <tbody>
               <tr v-for="row in list.records" :key="String(row.id)">
                 <td>
-                  <RouterLink :to="`${basePath}/${row.id}`">运行 #{{ row.id }}</RouterLink>
-                  <p>
+                  <RouterLink :to="`${basePath}/${row.id}`">
                     {{
                       row.datasetVersionId
                         ? `${row.datasetName || '数据集名称不可用'} · v${row.datasetVersionNo ?? '不可用'}`
                         : `${row.testCaseName || '用例名称不可用'} · v${row.testCaseVersionNo ?? '不可用'}`
                     }}
-                  </p>
+                  </RouterLink>
+                  <p>运行 #{{ row.id }}</p>
                   <small v-if="row.experimentVariantId"
                     >Experiment Variant #{{ row.experimentVariantId }}</small
                   >
@@ -154,12 +162,20 @@
             </p>
           </article>
           <article v-if="run.status === 'PAUSED' || run.cancelRequested" class="run-warning">
-            <strong>{{ run.cancelRequested ? '取消请求已记录' : '运行已暂停' }}</strong>
+            <strong>{{
+              run.status === 'CANCELED'
+                ? '运行已取消'
+                : run.cancelRequested
+                  ? '取消请求已记录'
+                  : '运行已暂停'
+            }}</strong>
             <p>
               {{
                 run.status === 'PAUSED'
                   ? pauseExplanation(run.pauseReason)
-                  : '正在等待在途执行收敛；已完成的执行不会撤销。'
+                  : terminal
+                    ? '运行已结束；已完成的执行与历史记录保持不变。'
+                    : '正在等待在途执行收敛；已完成的执行不会撤销。'
               }}
             </p>
             <p v-if="run.reconciliationFailureCount !== null">
@@ -201,6 +217,7 @@
           </section>
           <EvaluationCasePanel
             v-if="selectedCase"
+            id="evaluation-current-case"
             :key="`${spaceId}/${run.id}/${selectedCase.id}`"
             :space-id="spaceId"
             :run-id="String(run.id)"
@@ -212,6 +229,8 @@
             :busy="busy"
             :initial-attempt-id="queryId(route.query.attemptId)"
             :initial-result-id="queryId(route.query.resultId)"
+            :return-path="route.fullPath"
+            @selection="rememberSelection"
             @retry-replay="openAction('replay')"
             @retry-evaluation="openAction('evaluation', $event)"
             @feedback-saved="loadDetail(true)"
@@ -224,8 +243,21 @@
       v-if="creating && canRun"
       :space-id="spaceId"
       :can-run="canRun"
-      @close="creating = false"
+      :initial-kind="
+        typeof route.query.sourceKind === 'string' ? route.query.sourceKind : undefined
+      "
+      :initial-version-id="queryId(route.query.sourceVersionId)"
+      @close="closeCreate"
       @created="created"
+    />
+    <PublishedVersionPicker
+      v-if="sourcePicker && sourceKind"
+      :open="true"
+      :space-id="spaceId"
+      :kind="sourceKind === 'datasetVersionId' ? 'datasets' : 'test-cases'"
+      :exclude-ids="[]"
+      @close="sourcePicker = false"
+      @select="selectFilterSource"
     />
     <el-dialog v-model="actionDialog" :title="actionTitle" width="560px">
       <p>{{ actionDescription }}</p>
@@ -252,7 +284,8 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { evaluationStatus } from '@/features/evaluation/status'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
@@ -261,6 +294,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
 import EvaluationRunCreate from '@/features/evaluation/components/EvaluationRunCreate.vue'
+import PublishedVersionPicker from '@/features/evaluation/components/PublishedVersionPicker.vue'
 import EvaluationCasePanel from '@/features/evaluation/components/EvaluationCasePanel.vue'
 import * as api from '@/features/evaluation/api/evaluation-api'
 import type {
@@ -269,6 +303,9 @@ import type {
   EvaluationCaseRun,
   EvaluationPage,
   EvaluationRunStatus,
+  DatasetVersion,
+  TestCaseVersion,
+  EvaluatorVersion,
 } from '@/features/evaluation/types'
 import {
   activeRun,
@@ -318,6 +355,45 @@ const statusFilter = ref<EvaluationRunStatus | ''>(''),
   sourceId = ref(''),
   createdFrom = ref(''),
   createdTo = ref('')
+const sourcePicker = ref(false),
+  sourceLabel = ref('')
+function rememberSelection(attemptId: string, resultId?: string) {
+  void router.replace({
+    query: { ...route.query, caseRunId: selectedCaseId.value, attemptId, resultId },
+  })
+}
+function closeCreate() {
+  creating.value = false
+  if (route.query.create === '1')
+    void router.replace({
+      query: {
+        ...route.query,
+        create: undefined,
+        sourceKind: undefined,
+        sourceVersionId: undefined,
+      },
+    })
+}
+function selectFilterSource(
+  value: DatasetVersion | TestCaseVersion | EvaluatorVersion,
+  name: string,
+) {
+  if (
+    String(value.spaceId) !== spaceId.value ||
+    value.status !== 'PUBLISHED' ||
+    'evaluatorId' in value ||
+    'datasetId' in value !== (sourceKind.value === 'datasetVersionId')
+  )
+    return
+  sourceId.value = String(value.id)
+  sourceLabel.value = `${name} · v${value.versionNo}`
+  sourcePicker.value = false
+}
+watch(sourceKind, () => {
+  sourceId.value = ''
+  sourceLabel.value = ''
+  sourcePicker.value = false
+})
 const selectedCaseId = ref(''),
   onlyErrors = ref(false),
   casePage = ref(1)
@@ -448,6 +524,10 @@ async function loadDetail(quiet = false) {
       throw new Error('用例不属于当前运行')
     if (!value.cases.some((item) => String(item.id) === selectedCaseId.value))
       selectedCaseId.value = requested || String(value.cases[0]?.id || '')
+    if (!quiet && requested) {
+      const position = filteredCases.value.findIndex((item) => String(item.id) === requested)
+      if (position >= 0) casePage.value = Math.floor(position / PAGE_SIZE) + 1
+    }
   } catch (e) {
     if (!pending.signal.aborted) {
       const fault = normalizeApiError(e)
@@ -463,6 +543,11 @@ async function loadDetail(quiet = false) {
     if (!pending.signal.aborted) {
       loading.value = false
       schedule()
+      if (!quiet && run.value && queryId(route.query.caseRunId)) {
+        await nextTick()
+        if (!pending.signal.aborted)
+          document.getElementById('evaluation-current-case')?.scrollIntoView?.({ block: 'start' })
+      }
     }
   }
 }
@@ -603,12 +688,12 @@ watch(
     mutationRequest?.abort()
     run.value = null
     busy.value = false
-    creating.value = false
+    creating.value = !props.resourceId && canRun.value && route.query.create === '1'
     actionDialog.value = false
     actionError.value = ''
     pollError.value = ''
     selectedCaseId.value = ''
-    onlyErrors.value = false
+    onlyErrors.value = route.query.errors === '1'
     casePage.value = 1
     statusFilter.value = ''
     sourceKind.value = ''
@@ -631,6 +716,8 @@ watch(canRun, () => {
 })
 watch(onlyErrors, () => {
   casePage.value = 1
+  if (props.resourceId && canRead.value)
+    void router.replace({ query: { ...route.query, errors: onlyErrors.value ? '1' : undefined } })
 })
 watch(
   () => route.query.caseRunId,

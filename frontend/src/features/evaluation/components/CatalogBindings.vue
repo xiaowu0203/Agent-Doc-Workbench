@@ -32,9 +32,10 @@
         >
         <span v-else>版本 #{{ row.versionId }}</span>
         <p v-if="row.evaluatorKey">{{ row.evaluatorKey }}</p>
-        <JsonConfigEditor
+        <EvaluatorConfigEditor
           v-if="kind === 'test-cases'"
           v-model="row.expectedJson"
+          :evaluator-key="row.evaluatorKey"
           label="绑定级 expectedJson（留空使用用例预期）"
           :readonly="!editable"
           :rows="3"
@@ -84,7 +85,7 @@ import {
 } from '../api/evaluation-api'
 import type { DatasetVersion, EvaluatorVersion, TestCaseVersion } from '../types'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
-import JsonConfigEditor from './JsonConfigEditor.vue'
+import EvaluatorConfigEditor from './EvaluatorConfigEditor.vue'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import { formatJson } from '../catalog'
 const props = defineProps<{

@@ -25,15 +25,6 @@
       <el-icon><Plus /></el-icon>
       创建/更新空间
     </el-button>
-    <el-button
-      v-if="canDeleteSpace"
-      type="danger"
-      plain
-      :loading="spaceDeleting"
-      @click="deleteCurrentSpace"
-    >
-      删除空间
-    </el-button>
     <el-divider direction="vertical" />
     <el-dropdown class="app-topbar__user-menu" trigger="click" @command="handleUserCommand">
       <button
@@ -133,8 +124,13 @@
             <el-alert v-if="spaceError" :title="spaceError" type="error" :closable="false" />
           </el-form>
         </el-tab-pane>
-        <el-tab-pane label="更新当前空间" name="update" :disabled="!canManageSpace">
+        <el-tab-pane
+          label="更新当前空间"
+          name="update"
+          :disabled="!canManageSpace && !canDeleteSpace"
+        >
           <el-form
+            v-if="canManageSpace"
             ref="spaceUpdateFormRef"
             :model="spaceUpdateForm"
             :rules="spaceRules"
@@ -203,8 +199,17 @@
         </el-tab-pane>
       </el-tabs>
       <template #footer>
+        <el-button
+          v-if="spaceDialogTab === 'update' && canDeleteSpace"
+          type="danger"
+          plain
+          :loading="spaceDeleting"
+          @click="deleteCurrentSpace"
+          >删除当前空间</el-button
+        >
         <el-button @click="spaceDialogVisible = false">取消</el-button>
         <el-button
+          v-if="spaceDialogTab === 'create' || canManageSpace"
           type="primary"
           :loading="spaceDialogTab === 'create' ? spaceSubmitting : spaceUpdateSubmitting"
           @click="spaceDialogTab === 'create' ? submitSpaceCreate() : submitSpaceUpdate()"
@@ -554,6 +559,7 @@ async function deleteCurrentSpace(): Promise<void> {
     )
     spaceDeleting.value = true
     await workspaceStore.deleteSpace(space.id)
+    spaceDialogVisible.value = false
     ElMessage.success('空间已删除')
     await router.replace('/')
   } catch (error) {
@@ -617,6 +623,7 @@ function resetPasswordForm(): void {
 
 <style scoped>
 .app-topbar {
+  min-width: 0;
   display: flex;
   height: var(--adw-topbar-height);
   align-items: center;
@@ -627,12 +634,15 @@ function resetPasswordForm(): void {
 }
 
 .app-topbar__toggle {
+  flex-shrink: 0;
   color: var(--adw-text-primary);
 }
 
 .app-topbar__search {
   display: flex;
   width: min(100%, 430px);
+  min-width: 38px;
+  white-space: nowrap;
   height: 38px;
   align-items: center;
   gap: var(--adw-space-2);
@@ -644,6 +654,18 @@ function resetPasswordForm(): void {
   font-size: var(--adw-font-size-body);
   cursor: pointer;
   text-align: left;
+}
+
+.app-topbar__search > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-topbar__search > .el-icon,
+.app-topbar > .el-button,
+.app-topbar__user-menu {
+  flex-shrink: 0;
 }
 
 .app-topbar__search:hover {
@@ -702,6 +724,18 @@ function resetPasswordForm(): void {
   align-items: center;
 }
 
+@media (max-width: 1100px) {
+  .app-topbar {
+    gap: var(--adw-space-3);
+    padding-inline: var(--adw-space-4);
+  }
+
+  .app-topbar__username,
+  .app-topbar__search kbd {
+    display: none;
+  }
+}
+
 .app-topbar__avatar {
   display: inline-flex;
   width: 34px;
@@ -720,6 +754,13 @@ function resetPasswordForm(): void {
   }
 
   .app-topbar__search {
+    width: 38px;
+    padding: 0;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .app-topbar__search > span {
     display: none;
   }
 

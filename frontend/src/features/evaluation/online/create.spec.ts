@@ -8,9 +8,11 @@ import * as agentApi from '@/features/agent/api/agent-api'
 import { experiment } from './fixtures.spec-support'
 import type { EvaluatorVersion } from '../types'
 import type { AgentDetail } from '@/features/agent/types'
+import { listDocumentTree } from '@/features/document/api/document-api'
 vi.mock('./api')
 vi.mock('../api/evaluation-api')
 vi.mock('@/features/agent/api/agent-api')
+vi.mock('@/features/document/api/document-api')
 const wrappers: VueWrapper[] = []
 const version = {
   id: '2104902086192304130',
@@ -49,6 +51,8 @@ async function create() {
   }
   for (const [key, value] of Object.entries(values))
     await wrapper.get(`[aria-label="${key}"]`).setValue(value)
+  await flushPromises()
+  await button(wrapper, '继续：规则与预算').trigger('click')
   wrapper.findComponent(PublishedVersionPicker).vm.$emit('select', version, '原始文本规则')
   await flushPromises()
   await wrapper.get('[aria-label="断言1内容"]').setValue('预期产物')
@@ -71,11 +75,57 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('冻结草案创建', () => {
+  it('分步返回保留输入，核对步骤才展示最终创建并清楚列出冻结内容', async () => {
+    const wrapper = await create()
+    expect(wrapper.get('[aria-current="step"]').text()).toContain('规则与预算')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.get('[aria-current="step"]').text()).toContain('核对冻结内容')
+    expect(wrapper.get('[aria-label="创建草案确认"]').text()).toContain('候选提示词')
+    await button(wrapper, '返回上一步').trigger('click')
+    expect(wrapper.get('[aria-label="候选系统提示词"]').element).toHaveProperty(
+      'value',
+      '候选提示词',
+    )
+    expect(wrapper.find('[aria-label="创建草案确认"]').exists()).toBe(false)
+    expect(api.createOnlineExperiment).not.toHaveBeenCalled()
+  })
+  it('按名称选择文档并精确换算两位小数概率，不改动 ID 或冻结协议', async () => {
+    const wrapper = await create()
+    vi.mocked(listDocumentTree).mockResolvedValue([
+      {
+        id: '9007199254740993',
+        parentId: null,
+        title: '验收草稿',
+        docType: 'DRAFT',
+        nodeType: 'DOCUMENT',
+        children: [],
+      },
+    ])
+    await button(wrapper, '从空间文档中选择').trigger('click')
+    await flushPromises()
+    await wrapper.get('[aria-label="实验文档选择"] input[type="checkbox"]').setValue(true)
+    expect(
+      (wrapper.get('[aria-label="文档范围ID"]').element as HTMLTextAreaElement).value,
+    ).toContain('9007199254740993')
+    await wrapper.get('[aria-label="候选文档概率百分比"]').setValue('50.01')
+    await wrapper.get('form').trigger('submit')
+    await button(wrapper, '确认创建草案').trigger('click')
+    await flushPromises()
+    expect(api.createOnlineExperiment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidateWeightBps: 5001,
+        documentIds: ['2104902086192304129', '9007199254740993'],
+      }),
+      expect.any(AbortSignal),
+    )
+  })
   it('多角色规则和文档覆盖一次冻结，秒级窗口与零观察窗口保持原值', async () => {
     const wrapper = await create()
     await wrapper.get('[aria-label="文档范围ID"]').setValue('41\n42')
-    await wrapper.get('[aria-label="分配窗口秒"]').setValue('1')
-    await wrapper.get('[aria-label="观察窗口秒"]').setValue('0')
+    await wrapper.get('[aria-label="分配窗口单位"]').setValue('1')
+    await wrapper.get('[aria-label="分配窗口数值"]').setValue('1')
+    await wrapper.get('[aria-label="观察窗口单位"]').setValue('1')
+    await wrapper.get('[aria-label="观察窗口数值"]').setValue('0')
     await wrapper.get('[aria-label="主规则覆盖文档"]').setValue('42')
     const override = {
       assertions: [{ field: 'originalText', operator: 'EXACT', value: '文档42专用' }],

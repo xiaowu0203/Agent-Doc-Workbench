@@ -288,6 +288,7 @@ async function fillCreate(wrapper: VueWrapper) {
   await button(wrapper, '选择已发布数据集版本')!.trigger('click')
   wrapper.findComponent(PublishedVersionPicker).vm.$emit('select', dataset, '数据集')
   await wrapper.get('[aria-label="候选 Prompt 1"]').setValue('测试候选 Prompt')
+  await flushPromises()
 }
 beforeEach(() => {
   vi.resetAllMocks()
@@ -370,6 +371,9 @@ beforeEach(() => {
     createdAt: null,
   })
   vi.mocked(api.createExperiment).mockResolvedValue(experiment)
+  vi.mocked(api.getDatasetCases).mockResolvedValue([{ enabled: true }] as Awaited<
+    ReturnType<typeof api.getDatasetCases>
+  >)
 })
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
@@ -676,6 +680,23 @@ describe('report facts and compatibility', () => {
   })
 })
 describe('creation idempotency', () => {
+  it('带入版本显示计划次数，空数据集不能创建实验', async () => {
+    const wrapper = mount(ExperimentCreate, {
+      props: { spaceId: '7', allowed: true, initialVersionId: String(dataset.id) },
+      global: { stubs: { ElDialog: dialogStub, PublishedVersionPicker: true } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('共 2 次执行')
+    expect(api.createExperiment).not.toHaveBeenCalled()
+    vi.mocked(api.getDatasetCases).mockResolvedValue([])
+    await button(wrapper, '选择已发布数据集版本')!.trigger('click')
+    wrapper.findComponent(PublishedVersionPicker).vm.$emit('select', dataset, '数据集')
+    await flushPromises()
+    await wrapper.get('[aria-label="候选 Prompt 1"]').setValue('候选')
+    expect(button(wrapper, '创建实验')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('没有启用用例')
+  })
   it('preserves key for identical failed submissions and generates a new key after editing', async () => {
     const wrapper = mountCreate()
     await fillCreate(wrapper)

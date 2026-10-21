@@ -1,5 +1,13 @@
 <template>
-  <el-dialog :model-value="true" title="创建 Prompt 离线实验" width="760px" @close="$emit('close')">
+  <el-dialog
+    :model-value="true"
+    title="创建 Prompt 离线实验"
+    width="min(760px, 94vw)"
+    top="5vh"
+    body-class="evaluation-create-body"
+    :close-on-click-modal="false"
+    @close="$emit('close')"
+  >
     <p>
       Baseline 来自数据集冻结来源；候选仅修改 Prompt。创建后仍需预检和单独确认 Token 预算才会启动。
     </p>
@@ -8,6 +16,13 @@
       {{ source.name }} · v{{ source.version.versionNo }} · #{{ source.version.id }}
     </p>
     <p v-if="source">内容 hash：{{ source.version.contentHash }}</p>
+    <p v-if="sourceLoading" role="status">正在核验数据集及启用用例……</p>
+    <p v-if="sourceError" role="alert">{{ sourceError }}</p>
+    <p v-if="caseCount !== null">
+      计划每组 {{ caseCount }} 个启用用例，共
+      {{ caseCount * (candidates.length + 1) }}
+      次执行。来源配置兼容性由创建后的统一预检核验；预检通过前不能启动。
+    </p>
     <fieldset v-for="(candidate, index) in candidates" :key="candidate.rowId" :disabled="busy">
       <legend>Prompt 候选 {{ index + 1 }}</legend>
       <label
@@ -65,12 +80,16 @@ import type {
   Experiment,
   ExperimentCreateRequest,
 } from '../types'
-const props = defineProps<{ spaceId: string; allowed: boolean }>()
+const props = defineProps<{ spaceId: string; allowed: boolean; initialVersionId?: string }>()
 const emit = defineEmits<{ close: []; created: [value: Experiment] }>()
 const source = ref<{ version: DatasetVersion; name: string }>()
 const picker = ref(false),
   busy = ref(false),
   error = ref('')
+const sourceLoading = ref(false),
+  sourceError = ref(''),
+  caseCount = ref<number | null>(null)
+let sourceRead: AbortController | undefined
 let nextRow = 0,
   request: AbortController | undefined,
   generation = 0
@@ -78,6 +97,8 @@ const candidates = ref([{ rowId: nextRow++, variantKey: 'prompt-v2', agentPrompt
 const valid = computed(
   () =>
     !!source.value &&
+    !sourceLoading.value &&
+    !sourceError.value &&
     candidates.value.every(
       (item) =>
         item.variantKey.trim() &&
@@ -121,7 +142,53 @@ function select(version: DatasetVersion | TestCaseVersion | EvaluatorVersion, na
     return
   source.value = { version, name }
   picker.value = false
+  void inspectSource(version)
 }
+async function inspectSource(loaded?: DatasetVersion) {
+  sourceRead?.abort()
+  const pending = new AbortController()
+  sourceRead = pending
+  sourceLoading.value = true
+  sourceError.value = ''
+  caseCount.value = null
+  try {
+    const version = loaded ?? (await api.getDatasetVersion(props.initialVersionId!, pending.signal))
+    if (pending.signal.aborted) return
+    if (
+      !('datasetId' in version) ||
+      (!loaded && String(version.id) !== props.initialVersionId) ||
+      String(version.spaceId) !== props.spaceId ||
+      version.status !== 'PUBLISHED' ||
+      !version.contentHash ||
+      !version.datasetId
+    )
+      throw new Error('数据集版本已不可用于新实验，请重新选择')
+    const parent = await api.getDataset(version.datasetId, pending.signal)
+    if (pending.signal.aborted) return
+    if (
+      String(parent.id) !== String(version.datasetId) ||
+      String(parent.spaceId) !== props.spaceId ||
+      parent.archived
+    )
+      throw new Error('数据集已归档或归属不一致')
+    const cases = await api.getDatasetCases(version.id, pending.signal)
+    if (pending.signal.aborted) return
+    caseCount.value = cases.filter((item) => item.enabled).length
+    if (!caseCount.value) throw new Error('数据集没有启用用例，请选择其他版本')
+    source.value = { version, name: parent.name }
+  } catch (failure) {
+    if (!pending.signal.aborted) sourceError.value = normalizeApiError(failure).message
+  } finally {
+    if (!pending.signal.aborted) sourceLoading.value = false
+  }
+}
+watch(
+  () => props.initialVersionId,
+  (id) => {
+    if (props.allowed && id && /^[1-9]\d{0,18}$/.test(id)) void inspectSource()
+  },
+  { immediate: true },
+)
 async function create() {
   if (!valid.value || !props.allowed || busy.value || !source.value) return
   const currentGeneration = generation,
@@ -193,6 +260,10 @@ watch(
   () => [props.spaceId, props.allowed],
   () => {
     generation++
+    sourceRead?.abort()
+    sourceLoading.value = false
+    sourceError.value = ''
+    caseCount.value = null
     request?.abort()
     busy.value = false
     source.value = undefined
@@ -202,6 +273,7 @@ watch(
   },
 )
 onBeforeUnmount(() => {
+  sourceRead?.abort()
   generation++
   request?.abort()
 })
@@ -236,5 +308,11 @@ p {
 input:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--adw-color-primary);
+}
+</style>
+<style>
+.evaluation-create-body {
+  max-height: 72vh;
+  overflow-y: auto;
 }
 </style>

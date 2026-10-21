@@ -3,10 +3,22 @@ import { describe, expect, it } from 'vitest'
 
 import EvaluationMetricValue from './EvaluationMetricValue.vue'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
+import { formatMetricNumber } from '../display'
 
 type MetricProps = InstanceType<typeof EvaluationMetricValue>['$props']
 
 describe('evaluation display', () => {
+  it.each([
+    [null, 'ratio', '未知'],
+    ['0.000000000000', 'ratio', '0%'],
+    ['0.666666666667', 'ratio', '66.67%'],
+    ['12500.000000000000', 'millisecond', '12.5 秒'],
+    ['0.00000000001', 'CNY', '1.00e-11 CNY'],
+    ['9007199254740993', 'token', '9,007,199,254,740,993'],
+    ['-0.1', 'percentage-point', '-10 个百分点'],
+  ])('格式化 %s，保留未知、零值、小额和安全整数边界', (value, unit, expected) => {
+    expect(formatMetricNumber(value, unit)).toBe(expected)
+  })
   it.each([
     ['run', 'COMPLETED_WITH_ERRORS', '完成但有错误', 'warning'],
     ['experiment', 'CANCEL_PENDING', '取消中', 'warning'],

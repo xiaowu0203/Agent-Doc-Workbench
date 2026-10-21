@@ -96,10 +96,14 @@
       @retry="refresh"
     >
       <template v-if="experiment">
+        <nav class="detail-navigation" aria-label="线上实验详情分区">
+          <a href="#online-facts">运行概况</a><a href="#online-assignments">任务与分配</a
+          ><a href="#online-report">冻结报告</a><a href="#online-config">冻结配置</a>
+        </nav>
         <p v-if="experiment.manifestSchemaVersion !== 2" role="alert">
           历史协议仅供查看，不能启动或操作。
         </p>
-        <section aria-label="线上运行事实">
+        <section id="online-facts" aria-label="线上运行事实">
           <h3>{{ onlineStatus(experiment.status) }}</h3>
           <p v-for="code in experiment.reasonCodes" :key="code" class="warning">
             {{ onlineIssue(code) }}
@@ -208,7 +212,7 @@
             </ul>
           </template>
         </section>
-        <section aria-label="线上分配观察">
+        <section id="online-assignments" aria-label="线上分配观察">
           <h3>已接受分配</h3>
           <p>保留未落库、失败、取消和未知项。下钻 Task 时重新检查权限。</p>
           <p v-if="assignmentError" role="alert">{{ assignmentError }}</p>
@@ -272,14 +276,23 @@
           />
         </section>
         <OnlineReportPanel
+          id="online-report"
+          :requested-revision="Number(route.query.reportRevision || 1)"
           :experiment="experiment"
           :readable="canRead"
           :manageable="canManageReport"
           :can-recalculate="canRecalculate"
           @decided="refresh"
+          @loaded="
+            router.replace({
+              query: { ...route.query, reportRevision: String($event) },
+              hash: route.hash,
+            })
+          "
         />
         <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
         <OnlinePromptComparison
+          id="online-config"
           :experiment="experiment"
           :allowed="isOwner && workspace.hasPermission(P.AGENT_MANAGE)"
         />
@@ -636,8 +649,19 @@ onBeforeUnmount(() => {
 </script>
 <style scoped>
 .online-experiment {
+  min-width: 0;
   display: grid;
   gap: 24px;
+}
+.detail-navigation {
+  display: flex;
+  gap: var(--adw-space-4);
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--adw-border-color);
+  padding-bottom: var(--adw-space-3);
+}
+[id] {
+  scroll-margin-top: 80px;
 }
 .header,
 .actions,
@@ -658,15 +682,19 @@ small {
   line-height: 1.6;
 }
 .table-wrap {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 table {
   width: 100%;
+  min-width: 550px;
   border-collapse: collapse;
   text-align: left;
 }
 th,
 td {
+  overflow-wrap: anywhere;
   padding: 12px;
   border-bottom: 1px solid var(--adw-border-color-light);
   vertical-align: top;

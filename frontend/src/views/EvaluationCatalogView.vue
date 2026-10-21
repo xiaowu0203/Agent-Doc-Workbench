@@ -62,7 +62,16 @@
     </form>
     <DataState :loading="loading" :error="error" @retry="reload">
       <template v-if="!resourceId">
-        <el-table :data="page.records" class="catalog-page__table">
+        <el-table :data="page.records" class="catalog-page__table" empty-text="暂无匹配资源">
+          <template #empty>
+            <p class="catalog-page__empty">
+              没有匹配的{{ label }}。{{
+                canManage
+                  ? `可以新建${label}，再创建草稿版本。`
+                  : '请调整查询条件，或联系空间管理者添加资源。'
+              }}
+            </p>
+          </template>
           <el-table-column :label="label" min-width="230"
             ><template #default="{ row }"
               ><div class="catalog-page__name">
@@ -96,13 +105,6 @@
             ></el-table-column
           >
         </el-table>
-        <p v-if="!page.records.length" class="catalog-page__empty">
-          没有匹配的{{ label }}。{{
-            canManage
-              ? `可以新建${label}，再创建草稿版本。`
-              : '请调整查询条件，或联系空间管理者添加资源。'
-          }}
-        </p>
         <div class="catalog-page__pagination">
           <span>共 {{ page.total }} 条</span
           ><el-pagination
@@ -151,6 +153,21 @@
                   <EvaluationStatusTag domain="version" :status="selectedVersion.status" />
                 </h3>
                 <div class="catalog-page__actions">
+                  <template
+                    v-if="
+                      selectedVersion.status === 'PUBLISHED' &&
+                      !resource?.archived &&
+                      canRun &&
+                      section !== 'evaluators'
+                    "
+                  >
+                    <el-button @click="createFromVersion('runs')">创建评估运行</el-button>
+                    <el-button
+                      v-if="section === 'datasets' && canManage"
+                      @click="createFromVersion('experiments')"
+                      >创建离线实验</el-button
+                    >
+                  </template>
                   <el-button
                     v-if="editable"
                     :loading="busy"
@@ -174,12 +191,22 @@
                     : '此版本只读，配置与绑定保持历史取值。'
                 }}
               </p>
-              <dl class="catalog-page__facts">
-                <dt>内容 hash</dt>
-                <dd>{{ selectedVersion.contentHash || '发布时生成' }}</dd>
-                <dt>发布时间</dt>
-                <dd>{{ selectedVersion.publishedAt || '尚未发布' }}</dd>
-              </dl>
+              <p v-if="editable" role="status" class="catalog-page__hint">
+                {{
+                  configDirty() || bindingDirty
+                    ? `尚未保存：${[configDirty() ? '草稿配置' : '', bindingDirty ? '版本绑定' : ''].filter(Boolean).join('、')}。请先保存对应内容，再核对发布。`
+                    : '当前配置与绑定已保存；发布后将冻结此版本。'
+                }}
+              </p>
+              <details>
+                <summary>版本冻结身份</summary>
+                <dl class="catalog-page__facts">
+                  <dt>内容 hash</dt>
+                  <dd>{{ selectedVersion.contentHash || '发布时生成' }}</dd>
+                  <dt>发布时间</dt>
+                  <dd>{{ selectedVersion.publishedAt || '尚未发布' }}</dd>
+                </dl>
+              </details>
               <template v-if="evaluatorVersion">
                 <dl class="catalog-page__facts">
                   <dt>Evaluator key</dt>
@@ -192,8 +219,10 @@
                     {{ evaluatorVersion.resultSchemaVersion }}
                   </dd>
                 </dl>
-                <JsonConfigEditor
+                <EvaluatorConfigEditor
                   v-model="configForm.configJson"
+                  :evaluator-key="evaluatorVersion.evaluatorKey"
+                  :schema-version="evaluatorVersion.configSchemaVersion"
                   label="configJson"
                   :readonly="!editable"
                 />
@@ -211,33 +240,40 @@
                 >
               </template>
               <template v-if="testCaseVersion">
-                <dl class="catalog-page__facts">
-                  <dt>来源 Task / Execution</dt>
-                  <dd>
-                    <RouterLink
-                      v-if="canReadTask && testCaseVersion.sourceTaskId"
-                      :to="`/spaces/${spaceId}/tasks/${testCaseVersion.sourceTaskId}?tab=evidence`"
-                      >#{{ testCaseVersion.sourceTaskId }}</RouterLink
-                    ><span v-else>{{ testCaseVersion.sourceTaskId || '未提供' }}</span> /
-                    {{ testCaseVersion.sourceExecutionId || '未提供' }}
-                  </dd>
-                  <dt>冻结文档版本</dt>
-                  <dd>{{ testCaseVersion.documentVersionSnapshot ?? '未提供' }}</dd>
-                  <dt>文档内容 hash</dt>
-                  <dd>{{ testCaseVersion.documentContentSha256 || '未提供' }}</dd>
-                  <dt>输入 snapshot schema / hash</dt>
-                  <dd>
-                    {{ testCaseVersion.sourceInputSchemaVersion }} /
-                    {{ testCaseVersion.sourceInputHash }}
-                  </dd>
-                  <dt>执行 snapshot schema / hash</dt>
-                  <dd>
-                    {{ testCaseVersion.sourceExecutionSchemaVersion }} /
-                    {{ testCaseVersion.sourceExecutionHash }}
-                  </dd>
-                  <dt>expected schema</dt>
-                  <dd>{{ testCaseVersion.expectedSchemaVersion }}</dd>
-                </dl>
+                <details>
+                  <summary>
+                    冻结来源与快照依据（文档 v{{
+                      testCaseVersion.documentVersionSnapshot ?? '未知'
+                    }}）
+                  </summary>
+                  <dl class="catalog-page__facts">
+                    <dt>来源 Task / Execution</dt>
+                    <dd>
+                      <RouterLink
+                        v-if="canReadTask && testCaseVersion.sourceTaskId"
+                        :to="`/spaces/${spaceId}/tasks/${testCaseVersion.sourceTaskId}?tab=evidence`"
+                        >#{{ testCaseVersion.sourceTaskId }}</RouterLink
+                      ><span v-else>{{ testCaseVersion.sourceTaskId || '未提供' }}</span> /
+                      {{ testCaseVersion.sourceExecutionId || '未提供' }}
+                    </dd>
+                    <dt>冻结文档版本</dt>
+                    <dd>{{ testCaseVersion.documentVersionSnapshot ?? '未提供' }}</dd>
+                    <dt>文档内容 hash</dt>
+                    <dd>{{ testCaseVersion.documentContentSha256 || '未提供' }}</dd>
+                    <dt>输入 snapshot schema / hash</dt>
+                    <dd>
+                      {{ testCaseVersion.sourceInputSchemaVersion }} /
+                      {{ testCaseVersion.sourceInputHash }}
+                    </dd>
+                    <dt>执行 snapshot schema / hash</dt>
+                    <dd>
+                      {{ testCaseVersion.sourceExecutionSchemaVersion }} /
+                      {{ testCaseVersion.sourceExecutionHash }}
+                    </dd>
+                    <dt>expected schema</dt>
+                    <dd>{{ testCaseVersion.expectedSchemaVersion }}</dd>
+                  </dl>
+                </details>
                 <JsonConfigEditor
                   v-model="configForm.expectedJson"
                   label="expectedJson"
@@ -339,7 +375,11 @@
             'evaluatorKey' in (resource || {}) ? (resource as Evaluator).evaluatorKey : ''
           }}
         </p>
-        <JsonConfigEditor v-model="newVersionForm.configJson" label="configJson" />
+        <EvaluatorConfigEditor
+          v-model="newVersionForm.configJson"
+          :evaluator-key="resource && 'evaluatorKey' in resource ? resource.evaluatorKey : null"
+          label="configJson"
+        />
         <details v-if="currentGuide">
           <summary>查看最小配置示例</summary>
           <pre>{{ formatJson(currentGuide.example) }}</pre>
@@ -406,6 +446,7 @@ import {
 import CatalogBindings from '@/features/evaluation/components/CatalogBindings.vue'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
 import JsonConfigEditor from '@/features/evaluation/components/JsonConfigEditor.vue'
+import EvaluatorConfigEditor from '@/features/evaluation/components/EvaluatorConfigEditor.vue'
 import TaskSourcePicker from '@/features/evaluation/components/TaskSourcePicker.vue'
 type CatalogResource = EvaluationDataset | EvaluationTestCase | Evaluator
 type CatalogVersion = DatasetVersion | TestCaseVersion | EvaluatorVersion
@@ -424,6 +465,26 @@ const canRead = computed(
 const canManage = computed(
   () => canRead.value && workspace.hasPermission(SPACE_PERMISSIONS.EVALUATION_MANAGE),
 )
+const canRun = computed(
+  () => canRead.value && workspace.hasPermission(SPACE_PERMISSIONS.EVALUATION_RUN),
+)
+function createFromVersion(target: 'runs' | 'experiments') {
+  if (
+    !canRun.value ||
+    !selectedVersion.value ||
+    selectedVersion.value.status !== 'PUBLISHED' ||
+    resource.value?.archived
+  )
+    return
+  void router.push({
+    path: `/spaces/${spaceId.value}/evaluation/${target}`,
+    query: {
+      create: '1',
+      sourceKind: props.section,
+      sourceVersionId: String(selectedVersion.value.id),
+    },
+  })
+}
 const canReadTask = computed(
   () => inSpace.value && workspace.hasPermission(SPACE_PERMISSIONS.TASK_READ),
 )
@@ -988,11 +1049,13 @@ onBeforeUnmount(() => {
 </script>
 <style scoped>
 .catalog-page {
+  min-width: 0;
   display: grid;
   gap: var(--adw-space-5);
 }
 .catalog-page__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--adw-space-4);
@@ -1019,9 +1082,11 @@ p {
 }
 .catalog-page__filters {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--adw-space-3);
 }
 .catalog-page__filters .el-input {
+  flex: 1 1 200px;
   max-width: 330px;
 }
 .catalog-page__filters .el-select {
@@ -1082,6 +1147,10 @@ button:focus-visible {
   color: var(--adw-text-primary);
   background: transparent;
   cursor: pointer;
+}
+.catalog-page__timeline {
+  max-height: 480px;
+  overflow-y: auto;
 }
 .catalog-page__timeline button[aria-pressed='true'] {
   background: var(--adw-color-primary-soft);
@@ -1148,6 +1217,7 @@ p[role='alert'] {
     grid-template-columns: minmax(0, 1fr);
   }
   .catalog-page__timeline {
+    max-height: 180px;
     border-right: 0;
     display: flex;
     flex-wrap: wrap;

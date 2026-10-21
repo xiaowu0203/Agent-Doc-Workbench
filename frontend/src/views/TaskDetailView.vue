@@ -2,6 +2,14 @@
   <section class="detail-page">
     <PageHeader :title="task?.name || '任务执行详情'" :description="headerDescription">
       <template #breadcrumb>
+        <button
+          v-if="evaluationReturn"
+          class="back-link"
+          type="button"
+          @click="router.push(evaluationReturn)"
+        >
+          返回评估运行
+        </button>
         <button class="back-link" type="button" @click="router.push(`/spaces/${spaceId}/tasks`)">
           任务
         </button>
@@ -257,7 +265,14 @@
               </template>
               <template v-else
                 ><strong>{{ isActive ? '正在等待任务产物' : '未生成业务产物' }}</strong>
-                <p>{{ task.resultSummary || '执行完成后将在这里显示结果引用。' }}</p></template
+                <p>
+                  {{
+                    task.resultSummary ||
+                    (isActive
+                      ? '产物生成后将在这里显示结果引用。'
+                      : '执行已结束，本次未生成业务产物。请结合调用审计核对交付情况。')
+                  }}
+                </p></template
               >
               <el-alert
                 v-if="task.errorMessage"
@@ -329,6 +344,26 @@ type TrailFilter = 'ALL' | 'MODEL' | 'TOOL' | 'ERROR'
 const route = useRoute(),
   router = useRouter(),
   workspace = useWorkspaceStore()
+const evaluationReturn = computed(() => {
+  const value = route.query.evaluationReturn
+  if (typeof value !== 'string') return ''
+  const [path, search = '', ...extra] = value.split('?')
+  if (
+    extra.length ||
+    !new RegExp(`^/spaces/${String(route.params.spaceId)}/evaluation/runs/[1-9]\\d{0,18}$`).test(
+      path!,
+    )
+  )
+    return ''
+  for (const [key, id] of new window.URLSearchParams(search))
+    if (
+      key === 'errors'
+        ? id !== '1'
+        : !['caseRunId', 'attemptId', 'resultId'].includes(key) || !/^[1-9]\d{0,18}$/.test(id)
+    )
+      return ''
+  return value
+})
 const detail = ref<TaskExecutionDetail | null>(null),
   loading = ref(false),
   refreshing = ref(false),

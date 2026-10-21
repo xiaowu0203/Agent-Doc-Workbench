@@ -31,6 +31,53 @@
       hash；不显示未知正文，也不自动重算。
     </p>
     <template v-else-if="content">
+      <section v-if="overviewMetrics.length" aria-label="重点指标对照" class="report-comparison">
+        <h4>重点指标对照</h4>
+        <p>
+          质量规则与执行成功分别判断；每项保留有效分母，费用按币种分开。用例数量不代表独立来源数量。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>指标</th>
+                <th v-for="variant in summaryVariants" :key="variant">
+                  {{ variant === 'baseline' ? '基线' : variant }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="key in overviewMetrics" :key="key">
+                <th :title="key">{{ metricLabel(key) }}</th>
+                <td v-for="variant in summaryVariants" :key="variant">
+                  <template v-if="summaryFor(key, variant)">
+                    <p
+                      v-for="unit in summaryUnits(summaryFor(key, variant)!)"
+                      :key="unit"
+                      :title="String(summaryFor(key, variant)!.numericMeansByUnit[unit])"
+                    >
+                      {{
+                        formatMetricNumber(summaryFor(key, variant)!.numericMeansByUnit[unit], unit)
+                      }}
+                    </p>
+                    <span v-if="!summaryFor(key, variant)!.validCount">无有效结果</span>
+                    <span v-else-if="!summaryUnits(summaryFor(key, variant)!).length"
+                      >真 {{ summaryFor(key, variant)!.trueCount }} / 假
+                      {{ summaryFor(key, variant)!.falseCount }}</span
+                    >
+                    <small
+                      >有效 {{ summaryFor(key, variant)!.validCount }} /
+                      {{ summaryFor(key, variant)!.expectedCount }} · 缺失
+                      {{ summaryFor(key, variant)!.missingCount }}</small
+                    >
+                  </template>
+                  <span v-else>未提供</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <div class="report-overview">
         <article>
           <span>冻结用例 / Variant</span
@@ -48,8 +95,8 @@
       </div>
       <div class="report-columns">
         <div class="report-main">
-          <section aria-label="Variant 指标汇总">
-            <h4>Variant 指标汇总</h4>
+          <details aria-label="Variant 指标汇总">
+            <summary>全部指标汇总与原值</summary>
             <p>各指标独立展示有效分母；成本按币种分开，未提供值不按 0 处理。</p>
             <div class="table-wrap">
               <table>
@@ -65,14 +112,23 @@
                 <tbody>
                   <tr v-for="(row, index) in content.summaries" :key="index">
                     <td>
-                      {{ row.variantKey }}<small>{{ row.metricKey }}</small>
+                      {{ row.variantKey
+                      }}<small :title="row.metricKey">{{ metricLabel(row.metricKey) }}</small>
                     </td>
                     <td>{{ row.validCount }} / {{ row.expectedCount }} / {{ row.missingCount }}</td>
-                    <td>{{ row.trueCount }} / {{ row.falseCount }}</td>
                     <td>
-                      <p v-for="unit in summaryUnits(row)" :key="unit">
-                        {{ unit || '未指定单位' }}：{{ fact(row.numericTotalsByUnit[unit]) }} /
-                        {{ fact(row.numericMeansByUnit[unit]) }}
+                      {{
+                        summaryUnits(row).length ? '不适用' : `${row.trueCount} / ${row.falseCount}`
+                      }}
+                    </td>
+                    <td>
+                      <p
+                        v-for="unit in summaryUnits(row)"
+                        :key="unit"
+                        :title="`原值：${row.numericTotalsByUnit[unit]} / ${row.numericMeansByUnit[unit]} ${unit}`"
+                      >
+                        {{ formatMetricNumber(row.numericTotalsByUnit[unit], unit) }} /
+                        {{ formatMetricNumber(row.numericMeansByUnit[unit], unit) }}
                       </p>
                       <span v-if="!summaryUnits(row).length">无有效数值汇总</span>
                     </td>
@@ -105,7 +161,7 @@
                 </div>
               </figure>
             </details>
-          </section>
+          </details>
           <section aria-label="Candidate 配对比较">
             <h4>Candidate 配对比较</h4>
             <div class="table-wrap">
@@ -122,7 +178,8 @@
                 <tbody>
                   <tr v-for="(row, index) in content.comparisons" :key="index">
                     <td>
-                      {{ row.candidateVariantKey || '未提供' }}<small>{{ row.metricKey }}</small>
+                      {{ row.candidateVariantKey || '未提供'
+                      }}<small :title="row.metricKey">{{ metricLabel(row.metricKey) }}</small>
                     </td>
                     <td>
                       {{ row.pairedCount }} /
@@ -166,7 +223,15 @@
                   <option v-for="key in metrics" :key="key">{{ key }}</option>
                 </select></label
               >
+              <label
+                >结果范围<select v-model="cellState" aria-label="矩阵结果范围">
+                  <option value="">全部结果</option>
+                  <option value="missing">缺失结果</option>
+                  <option value="failed">执行异常或布尔未通过</option>
+                </select></label
+              >
             </div>
+            <p>当前匹配 {{ filteredCells.length }} 项；筛选不改变冻结汇总或配对分母。</p>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -286,6 +351,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElPagination } from 'element-plus'
 import { metricText } from '../experiment'
+import { formatMetricNumber, metricLabel } from '../display'
 import type { EntityId } from '@/features/workspace/types'
 import type {
   ExperimentReport,
@@ -303,8 +369,26 @@ const supported = computed(
     !!props.report.report,
 )
 const content = computed(() => (supported.value ? props.report.report : null))
+const summaryVariants = computed(() => [
+  ...new Set(content.value?.summaries.map((row) => row.variantKey)),
+])
+const overviewMetrics = computed(() =>
+  [
+    'evaluation.document-change.valid',
+    'evaluation.document-change.accuracy',
+    'evaluation.artifact-contract.valid',
+    'execution.success',
+    'execution.cost',
+    'execution.latency',
+    'execution.total-tokens',
+  ].filter((key) => content.value?.summaries.some((row) => row.metricKey === key)),
+)
+function summaryFor(key: string, variant: string) {
+  return content.value?.summaries.find((row) => row.metricKey === key && row.variantKey === variant)
+}
 const variantFilter = ref(''),
   metricFilter = ref(''),
+  cellState = ref(''),
   page = ref(1)
 const variants = computed(() => [
   ...new Set(content.value?.cells.map((cell) => cell.value.variantKey)),
@@ -317,7 +401,14 @@ const filteredCells = computed(
     content.value?.cells.filter(
       (cell) =>
         (!variantFilter.value || cell.value.variantKey === variantFilter.value) &&
-        (!metricFilter.value || cell.value.metricKey === metricFilter.value),
+        (!metricFilter.value || cell.value.metricKey === metricFilter.value) &&
+        (!cellState.value ||
+          (cellState.value === 'missing'
+            ? !!cell.value.missingReason
+            : cell.value.booleanValue === false ||
+              ['REPLAY_FAILED', 'EVALUATOR_FAILED'].includes(
+                selection(cell)?.attemptStatus || '',
+              ))),
     ) || [],
 )
 const visibleCells = computed(() =>
@@ -331,7 +422,8 @@ const evidenceCovered = computed(
         .map((cell) => String(cell.value.metricId)),
     ).size,
 )
-const fact = (value: number | null | undefined) => (value == null ? '未提供' : String(value))
+const fact = (value: number | null | undefined) =>
+  value == null ? '未提供' : formatMetricNumber(value)
 const summaryUnits = (row: ExperimentReportVariantSummary) => [
   ...new Set([...Object.keys(row.numericTotalsByUnit), ...Object.keys(row.numericMeansByUnit)]),
 ]
@@ -388,7 +480,7 @@ const charts = computed(() => {
     }))
 })
 watch(
-  () => [props.report.revision, variantFilter.value, metricFilter.value],
+  () => [props.report.revision, variantFilter.value, metricFilter.value, cellState.value],
   () => {
     page.value = 1
   },
@@ -396,6 +488,7 @@ watch(
 </script>
 <style scoped>
 .report-panel {
+  min-width: 0;
   display: grid;
   gap: var(--adw-space-4);
 }
@@ -433,6 +526,8 @@ details {
   padding: var(--adw-space-4);
 }
 .table-wrap {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 table {
@@ -447,6 +542,9 @@ td {
   vertical-align: top;
   overflow-wrap: anywhere;
   min-width: 70px;
+}
+.report-comparison table {
+  min-width: 420px;
 }
 small {
   display: block;

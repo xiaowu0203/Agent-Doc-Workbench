@@ -22,14 +22,23 @@
         <label
           >状态<select v-model="statusFilter" aria-label="实验状态">
             <option value="">全部状态</option>
-            <option v-for="status in EXPERIMENT_STATUSES" :key="status">{{ status }}</option>
+            <option v-for="status in EXPERIMENT_STATUSES" :key="status" :value="status">
+              {{ evaluationStatus('experiment', status).label }}
+            </option>
           </select></label
-        ><label
-          >数据集版本 ID<input
-            v-model="datasetFilter"
-            aria-label="筛选数据集版本 ID"
-            inputmode="numeric" /></label
-        ><label
+        >
+        <div class="source-filter">
+          <el-button @click="sourcePicker = true">按名称选择数据集版本</el-button
+          ><small v-if="sourceLabel">{{ sourceLabel }}</small
+          ><label
+            >数据集版本 ID<input
+              v-model="datasetFilter"
+              aria-label="筛选数据集版本 ID"
+              inputmode="numeric"
+              @input="sourceLabel = ''"
+          /></label>
+        </div>
+        <label
           >创建起始<input
             v-model="createdFrom"
             aria-label="实验创建起始"
@@ -45,7 +54,11 @@
         :loading="loading"
         :error="error"
         :empty="!list.records.length"
-        empty-text="尚无离线实验。选择已发布数据集，创建 Prompt 候选后预检。"
+        :empty-text="
+          statusFilter || datasetFilter || createdFrom || createdTo
+            ? '当前筛选没有匹配的离线实验，请调整条件后查询。'
+            : '尚无离线实验。选择已发布数据集，创建 Prompt 候选后预检。'
+        "
         @retry="refresh"
         ><div class="table-wrap">
           <table>
@@ -60,12 +73,12 @@
             <tbody>
               <tr v-for="item in list.records" :key="String(item.id)">
                 <td>
-                  <RouterLink :to="`${basePath}/${item.id}`">实验 #{{ item.id }}</RouterLink>
-                  <p>
+                  <RouterLink :to="`${basePath}/${item.id}`">
                     {{ item.datasetName || '数据集名称不可用' }} · v{{
                       item.datasetVersionNo ?? '未提供'
                     }}
-                  </p>
+                  </RouterLink>
+                  <p>实验 #{{ item.id }}</p>
                   <small>版本 #{{ item.datasetVersionId || '未提供' }}</small>
                 </td>
                 <td>
@@ -277,8 +290,22 @@
       v-if="creating && canCreate"
       :space-id="spaceId"
       :allowed="canCreate"
-      @close="creating = false"
+      :initial-version-id="
+        typeof route.query.sourceVersionId === 'string' && route.query.sourceKind === 'datasets'
+          ? route.query.sourceVersionId
+          : undefined
+      "
+      @close="closeCreate"
       @created="created"
+    />
+    <PublishedVersionPicker
+      v-if="sourcePicker"
+      :open="true"
+      :space-id="spaceId"
+      kind="datasets"
+      :exclude-ids="[]"
+      @close="sourcePicker = false"
+      @select="selectFilterSource"
     />
     <el-dialog
       v-model="startDialog"
@@ -351,6 +378,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { evaluationStatus } from '@/features/evaluation/status'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
@@ -360,6 +388,7 @@ import { normalizeApiError } from '@/api/errors'
 import DataState from '@/shared/components/DataState.vue'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
 import ExperimentCreate from '@/features/evaluation/components/ExperimentCreate.vue'
+import PublishedVersionPicker from '@/features/evaluation/components/PublishedVersionPicker.vue'
 import ExperimentReportPanel from '@/features/evaluation/components/ExperimentReportPanel.vue'
 import * as api from '@/features/evaluation/api/evaluation-api'
 import {
@@ -387,6 +416,7 @@ import type {
   ExperimentDecision,
   EvaluationPage,
   EvaluationRun,
+  DatasetVersion,
 } from '@/features/evaluation/types'
 const props = defineProps<{ resourceId?: string }>()
 const route = useRoute(),
@@ -428,6 +458,33 @@ const statusFilter = ref<ExperimentStatus | ''>(''),
   datasetFilter = ref(''),
   createdFrom = ref(''),
   createdTo = ref('')
+const sourcePicker = ref(false),
+  sourceLabel = ref('')
+function closeCreate() {
+  creating.value = false
+  if (route.query.create === '1')
+    void router.replace({
+      query: {
+        ...route.query,
+        create: undefined,
+        sourceKind: undefined,
+        sourceVersionId: undefined,
+      },
+    })
+}
+function selectFilterSource(value: unknown, name: string) {
+  const version = value as DatasetVersion
+  if (
+    !version ||
+    !('datasetId' in version) ||
+    String(version.spaceId) !== spaceId.value ||
+    version.status !== 'PUBLISHED'
+  )
+    return
+  datasetFilter.value = String(version.id)
+  sourceLabel.value = `${name} · v${version.versionNo}`
+  sourcePicker.value = false
+}
 const preflight = ref<ExperimentPreflight>(),
   startDialog = ref(false),
   authorizedBudget = ref<number>(),
@@ -920,7 +977,7 @@ watch(
     preflight.value = undefined
     startDialog.value = false
     decisionDialog.value = false
-    creating.value = false
+    creating.value = !props.resourceId && canCreate.value && route.query.create === '1'
     authorizedBudget.value = undefined
     budgetConfirmed.value = false
     decisionReason.value = ''
@@ -932,6 +989,8 @@ watch(
     reportKey = window.crypto.randomUUID()
     statusFilter.value = ''
     datasetFilter.value = ''
+    sourcePicker.value = false
+    sourceLabel.value = ''
     createdFrom.value = ''
     createdTo.value = ''
     void (props.resourceId ? loadDetail() : loadList(1))

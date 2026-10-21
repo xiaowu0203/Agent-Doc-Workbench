@@ -23,14 +23,14 @@
                 ><strong>{{ trace.availabilityCode === 'AVAILABLE' ? '已关联' : '不可用' }}</strong
                 ><code>{{ trace.traceId || '未关联 Trace' }}</code>
               </div>
-              <div>
+              <div v-if="trace.availabilityCode === 'AVAILABLE'">
                 <span>端到端遥测耗时</span
                 ><strong>{{ formatTraceDuration(trace.durationMicros) }}</strong>
               </div>
-              <div>
+              <div v-if="trace.availabilityCode === 'AVAILABLE'">
                 <span>可见 Span 总数</span><strong>{{ trace.spanCount ?? '不可用' }}</strong>
               </div>
-              <div>
+              <div v-if="trace.availabilityCode === 'AVAILABLE'">
                 <span>错误 / 取消 / 重试</span
                 ><strong
                   >{{ trace.errorCount ?? '不可用' }} / {{ trace.canceledCount ?? '不可用' }} /

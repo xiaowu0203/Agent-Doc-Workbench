@@ -177,16 +177,14 @@ describe('evaluation navigation and permission boundary', () => {
     wrapper.unmount()
   })
 
-  it('keeps two-level navigation active on details and follows the route space', async () => {
+  it('keeps compact section navigation active on details and follows the route space', async () => {
     const router = testRouter(false)
     await router.push(paths[1]!)
     const wrapper = mount(EvaluationWorkbenchLayout, {
       global: { plugins: [router], stubs: { RouterView: true } },
     })
-    expect(wrapper.get('[aria-label="评估工作台导航"] [aria-current="page"]').text()).toBe(
-      '评估目录',
-    )
-    expect(wrapper.get('[aria-label="评估目录资源"] [aria-current="page"]').text()).toBe('评估器')
+    expect(wrapper.get('[aria-label="评估工作台导航"] [aria-current="page"]').text()).toBe('评估器')
+    expect(wrapper.findAll('[aria-label="评估工作台导航"] a')).toHaveLength(6)
     await router.push('/spaces/2/evaluation/experiments/3')
     expect(wrapper.find('[aria-label="评估目录资源"]').exists()).toBe(false)
     expect(wrapper.get('[aria-label="评估工作台导航"] [aria-current="page"]').text()).toBe(

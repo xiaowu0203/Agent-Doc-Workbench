@@ -18,6 +18,7 @@
     <form v-if="canWrite" @submit.prevent="submit">
       <label
         >反馈标签<select v-model="label" aria-label="反馈标签">
+          <option value="" disabled>请选择反馈标签</option>
           <option value="ACCEPTED">接受</option>
           <option value="REJECTED">拒绝</option>
           <option value="NEEDS_CHANGES">需要修改</option>
@@ -63,7 +64,7 @@ const props = defineProps<{
   canWrite: boolean
 }>()
 const emit = defineEmits<{ saved: [] }>()
-const label = ref<EvaluationFeedbackLabel>('ACCEPTED'),
+const label = ref<EvaluationFeedbackLabel | ''>(''),
   score = ref(''),
   comment = ref(''),
   busy = ref(false),
@@ -72,6 +73,10 @@ let request: AbortController | undefined,
   generation = 0
 async function submit() {
   if (!props.canWrite || busy.value) return
+  if (!label.value) {
+    error.value = '请选择反馈标签'
+    return
+  }
   const numeric = score.value === '' ? null : Number(score.value)
   if (numeric !== null && (!Number.isFinite(numeric) || numeric < 0 || numeric > 1)) {
     error.value = '人工分数必须在 0～1 之间'
@@ -110,6 +115,7 @@ async function submit() {
       String(value.caseRunId) !== props.caseRunId
     )
       throw new Error('反馈目标归属不一致')
+    label.value = ''
     score.value = ''
     comment.value = ''
     ElMessage.success('人工反馈已新增')
@@ -125,6 +131,9 @@ watch(
   () => [props.spaceId, props.runId, props.caseRunId, props.taskId, props.canWrite],
   () => {
     generation++
+    label.value = ''
+    score.value = ''
+    comment.value = ''
     request?.abort()
     busy.value = false
     error.value = ''

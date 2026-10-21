@@ -21,14 +21,14 @@
               :key="String(attempt.id)"
               class="attempt"
               :aria-pressed="String(attempt.id) === String(selected?.id)"
-              @click="selectAttempt(attempt)"
+              @click="selectAttempt(attempt, true)"
             >
               <strong
                 >Attempt {{ attempt.attemptNo }}
                 {{ attempt.currentCaseAttempt ? '（当前）' : '（历史，只读）' }}</strong
               ><EvaluationStatusTag domain="attempt" :status="attempt.status" /><small
                 >#{{ attempt.id }}</small
-              ><small>{{ attempt.failureCode || '未提供失败码' }}</small>
+              ><small v-if="attempt.failureCode">{{ attempt.failureCode }}</small>
             </button>
             <el-pagination
               v-if="page.total > PAGE_SIZE"
@@ -96,7 +96,7 @@
                 :key="String(result.id)"
                 class="result-row"
                 :aria-pressed="String(result.id) === String(selectedResult?.id)"
-                @click="chooseResult(result)"
+                @click="chooseResult(result, true)"
               >
                 <span
                   ><strong
@@ -136,6 +136,7 @@
             :task-id="selected.executionTaskId ? String(selected.executionTaskId) : null"
             :can-read-task="canReadTask"
             :revision="revision"
+            :return-path="returnPath"
           />
           <EvaluationFeedbackPanel
             :space-id="spaceId"
@@ -184,8 +185,14 @@ const props = defineProps<{
   busy: boolean
   initialAttemptId?: string
   initialResultId?: string
+  returnPath?: string
 }>()
-defineEmits<{ retryReplay: []; retryEvaluation: [attemptId: string]; feedbackSaved: [] }>()
+const emit = defineEmits<{
+  retryReplay: []
+  retryEvaluation: [attemptId: string]
+  feedbackSaved: []
+  selection: [attemptId: string, resultId?: string]
+}>()
 const PAGE_SIZE = 10
 const page = ref<EvaluationPage<EvaluationCaseAttemptHistory>>({
   records: [],
@@ -224,12 +231,16 @@ const visibleResults = computed(
     ) || [],
 )
 function taskPath(id: string | number) {
-  return `/spaces/${props.spaceId}/tasks/${id}?tab=evidence`
+  return {
+    path: `/spaces/${props.spaceId}/tasks/${id}`,
+    query: { tab: 'evidence', evaluationReturn: props.returnPath },
+  }
 }
-function chooseResult(value: EvaluationResultSummary) {
+function chooseResult(value: EvaluationResultSummary, notify = false) {
   selectedResult.value = value
+  if (notify && selected.value) emit('selection', String(selected.value.id), String(value.id))
 }
-function selectAttempt(value: EvaluationCaseAttemptHistory) {
+function selectAttempt(value: EvaluationCaseAttemptHistory, notify = false) {
   followCurrent = value.currentCaseAttempt
   const previous = selectedResult.value
   selected.value = value
@@ -255,6 +266,12 @@ function selectAttempt(value: EvaluationCaseAttemptHistory) {
         PAGE_SIZE,
     ),
   )
+  if (notify)
+    emit(
+      'selection',
+      String(value.id),
+      selectedResult.value ? String(selectedResult.value.id) : undefined,
+    )
 }
 async function load(pageNum: number, locateDeepLink = false) {
   request?.abort()
@@ -330,6 +347,12 @@ watch(
     props.initialResultId,
   ],
   () => {
+    if (
+      selected.value &&
+      String(selected.value.id) === props.initialAttemptId &&
+      (!props.initialResultId || String(selectedResult.value?.id) === props.initialResultId)
+    )
+      return
     selected.value = null
     selectedResult.value = null
     followCurrent = !props.initialAttemptId
@@ -347,6 +370,7 @@ onBeforeUnmount(() => request?.abort())
 </script>
 <style scoped>
 .case-panel {
+  container-type: inline-size;
   min-width: 0;
   border: 1px solid var(--adw-border-color);
   border-radius: var(--adw-radius-md);
@@ -438,7 +462,7 @@ button:focus-visible {
   outline: 2px solid var(--adw-color-primary);
   outline-offset: -2px;
 }
-@media (max-width: 700px) {
+@container (max-width: 720px) {
   .case-panel__columns {
     grid-template-columns: minmax(0, 1fr);
   }

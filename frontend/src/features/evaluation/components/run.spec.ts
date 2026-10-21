@@ -208,6 +208,42 @@ async function mountRun(id?: string, query = '') {
   await flushPromises()
   return { wrapper, router }
 }
+
+it('已取消终态不再提示等待在途执行收敛', async () => {
+  vi.mocked(api.getEvaluationRun).mockResolvedValue({
+    ...run,
+    status: 'CANCELED',
+    cancelRequested: true,
+  })
+  const { wrapper } = await mountRun('10')
+  expect(wrapper.text()).toContain('运行已取消')
+  expect(wrapper.text()).not.toContain('正在等待在途执行收敛')
+})
+
+it('首评需要主动选择标签，并保留有效零分', async () => {
+  const wrapper = mount(EvaluationFeedbackPanel, {
+    props: {
+      spaceId: '7',
+      runId: '10',
+      caseRunId: '20',
+      taskId: '50',
+      records: [],
+      canWrite: true,
+    },
+  })
+  wrappers.push(wrapper)
+  await wrapper.get('form').trigger('submit')
+  expect(ElMessageBox.confirm).not.toHaveBeenCalled()
+  expect(wrapper.text()).toContain('请选择反馈标签')
+  await wrapper.get('[aria-label="反馈标签"]').setValue('ACCEPTED')
+  await wrapper.get('[aria-label="人工分数"]').setValue('0')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(api.createEvaluationFeedback).toHaveBeenCalledWith(
+    expect.objectContaining({ label: 'ACCEPTED', score: 0 }),
+    expect.any(AbortSignal),
+  )
+})
 function mountCase(extra = {}, realFeedback = false) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -399,6 +435,21 @@ describe('run list, permissions and lifecycle', () => {
   })
 })
 describe('attempt and evaluation result histories', () => {
+  it('选择评价结果发出稳定定位，写回 URL 属性时不重复加载历史或清空反馈', async () => {
+    const wrapper = mountCase({}, true)
+    await flushPromises()
+    await wrapper.get('[aria-label="反馈说明"]').setValue('保留草稿')
+    await wrapper
+      .findAll('button')
+      .find((item) => item.text().includes('Result #80'))!
+      .trigger('click')
+    expect(wrapper.emitted('selection')?.at(-1)).toEqual(['40', '80'])
+    const reads = vi.mocked(api.searchCaseAttempts).mock.calls.length
+    await wrapper.setProps({ initialAttemptId: '40', initialResultId: '80' })
+    await flushPromises()
+    expect(api.searchCaseAttempts).toHaveBeenCalledTimes(reads)
+    expect(wrapper.get('[aria-label="反馈说明"]').element).toHaveProperty('value', '保留草稿')
+  })
   it('keeps typed feedback during a background history refresh', async () => {
     const wrapper = mountCase({}, true)
     await flushPromises()
@@ -558,7 +609,7 @@ describe('result facts, evidence and feedback', () => {
     expect(wrapper.text()).toContain('便捷得分0')
     expect(wrapper.text()).not.toContain('PRIVATE_RESULT_BODY')
     expect(wrapper.text()).not.toContain('PRIVATE_LOCATOR')
-    expect(wrapper.get('a').attributes('href')).toContain('/tasks/50?tab=audit')
+    expect(wrapper.get('a').attributes('href')).toContain('/tasks/50?tab=trace')
   })
   it('rejects cross-space Result details before displaying evidence', async () => {
     vi.mocked(api.getEvaluationResult).mockResolvedValue({ ...detail, spaceId: '8' })
@@ -625,6 +676,19 @@ describe('result facts, evidence and feedback', () => {
   })
 })
 describe('creation from published resources', () => {
+  it('带入已发布版本只读取必要来源，核验后仍等待最终创建确认', async () => {
+    const wrapper = mount(EvaluationRunCreate, {
+      props: { spaceId: '7', canRun: true, initialKind: 'datasets', initialVersionId: '60' },
+      global: {
+        stubs: { PublishedVersionPicker: true, ElDialog: { template: '<div><slot /></div>' } },
+      },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('计划 1 个用例')
+    expect(api.getDatasetVersion).toHaveBeenCalledTimes(1)
+    expect(api.createEvaluationRun).not.toHaveBeenCalled()
+  })
   async function mountCreate() {
     const wrapper = mount(EvaluationRunCreate, {
       props: { spaceId: '7', canRun: true },

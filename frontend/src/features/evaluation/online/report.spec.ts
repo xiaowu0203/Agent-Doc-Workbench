@@ -34,6 +34,9 @@ const frozen: OnlineReport = {
           qualityByBlindness: { BLINDED: { meanRubricScore: '0.000000000000', documentCount: 1 } },
           firstAssignmentResource: {
             ledgerTokens: '9007199254740993',
+            ledgerCoverage: '0.666666666667',
+            executionLatencyMeanMillis: '12500.000000000000',
+            executionLatencyCoverage: '0.666666666667',
             meanCostByCurrency: { CNY: '0.00' },
             queueLatencyMeanMillis: null,
           },
@@ -121,6 +124,34 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('固定线上报告和人工决定', () => {
+  it('沿用报告范围保持长序号和服务端本地时间原文，不自动冻结新报告', async () => {
+    const wrapper = create()
+    await load(wrapper)
+    await button(wrapper, '沿用当前冻结报告范围').trigger('click')
+    expect(wrapper.get('[aria-label="报告分配截止序号"]').element).toHaveProperty(
+      'value',
+      '9007199254740993',
+    )
+    expect(wrapper.get('[aria-label="报告观察截止"]').element).toHaveProperty(
+      'value',
+      '2026-10-12T12:00:00.000',
+    )
+    expect(api.recalculateOnlineReport).not.toHaveBeenCalled()
+  })
+  it('按深链指定版本核验，报告读取后输出该版本且不猜测最新版本', async () => {
+    const wrapper = create()
+    await wrapper.setProps({ requestedRevision: 5 })
+    vi.mocked(api.getOnlineReport).mockResolvedValue({ ...frozen, revision: 5 })
+    await load(wrapper)
+    expect(api.getOnlineReport).toHaveBeenCalledWith(
+      experiment.id,
+      5,
+      true,
+      expect.any(AbortSignal),
+    )
+    expect(wrapper.emitted('loaded')).toEqual([[5]])
+    expect(wrapper.text()).toContain('冻结报告 v5')
+  })
   it.each(['UNSUPPORTED_SCHEMA', 'HASH_MISMATCH', 'FUTURE'])(
     '未知校验状态 %s 不展示正文',
     (state) => expect(onlineReportPayload({ ...frozen, state }, experiment)).toBeNull(),
@@ -133,15 +164,22 @@ describe('固定线上报告和人工决定', () => {
   it('概要保留零和缺失、独立文档/Task 分母、币种和审批差异，并禁止决定', async () => {
     const wrapper = create()
     await load(wrapper, false)
-    expect(wrapper.text()).toContain('0.000000000000')
+    expect(wrapper.text()).toContain('0%')
+    expect(wrapper.find('[title="0.000000000000"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('未知')
     expect(wrapper.text()).toContain('9007199254740993')
     expect(wrapper.text()).toContain('全部 Task 辅助分析')
-    expect(wrapper.text()).toContain('CNY 0.00')
-    expect(wrapper.text()).toContain('USD 1.25')
+    expect(wrapper.text()).toContain('0 CNY')
+    expect(wrapper.text()).toContain('1.25 USD')
     expect(wrapper.text()).toContain('平均人工修改比例')
-    const approvalRatio = wrapper.findAll('tr').find((row) => row.text().includes('可比较提案的平均人工修改比例'))!
-    expect(approvalRatio.findAll('td').map((cell) => cell.text())).toEqual(['0.5', '未知'])
+    const overview = wrapper.get('[aria-label="质量成本与耗时概览"]')
+    expect(overview.text()).toContain('12.5 秒')
+    expect(overview.text()).toContain('66.67%')
+    const approvalRatio = wrapper
+      .findAll('tr')
+      .find((row) => row.text().includes('可比较提案的平均人工修改比例'))!
+    expect(approvalRatio.findAll('td').map((cell) => cell.text())).toEqual(['50%', '未知'])
+    expect(approvalRatio.find('td').attributes('title')).toBe('0.5')
     expect(wrapper.text()).toContain('证据不足或存在阻塞')
     expect(button(wrapper, '核对结论').attributes('disabled')).toBeDefined()
     expect(api.getOnlineReport).toHaveBeenCalledWith(
