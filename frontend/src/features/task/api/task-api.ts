@@ -63,6 +63,13 @@ export function getTaskCreateOptions(
   })
 }
 
+export function getTaskNames(
+  payload: { spaceId: string; taskIds: string[] },
+  signal?: AbortSignal,
+): Promise<{ id: string; spaceId: string; name: string | null }[]> {
+  return request({ method: 'POST', url: '/task/tasks/names-query', data: payload, signal })
+}
+
 export function getTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDetail> {
   return request<TaskDetail>({ method: 'GET', url: `/task/tasks/${taskId}`, signal })
 }

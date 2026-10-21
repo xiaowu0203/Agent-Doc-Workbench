@@ -8,29 +8,41 @@
         }}。历史报告只读，分母以冻结数据集为准。
       </p>
     </header>
-    <details>
-      <summary>报告身份与选中记录</summary>
-      <dl>
-        <dt>schema</dt>
-        <dd>{{ report.schemaVersion ?? '未提供' }}</dd>
-        <dt>Manifest hash</dt>
-        <dd>{{ report.manifestHash || '未提供' }}</dd>
-        <dt>内容 hash</dt>
-        <dd>{{ report.contentHash || '未提供' }}</dd>
-        <dt>计算输入 hash</dt>
-        <dd>{{ report.calculationInputHash || '未提供' }}</dd>
-      </dl>
-      <template v-if="supported && report.selectedRecordIds"
-        ><p v-for="(ids, key) in report.selectedRecordIds" :key="key">
-          {{ key }}：{{ ids.length ? ids.join('、') : '无' }}
-        </p></template
-      >
-    </details>
     <p v-if="!supported" role="alert">
       报告不可解释：{{ report.compatibilityCode }}。保留 revision 和持久化
       hash；不显示未知正文，也不自动重算。
     </p>
     <template v-else-if="content">
+      <section aria-label="冻结来源摘要" class="source-summary">
+        <p v-if="sourceSummary">
+          冻结 {{ sourceSummary.caseCount }} 个用例，已知来源按任务 ID 去重为
+          {{ sourceSummary.distinctSourceTaskCount }} 个；{{ sourceSummary.missingSourceCaseCount }}
+          个用例缺少来源任务身份。
+        </p>
+        <p v-else-if="sourceError" role="status">
+          来源去重摘要暂不可用：{{ sourceError }}。冻结用例
+          {{ content.expectedCaseCount }} 个，不能推算独立来源数。<button
+            @click="loadSourceSummary"
+          >
+            重试来源摘要
+          </button>
+        </p>
+        <p v-else>正在核对冻结来源摘要；冻结用例 {{ content.expectedCaseCount }} 个。</p>
+        <p>
+          来源数量来自校验过的冻结清单；来源去重不代表统计独立性，不因候选组数或重复执行增加样本。
+        </p>
+      </section>
+      <nav class="metric-groups" aria-label="报告指标分组">
+        <button
+          v-for="group in metricGroups"
+          :key="group.key"
+          :aria-pressed="groupFilter === group.key"
+          @click="groupFilter = group.key"
+        >
+          {{ group.label }}
+        </button>
+      </nav>
+      <p class="report-hint">分组仅切换展示；有效、期望、缺失及配对分母始终使用冻结报告。</p>
       <section v-if="overviewMetrics.length" aria-label="重点指标对照" class="report-comparison">
         <h4>重点指标对照</h4>
         <p>
@@ -70,6 +82,22 @@
                       {{ summaryFor(key, variant)!.expectedCount }} · 缺失
                       {{ summaryFor(key, variant)!.missingCount }}</small
                     >
+                    <template v-if="variant !== 'baseline' && comparisonFor(key, variant)">
+                      <p
+                        v-for="delta in pairDifferences(comparisonFor(key, variant)!)"
+                        :key="delta.unit || 'unknown'"
+                        :title="String(delta.value)"
+                      >
+                        配对差（候选 − 基线）：{{ differenceText(delta.value, delta.unit) }}
+                      </p>
+                      <small
+                        >配对 {{ comparisonFor(key, variant)!.pairedCount }} /
+                        {{ pairExpected(variant, key) }}；按共同用例的冻结配对结果展示。</small
+                      >
+                      <small v-if="!comparisonFor(key, variant)!.pairedCount"
+                        >无有效配对，不计算差值。</small
+                      >
+                    </template>
                   </template>
                   <span v-else>未提供</span>
                 </td>
@@ -80,7 +108,7 @@
       </section>
       <div class="report-overview">
         <article>
-          <span>冻结用例 / Variant</span
+          <span>冻结用例 / 配置组</span
           ><strong>{{ content.expectedCaseCount }} / {{ content.variantCount }}</strong>
         </article>
         <article>
@@ -102,7 +130,7 @@
               <table>
                 <thead>
                   <tr>
-                    <th>Variant / 指标</th>
+                    <th>配置组 / 指标</th>
                     <th>有效 / 期望 / 缺失</th>
                     <th>Boolean 真 / 假</th>
                     <th>数值总值 / 均值（按单位）</th>
@@ -110,7 +138,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, index) in content.summaries" :key="index">
+                  <tr v-for="(row, index) in groupedSummaries" :key="index">
                     <td>
                       {{ row.variantKey
                       }}<small :title="row.metricKey">{{ metricLabel(row.metricKey) }}</small>
@@ -118,7 +146,11 @@
                     <td>{{ row.validCount }} / {{ row.expectedCount }} / {{ row.missingCount }}</td>
                     <td>
                       {{
-                        summaryUnits(row).length ? '不适用' : `${row.trueCount} / ${row.falseCount}`
+                        row.validCount <= 0
+                          ? '无有效结果'
+                          : row.trueCount + row.falseCount > 0
+                            ? `${row.trueCount} / ${row.falseCount}`
+                            : '不适用'
                       }}
                     </td>
                     <td>
@@ -141,7 +173,7 @@
                 </tbody>
               </table>
             </div>
-            <p v-if="!content.summaries.length">尚无指标汇总。</p>
+            <p v-if="!groupedSummaries.length">当前分组无指标汇总。</p>
             <details v-if="charts.length">
               <summary>同单位数值均值比较</summary>
               <p>柱长按本组最大绝对值归一化；保留正负原值。没有有效分母的指标不绘图。</p>
@@ -163,20 +195,20 @@
             </details>
           </details>
           <section aria-label="Candidate 配对比较">
-            <h4>Candidate 配对比较</h4>
+            <h4>候选配对比较</h4>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Candidate / 指标</th>
+                    <th>候选 / 指标</th>
                     <th>配对分母</th>
                     <th>改善 / 下降 / 不变</th>
                     <th>币种不可比</th>
-                    <th>Candidate − Baseline</th>
+                    <th>候选 − 基线</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(row, index) in content.comparisons" :key="index">
+                  <tr v-for="(row, index) in groupedComparisons" :key="index">
                     <td>
                       {{ row.candidateVariantKey || '未提供'
                       }}<small :title="row.metricKey">{{ metricLabel(row.metricKey) }}</small>
@@ -190,30 +222,30 @@
                     </td>
                     <td>{{ row.incomparableCurrencyCount }}</td>
                     <td>
-                      <template v-if="Object.keys(row.meanCandidateMinusBaselineByCurrency).length"
-                        ><p
-                          v-for="(value, currency) in row.meanCandidateMinusBaselineByCurrency"
-                          :key="currency"
-                        >
-                          {{ currency }}：{{ value }}
-                        </p></template
-                      ><template v-else>{{
+                      <p
+                        v-for="delta in pairDifferences(row)"
+                        :key="delta.unit || 'unknown'"
+                        :title="String(delta.value)"
+                      >
+                        {{ differenceText(delta.value, delta.unit) }}
+                      </p>
+                      <span v-if="!pairDifferences(row).length">{{
                         row.pairedCount
-                          ? fact(row.meanCandidateMinusBaseline)
+                          ? '未提供数值差值，请结合改善/下降/不变计数'
                           : '无有效配对，不计算差值'
-                      }}</template>
+                      }}</span>
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <p v-if="!content.comparisons.length">没有可用比较；不推断候选更优。</p>
+            <p v-if="!groupedComparisons.length">当前分组没有可用比较；不推断候选更优。</p>
           </section>
           <section aria-label="逐用例原值矩阵">
             <h4>逐用例原值矩阵</h4>
             <div class="matrix-filters">
               <label
-                >Variant<select v-model="variantFilter" aria-label="矩阵 Variant">
+                >配置组<select v-model="variantFilter" aria-label="矩阵 Variant">
                   <option value="">全部</option>
                   <option v-for="key in variants" :key="key">{{ key }}</option>
                 </select></label
@@ -345,6 +377,24 @@
         </aside>
       </div>
     </template>
+    <details>
+      <summary>报告身份与选中记录</summary>
+      <dl>
+        <dt>schema</dt>
+        <dd>{{ report.schemaVersion ?? '未提供' }}</dd>
+        <dt>Manifest hash</dt>
+        <dd>{{ report.manifestHash || '未提供' }}</dd>
+        <dt>内容 hash</dt>
+        <dd>{{ report.contentHash || '未提供' }}</dd>
+        <dt>计算输入 hash</dt>
+        <dd>{{ report.calculationInputHash || '未提供' }}</dd>
+      </dl>
+      <template v-if="supported && report.selectedRecordIds"
+        ><p v-for="(ids, key) in report.selectedRecordIds" :key="key">
+          {{ key }}：{{ ids.length ? ids.join('、') : '无' }}
+        </p></template
+      >
+    </details>
   </section>
 </template>
 <script setup lang="ts">
@@ -352,7 +402,8 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElPagination } from 'element-plus'
 import { metricText } from '../experiment'
-import { queryCaseVersionNames } from '../api/evaluation-api'
+import { queryCaseVersionNames, getExperimentSourceSummary } from '../api/evaluation-api'
+import { normalizeApiError } from '@/api/errors'
 import { formatMetricNumber, metricLabel } from '../display'
 import type { EntityId } from '@/features/workspace/types'
 import type {
@@ -361,6 +412,8 @@ import type {
   ExperimentReportCaseSelection,
   ExperimentReportVariantSummary,
   CaseVersionName,
+  ExperimentReportPairComparison,
+  ExperimentSourceSummary,
 } from '../types'
 const props = defineProps<{ report: ExperimentReport; spaceId: string; canReadTask: boolean }>()
 const PAGE_SIZE = 10
@@ -372,6 +425,82 @@ const supported = computed(
     !!props.report.report,
 )
 const content = computed(() => (supported.value ? props.report.report : null))
+const metricGroups = [
+  { key: '', label: '全部指标' },
+  { key: 'quality', label: '质量规则' },
+  { key: 'execution', label: '执行状态' },
+  { key: 'resource', label: '成本与用量' },
+  { key: 'latency', label: '耗时' },
+  { key: 'other', label: '其他指标' },
+]
+const groupFilter = ref('')
+function metricGroup(key: string) {
+  if (key.startsWith('evaluation.')) return 'quality'
+  if (key === 'execution.success') return 'execution'
+  if (key === 'execution.latency') return 'latency'
+  if (
+    [
+      'execution.cost',
+      'execution.total-tokens',
+      'execution.input-tokens',
+      'execution.output-tokens',
+      'execution.cached-input-tokens',
+      'execution.retry-count',
+    ].includes(key)
+  )
+    return 'resource'
+  return 'other'
+}
+const inGroup = (key: string) => !groupFilter.value || metricGroup(key) === groupFilter.value
+const groupedSummaries = computed(
+  () => content.value?.summaries.filter((row) => inGroup(row.metricKey)) || [],
+)
+const groupedComparisons = computed(
+  () => content.value?.comparisons.filter((row) => inGroup(row.metricKey)) || [],
+)
+const sourceSummary = ref<ExperimentSourceSummary | null>(null),
+  sourceError = ref('')
+let sourcePending: AbortController | undefined
+async function loadSourceSummary() {
+  sourcePending?.abort()
+  sourceSummary.value = null
+  sourceError.value = ''
+  if (!supported.value) return
+  const controller = new AbortController(),
+    space = props.spaceId,
+    report = props.report
+  sourcePending = controller
+  try {
+    const value = await getExperimentSourceSummary(report.experimentId, controller.signal)
+    if (controller.signal.aborted) return
+    if (
+      String(value.experimentId) !== String(report.experimentId) ||
+      String(value.spaceId) !== space ||
+      value.manifestHash !== report.manifestHash ||
+      value.caseCount !== report.report?.expectedCaseCount ||
+      ![value.caseCount, value.distinctSourceTaskCount, value.missingSourceCaseCount].every(
+        (count) => Number.isSafeInteger(count) && count >= 0,
+      ) ||
+      value.distinctSourceTaskCount > value.caseCount - value.missingSourceCaseCount
+    )
+      throw new Error('来源摘要身份或计数不一致')
+    sourceSummary.value = value
+  } catch (error) {
+    if (!controller.signal.aborted) sourceError.value = normalizeApiError(error).message
+  }
+}
+watch(
+  [
+    supported,
+    () => props.spaceId,
+    () => props.report.experimentId,
+    () => props.report.manifestHash,
+    () => content.value?.expectedCaseCount,
+  ],
+  loadSourceSummary,
+  { immediate: true },
+)
+onBeforeUnmount(() => sourcePending?.abort())
 const summaryVariants = computed(() => [
   ...new Set(content.value?.summaries.map((row) => row.variantKey)),
 ])
@@ -384,10 +513,33 @@ const overviewMetrics = computed(() =>
     'execution.cost',
     'execution.latency',
     'execution.total-tokens',
-  ].filter((key) => content.value?.summaries.some((row) => row.metricKey === key)),
+  ].filter((key) => inGroup(key) && content.value?.summaries.some((row) => row.metricKey === key)),
 )
 function summaryFor(key: string, variant: string) {
   return content.value?.summaries.find((row) => row.metricKey === key && row.variantKey === variant)
+}
+function comparisonFor(key: string, variant: string) {
+  return content.value?.comparisons.find(
+    (row) => row.metricKey === key && row.candidateVariantKey === variant,
+  )
+}
+function pairDifferences(
+  row: ExperimentReportPairComparison,
+): { unit: string | null; value: number }[] {
+  if (!row.pairedCount) return []
+  const currencies = Object.entries(row.meanCandidateMinusBaselineByCurrency)
+  if (currencies.length) return currencies.map(([unit, value]) => ({ unit, value }))
+  if (row.meanCandidateMinusBaseline == null) return []
+  const baseline = summaryFor(row.metricKey, 'baseline'),
+    candidate = summaryFor(row.metricKey, row.candidateVariantKey || '')
+  const units = baseline ? summaryUnits(baseline) : [],
+    otherUnits = candidate ? summaryUnits(candidate) : []
+  const unit =
+    units.length === 1 && otherUnits.length === 1 && units[0] === otherUnits[0] ? units[0]! : null
+  return [{ unit, value: row.meanCandidateMinusBaseline }]
+}
+function differenceText(value: number, unit: string | null) {
+  return `${formatMetricNumber(value, unit === 'ratio' ? 'percentage-point' : unit)}${unit === null ? '（单位未确认）' : ''}`
 }
 const variantFilter = ref(''),
   metricFilter = ref(''),
@@ -397,12 +549,17 @@ const variants = computed(() => [
   ...new Set(content.value?.cells.map((cell) => cell.value.variantKey)),
 ])
 const metrics = computed(() => [
-  ...new Set(content.value?.cells.map((cell) => cell.value.metricKey)),
+  ...new Set(
+    content.value?.cells
+      .filter((cell) => inGroup(cell.value.metricKey))
+      .map((cell) => cell.value.metricKey),
+  ),
 ])
 const filteredCells = computed(
   () =>
     content.value?.cells.filter(
       (cell) =>
+        inGroup(cell.value.metricKey) &&
         (!variantFilter.value || cell.value.variantKey === variantFilter.value) &&
         (!metricFilter.value || cell.value.metricKey === metricFilter.value) &&
         (!cellState.value ||
@@ -506,7 +663,7 @@ function taskLink(id: EntityId) {
 }
 const charts = computed(() => {
   const groups = new Map<string, { variant: string; count: number; value: number }[]>()
-  for (const row of content.value?.summaries || []) {
+  for (const row of groupedSummaries.value) {
     // v1 只给出指标级分母；多单位汇总不具备每单位分母，保留表格展示。
     if (row.validCount <= 0 || Object.keys(row.numericMeansByUnit).length !== 1) continue
     for (const [unit, value] of Object.entries(row.numericMeansByUnit)) {
@@ -525,6 +682,10 @@ const charts = computed(() => {
       maximum: Math.max(...rows.map((row) => Math.abs(row.value))),
     }))
 })
+watch(groupFilter, () => {
+  metricFilter.value = ''
+  page.value = 1
+})
 watch(
   () => [props.report.revision, variantFilter.value, metricFilter.value, cellState.value],
   () => {
@@ -542,6 +703,39 @@ watch(
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--adw-space-3);
+}
+.report-panel > header h3,
+.report-panel > .report-hint,
+.source-summary p {
+  margin: 0;
+}
+.report-panel .source-summary {
+  border: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--adw-space-2);
+}
+.metric-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--adw-space-2);
+}
+.metric-groups button {
+  padding: var(--adw-space-2) var(--adw-space-3);
+  border: 1px solid var(--adw-border-color);
+  border-radius: var(--adw-radius-md);
+  background: var(--adw-surface);
+  color: var(--adw-text-primary);
+  cursor: pointer;
+}
+.metric-groups button[aria-pressed='true'] {
+  border-color: var(--adw-color-primary);
+  background: var(--adw-color-primary-soft);
+  font-weight: 600;
+}
+.metric-groups button:focus-visible {
+  outline: 2px solid var(--adw-color-primary);
+  outline-offset: 2px;
 }
 .report-overview article {
   border-left: 3px solid var(--adw-color-primary);

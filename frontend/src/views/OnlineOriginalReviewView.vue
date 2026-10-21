@@ -43,12 +43,25 @@
             v-for="item in candidates.records"
             :key="item.assignmentId"
             :disabled="busy"
+            :aria-pressed="assignmentId === item.assignmentId"
             @click="selectAssignment(item.assignmentId)"
-            >{{ item.documentTitle || `文档 #${item.documentId}` }} / 分配 #{{
-              item.assignmentId
-            }}</el-button
+            ><span class="candidate-label"
+              ><strong>{{ item.documentTitle || `文档 #${item.documentId}` }}</strong
+              ><small>分配 #{{ item.assignmentId }}</small
+              ><span>{{
+                item.ownReviewRecorded === true
+                  ? '本人有历史评审记录'
+                  : item.ownReviewRecorded === false
+                    ? '本人尚无评审记录'
+                    : '本人记录状态未知'
+              }}</span
+              ><small v-if="assignmentId === item.assignmentId">当前选择</small></span
+            ></el-button
           >
         </div>
+        <p>
+          这里只显示本人是否曾提交评审，不透露他人评分；文本与变更集合的具体记录、当前证据和链尾仍需点开核对。
+        </p>
         <el-pagination
           :current-page="candidates.pageNum"
           :page-size="10"
@@ -702,6 +715,28 @@ onBeforeUnmount(() => {
   gap: 12px;
   flex-wrap: wrap;
   align-items: end;
+}
+.candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: stretch;
+}
+.candidates .el-button {
+  min-width: 0;
+  height: auto;
+  margin-left: 0;
+  padding: 12px;
+}
+.candidate-label {
+  display: grid;
+  gap: 6px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.candidates .el-button[aria-pressed='true'] {
+  border-width: 2px;
+  border-color: var(--adw-color-primary);
 }
 label {
   display: flex;

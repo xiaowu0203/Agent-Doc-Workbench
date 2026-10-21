@@ -293,6 +293,14 @@ async function fillCreate(wrapper: VueWrapper) {
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(api.queryCaseVersionNames).mockResolvedValue([])
+  vi.mocked(api.getExperimentSourceSummary).mockResolvedValue({
+    experimentId: '10',
+    spaceId: '7',
+    manifestHash: report.manifestHash!,
+    caseCount: 1,
+    distinctSourceTaskCount: 1,
+    missingSourceCaseCount: 0,
+  })
   setActivePinia(createPinia())
   useWorkspaceStore().setCurrentSpace('7')
   permissions([
@@ -599,6 +607,134 @@ describe('preflight, budget and mutations', () => {
   })
 })
 describe('report facts and compatibility', () => {
+  it('冻结用例数与去重来源数分开展示，元数据不改写报告', async () => {
+    const value = { ...report, report: { ...content, expectedCaseCount: 3 } }
+    const before = JSON.stringify(value)
+    vi.mocked(api.getExperimentSourceSummary).mockResolvedValue({
+      experimentId: '10',
+      spaceId: '7',
+      manifestHash: report.manifestHash!,
+      caseCount: 3,
+      distinctSourceTaskCount: 2,
+      missingSourceCaseCount: 0,
+    })
+    const wrapper = await mountReport(value)
+    expect(wrapper.get('[aria-label="冻结来源摘要"]').text()).toContain(
+      '冻结 3 个用例，已知来源按任务 ID 去重为 2 个',
+    )
+    expect(wrapper.text()).toContain('不代表统计独立性')
+    expect(JSON.stringify(value)).toBe(before)
+    expect(api.recalculateExperimentReport).not.toHaveBeenCalled()
+  })
+  it('来源摘要跨空间或摘要不匹配不展示，不阻断已核验报告', async () => {
+    vi.mocked(api.getExperimentSourceSummary).mockResolvedValue({
+      experimentId: '10',
+      spaceId: '9',
+      manifestHash: 'wrong',
+      caseCount: 1,
+      distinctSourceTaskCount: 1,
+      missingSourceCaseCount: 0,
+    })
+    const wrapper = await mountReport()
+    expect(wrapper.get('[aria-label="冻结来源摘要"]').text()).toContain('来源摘要身份或计数不一致')
+    expect(wrapper.get('[aria-label="Candidate 配对比较"]').text()).toContain('1 / 1')
+    expect(wrapper.text()).not.toContain('去重为 1 个')
+  })
+  it('分组同步筛选概要/配对/矩阵，差值采用冻结配对数而非两侧均值相减', async () => {
+    const summary = content.summaries[0]!
+    const comparison = content.comparisons[0]!
+    const value: ExperimentReport = {
+      ...report,
+      report: {
+        ...content,
+        summaries: [
+          {
+            ...summary,
+            metricKey: 'execution.latency',
+            numericMeansByUnit: { millisecond: 1000 },
+            numericTotalsByUnit: { millisecond: 1000 },
+          },
+          {
+            ...summary,
+            variantKey: 'prompt-v2',
+            metricKey: 'execution.latency',
+            numericMeansByUnit: { millisecond: 5000 },
+            numericTotalsByUnit: { millisecond: 5000 },
+          },
+          {
+            ...summary,
+            metricKey: 'evaluation.document-change.accuracy',
+            numericMeansByUnit: { ratio: 0.2 },
+            numericTotalsByUnit: { ratio: 0.2 },
+          },
+          {
+            ...summary,
+            variantKey: 'prompt-v2',
+            metricKey: 'evaluation.document-change.accuracy',
+            numericMeansByUnit: { ratio: 0.8 },
+            numericTotalsByUnit: { ratio: 0.8 },
+          },
+        ],
+        comparisons: [
+          { ...comparison, metricKey: 'execution.latency', meanCandidateMinusBaseline: 2000 },
+          {
+            ...comparison,
+            metricKey: 'evaluation.document-change.accuracy',
+            meanCandidateMinusBaseline: 0.1,
+          },
+        ],
+      },
+    }
+    const before = JSON.stringify(value)
+    const wrapper = await mountReport(value)
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('2 秒')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('10 个百分点')
+    await button(wrapper, '质量规则')!.trigger('click')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).not.toContain('执行耗时')
+    expect(wrapper.get('[aria-label="Candidate 配对比较"]').text()).toContain('文档变更准确率')
+    expect(wrapper.get('[aria-label="Candidate 配对比较"]').text()).not.toContain('执行耗时')
+    await button(wrapper, '耗时')!.trigger('click')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('执行耗时')
+    expect(wrapper.get('[aria-label="逐用例原值矩阵"]').text()).toContain('当前匹配 0 项')
+    expect(JSON.stringify(value)).toBe(before)
+  })
+  it('零差值合法、币种分开，无有效配对不显示虚构数值差', async () => {
+    const summary = {
+      ...content.summaries[0]!,
+      metricKey: 'execution.cost',
+      numericMeansByUnit: { CNY: 1 },
+      numericTotalsByUnit: { CNY: 1 },
+    }
+    const value = {
+      ...report,
+      report: {
+        ...content,
+        summaries: [summary, { ...summary, variantKey: 'prompt-v2' }],
+        comparisons: [
+          {
+            ...content.comparisons[0]!,
+            metricKey: 'execution.cost',
+            meanCandidateMinusBaseline: null,
+            meanCandidateMinusBaselineByCurrency: { CNY: 0, USD: 0.000001 },
+          },
+        ],
+      },
+    }
+    const wrapper = await mountReport(value)
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('0 CNY')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('0.000001 USD')
+    await wrapper.setProps({
+      report: {
+        ...value,
+        report: {
+          ...value.report,
+          comparisons: value.report.comparisons.map((row) => ({ ...row, pairedCount: 0 })),
+        },
+      },
+    })
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('无有效配对，不计算差值')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).not.toContain('0.000001 USD')
+  })
   it('当前可见用例只批量补目录名称，不改写冻结报告或请求任务详情', async () => {
     const id = content.cells[0]!.value.testCaseVersionId!
     const before = JSON.stringify(report)

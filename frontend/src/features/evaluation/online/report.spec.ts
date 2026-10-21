@@ -132,6 +132,36 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('固定线上报告和人工决定', () => {
+  it('既有决定依据独立于当前报告，明确不同版本并可读取原依据', async () => {
+    const wrapper = create()
+    await flushPromises()
+    await wrapper.setProps({
+      experiment: {
+        ...experiment,
+        decision: 'INSUFFICIENT_EVIDENCE',
+        decisionReportRevision: 4,
+        decisionReportHash: 'e'.repeat(64),
+      },
+    })
+    expect(wrapper.get('[aria-label="既有人工结论"]').text()).toContain('当前查看 v1')
+    expect(wrapper.get('[aria-label="既有人工结论"]').text()).toContain('依据 v4')
+    vi.mocked(api.getOnlineReport).mockResolvedValue({
+      ...frozen,
+      revision: 4,
+      reportHash: 'e'.repeat(64),
+      state: 'SUMMARY_VERIFIED',
+    })
+    await button(wrapper, '查看结论依据报告').trigger('click')
+    await flushPromises()
+    expect(api.getOnlineReport).toHaveBeenLastCalledWith(
+      experiment.id,
+      4,
+      false,
+      expect.any(AbortSignal),
+    )
+    expect(wrapper.text()).not.toContain('当前查看 v1')
+    expect(api.decideOnlineExperiment).not.toHaveBeenCalled()
+  })
   it('服务端范围建议保留长序号、原始本地时间与实际时区，仍需显式确认冻结', async () => {
     vi.mocked(api.getOnlineReportRangeSuggestion).mockResolvedValue({
       experimentId: experiment.id,

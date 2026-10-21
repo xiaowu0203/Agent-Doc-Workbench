@@ -1,7 +1,8 @@
 <template>
   <section class="result-detail" aria-label="评估结果详情">
     <header>
-      <h4>Result #{{ summary.id }}</h4>
+      <h4>{{ summary.evaluatorName || '评估器名称不可用' }} · 评价结果</h4>
+      <p>Result #{{ summary.id }}</p>
       <EvaluationStatusTag domain="result" :status="summary.status" />
       <p>
         评价尝试 {{ summary.evaluationAttemptNo }}
@@ -64,8 +65,12 @@
                   />
                 </td>
                 <td>
-                  {{ metric.source || '不可用'
-                  }}<small>{{ metric.direction || '未提供方向' }}</small>
+                  <span :title="metric.source || ''">{{
+                    metricSources[metric.source || ''] || metric.source || '不可用'
+                  }}</span>
+                  <small :title="metric.direction || ''">{{
+                    metricDirections[metric.direction || ''] || metric.direction || '未提供方向'
+                  }}</small>
                 </td>
                 <td>
                   <span v-if="!metric.evidence.length">缺失：没有证据引用</span
@@ -80,7 +85,7 @@
             </tbody>
           </table>
         </div>
-        <h4>Evidence（{{ detail.evidence.length }} 条引用）</h4>
+        <h4>证据（{{ detail.evidence.length }} 条引用）</h4>
         <p v-if="!detail.evidence.length">证据缺失，无法据此认定质量通过。</p>
         <article
           v-for="reference in detail.evidence"
@@ -134,6 +139,12 @@ import { getEvaluationResult } from '../api/evaluation-api'
 import type { EvaluationResultDetail, EvaluationResultSummary } from '../types'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
 import EvaluationMetricValue from './EvaluationMetricValue.vue'
+const metricSources: Record<string, string> = { EVALUATOR: '评估器', EXECUTION: '执行事实' }
+const metricDirections: Record<string, string> = {
+  HIGHER_IS_BETTER: '越高越好',
+  LOWER_IS_BETTER: '越低越好',
+  NEUTRAL: '中性指标',
+}
 const props = defineProps<{
   spaceId: string
   runId: string

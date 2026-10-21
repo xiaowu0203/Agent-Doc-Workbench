@@ -2,8 +2,20 @@
   <section class="run-page" aria-label="评估运行">
     <header class="run-heading">
       <div>
-        <h2>{{ resourceId ? `评估运行 #${resourceId}` : '评估运行列表' }}</h2>
-        <p>每次回放保留独立 Attempt；每次评价保留独立 Result，历史记录保持只读。</p>
+        <h2>
+          <template v-if="resourceId && run && canRead">
+            <EvaluationSourceTitle
+              :space-id="spaceId"
+              :kind="run.datasetVersionId ? 'datasets' : 'test-cases'"
+              :version-id="String(run.datasetVersionId || run.singleTestCaseVersionId || '')"
+              :fallback="`评估运行 #${resourceId}`"
+            />
+            · 评估运行
+          </template>
+          <template v-else>{{ resourceId ? `评估运行 #${resourceId}` : '评估运行列表' }}</template>
+        </h2>
+        <p v-if="resourceId">运行 #{{ resourceId }}</p>
+        <p>每次回放保留独立执行尝试；每次评价保留独立评价结果，历史记录保持只读。</p>
       </div>
       <div class="run-actions">
         <el-button v-if="resourceId" @click="router.push(basePath)">返回列表</el-button>
@@ -204,7 +216,7 @@
                       item.testCaseVersionNo ?? '不可用'
                     }}</strong
                   ><small>用例版本 #{{ item.testCaseVersionId || '不可用' }}</small
-                  ><small>CaseRun #{{ item.id }} · Attempt {{ item.attemptNo }}</small></span
+                  ><small>用例运行 #{{ item.id }} · 执行尝试 {{ item.attemptNo }}</small></span
                 ><EvaluationStatusTag domain="attempt" :status="item.status" />
               </button>
               <p v-if="!visibleCases.length">没有符合筛选的用例。</p>
@@ -297,6 +309,7 @@ import { normalizeApiError } from '@/api/errors'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
+import EvaluationSourceTitle from '@/features/evaluation/components/EvaluationSourceTitle.vue'
 import EvaluationRunCreate from '@/features/evaluation/components/EvaluationRunCreate.vue'
 import PublishedVersionPicker from '@/features/evaluation/components/PublishedVersionPicker.vue'
 import EvaluationCasePanel from '@/features/evaluation/components/EvaluationCasePanel.vue'

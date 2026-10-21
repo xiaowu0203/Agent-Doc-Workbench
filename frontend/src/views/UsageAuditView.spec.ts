@@ -94,6 +94,18 @@ async function create() {
   return wrapper
 }
 describe('用量全局筛选与独立工具分页', () => {
+  it.each([
+    [0, '¥ 0.00'],
+    [0.00003, '¥ 0.00003'],
+    [0.00000001, '¥ <0.000001'],
+  ])('成本 %s 保留零与非零小额差异', async (cost, expected) => {
+    vi.mocked(usageApi.queryUsageDashboard).mockResolvedValue({
+      ...dashboard,
+      summary: { ...summary, estimatedCost: cost as number },
+    })
+    const wrapper = await create()
+    expect(wrapper.text()).toContain(expected)
+  })
   it('执行页为空时仍独立读取全部工具调用，保留长任务身份并支持分页', async () => {
     const wrapper = await create()
     wrapper.findComponent({ name: 'ElTabs' }).vm.$emit('update:modelValue', 'tools')

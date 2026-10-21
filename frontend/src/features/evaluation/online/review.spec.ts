@@ -88,6 +88,24 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('隐藏分组原始评价', () => {
+  it('候选仅显示本人历史记录状态，缺字段保持未知且不提前读取原始产物', async () => {
+    vi.mocked(api.searchOnlineReviewAssignments).mockResolvedValue({
+      records: [
+        { assignmentId: '11', documentId: '4', documentTitle: '文档一', ownReviewRecorded: true },
+        { assignmentId: '12', documentId: '5', ownReviewRecorded: false },
+        { assignmentId: '13', documentId: '6' },
+      ],
+      total: 3,
+      pageNum: 1,
+      pageSize: 10,
+    })
+    const wrapper = await create()
+    expect(wrapper.text()).toContain('本人有历史评审记录')
+    expect(wrapper.text()).toContain('本人尚无评审记录')
+    expect(wrapper.text()).toContain('本人记录状态未知')
+    expect(api.getOnlineReviewContext).not.toHaveBeenCalled()
+    expect(api.createOnlineQuality).not.toHaveBeenCalled()
+  })
   it('安全预览只渲染 Markdown，不加载远程图片或执行模型 HTML', async () => {
     vi.mocked(api.getOnlineReviewContext).mockResolvedValue({
       ...original,

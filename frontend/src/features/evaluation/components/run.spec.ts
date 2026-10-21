@@ -474,7 +474,7 @@ describe('attempt and evaluation result histories', () => {
     expect(button(wrapper, '仅重试评估器')).toBeDefined()
     await wrapper
       .findAll('button')
-      .find((item) => item.text().includes('Attempt 1'))!
+      .find((item) => item.text().includes('执行尝试 1'))!
       .trigger('click')
     await flushPromises()
     expect(button(wrapper, '仅重试评估器')).toBeUndefined()

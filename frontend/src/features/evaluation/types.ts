@@ -660,6 +660,15 @@ export interface ExperimentReport {
   compatibilityCode: ExperimentReportCompatibility
 }
 
+export interface ExperimentSourceSummary {
+  experimentId: EntityId
+  spaceId: EntityId
+  manifestHash: string
+  caseCount: number
+  distinctSourceTaskCount: number
+  missingSourceCaseCount: number
+}
+
 export interface ExperimentSummary {
   id: EntityId
   spaceId: EntityId

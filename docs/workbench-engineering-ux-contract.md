@@ -172,3 +172,17 @@ OTel 保留 14 天。超过窗口仍可查看业务审计、快照 hash、权威
 活动详情轮询采用单请求、3～5 秒间隔、隐藏暂停/回前台刷新、失败 5/10/20/30 秒退避、终态及卸载停止；不新增全局缓存框架或 WebSocket/SSE。
 
 后续实现需验证权限与跨 Space、版本冻结、批量查询、Trace 白名单/降级、历史报告 shape/hash、恢复 ADR 的安全/幂等和真实端到端流程。本文不承担上线验收记录；功能、测试与真实数据验收完成前不标记已发布。
+
+### 6.1 详情识别与普通任务名称投影
+
+Run 和离线实验详情可通过现有目录读取接口查询单个来源版本及其主资源，展示当前目录名称和固定版本号；读取必须核对空间、版本 ID 与父资源 ID。名称仅用于识别，不写回快照或报告，失败时保留 Run/Experiment 的稳定 ID；切换空间或离开页面取消读取。当前用例标题使用 CaseRun 的名称/版本投影，技术身份保留在次级区域。
+
+`POST /api/task/tasks/names-query` 接收 `{spaceId, taskIds}`，任务 ID 为 1～100 个正整数，返回 `{id, spaceId, name}` 数组。仅查询当前空间和给定 ID 的名称/身份元数据，校验当前用户 task:read，返回前继续记录线上任务知情事实；失败则不披露名称。此查询不加载指令、冻结输入、文档正文、Agent 或用户资料，不替代任务详情读取；未落库或已不可访问的任务可不返回，前端保留 ID。普通线上分配页每页至多一次批量调用，撤销 task:read 立即清除名称并中止读取；专用盲评页面不调用本接口。
+
+用量页成本解释以执行权威账本和冻结价格快照为准，当前计价协议为 CNY，不做汇率换算；显示 Token 估算标记与已知部分/缺失边界，小额非零成本不显示成零。执行和审计列表使用一份中文空态。
+
+### 6.2 冻结来源摘要与报告分组
+
+`GET /api/evaluation/experiments/{id}/source-summary` 在 evaluation:read 校验后，仅从已核验 schema/manifestHash 的冻结清单返回 experimentId、spaceId、manifestHash、caseCount、distinctSourceTaskCount、missingSourceCaseCount。已知来源任务按 ID 去重，缺失身份单独计数；不加载当前目录、Task 或报告正文，不修改 reportJson、hash 或 revision。来源去重不是统计独立性证明。前端仅在实验/空间/manifestHash 和冻结用例数匹配时展示，失败保留已核验报告并说明来源摘要未知。
+
+报告按质量规则、执行状态、成本与用量、耗时、其他指标分组，分组同步作用于概要、展开汇总、配对比较和矩阵；全局冻结数量及分母不随筛选变化。差值直接使用报告的 meanCandidateMinusBaseline / meanCandidateMinusBaselineByCurrency，不用两侧均值另算；保留配对/期望分母、不可比币种数、缺失与零差值，比例差按百分点显示。多单位无法确认共同单位时保留原值并提示单位未确认，不把未知当作数值零。

@@ -1,7 +1,13 @@
 <template>
   <section class="case-panel" aria-label="执行尝试与结果">
     <header>
-      <h3>CaseRun #{{ caseRun.id }}</h3>
+      <h3>
+        {{ caseRun.testCaseName || '用例名称不可用'
+        }}<template v-if="caseRun.testCaseVersionNo != null">
+          · v{{ caseRun.testCaseVersionNo }}</template
+        >
+      </h3>
+      <p>用例运行 #{{ caseRun.id }}</p>
       <p>
         来源用例版本 #{{ caseRun.testCaseVersionId || '不可用' }}；默认查看当前尝试，历史尝试只读。
       </p>
@@ -24,7 +30,7 @@
               @click="selectAttempt(attempt, true)"
             >
               <strong
-                >Attempt {{ attempt.attemptNo }}
+                >执行尝试 {{ attempt.attemptNo }}
                 {{ attempt.currentCaseAttempt ? '（当前）' : '（历史，只读）' }}</strong
               ><EvaluationStatusTag domain="attempt" :status="attempt.status" /><small
                 >#{{ attempt.id }}</small
@@ -43,7 +49,7 @@
           <div v-if="selected" class="attempt-detail">
             <div class="attempt-facts">
               <h4>
-                Attempt {{ selected.attemptNo }}
+                执行尝试 {{ selected.attemptNo }}
                 {{ selected.currentCaseAttempt ? '（当前）' : '（历史，只读）' }}
               </h4>
               <p>
@@ -81,7 +87,7 @@
             <section class="result-history" aria-label="Result 历史">
               <h4>评估结果与评价尝试</h4>
               <p v-if="!selected.results.length">
-                尚未产生 Result。{{
+                尚未产生评价结果。{{
                   selected.status === 'REPLAY_FAILED'
                     ? '回放失败，缺少评估结果与指标。'
                     : selected.status === 'EVALUATOR_FAILED'

@@ -21,6 +21,8 @@ import com.agentdoc.task.pojo.vo.TaskToolCallSearchVO;
 import com.agentdoc.task.pojo.vo.TaskActivityVO;
 import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;
+import com.agentdoc.task.pojo.vo.TaskNameVO;
+import com.agentdoc.task.pojo.param.TaskNamesSearchParam;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.vo.TaskExecutionDetailVO;
@@ -75,6 +77,12 @@ public class TaskController {
     @PostMapping("/search")
     public Result<PageVO<TaskListItemVO>> search(@Valid @RequestBody TaskSearchParam param) {
         return Result.ok(taskService.search(param));
+    }
+
+    @Operation(summary = "批量读取当前空间任务名称，记录线上知情事实")
+    @PostMapping("/names-query")
+    public Result<List<TaskNameVO>> names(@Valid @RequestBody TaskNamesSearchParam request) {
+        return Result.ok(taskService.readNames(request.spaceId(), request.taskIds()));
     }
 
     @Operation(summary = "导出空间执行记录")

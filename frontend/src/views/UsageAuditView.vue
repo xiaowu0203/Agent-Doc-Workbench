@@ -193,10 +193,31 @@
           </article>
         </div>
 
+        <details class="usage-scope-hint">
+          <summary>预估成本与数据口径</summary>
+          <p>
+            成本来自执行权威账本，按每次执行冻结的价格快照计价，不使用当前模型价格重算历史。当前计价协议使用人民币（CNY），此处不做汇率换算；预估成本不代表供应商最终账单。
+          </p>
+          <p>
+            Token 估算标记：输入{{
+              dashboard.summary.inputTokensEstimated ? '包含估算' : '未标记估算'
+            }}，输出{{ dashboard.summary.outputTokensEstimated ? '包含估算' : '未标记估算' }}。{{
+              dashboard.summary.hasIncompleteData
+                ? '存在缺失明细，合计只覆盖已知部分；缺失不等于零。'
+                : '当前范围未标记 Token 或成本缺失。'
+            }}
+          </p>
+          <p>
+            汇总时区 {{ dashboard.timeZone }}；统计生成于
+            {{ dashboard.calculatedAt }}（服务端原始时间）。
+          </p>
+        </details>
+
         <article class="records-card surface-card">
           <el-tabs v-model="activeTab">
             <el-tab-pane label="执行记录" name="executions">
               <el-table :data="taskPage.records" stripe @row-click="openExecution">
+                <template #empty>当前筛选范围没有执行记录</template>
                 <el-table-column prop="name" label="任务" min-width="190">
                   <template #default="{ row }">
                     <div class="task-cell">
@@ -236,9 +257,6 @@
                   </template>
                 </el-table-column>
               </el-table>
-              <div v-if="!taskPage.records.length" class="panel-empty">
-                当前筛选范围没有执行记录
-              </div>
               <el-pagination
                 v-if="taskPage.total"
                 class="records-pagination"
@@ -321,6 +339,7 @@
             </el-tab-pane>
             <el-tab-pane v-if="canReadAudit" label="审计事件" name="audit">
               <el-table :data="auditRows" stripe>
+                <template #empty>当前筛选范围没有审计事件</template>
                 <el-table-column prop="actorName" label="主体" min-width="130" />
                 <el-table-column prop="actionName" label="操作" min-width="190" />
                 <el-table-column prop="targetTypeName" label="目标类型" min-width="150" />
@@ -344,9 +363,6 @@
                   <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
                 </el-table-column>
               </el-table>
-              <div v-if="!auditPage.records.length" class="panel-empty">
-                当前筛选范围没有审计事件
-              </div>
               <el-pagination
                 v-if="auditPage.total"
                 class="records-pagination"
@@ -1119,7 +1135,9 @@ function compactNumber(value: number) {
 }
 
 function formatCost(value: number | null) {
-  return value === null ? '—' : `¥ ${value.toFixed(2)}`
+  if (value === null) return '—'
+  if (value > 0 && value < 0.000001) return '¥ <0.000001'
+  return `¥ ${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
 }
 
 function formatDateTime(value: string | null | undefined) {

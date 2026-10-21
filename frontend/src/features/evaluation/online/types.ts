@@ -48,6 +48,8 @@ export interface OnlineExperiment extends OnlineSummary {
   assignmentDeadline: string | null
   observationDeadline: string | null
   decision: string | null
+  decisionReportRevision?: number | null
+  decisionReportHash?: string | null
 }
 export interface OnlinePreflight {
   experimentId: string
@@ -144,6 +146,7 @@ export type OnlineReviewTarget = 'TEXT' | 'CHANGE_SET'
 export type OnlineBlindness = 'BLINDED' | 'NON_BLINDED' | 'UNKNOWN'
 export interface OnlineReviewAssignment {
   documentTitle?: string | null
+  ownReviewRecorded?: boolean
   assignmentId: string
   documentId: string
 }

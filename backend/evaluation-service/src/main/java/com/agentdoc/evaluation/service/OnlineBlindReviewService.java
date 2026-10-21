@@ -9,6 +9,7 @@ import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.evaluation.mapper.OnlineAssignmentMapper;
+import com.agentdoc.evaluation.mapper.EvaluationFeedbackMapper;
 import com.agentdoc.evaluation.pojo.vo.OnlineBlindReviewContextVO;
 import com.agentdoc.evaluation.pojo.vo.OnlineReviewAssignmentVO;
 import com.agentdoc.evaluation.mapper.OnlineExperimentMapper;
@@ -24,6 +25,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.Objects;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -39,6 +42,7 @@ public class OnlineBlindReviewService {
     private final OnlineExperimentMapper experiments;
     private final SpaceAccessService access;
     private final DocumentFeign documents;
+    private final EvaluationFeedbackMapper feedback;
     /** 仅在已完成read的当前授权链路内取得Space，不生成普通元数据或曝光记录。 */
     String spaceId(String experimentId, String assignmentId) {
         var row = assignments.selectById(OnlineProtocolUtils.id(assignmentId));
@@ -46,7 +50,7 @@ public class OnlineBlindReviewService {
         return row.getSpaceId().toString();
     }
     public PageVO<OnlineReviewAssignmentVO> assignments(String id, PageParam page) {
-        AuthUtils.getUserIdOrException(); page.validate(); var experiment = experiments.selectById(OnlineProtocolUtils.id(id));
+        Long actor = AuthUtils.getUserIdOrException(); page.validate(); var experiment = experiments.selectById(OnlineProtocolUtils.id(id));
         if (experiment == null) { throw invalid(); }
         access.requirePermission(experiment.getSpaceId(), SPACE_READ); access.requirePermission(experiment.getSpaceId(), EVALUATION_RUN);
         access.requirePermission(experiment.getSpaceId(), TASK_READ); access.requirePermission(experiment.getSpaceId(), DOCUMENT_READ);
@@ -64,8 +68,11 @@ public class OnlineBlindReviewService {
             titles = response.data().stream().collect(Collectors.toMap(DocumentRefVO::id, Function.identity()));
         }
         var names = titles;
+        var assignmentIds = rows.getRecords().stream().map(OnlineAssignmentEntity::getId).toList();
+        Set<Long> ownReviewed = assignmentIds.isEmpty() ? Set.of()
+                : new HashSet<>(feedback.ownOnlineReviewedAssignments(experiment.getSpaceId(), actor, assignmentIds));
         return PageVO.of(rows.getRecords().stream().map(row -> new OnlineReviewAssignmentVO(row.getId().toString(), row.getDocumentId().toString(),
-                names.containsKey(row.getDocumentId()) ? names.get(row.getDocumentId()).title() : null)).toList(), rows.getTotal(), page);
+                names.containsKey(row.getDocumentId()) ? names.get(row.getDocumentId()).title() : null, ownReviewed.contains(row.getId()))).toList(), rows.getTotal(), page);
     }
     public OnlineBlindReviewContextVO read(String experimentId, String assignmentId, String target) {
         Long actor = AuthUtils.getUserIdOrException(); String type, evidenceId, evidenceHash; Object context;

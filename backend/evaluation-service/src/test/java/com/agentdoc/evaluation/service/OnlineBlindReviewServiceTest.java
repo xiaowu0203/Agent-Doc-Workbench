@@ -12,6 +12,7 @@ import com.agentdoc.common.feign.vo.OnlineReviewGoalVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.evaluation.mapper.OnlineAssignmentMapper;
+import com.agentdoc.evaluation.mapper.EvaluationFeedbackMapper;
 import com.agentdoc.evaluation.mapper.OnlineExperimentMapper;
 import com.agentdoc.evaluation.pojo.entity.OnlineAssignmentEntity;
 import com.agentdoc.evaluation.pojo.vo.OnlineTextReviewContextVO;
@@ -31,7 +32,8 @@ class OnlineBlindReviewServiceTest {
     private final OnlineExperimentMapper experiments = mock(OnlineExperimentMapper.class);
     private final SpaceAccessService access = mock(SpaceAccessService.class);
     private final DocumentFeign documents = mock(DocumentFeign.class);
-    private final OnlineBlindReviewService service = new OnlineBlindReviewService(texts, changes, assignments, tasks, receipts, experiments, access, documents);
+    private final EvaluationFeedbackMapper feedback = mock(EvaluationFeedbackMapper.class);
+    private final OnlineBlindReviewService service = new OnlineBlindReviewService(texts, changes, assignments, tasks, receipts, experiments, access, documents, feedback);
 
     @Test void candidateNamesUseOnlyOneDocumentReferenceBatchAndNeverReadOrdinaryTaskOrCreateReceipt() {
         try (var auth = mockStatic(AuthUtils.class)) {
@@ -41,8 +43,11 @@ class OnlineBlindReviewServiceTest {
             var row = row(); row.setDocumentId(41L);
             when(assignments.selectPage(any(Page.class), any())).thenReturn(new Page<OnlineAssignmentEntity>(1, 10).setRecords(List.of(row)).setTotal(1));
             when(documents.getDocumentRefs(List.of(41L))).thenReturn(Result.ok(List.of(new DocumentRefVO(41L, 10L, "核对文档"))));
+            when(feedback.ownOnlineReviewedAssignments(10L, 502L, List.of(51L))).thenReturn(List.of(51L));
             var result = service.assignments("11", new PageParam());
             assertThat(result.records().getFirst().documentTitle()).isEqualTo("核对文档");
+            assertThat(result.records().getFirst().ownReviewRecorded()).isTrue();
+            verify(feedback).ownOnlineReviewedAssignments(10L, 502L, List.of(51L));
             assertThat(JsonUtils.parse(JsonUtils.toJson(result), JsonNode.class).findValues("variant")).isEmpty();
             verify(documents).getDocumentRefs(List.of(41L)); verifyNoInteractions(tasks, texts, changes, receipts);
             when(documents.getDocumentRefs(List.of(41L))).thenReturn(Result.ok(List.of(new DocumentRefVO(41L, 99L, "其他空间"))));
@@ -69,6 +74,16 @@ class OnlineBlindReviewServiceTest {
             assertThatThrownBy(() -> service.read("11", "51", "TEXT")).isInstanceOf(BusinessException.class); verifyNoInteractions(receipts);
             when(texts.read("11", "51")).thenThrow(new BusinessException(403, "撤权"));
             assertThatThrownBy(() -> service.read("11", "51", "TEXT")).isInstanceOf(BusinessException.class); verifyNoInteractions(receipts);
+        }
+    }
+    @Test void deniedCandidateReadDoesNotQueryFeedbackOrIssueQualification() {
+        try (var auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUserIdOrException).thenReturn(502L);
+            var experiment = new OnlineExperimentEntity(); experiment.setId(11L); experiment.setSpaceId(10L);
+            when(experiments.selectById(11L)).thenReturn(experiment);
+            doThrow(new BusinessException(403, "权限撤销")).when(access).requirePermission(any(), any());
+            assertThatThrownBy(() -> service.assignments("11", new PageParam())).hasMessageContaining("权限撤销");
+            verifyNoInteractions(feedback, assignments, tasks, documents, receipts);
         }
     }
     @Test void clientCannotChooseKnowledgeStatusAndUnauthenticatedCallerFailsBeforeSources() {

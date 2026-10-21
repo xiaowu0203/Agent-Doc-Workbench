@@ -114,6 +114,16 @@ class OnlineExperimentServiceTest {
         verify(persistence, times(1)).complete(any());
     }
 
+    @Test void detailPreservesOriginalDecisionReportIdentity() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        var entity = stored.get();
+        entity.setDecision("INSUFFICIENT_EVIDENCE"); entity.setDecisionReportRevision(4); entity.setDecisionReportHash("e".repeat(64));
+        var result = service.detail(created.summary().id());
+        assertThat(result.decisionReportRevision()).isEqualTo(4);
+        assertThat(result.decisionReportHash()).isEqualTo("e".repeat(64));
+        assertThat(stored.get().getManifestHash()).isEqualTo(created.summary().manifestHash());
+    }
+
     @Test
     void promptReadPersistsExposureBeforeReturningMatchingPrivateContent() {
         var created = service.create(OnlineExperimentRequestValidatorTest.request());

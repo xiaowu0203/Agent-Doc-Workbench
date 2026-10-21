@@ -52,6 +52,7 @@ import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightIssueVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVO;
+import com.agentdoc.evaluation.pojo.vo.ExperimentSourceSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVariantVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -170,6 +171,19 @@ public class ExperimentService {
             return detailInternal(concurrent);
         }
         return toVO(experiment, variants);
+    }
+
+    public ExperimentSourceSummaryVO sourceSummary(Long id) {
+        var experiment = requireExperiment(id);
+        spaceAccessService.requirePermission(experiment.getSpaceId(), EVALUATION_READ);
+        if (!Objects.equals(experiment.getManifestSchemaVersion(), MANIFEST_SCHEMA_VERSION)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "MANIFEST_MISMATCH");
+        }
+        var manifest = requireManifest(experiment);
+        var sources = manifest.cases().stream().map(ManifestCase::sourceTaskId).toList();
+        return new ExperimentSourceSummaryVO(experiment.getId(), experiment.getSpaceId(), experiment.getManifestHash(),
+                sources.size(), sources.stream().filter(source -> source != null && source > 0).distinct().count(),
+                sources.stream().filter(source -> source == null || source <= 0).count());
     }
 
     public ExperimentVO detail(Long id) {

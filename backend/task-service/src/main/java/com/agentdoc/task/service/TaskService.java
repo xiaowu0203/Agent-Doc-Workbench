@@ -72,6 +72,7 @@ import com.agentdoc.task.pojo.vo.TaskActivityVO;
 import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
 import com.agentdoc.task.pojo.vo.TaskDocumentContextVO;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;
+import com.agentdoc.task.pojo.vo.TaskNameVO;
 import com.agentdoc.task.pojo.vo.TaskFocusRegionVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
@@ -466,11 +467,24 @@ public class TaskService {
     }
 
     /**
-     * 为当前工具调用页批量读取同空间任务概要，继续执行权限及知情校验。
+     * 批量读取同空间任务名称，继续执行权限及知情校验，不读取文档或用户资料。
      * @param spaceId 当前空间
      * @param ids 本页任务ID
-     * @return 任务列表VO
+     * @return 任务名称投影
      */
+    public List<TaskNameVO> readNames(Long spaceId, List<Long> ids) {
+        requirePermission(spaceId, TASK_READ);
+        if (ids == null || ids.isEmpty() || ids.size() > PageParam.MAX_PAGE_SIZE) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "任务名称查询需要 1~100 个任务ID");
+        }
+        var tasks = taskMapper.selectList(new LambdaQueryWrapper<TaskEntity>()
+                .select(TaskEntity::getId, TaskEntity::getSpaceId, TaskEntity::getName, TaskEntity::getOnlineExperimentId)
+                .eq(TaskEntity::getSpaceId, spaceId).in(TaskEntity::getId, ids));
+        recordOnlineExposure(tasks);
+        return tasks.stream().map(task -> new TaskNameVO(task.getId(), task.getSpaceId(), task.getName())).toList();
+    }
+
+    /** 为当前工具调用页批量读取同空间任务概要，继续执行权限及知情校验。 */
     public List<TaskListItemVO> readListItems(Long spaceId, List<Long> ids) {
         requirePermission(spaceId, TASK_READ);
         if (ids == null || ids.isEmpty() || ids.size() > PageParam.MAX_PAGE_SIZE) {

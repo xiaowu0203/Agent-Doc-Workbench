@@ -97,204 +97,237 @@
     >
       <template v-if="experiment">
         <nav class="detail-navigation" aria-label="线上实验详情分区">
-          <a href="#online-facts">运行概况</a><a href="#online-assignments">任务与分配</a
-          ><a href="#online-report">冻结报告</a><a href="#online-config">冻结配置</a>
+          <a v-for="section in detailSections" :key="section" :href="`#online-${section}`">{{
+            detailLabels[section]
+          }}</a
+          ><a href="#online-config">冻结配置</a>
         </nav>
         <p v-if="experiment.manifestSchemaVersion !== 2" role="alert">
           历史协议仅供查看，不能启动或操作。
         </p>
-        <section id="online-facts" aria-label="线上运行事实">
-          <h3>{{ onlineStatus(experiment.status) }}</h3>
-          <p v-for="code in experiment.reasonCodes" :key="code" class="warning">
-            {{ onlineIssue(code) }}
-          </p>
-          <div class="table-wrap">
-            <table>
-              <tbody>
-                <tr>
-                  <th>范围与分配</th>
-                  <td>
-                    范围 {{ onlineFact(experiment.documentCount) }} 文档 / 参与
-                    {{ onlineFact(experiment.participatingDocumentCount) }} 文档 /
-                    {{ onlineFact(experiment.assignedTaskCount) }} Task
-                  </td>
-                </tr>
-                <tr>
-                  <th>候选概率</th>
-                  <td>
-                    {{
-                      experiment.candidateWeightBps === null
-                        ? '未知'
-                        : `${experiment.candidateWeightBps / 100}%`
-                    }}，实际 Task 比例不必相同
-                  </td>
-                </tr>
-                <tr>
-                  <th>Token 账本</th>
-                  <td>
-                    授权 {{ onlineFact(experiment.authorizedTokenBudget) }} / 实际
-                    {{ onlineFact(experiment.consumedTokens) }} / 未结算预留
-                    {{ onlineFact(experiment.reservedTokenBudget) }}
-                  </td>
-                </tr>
-                <tr>
-                  <th>占槽 / 未决</th>
-                  <td>
-                    基线 {{ onlineFact(experiment.baselineSlotCount) }} / 候选
-                    {{ onlineFact(experiment.candidateSlotCount) }} / 未决任务
-                    {{ onlineFact(experiment.unknownTaskCount) }}
-                  </td>
-                </tr>
-                <tr>
-                  <th>实际窗口</th>
-                  <td>
-                    开始 {{ experiment.startedAt || '未开始'
-                    }}<small
-                      >分配截止 {{ experiment.assignmentDeadline || '未开始' }} / 观察截止
-                      {{ experiment.observationDeadline || '未开始' }}</small
-                    >
-                  </td>
-                </tr>
-                <tr>
-                  <th>对账</th>
-                  <td>
-                    {{ experiment.lastReconciledAt || '尚未确认' }}。已发取消请求不代表远端已停止。
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p>{{ ONLINE_FALLBACK_NOTICE }}</p>
-          <OnlineExperimentActions
-            v-if="isOwner"
-            :experiment="experiment"
-            :preflight="preflight"
-            :allowed="canOperate"
-            :can-terminate="canTerminate"
-            @changed="changed"
-          />
-        </section>
-        <section v-if="isOwner" aria-label="启动前预检">
-          <h3>启动前预检</h3>
-          <el-button
-            :disabled="checking || loading || experiment.manifestSchemaVersion !== 2"
-            @click="check"
-            >{{ checking ? '正在预检' : '重新预检' }}</el-button
+        <template v-for="section in detailSections" :key="section">
+          <section v-if="section === 'facts'" id="online-facts" aria-label="线上运行事实">
+            <h3>{{ onlineStatus(experiment.status) }}</h3>
+            <p v-if="factsReadAt">
+              当前运行事实 · 浏览器最近成功读取于 {{ factsReadAt }}（UTC）；不代表报告观察截止时间。
+            </p>
+            <p v-for="code in experiment.reasonCodes" :key="code" class="warning">
+              {{ onlineIssue(code) }}
+            </p>
+            <div class="table-wrap">
+              <table>
+                <tbody>
+                  <tr>
+                    <th>范围与分配</th>
+                    <td>
+                      范围 {{ onlineFact(experiment.documentCount) }} 文档 / 参与
+                      {{ onlineFact(experiment.participatingDocumentCount) }} 文档 /
+                      {{ onlineFact(experiment.assignedTaskCount) }} Task
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>候选概率</th>
+                    <td>
+                      {{
+                        experiment.candidateWeightBps === null
+                          ? '未知'
+                          : `${experiment.candidateWeightBps / 100}%`
+                      }}，实际 Task 比例不必相同
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Token 账本</th>
+                    <td>
+                      授权 {{ onlineFact(experiment.authorizedTokenBudget) }} / 实际
+                      {{ onlineFact(experiment.consumedTokens) }} / 未结算预留
+                      {{ onlineFact(experiment.reservedTokenBudget) }}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>占槽 / 未决</th>
+                    <td>
+                      基线 {{ onlineFact(experiment.baselineSlotCount) }} / 候选
+                      {{ onlineFact(experiment.candidateSlotCount) }} / 未决任务
+                      {{ onlineFact(experiment.unknownTaskCount) }}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>实际窗口</th>
+                    <td>
+                      开始 {{ experiment.startedAt || '未开始'
+                      }}<small
+                        >分配截止 {{ experiment.assignmentDeadline || '未开始' }} / 观察截止
+                        {{ experiment.observationDeadline || '未开始' }}</small
+                      >
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>对账</th>
+                    <td>
+                      {{
+                        experiment.lastReconciledAt || '尚未确认'
+                      }}。已发取消请求不代表远端已停止。
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>{{ ONLINE_FALLBACK_NOTICE }}</p>
+            <OnlineExperimentActions
+              v-if="isOwner"
+              :experiment="experiment"
+              :preflight="preflight"
+              :allowed="canOperate"
+              :can-terminate="canTerminate"
+              @changed="changed"
+            />
+          </section>
+          <section v-if="section === 'facts' && isOwner" aria-label="启动前预检">
+            <h3>启动前预检</h3>
+            <el-button
+              :disabled="checking || loading || experiment.manifestSchemaVersion !== 2"
+              @click="check"
+              >{{ checking ? '正在预检' : '重新预检' }}</el-button
+            >
+            <p v-if="preflightError" role="alert">{{ preflightError }}</p>
+            <template v-if="preflight">
+              <p>
+                {{
+                  preflight.startable ? '预检允许启动，仍需确认副作用和授权' : '当前不能启动'
+                }}。有效至 {{ preflight.expiresAt }}。
+              </p>
+              <p>
+                基线 {{ preflight.baselineDocumentCount }} 文档 / 候选
+                {{ preflight.candidateDocumentCount }} 文档；最大计划预留
+                {{ preflight.plannedUpperTokenBudget }} Token；历史估算
+                {{ preflight.historicalEstimate || '不可用' }}。
+              </p>
+              <p>
+                分配诊断：{{
+                  preflight.srm.status === 'NOT_ENOUGH_UNITS'
+                    ? '样本不足，SRM 未启用；协议核查不等于统计诊断通过'
+                    : preflight.srm.status
+                }}<span v-if="preflight.srm.pValue !== null"
+                  >（分配诊断 p={{ preflight.srm.pValue }}）</span
+                >
+              </p>
+              <ul>
+                <li v-for="(issue, index) in preflight.issues" :key="index">
+                  {{ issue.severity }}：{{ onlineIssue(issue.code)
+                  }}<span v-if="issue.documentId">，文档 #{{ issue.documentId }}</span
+                  ><span v-if="issue.ruleKey">，规则 {{ issue.ruleKey }}</span>
+                </li>
+              </ul>
+            </template>
+          </section>
+          <section
+            v-if="section === 'assignments'"
+            id="online-assignments"
+            aria-label="线上分配观察"
           >
-          <p v-if="preflightError" role="alert">{{ preflightError }}</p>
-          <template v-if="preflight">
-            <p>
-              {{
-                preflight.startable ? '预检允许启动，仍需确认副作用和授权' : '当前不能启动'
-              }}。有效至 {{ preflight.expiresAt }}。
-            </p>
-            <p>
-              基线 {{ preflight.baselineDocumentCount }} 文档 / 候选
-              {{ preflight.candidateDocumentCount }} 文档；最大计划预留
-              {{ preflight.plannedUpperTokenBudget }} Token；历史估算
-              {{ preflight.historicalEstimate || '不可用' }}。
-            </p>
-            <p>
-              分配诊断：{{
-                preflight.srm.status === 'NOT_ENOUGH_UNITS'
-                  ? '样本不足，SRM 未启用；协议核查不等于统计诊断通过'
-                  : preflight.srm.status
-              }}<span v-if="preflight.srm.pValue !== null"
-                >（分配诊断 p={{ preflight.srm.pValue }}）</span
-              >
-            </p>
-            <ul>
-              <li v-for="(issue, index) in preflight.issues" :key="index">
-                {{ issue.severity }}：{{ onlineIssue(issue.code)
-                }}<span v-if="issue.documentId">，文档 #{{ issue.documentId }}</span
-                ><span v-if="issue.ruleKey">，规则 {{ issue.ruleKey }}</span>
-              </li>
-            </ul>
-          </template>
-        </section>
-        <section id="online-assignments" aria-label="线上分配观察">
-          <h3>已接受分配</h3>
-          <p>保留未落库、失败、取消和未知项。下钻 Task 时重新检查权限。</p>
-          <p v-if="assignmentError" role="alert">{{ assignmentError }}</p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>文档 / Task</th>
-                  <th>固定组 / 顺序</th>
-                  <th>任务 / 派发 / 槽</th>
-                  <th>取消 / 结算</th>
-                  <th>Token / 未决</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in assignments.records" :key="item.id">
-                  <td>
-                    {{ item.documentTitle || `文档 #${item.documentId}`
-                    }}<small>文档 #{{ item.documentId }}</small
-                    ><small
-                      ><RouterLink
-                        v-if="canTaskRead"
-                        :to="`/spaces/${spaceId}/tasks/${item.taskId}`"
-                        >Task #{{ item.taskId }}</RouterLink
-                      ><span v-else>Task #{{ item.taskId }}</span></small
-                    >
-                  </td>
-                  <td>
-                    {{ item.variant }}<small>{{ onlineFact(item.acceptedSequence) }}</small>
-                  </td>
-                  <td>
-                    {{ onlineFact(item.taskConfirmationStatus)
-                    }}<small
-                      >{{ onlineFact(item.dispatchStatus) }} /
-                      {{ onlineFact(item.slotStatus) }}</small
-                    >
-                  </td>
-                  <td>
-                    {{ onlineFact(item.cancelStatus)
-                    }}<small>{{ onlineFact(item.settlementStatus) }}</small>
-                  </td>
-                  <td>
-                    预留 {{ onlineFact(item.reservedTokenBudget) }} / 实际
-                    {{ onlineFact(item.consumedTokens)
-                    }}<small>{{
-                      item.reasonCode ? onlineIssue(item.reasonCode) : item.factStatus || '未知'
-                    }}</small>
-                  </td>
-                </tr>
-                <tr v-if="!assignments.records.length">
-                  <td colspan="5">暂无已接受分配。</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <el-pagination
-            :current-page="assignments.pageNum"
-            :page-size="10"
-            :total="assignments.total"
-            layout="prev, pager, next"
-            @current-change="loadAssignments"
+            <h3>已接受分配</h3>
+            <p>保留未落库、失败、取消和未知项。下钻 Task 时重新检查权限。</p>
+            <p v-if="assignmentError" role="alert">{{ assignmentError }}</p>
+            <p v-if="taskNameError" role="status">{{ taskNameError }}</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>文档 / Task</th>
+                    <th>固定组 / 顺序</th>
+                    <th>任务 / 派发 / 槽</th>
+                    <th>取消 / 结算</th>
+                    <th>Token / 未决</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in assignments.records" :key="item.id">
+                    <td>
+                      {{ item.documentTitle || `文档 #${item.documentId}`
+                      }}<small>文档 #{{ item.documentId }}</small
+                      ><small
+                        ><RouterLink
+                          v-if="canTaskRead"
+                          :to="`/spaces/${spaceId}/tasks/${item.taskId}`"
+                          >{{ taskNames[item.taskId] || `Task #${item.taskId}` }}</RouterLink
+                        ><span v-else>Task #{{ item.taskId }}</span
+                        ><small v-if="canTaskRead && taskNames[item.taskId]"
+                          >Task #{{ item.taskId }}</small
+                        ></small
+                      >
+                    </td>
+                    <td>
+                      <span :title="item.variant">{{
+                        assignmentStatus('variant', item.variant)
+                      }}</span
+                      ><small>接受顺序 {{ onlineFact(item.acceptedSequence) }}</small>
+                    </td>
+                    <td>
+                      <span :title="item.taskConfirmationStatus || ''"
+                        >任务{{
+                          assignmentStatus('confirmation', item.taskConfirmationStatus)
+                        }}</span
+                      >
+                      <small :title="item.dispatchStatus || ''">{{
+                        assignmentStatus('dispatch', item.dispatchStatus)
+                      }}</small>
+                      <small :title="item.slotStatus || ''">{{
+                        assignmentStatus('slot', item.slotStatus)
+                      }}</small>
+                    </td>
+                    <td>
+                      <span :title="item.cancelStatus || ''">{{
+                        assignmentStatus('cancel', item.cancelStatus)
+                      }}</span
+                      ><small :title="item.settlementStatus || ''">{{
+                        assignmentStatus('settlement', item.settlementStatus)
+                      }}</small>
+                    </td>
+                    <td>
+                      预留 {{ onlineFact(item.reservedTokenBudget) }} / 实际
+                      {{ onlineFact(item.consumedTokens)
+                      }}<small>{{
+                        item.reasonCode
+                          ? onlineIssue(item.reasonCode)
+                          : assignmentStatus('execution', item.factStatus)
+                      }}</small>
+                    </td>
+                  </tr>
+                  <tr v-if="!assignments.records.length">
+                    <td colspan="5">暂无已接受分配。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <el-pagination
+              :current-page="assignments.pageNum"
+              :page-size="10"
+              :total="assignments.total"
+              layout="prev, pager, next"
+              @current-change="loadAssignments"
+            />
+          </section>
+          <OnlineReportPanel
+            v-if="section === 'report'"
+            id="online-report"
+            :requested-revision="
+              route.query.reportRevision === undefined
+                ? undefined
+                : Number(route.query.reportRevision)
+            "
+            :experiment="experiment"
+            :readable="canRead"
+            :manageable="canManageReport"
+            :can-recalculate="canRecalculate"
+            @decided="refresh"
+            @loaded="
+              router.replace({
+                query: { ...route.query, reportRevision: String($event) },
+                hash: route.hash,
+              })
+            "
           />
-        </section>
-        <OnlineReportPanel
-          id="online-report"
-          :requested-revision="
-            route.query.reportRevision === undefined
-              ? undefined
-              : Number(route.query.reportRevision)
-          "
-          :experiment="experiment"
-          :readable="canRead"
-          :manageable="canManageReport"
-          :can-recalculate="canRecalculate"
-          @decided="refresh"
-          @loaded="
-            router.replace({
-              query: { ...route.query, reportRevision: String($event) },
-              hash: route.hash,
-            })
-          "
-        />
+        </template>
         <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
         <OnlinePromptComparison
           id="online-config"
@@ -347,6 +380,7 @@ import OnlineExperimentActions from '@/features/evaluation/online/OnlineExperime
 import OnlineExperimentCreate from '@/features/evaluation/online/OnlineExperimentCreate.vue'
 import OnlinePromptComparison from '@/features/evaluation/online/OnlinePromptComparison.vue'
 import OnlineReportPanel from '@/features/evaluation/online/OnlineReportPanel.vue'
+import { getTaskNames } from '@/features/task/api/task-api'
 import {
   getOnlineExperiment,
   getOnlinePreflight,
@@ -365,6 +399,7 @@ import {
   onlineStatus,
   onlineStateVersion,
   validOnlineId,
+  assignmentStatus,
 } from '@/features/evaluation/online/presentation'
 import type {
   OnlineActionResult,
@@ -423,6 +458,16 @@ const list = ref(emptyPage<OnlineSummary>()),
   assignments = ref(emptyPage<OnlineAssignment>()),
   experiment = ref<OnlineExperiment | null>(null),
   preflight = ref<OnlinePreflight | null>(null)
+const detailLabels = { facts: '运行概况', assignments: '任务与分配', report: '冻结报告' }
+const detailSections = computed<('facts' | 'assignments' | 'report')[]>(() =>
+  experiment.value?.status === 'STOPPED'
+    ? ['report', 'facts', 'assignments']
+    : ['facts', 'assignments', 'report'],
+)
+const factsReadAt = ref(''),
+  taskNames = ref<Record<string, string>>({}),
+  taskNameError = ref('')
+let nameRead: AbortController | undefined
 const loading = ref(false),
   checking = ref(false),
   error = ref(''),
@@ -493,11 +538,38 @@ async function loadAssignments(pageNum: number) {
     )
       throw new Error('分配身份或空间不一致')
     assignments.value = value
+    void loadTaskNames(value.records)
   } catch (e) {
     if (!controller.signal.aborted) {
       assignmentError.value = normalizeApiError(e).message
       assignments.value = emptyPage()
     }
+  }
+}
+async function loadTaskNames(rows: OnlineAssignment[]) {
+  nameRead?.abort()
+  taskNames.value = {}
+  taskNameError.value = ''
+  if (!canTaskRead.value || !rows.length) return
+  const controller = new AbortController(),
+    currentSpace = spaceId.value
+  nameRead = controller
+  const taskIds = [...new Set(rows.map((row) => row.taskId))]
+  try {
+    const values = await getTaskNames({ spaceId: currentSpace, taskIds }, controller.signal)
+    if (controller.signal.aborted || !canTaskRead.value || spaceId.value !== currentSpace) return
+    if (
+      values.some(
+        (row) => String(row.spaceId) !== currentSpace || !taskIds.includes(String(row.id)),
+      )
+    )
+      throw new Error('任务名称身份或空间不一致')
+    taskNames.value = Object.fromEntries(
+      values.filter((row) => row.name).map((row) => [String(row.id), row.name!]),
+    )
+  } catch (e) {
+    if (!controller.signal.aborted && canTaskRead.value)
+      taskNameError.value = `任务名称暂不可用，保留任务ID：${normalizeApiError(e).message}`
   }
 }
 function schedule() {
@@ -536,6 +608,7 @@ async function loadDetail(quiet = false) {
     if (value.id !== props.resourceId) throw new Error('实验身份不一致')
     if (experiment.value && onlineIdentity(experiment.value) !== onlineIdentity(value)) clearProof()
     experiment.value = value
+    factsReadAt.value = new Date().toISOString()
     error.value = ''
     pollError.value = ''
     failures = 0
@@ -555,6 +628,9 @@ async function loadDetail(quiet = false) {
       else {
         error.value = fault.message
         experiment.value = null
+        factsReadAt.value = ''
+        nameRead?.abort()
+        taskNames.value = {}
         assignments.value = emptyPage()
         clearProof()
       }
@@ -629,6 +705,10 @@ watch(
     list.value = emptyPage()
     assignments.value = emptyPage()
     experiment.value = null
+    factsReadAt.value = ''
+    nameRead?.abort()
+    taskNames.value = {}
+    taskNameError.value = ''
     error.value = ''
     pollError.value = ''
     creating.value = false
@@ -641,10 +721,12 @@ watch(
 watch(isOwner, (owner) => {
   if (!owner) clearProof()
 })
+watch(canTaskRead, () => void loadTaskNames(assignments.value.records))
 watch(canCreate, (allowed) => {
   if (!allowed) creating.value = false
 })
 onBeforeUnmount(() => {
+  nameRead?.abort()
   stopTimer()
   read?.abort()
   assignmentRead?.abort()

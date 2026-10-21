@@ -19,5 +19,7 @@ public record OnlineExperimentVO(
         @Schema(description = "实际首次启动") LocalDateTime startedAt,
         @Schema(description = "分配截止") LocalDateTime assignmentDeadline,
         @Schema(description = "观察截止") LocalDateTime observationDeadline,
-        @Schema(description = "人工结论") String decision
+        @Schema(description = "人工结论") String decision,
+        @Schema(description = "既有决定依据的报告版本") Integer decisionReportRevision,
+        @Schema(description = "既有决定依据的报告摘要") String decisionReportHash
 ) { }

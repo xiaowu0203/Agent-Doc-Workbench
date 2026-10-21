@@ -2,6 +2,48 @@
   <section aria-label="线上报告与结论" class="report-panel">
     <h3>线上报告 · 固定版本</h3>
     <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
+    <section v-if="experiment.decision" aria-label="既有人工结论">
+      <p>
+        已记录人工结论：{{ evaluationStatus('decision', experiment.decision).label }}。 依据报告
+        {{
+          experiment.decisionReportRevision == null
+            ? '版本未知'
+            : `v${experiment.decisionReportRevision}`
+        }}；当前报告不改变既有结论及其依据。
+      </p>
+      <el-button
+        v-if="experiment.decisionReportRevision != null"
+        :disabled="busy || !readable"
+        @click="readDecisionReport"
+        >查看结论依据报告</el-button
+      >
+      <p
+        v-if="
+          report &&
+          experiment.decisionReportRevision != null &&
+          report.revision !== experiment.decisionReportRevision
+        "
+      >
+        当前查看 v{{ report.revision }}，与既有决定依据 v{{
+          experiment.decisionReportRevision
+        }}
+        不同；当前版本不会替换决定依据。
+      </p>
+      <p
+        v-else-if="
+          report &&
+          experiment.decisionReportHash &&
+          report.reportHash !== experiment.decisionReportHash
+        "
+        role="alert"
+      >
+        当前报告摘要与决定依据不一致，请核对原始依据。
+      </p>
+      <details>
+        <summary>决定依据摘要</summary>
+        <p>{{ experiment.decisionReportHash || '历史决定未提供报告摘要，不能推测其身份。' }}</p>
+      </details>
+    </section>
     <div class="revision-index" aria-label="报告版本记录">
       <div class="row">
         <label
@@ -465,11 +507,6 @@
           >核对结论</el-button
         >
       </form>
-      <p v-if="experiment.decision">
-        已记录人工结论：{{
-          evaluationStatus('decision', experiment.decision).label
-        }}。当前报告不改变既有结论及其依据。
-      </p>
     </template>
     <form
       v-if="canRecalculate && experiment.manifestSchemaVersion === 2"
@@ -837,6 +874,11 @@ async function loadRevisions(page: number, chooseLatest = false) {
   } finally {
     if (!controller.signal.aborted) indexBusy.value = false
   }
+}
+function readDecisionReport() {
+  if (props.experiment.decisionReportRevision == null) return
+  revision.value = props.experiment.decisionReportRevision
+  void load(false)
 }
 function selectRevision(event: Event) {
   pending?.abort()

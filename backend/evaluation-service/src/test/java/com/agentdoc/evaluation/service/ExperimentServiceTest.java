@@ -2,6 +2,8 @@ package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.TaskFeign;
@@ -56,6 +58,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
 
 @ExtendWith(MockitoExtension.class)
 class ExperimentServiceTest {
@@ -132,6 +136,33 @@ class ExperimentServiceTest {
         assertThatThrownBy(() -> service.start(created.id(), new ExperimentStartDTO(1_999L, 600L)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("BUDGET_LIMIT_EXCEEDED");
+    }
+
+    @Test void sourceSummaryUsesOnlyVerifiedFrozenSourcesAndKeepsDuplicateAndMissingBoundaries() {
+        var manifest = new ExperimentManifest(10L, List.of(
+                new ManifestCase(11L, 101L, 201L, 1, "a", 1L, 0L, "b", List.of()),
+                new ManifestCase(12L, 101L, 201L, 1, "a", 1L, 0L, "b", List.of()),
+                new ManifestCase(13L, 102L, 202L, 1, "a", 2L, 0L, "b", List.of()),
+                new ManifestCase(14L, null, null, 1, "a", 3L, 0L, "b", List.of())), 3, "config", 1, List.of(), "metrics");
+        var entity = new ExperimentEntity(); entity.setId(71L); entity.setSpaceId(9L); entity.setManifestSchemaVersion(1);
+        entity.setManifestJson(JsonUtils.toJson(manifest)); entity.setManifestHash(StableSnapshotUtils.snapshotHash(1, manifest));
+        when(experimentMapper.selectById(71L)).thenReturn(entity);
+        var result = service.sourceSummary(71L);
+        assertThat(result.caseCount()).isEqualTo(4); assertThat(result.distinctSourceTaskCount()).isEqualTo(2);
+        assertThat(result.missingSourceCaseCount()).isEqualTo(1); assertThat(result.manifestHash()).isEqualTo(entity.getManifestHash());
+        verifyNoInteractions(testCaseVersionMapper, taskFeign, agentFeign, persistenceService, reportMapper);
+        entity.setManifestHash("damaged");
+        assertThatThrownBy(() -> service.sourceSummary(71L)).hasMessageContaining("MANIFEST_MISMATCH");
+        entity.setManifestSchemaVersion(99);
+        assertThatThrownBy(() -> service.sourceSummary(71L)).hasMessageContaining("MANIFEST_MISMATCH");
+    }
+
+    @Test void sourceSummaryCannotBypassEvaluationRead() {
+        var entity = new ExperimentEntity(); entity.setId(71L); entity.setSpaceId(9L);
+        when(experimentMapper.selectById(71L)).thenReturn(entity);
+        doThrow(new BusinessException(403, "权限不足")).when(spaceAccessService).requirePermission(9L, EVALUATION_READ);
+        assertThatThrownBy(() -> service.sourceSummary(71L)).hasMessageContaining("权限不足");
+        verifyNoInteractions(taskFeign, reportMapper, testCaseVersionMapper);
     }
 
     @Test

@@ -397,6 +397,10 @@ V40 的资格证明只能由这条完整隐藏读取链路创建；证明绑定�
 
 `GET /api/evaluation/online-experiments/{id}/reports/range-suggestion` 为 OWNER + evaluation:manage 且具备上述读取权限的用户提供当前 `acceptedSequence`（十进制文本）、服务端本地 `observationCutoffAt`（毫秒）及实际 JVM `timeZone`。读取前同样记录 REPORT 知情；不从 Task 数或浏览器时钟推算，不生成报告。建议是读取时观察到的范围，提交前序号仍可能增长；前端只填入表单，继续保留显式核对和确认。已有历史截止不做时区猜测或重新解释。
 
+普通实验详情追加只读 `decisionReportRevision`、`decisionReportHash`，直接来自既有人工决定记录，不从最新报告或当前索引推断。报告区明确标示当前查看版本与决定依据是否不同，并提供读取原依据报告的入口；概要读取仍不能代替完整核验或重新作出决定。STOPPED 页面在 DOM 和导航中优先展示报告，运行期优先展示运行事实。当前事实读取时间是浏览器最近成功接收详情的 UTC 时间，不冒充服务端观察时点，不与冻结报告截止混用；刷新失败保留上次成功时间。分配的确认、派发、槽、取消、结算与执行各阶段分别译名，未知码保留原码，不合成为推测的任务终态。
+
+隐藏分组评审候选追加 `ownReviewRecorded`：仅表示当前用户在当前空间、本页分配中曾提交 MANUAL 且带原始 rubric 的历史反馈，不返回他人参与情况、评分/标签/自由文本、知情状态或任务终态。当前页一次批量查询，0 分同样属于已有记录，不读取 factsJson 或为此签发资格。它不证明反馈摘要有效、当前目标已评、当前链尾已确认或具备盲态资格；文本与完整变更集合仍需打开冻结目标并核验原始证据和反馈链。没有该字段的旧服务响应在前端显示“记录状态未知”，不默认当作未评。
+
 返回包装字段为 id/experimentId/revision/reportType/schemaVersion/reportHash/inputHash/state/report；report 是 online.report schema2规范信封，payload 是 ONLINE_V1 schema2正文，包含第9节的窗口、分母、覆盖、诊断和门禁。未知schema或摘要损坏返回安全降级状态、空正文，不能作决定。小数和时间以规范文本进入哈希；原始正文、Prompt、诊断正文和Trace不进入报告冻结输入，相应私有字段只保留摘要。每个冻结ruleKey按截止内最大attemptNo取最近一次尝试，失败/缺失不得回退挑选更好的旧尝试；全部参与事实身份仍冻结。报告是当前读取的事实快照，不能声称从可变状态重建任意历史时刻。
 
 V41 为大型冻结输入追加 online_report_input_chunk，不改 V39/V40。小输入仍直接存 input_json；超过 262,144 个 UTF-16 单元的输入按此上限分块，避免拆开代理对，最多 256 块。报告行存 online.report-input-chunks schema2定位信封和完整逻辑输入 hash，每块存序号与独立 hash；报告、全部块及幂等映射在同一事务提交。读取/决定按序复核连续性、各块 hash、完整输入 hash及逻辑 schema，不用当前业务数据补缺块；损坏或缺块拒绝决定。分块是物理存储形式，不改变逻辑 online.report-input 或报告 hash。

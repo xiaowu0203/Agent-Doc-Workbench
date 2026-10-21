@@ -35,6 +35,7 @@ import type {
   ExperimentDecisionRequest,
   ExperimentPreflight,
   ExperimentReport,
+  ExperimentSourceSummary,
   ExperimentReportRecalculateRequest,
   ExperimentReportRevision,
   ExperimentSearch,
@@ -648,6 +649,13 @@ export function cancelExperiment(id: EntityId, signal?: AbortSignal): Promise<Ex
     url: `/evaluation/experiments/${id}/cancel`,
     signal,
   })
+}
+
+export function getExperimentSourceSummary(
+  id: EntityId,
+  signal?: AbortSignal,
+): Promise<ExperimentSourceSummary> {
+  return request({ method: 'GET', url: `/evaluation/experiments/${id}/source-summary`, signal })
 }
 
 export function getExperimentReportRevisions(

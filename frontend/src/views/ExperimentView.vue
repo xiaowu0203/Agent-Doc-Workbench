@@ -2,7 +2,19 @@
   <section class="experiment" aria-label="离线实验">
     <header class="experiment-header">
       <div>
-        <h2>{{ resourceId ? `离线实验 #${resourceId}` : '离线实验列表' }}</h2>
+        <h2>
+          <template v-if="resourceId && experiment && canRead">
+            <EvaluationSourceTitle
+              :space-id="spaceId"
+              kind="datasets"
+              :version-id="String(experiment.datasetVersionId || '')"
+              :fallback="`离线实验 #${resourceId}`"
+            />
+            · 离线实验
+          </template>
+          <template v-else>{{ resourceId ? `离线实验 #${resourceId}` : '离线实验列表' }}</template>
+        </h2>
+        <p v-if="resourceId">实验 #{{ resourceId }}</p>
         <p>在冻结数据集上比较 Baseline 与 Prompt 候选；不修改生产 Agent，不分配线上流量。</p>
       </div>
       <div class="actions">
@@ -176,7 +188,7 @@
           </ul>
         </section>
         <section aria-label="冻结 Variant" class="variants">
-          <h3>冻结 Variant 与关联运行</h3>
+          <h3>冻结配置组与关联运行</h3>
           <p>
             首版仅改变 Prompt。选中一项查看其 Run 进度；历史 Run 的恢复与重试通过 Run
             页面正式入口操作。
@@ -387,6 +399,7 @@ import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { normalizeApiError } from '@/api/errors'
 import DataState from '@/shared/components/DataState.vue'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
+import EvaluationSourceTitle from '@/features/evaluation/components/EvaluationSourceTitle.vue'
 import ExperimentCreate from '@/features/evaluation/components/ExperimentCreate.vue'
 import PublishedVersionPicker from '@/features/evaluation/components/PublishedVersionPicker.vue'
 import ExperimentReportPanel from '@/features/evaluation/components/ExperimentReportPanel.vue'
