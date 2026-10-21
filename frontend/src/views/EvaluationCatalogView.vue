@@ -99,11 +99,48 @@
           <el-table-column label="资源 ID" min-width="185"
             ><template #default="{ row }">{{ row.id }}</template></el-table-column
           >
-          <el-table-column label="版本与绑定" width="120"
-            ><template #default="{ row }"
-              ><RouterLink :to="resourcePath(row.id)">查看版本</RouterLink></template
-            ></el-table-column
+          <el-table-column label="最新发布与草稿" min-width="180">
+            <template #default="{ row }">
+              <template v-if="row.versionSummary">
+                <RouterLink
+                  v-if="row.versionSummary.latestPublishedVersionId"
+                  :to="{
+                    path: resourcePath(row.id),
+                    query: { versionId: String(row.versionSummary.latestPublishedVersionId) },
+                  }"
+                  >已发布 v{{ row.versionSummary.latestPublishedVersionNo }}</RouterLink
+                >
+                <span v-else>尚未发布</span>
+                <p>
+                  {{ row.versionSummary.draftCount }} 个草稿 · 共
+                  {{ row.versionSummary.versionCount }} 个版本
+                </p>
+              </template>
+              <span v-else>版本信息暂不可用</span>
+            </template>
+          </el-table-column>
+          <el-table-column
+            :label="
+              section === 'datasets'
+                ? '已发布启用用例'
+                : section === 'test-cases'
+                  ? '已发布绑定评估器'
+                  : '发布版本引用数'
+            "
+            min-width="150"
           >
+            <template #default="{ row }">
+              <span
+                :title="
+                  section === 'evaluators'
+                    ? '引用该最新发布版本的不同用例版本数，含历史版本'
+                    : '最新已发布版本的绑定数量'
+                "
+                >{{ row.versionSummary?.publishedBindingCount ?? '—' }}</span
+              >
+              <p><RouterLink :to="resourcePath(row.id)">管理版本与绑定</RouterLink></p>
+            </template>
+          </el-table-column>
         </el-table>
         <div class="catalog-page__pagination">
           <span>共 {{ page.total }} 条</span

@@ -199,7 +199,11 @@
                 @click="chooseCase(item)"
               >
                 <span
-                  ><strong>用例版本 #{{ item.testCaseVersionId || '不可用' }}</strong
+                  ><strong
+                    >{{ item.testCaseName || '用例名称不可用' }} · v{{
+                      item.testCaseVersionNo ?? '不可用'
+                    }}</strong
+                  ><small>用例版本 #{{ item.testCaseVersionId || '不可用' }}</small
                   ><small>CaseRun #{{ item.id }} · Attempt {{ item.attemptNo }}</small></span
                 ><EvaluationStatusTag domain="attempt" :status="item.status" />
               </button>

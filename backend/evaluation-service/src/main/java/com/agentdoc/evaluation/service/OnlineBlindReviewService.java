@@ -3,6 +3,8 @@ package com.agentdoc.evaluation.service;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.OnlineProtocolUtils;
@@ -21,6 +23,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.Objects;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /** 来源求证全部在事务外；资格短事务只能消费完整隐藏上下文和冻结用户目标。 */
 @Service
@@ -33,6 +38,7 @@ public class OnlineBlindReviewService {
     private final OnlineBlindReviewReceiptService receipts;
     private final OnlineExperimentMapper experiments;
     private final SpaceAccessService access;
+    private final DocumentFeign documents;
     /** 仅在已完成read的当前授权链路内取得Space，不生成普通元数据或曝光记录。 */
     String spaceId(String experimentId, String assignmentId) {
         var row = assignments.selectById(OnlineProtocolUtils.id(assignmentId));
@@ -47,7 +53,19 @@ public class OnlineBlindReviewService {
         var rows = assignments.selectPage(new Page<>(page.getPageNum(), page.getPageSize()), new LambdaQueryWrapper<OnlineAssignmentEntity>()
                 .eq(OnlineAssignmentEntity::getExperimentId, experiment.getId()).eq(OnlineAssignmentEntity::getSpaceId, experiment.getSpaceId())
                 .eq(OnlineAssignmentEntity::getBindingSchemaVersion, 2).orderByAsc(OnlineAssignmentEntity::getAcceptedSequence));
-        return PageVO.of(rows.getRecords().stream().map(row -> new OnlineReviewAssignmentVO(row.getId().toString(), row.getDocumentId().toString())).toList(), rows.getTotal(), page);
+        var ids = rows.getRecords().stream().map(OnlineAssignmentEntity::getDocumentId).distinct().toList();
+        var titles = Map.<Long, DocumentRefVO>of();
+        if (!ids.isEmpty()) {
+            var response = documents.getDocumentRefs(ids);
+            if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "评审文档引用暂不可用");
+            }
+            if (response.data().stream().anyMatch(row -> !Objects.equals(row.spaceId(), experiment.getSpaceId()) || !ids.contains(row.id()))) throw invalid();
+            titles = response.data().stream().collect(Collectors.toMap(DocumentRefVO::id, Function.identity()));
+        }
+        var names = titles;
+        return PageVO.of(rows.getRecords().stream().map(row -> new OnlineReviewAssignmentVO(row.getId().toString(), row.getDocumentId().toString(),
+                names.containsKey(row.getDocumentId()) ? names.get(row.getDocumentId()).title() : null)).toList(), rows.getTotal(), page);
     }
     public OnlineBlindReviewContextVO read(String experimentId, String assignmentId, String target) {
         Long actor = AuthUtils.getUserIdOrException(); String type, evidenceId, evidenceHash; Object context;

@@ -171,7 +171,29 @@ describe('catalog editing and frozen contracts', () => {
     },
   )
   it('queries one resource page without per-row version requests', async () => {
+    vi.mocked(api.searchEvaluators).mockResolvedValue(
+      page([
+        {
+          ...evaluator,
+          versionSummary: {
+            resourceId: '20',
+            versionCount: 5,
+            draftCount: 0,
+            latestPublishedVersionId: '9007199254740993',
+            latestPublishedVersionNo: 4,
+            publishedBindingCount: 0,
+          },
+        },
+      ]),
+    )
     const { wrapper } = await catalog(false)
+    expect(wrapper.text()).toContain('已发布 v4')
+    expect(wrapper.text()).toContain('0 个草稿 · 共 5 个版本')
+    expect(
+      wrapper
+        .findAll('a')
+        .some((link) => link.attributes('href')?.includes('versionId=9007199254740993')),
+    ).toBe(true)
     expect(api.searchEvaluators).toHaveBeenCalledWith(
       { spaceId: '7', archived: false, keyword: undefined, pageNum: 1, pageSize: 20 },
       expect.any(AbortSignal),

@@ -245,8 +245,9 @@
                 <tbody>
                   <tr v-for="(cell, index) in visibleCells" :key="index">
                     <td>
-                      #{{ cell.value.testCaseVersionId || '未提供'
-                      }}<small>{{ cell.value.variantKey }} · {{ cell.value.metricKey }}</small>
+                      {{ caseLabel(cell.value.testCaseVersionId)
+                      }}<small>#{{ cell.value.testCaseVersionId || '未提供' }}</small
+                      ><small>{{ cell.value.variantKey }} · {{ cell.value.metricKey }}</small>
                     </td>
                     <td>
                       {{ metricText(cell.value)
@@ -347,10 +348,11 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElPagination } from 'element-plus'
 import { metricText } from '../experiment'
+import { queryCaseVersionNames } from '../api/evaluation-api'
 import { formatMetricNumber, metricLabel } from '../display'
 import type { EntityId } from '@/features/workspace/types'
 import type {
@@ -358,6 +360,7 @@ import type {
   ExperimentReportCell,
   ExperimentReportCaseSelection,
   ExperimentReportVariantSummary,
+  CaseVersionName,
 } from '../types'
 const props = defineProps<{ report: ExperimentReport; spaceId: string; canReadTask: boolean }>()
 const PAGE_SIZE = 10
@@ -414,6 +417,49 @@ const filteredCells = computed(
 const visibleCells = computed(() =>
   filteredCells.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
 )
+const caseNames = ref<Record<string, CaseVersionName>>({})
+const visibleCaseIds = computed(() => [
+  ...new Set(
+    visibleCells.value
+      .map((cell) => cell.value.testCaseVersionId)
+      .filter((id): id is EntityId => id !== null),
+  ),
+])
+let namesPending: AbortController | undefined
+watch(
+  [() => props.spaceId, () => props.report.contentHash, visibleCaseIds],
+  async () => {
+    namesPending?.abort()
+    caseNames.value = {}
+    if (!supported.value || !visibleCaseIds.value.length) return
+    const controller = new AbortController(),
+      ids = [...visibleCaseIds.value],
+      space = props.spaceId
+    namesPending = controller
+    try {
+      const rows = await queryCaseVersionNames(space, ids, controller.signal)
+      if (controller.signal.aborted) return
+      if (
+        rows.some(
+          (row) =>
+            String(row.spaceId) !== space ||
+            !ids.some((id) => String(id) === String(row.versionId)),
+        )
+      )
+        return
+      caseNames.value = Object.fromEntries(rows.map((row) => [String(row.versionId), row]))
+    } catch {
+      // 可选名称不可用时保留报告中的冻结身份，不影响已核验正文。
+      if (!controller.signal.aborted) caseNames.value = {}
+    }
+  },
+  { immediate: true },
+)
+function caseLabel(id: EntityId | null) {
+  const value = caseNames.value[String(id)]
+  return value ? `${value.name} · v${value.versionNo}（当前目录名称）` : '用例名称不可用'
+}
+onBeforeUnmount(() => namesPending?.abort())
 const evidenceCovered = computed(
   () =>
     new Set(

@@ -55,6 +55,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Objects;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -252,7 +253,22 @@ public class OnlineExperimentService {
                 .eq(param.getSettlementStatus() != null, OnlineAssignmentEntity::getSettlementStatus, param.getSettlementStatus())
                 .orderByDesc(OnlineAssignmentEntity::getId);
         var page = assignmentMapper.selectPage(new Page<>(param.getPageNum(), param.getPageSize()), query);
-        return PageVO.of(page.getRecords().stream().map(assignmentConvertor::toVO).toList(), page.getTotal(), param);
+        var titles = new HashMap<Long, String>();
+        if (!page.getRecords().isEmpty()) {
+            var permission = documentFeign.checkSpacePermission(entity.getSpaceId(), DOCUMENT_READ);
+            if (permission == null || permission.code() != ErrorCode.SUCCESS.getCode() && permission.code() != ErrorCode.FORBIDDEN.getCode()) {
+                throw new BusinessException(ErrorCode.CONFLICT, "文档标题读取权限暂不可验证");
+            }
+            if (permission.code() == ErrorCode.SUCCESS.getCode()) {
+                var ids = page.getRecords().stream().map(OnlineAssignmentEntity::getDocumentId).distinct().toList();
+                var references = data(documentFeign.getDocumentRefs(ids));
+                if (references.stream().anyMatch(row -> !entity.getSpaceId().equals(row.spaceId()) || !ids.contains(row.id()))) {
+                    throw new BusinessException(ErrorCode.CONFLICT, "文档标题归属不一致");
+                }
+                references.forEach(row -> { if (row.title() != null) titles.put(row.id(), row.title()); });
+            }
+        }
+        return PageVO.of(page.getRecords().stream().map(row -> assignmentConvertor.toVO(row, titles.get(row.getDocumentId()))).toList(), page.getTotal(), param);
     }
 
     private OnlineExperimentVO exposedView(OnlineExperimentEntity entity, Long actor) {

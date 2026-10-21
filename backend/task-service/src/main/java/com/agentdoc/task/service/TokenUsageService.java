@@ -278,10 +278,12 @@ public class TokenUsageService {
 
         // 查询当前周期统计汇总
         TokenUsageStatisticsRow currentRow = detailMapper.summarize(
-                param.spaceId(), start, end, param.agentId(), param.modelId(), taskStatus);
+                param.spaceId(), start, end, param.agentId(), param.modelId(), taskStatus,
+                param.executionMode() == null ? null : param.executionMode().name(), param.onlineParticipation());
         // 查询上一周期统计汇总，用于环比对比
         TokenUsageStatisticsRow previousRow = detailMapper.summarize(
-                param.spaceId(), previousStart, previousEnd, param.agentId(), param.modelId(), taskStatus);
+                param.spaceId(), previousStart, previousEnd, param.agentId(), param.modelId(), taskStatus,
+                param.executionMode() == null ? null : param.executionMode().name(), param.onlineParticipation());
 
         // 当前周期工具调用统计
         AgentToolUsageStatsVO currentTools = toolUsage(param, start, end);
@@ -290,7 +292,8 @@ public class TokenUsageService {
 
         // 按日期分组每日明细数据
         Map<LocalDate, TokenUsageDailyRow> dailyRows = detailMapper.summarizeDaily(
-                        param.spaceId(), start, end, param.agentId(), param.modelId(), taskStatus)
+                        param.spaceId(), start, end, param.agentId(), param.modelId(), taskStatus,
+                        param.executionMode() == null ? null : param.executionMode().name(), param.onlineParticipation())
                 .stream().collect(Collectors.toMap(TokenUsageDailyRow::usageDate, Function.identity()));
 
         // 遍历时间区间，生成每日趋势VO；没有数据的日期也填充空数据
@@ -320,7 +323,7 @@ public class TokenUsageService {
                                             LocalDateTime start, LocalDateTime end) {
         Result<AgentToolUsageStatsVO> result = agentFeign.getToolUsageStats(new AgentToolUsageQueryDTO(
                 param.spaceId(), start, end, param.agentId(), param.modelId(),
-                executionStatus(param.status())));
+                executionStatus(param.status()), param.executionMode(), param.onlineParticipation()));
         // 校验feign返回结果，异常抛出业务异常
         return requireData(result);
     }
@@ -330,7 +333,7 @@ public class TokenUsageService {
      * @param status 任务状态
      * @return Agent服务识别的状态字符串
      */
-    private String executionStatus(TaskStatus status) {
+    static String executionStatus(TaskStatus status) {
         if (status == null) {
             return null;
         }

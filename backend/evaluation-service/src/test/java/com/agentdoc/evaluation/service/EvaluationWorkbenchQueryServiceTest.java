@@ -39,6 +39,7 @@ import com.agentdoc.evaluation.enums.ExperimentStatus;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import com.agentdoc.evaluation.pojo.param.EvaluationRunSearchParam;
+import com.agentdoc.evaluation.pojo.param.CaseVersionNamesSearchParam;
 import com.agentdoc.evaluation.pojo.param.ExperimentSearchParam;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.Test;
@@ -69,7 +70,8 @@ class EvaluationWorkbenchQueryServiceTest {
         var assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "workbench-tests");
         for (Class<?> type : List.of(EvaluationCaseRunEntity.class, EvaluationRunEntity.class,
                 ExperimentEntity.class, EvaluationCaseAttemptEntity.class, EvaluationResultEntity.class,
-                EvaluationDatasetCaseEntity.class, TestCaseEvaluatorEntity.class)) {
+                EvaluationDatasetCaseEntity.class, TestCaseEvaluatorEntity.class,
+                EvaluationTestCaseVersionEntity.class, EvaluationTestCaseEntity.class)) {
             TableInfoHelper.initTableInfo(assistant, type);
         }
     }
@@ -90,6 +92,24 @@ class EvaluationWorkbenchQueryServiceTest {
     @Mock private TestCaseEvaluatorMapper testCaseEvaluatorMapper;
     @Mock private SpaceAccessService spaceAccessService;
     @InjectMocks private EvaluationWorkbenchQueryService service;
+
+    @Test void namesAreOneMetadataBatchPerTableAndDeniedOrDuplicateRequestsNeverReadRows() {
+        var param = new CaseVersionNamesSearchParam(); param.setSpaceId(7L); param.setVersionIds(List.of(31L, 32L));
+        var first = new EvaluationTestCaseVersionEntity(); first.setId(31L); first.setTestCaseId(41L); first.setVersionNo(2);
+        var second = new EvaluationTestCaseVersionEntity(); second.setId(32L); second.setTestCaseId(99L); second.setVersionNo(3);
+        var parent = new EvaluationTestCaseEntity(); parent.setId(41L); parent.setName("当前目录名称");
+        when(testCaseVersionMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(testCaseMapper.selectList(any())).thenReturn(List.of(parent));
+        var rows = service.caseVersionNames(param);
+        assertThat(rows).hasSize(1); assertThat(rows.getFirst().name()).isEqualTo("当前目录名称");
+        verify(testCaseVersionMapper).selectList(any()); verify(testCaseMapper).selectList(any());
+        param.setVersionIds(List.of(31L, 31L));
+        assertThatThrownBy(() -> service.caseVersionNames(param)).isInstanceOf(BusinessException.class);
+        param.setVersionIds(List.of(31L));
+        doThrow(new BusinessException(403, "撤权")).when(spaceAccessService).requirePermission(7L, EVALUATION_READ);
+        assertThatThrownBy(() -> service.caseVersionNames(param)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(runMapper, caseRunMapper, attemptMapper);
+    }
 
     @Test
     void taskLinksRequireBothPermissionsBeforeQuerying() {

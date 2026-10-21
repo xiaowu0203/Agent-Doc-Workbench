@@ -1,6 +1,12 @@
 import { request, requestRaw } from '@/api/client'
-import type { TaskStatus } from '@/features/task/types'
-import type { AuditLogPage, UsageDashboard, UsageDashboardQuery } from '@/features/usage/types'
+import type { TaskStatus, TaskExecutionMode } from '@/features/task/types'
+import type {
+  AuditLogPage,
+  UsageDashboard,
+  UsageDashboardQuery,
+  UsageToolCallSearchItem,
+} from '@/features/usage/types'
+import type { PageResult } from '@/features/document/types'
 import type { EntityId } from '@/features/workspace/types'
 
 export function exportUsageRecords(payload: {
@@ -8,6 +14,8 @@ export function exportUsageRecords(payload: {
   agentId?: EntityId
   modelId?: EntityId
   status?: TaskStatus
+  executionMode?: TaskExecutionMode
+  onlineParticipation?: boolean
   startedFrom?: string
   startedTo?: string
 }): Promise<Blob> {
@@ -29,6 +37,18 @@ export function queryUsageDashboard(
     data: payload,
     signal,
   })
+}
+
+export function searchUsageToolCalls(
+  payload: Omit<UsageDashboardQuery, 'startDate' | 'endDate'> & {
+    startAt: string
+    endAt: string
+    pageNum: number
+    pageSize: number
+  },
+  signal?: AbortSignal,
+): Promise<PageResult<UsageToolCallSearchItem>> {
+  return request({ method: 'POST', url: '/task/tasks/tool-calls/search', data: payload, signal })
 }
 
 export function queryAuditLogs(

@@ -3,6 +3,7 @@ import type { EntityId } from '@/features/workspace/types'
 import type { EvaluationTaskLink } from '@/features/task/engineering-types'
 import type {
   DatasetCaseBinding,
+  CaseVersionName,
   DatasetCaseBindingsRequest,
   DatasetVersion,
   DatasetVersionCreateRequest,
@@ -50,6 +51,19 @@ import type {
   TestCaseVersionCreateRequest,
   TestCaseVersionUpdateRequest,
 } from '@/features/evaluation/types'
+
+export function queryCaseVersionNames(
+  spaceId: EntityId,
+  versionIds: EntityId[],
+  signal?: AbortSignal,
+) {
+  return request<CaseVersionName[]>({
+    method: 'POST',
+    url: '/evaluation/test-case-versions/names-query',
+    data: { spaceId, versionIds },
+    signal,
+  })
+}
 
 export function getEvaluationTaskLink(
   spaceId: EntityId,

@@ -62,9 +62,37 @@
           :clearable="false"
         />
       </label>
-      <el-button type="primary" :loading="loading" @click="applyFilters">查询</el-button>
-      <el-button :disabled="loading" @click="resetFilters">重置</el-button>
+      <label
+        ><span>执行模式</span
+        ><el-select
+          v-model="filters.executionMode"
+          aria-label="用量执行模式"
+          clearable
+          placeholder="全部模式"
+          ><el-option label="生产执行（LIVE）" value="LIVE" /><el-option
+            label="隔离执行（ISOLATED）"
+            value="ISOLATED" /></el-select
+      ></label>
+      <label
+        ><span>线上实验参与</span
+        ><el-select
+          v-model="filters.onlineParticipation"
+          aria-label="用量线上实验参与"
+          clearable
+          placeholder="全部任务"
+          ><el-option label="参与线上实验" :value="true" /><el-option
+            label="非线上实验"
+            :value="false" /></el-select
+      ></label>
+      <div class="filter-bar__actions">
+        <el-button type="primary" :loading="loading" @click="applyFilters">查询</el-button>
+        <el-button :disabled="loading" @click="resetFilters">重置</el-button>
+      </div>
     </div>
+    <p class="usage-scope-hint">
+      Token
+      按账本记账时间、工具按调用时间、执行记录按任务开始时间统计。月度预算始终覆盖整个空间；审计事件只按日期查询。
+    </p>
 
     <DataState :loading="loading && !dashboard" :error="errorMessage" @retry="loadUsage">
       <template v-if="dashboard">
@@ -232,13 +260,13 @@
                   <span>次工具调用</span>
                 </div>
                 <p class="tool-usage-panel__hint">
-                  下方仅展示当前执行记录页对应的工具明细，明细条数可能少于上方总调用数。切换执行记录分页可查看其他任务；点击“查看审计”查看对应执行上下文。
+                  下方按当前已查询条件独立分页，覆盖全部工具调用，不受执行记录页影响。点击“查看审计”查看对应执行上下文。
                 </p>
                 <DataState
                   :loading="toolCallsLoading"
                   :error="toolCallsError"
                   :empty="!toolCallsLoading && !toolCallRows.length"
-                  empty-text="当前执行记录页没有工具调用明细"
+                  empty-text="当前筛选范围没有工具调用明细"
                   @retry="loadToolCalls"
                 >
                   <el-table :data="pagedToolCallRows" stripe>
@@ -429,14 +457,21 @@ import { RouterLink, useRouter } from 'vue-router'
 import { normalizeApiError } from '@/api/errors'
 import { listAgents, listModels, type AgentOption } from '@/features/agent/api/agent-api'
 import type { ModelOption } from '@/features/agent/types'
-import { getTaskExecutionDetail, getTaskToolCalls, searchTasks } from '@/features/task/api/task-api'
+import { getTaskExecutionDetail, searchTasks } from '@/features/task/api/task-api'
 import type { TaskExecutionDetail, TaskListItem, TaskPage, TaskStatus } from '@/features/task/types'
 import {
   exportUsageRecords,
   queryAuditLogs,
   queryUsageDashboard,
+  searchUsageToolCalls,
 } from '@/features/usage/api/usage-api'
-import type { AuditLogItem, AuditLogPage, ToolSource, UsageDashboard } from '@/features/usage/types'
+import type {
+  AuditLogItem,
+  AuditLogPage,
+  ToolSource,
+  UsageDashboard,
+  UsageDashboardQuery,
+} from '@/features/usage/types'
 import EChartCanvas from '@/features/usage/components/EChartCanvas.vue'
 import UsageMetricCard, { type MetricChange } from '@/features/usage/components/UsageMetricCard.vue'
 import { buildUsageChartData } from '@/features/usage/usage-chart'
@@ -448,7 +483,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 type ToolCallItem = NonNullable<TaskExecutionDetail['execution']>['toolCalls'][number]
 
 interface UsageToolCallRow extends ToolCallItem {
-  task: TaskListItem
+  task: Pick<TaskListItem, 'id'>
   taskName: string
   taskNo: string
   agentName: string
@@ -495,7 +530,10 @@ const filters = reactive<{
   agentId?: string | number
   modelId?: string | number
   status?: TaskStatus
+  executionMode?: TaskListItem['executionMode']
+  onlineParticipation?: boolean
 }>({})
+const appliedQuery = ref<UsageDashboardQuery | null>(null)
 const taskPage = ref<TaskPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
 const auditPage = ref<AuditLogPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
 const auditRows = computed(() =>
@@ -515,6 +553,7 @@ const toolCallsLoadedKey = ref<string | null>(null)
 let requestController: AbortController | null = null
 let loadSequence = 0
 let toolCallLoadSequence = 0
+let toolController: AbortController | undefined
 
 const canReadAudit = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.AUDIT_READ))
 const canExport = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.USAGE_EXPORT))
@@ -702,6 +741,16 @@ onMounted(async () => {
 watch(
   () => workspaceStore.currentSpaceId,
   async () => {
+    requestController?.abort()
+    toolController?.abort()
+    ++loadSequence
+    ++toolCallLoadSequence
+    dashboard.value = null
+    appliedQuery.value = null
+    toolCallRows.value = []
+    toolCallsLoadedKey.value = null
+    executionDetail.value = null
+    drawerVisible.value = false
     await loadOptions()
     await loadUsage()
   },
@@ -711,7 +760,11 @@ watch(activeTab, (tab) => {
   if (tab === 'tools') void loadToolCalls()
 })
 
-onBeforeUnmount(() => requestController?.abort())
+onBeforeUnmount(() => {
+  requestController?.abort()
+  toolController?.abort()
+  ++toolCallLoadSequence
+})
 
 async function loadOptions() {
   const spaceId = workspaceStore.currentSpaceId
@@ -732,22 +785,28 @@ async function loadUsage() {
   requestController = controller
   const sequence = ++loadSequence
   loading.value = true
+  toolController?.abort()
+  ++toolCallLoadSequence
+  toolCallsLoadedKey.value = null
+  toolCallRows.value = []
+  toolPage.total = 0
   errorMessage.value = ''
   const [startDate, endDate] = dateRange.value
+  const scope: UsageDashboardQuery = {
+    spaceId,
+    startDate,
+    endDate,
+    agentId: filters.agentId,
+    modelId: filters.modelId,
+    status: filters.status,
+    executionMode: filters.executionMode || undefined,
+    onlineParticipation:
+      typeof filters.onlineParticipation === 'boolean' ? filters.onlineParticipation : undefined,
+  }
   try {
     const [usage, tasks, audits] = await Promise.all([
-      queryUsageDashboard(
-        {
-          spaceId,
-          startDate,
-          endDate,
-          agentId: filters.agentId,
-          modelId: filters.modelId,
-          status: filters.status,
-        },
-        controller.signal,
-      ),
-      loadTasks(spaceId, taskPage.value.pageNum, taskPage.value.pageSize, controller.signal),
+      queryUsageDashboard(scope, controller.signal),
+      loadTasks(spaceId, taskPage.value.pageNum, taskPage.value.pageSize, controller.signal, scope),
       canReadAudit.value
         ? queryAuditLogs(
             {
@@ -763,6 +822,7 @@ async function loadUsage() {
     ])
     if (sequence !== loadSequence) return
     dashboard.value = usage
+    appliedQuery.value = scope
     taskPage.value = tasks
     toolPage.pageNum = 1
     auditPage.value = audits
@@ -780,16 +840,19 @@ function loadTasks(
   pageNum: number,
   pageSize: number,
   signal?: AbortSignal,
+  scope = appliedQuery.value,
 ) {
-  const [startDate, endDate] = dateRange.value
+  const [startDate, endDate] = scope ? [scope.startDate, scope.endDate] : dateRange.value
   return searchTasks(
     {
       spaceId,
       pageNum,
       pageSize,
-      agentId: filters.agentId,
-      modelId: filters.modelId,
-      status: filters.status,
+      agentId: scope?.agentId,
+      modelId: scope?.modelId,
+      status: scope?.status,
+      executionMode: scope?.executionMode,
+      onlineParticipation: scope?.onlineParticipation,
       startedFrom: `${startDate}T00:00:00`,
       startedTo: `${addDays(endDate, 1)}T00:00:00`,
     },
@@ -814,6 +877,8 @@ function resetFilters() {
   filters.agentId = undefined
   filters.modelId = undefined
   filters.status = undefined
+  filters.executionMode = undefined
+  filters.onlineParticipation = undefined
   presetDays.value = 7
   dateRange.value = presetRange(7)
   applyFilters()
@@ -852,8 +917,6 @@ async function loadTaskPage() {
     )
     if (sequence !== loadSequence) return
     taskPage.value = tasks
-    toolPage.pageNum = 1
-    if (activeTab.value === 'tools') void loadToolCalls()
   } catch (error) {
     if (!controller.signal.aborted) errorMessage.value = normalizeApiError(error).message
   } finally {
@@ -903,38 +966,54 @@ function changeToolPageSize(size: number) {
 
 async function loadToolCalls() {
   const spaceId = workspaceStore.currentSpaceId
-  const records = taskPage.value.records
-  const recordsKey = `${spaceId ?? 'none'}:${records.map((task) => String(task.id)).join(',')}:${toolPage.pageNum}:${toolPage.pageSize}`
+  const scope = appliedQuery.value
+  const recordsKey = JSON.stringify([scope, toolPage.pageNum, toolPage.pageSize])
   if (recordsKey === toolCallsLoadedKey.value && !toolCallsError.value) return
   const sequence = ++toolCallLoadSequence
+  toolController?.abort()
+  const controller = new AbortController()
+  toolController = controller
   toolCallsLoading.value = true
   toolCallsError.value = ''
   toolCallRows.value = []
   toolPage.total = 0
-  if (spaceId === null || !records.length) {
+  if (spaceId === null || !scope || String(scope.spaceId) !== String(spaceId)) {
     toolCallsLoading.value = false
     return
   }
   try {
-    const result = await getTaskToolCalls(
-      spaceId,
-      records.map((task) => task.id),
-      toolPage.pageNum,
-      toolPage.pageSize,
+    const { startDate, endDate, ...filters } = scope
+    const result = await searchUsageToolCalls(
+      {
+        ...filters,
+        startAt: `${startDate}T00:00:00`,
+        endAt: `${addDays(endDate, 1)}T00:00:00`,
+        pageNum: toolPage.pageNum,
+        pageSize: toolPage.pageSize,
+      },
+      controller.signal,
     )
-    if (sequence !== toolCallLoadSequence) return
-    const taskById = new Map(records.map((task) => [String(task.id), task]))
+    if (
+      controller.signal.aborted ||
+      sequence !== toolCallLoadSequence ||
+      String(workspaceStore.currentSpaceId) !== String(spaceId)
+    )
+      return
     const rows: UsageToolCallRow[] = []
     result.records.forEach((item) => {
-      const task = taskById.get(String(item.taskId))
-      if (!task) return
+      const task = item.task
+      if (
+        task &&
+        (String(task.spaceId) !== String(spaceId) || String(task.id) !== String(item.taskId))
+      )
+        throw new Error('工具调用任务身份不一致')
       const call = item.toolCall
       rows.push({
         ...call,
-        task,
-        taskName: task.name,
-        taskNo: task.taskNo,
-        agentName: task.agentName || `#${task.agentId}`,
+        task: task ?? { id: item.taskId },
+        taskName: task?.name || `任务 #${item.taskId}`,
+        taskNo: task?.taskNo || '任务名称暂不可用',
+        agentName: task?.agentName || (task?.agentId ? `#${task.agentId}` : '不可用'),
         sourceLabel: toolSourceLabel(call.toolSourceKey, call.toolSource),
       })
     })
@@ -942,7 +1021,7 @@ async function loadToolCalls() {
     toolPage.total = result.total
     toolCallsLoadedKey.value = recordsKey
   } catch (error) {
-    if (sequence === toolCallLoadSequence) {
+    if (!controller.signal.aborted && sequence === toolCallLoadSequence) {
       toolCallsError.value = normalizeApiError(error).message
     }
   } finally {
@@ -951,7 +1030,7 @@ async function loadToolCalls() {
 }
 
 async function openExecution(row: unknown) {
-  const task = row as TaskListItem
+  const task = row as Pick<TaskListItem, 'id'>
   selectedTaskId.value = task.id
   drawerVisible.value = true
   detailLoading.value = true
@@ -973,21 +1052,25 @@ function goToTaskDetail() {
 
 async function exportRecords() {
   const spaceId = workspaceStore.currentSpaceId
-  if (spaceId === null || !canExport.value) return
+  const scope = appliedQuery.value
+  if (spaceId === null || !scope || String(scope.spaceId) !== String(spaceId) || !canExport.value)
+    return
   exporting.value = true
   try {
     const csv = await exportUsageRecords({
       spaceId,
-      agentId: filters.agentId,
-      modelId: filters.modelId,
-      status: filters.status,
-      startedFrom: `${dateRange.value[0]}T00:00:00`,
-      startedTo: `${addDays(dateRange.value[1], 1)}T00:00:00`,
+      agentId: scope.agentId,
+      modelId: scope.modelId,
+      status: scope.status,
+      executionMode: scope.executionMode,
+      onlineParticipation: scope.onlineParticipation,
+      startedFrom: `${scope.startDate}T00:00:00`,
+      startedTo: `${addDays(scope.endDate, 1)}T00:00:00`,
     })
     const url = URL.createObjectURL(csv)
     const link = document.createElement('a')
     link.href = url
-    link.download = `usage-executions-${dateRange.value[0]}-${dateRange.value[1]}.csv`
+    link.download = `usage-executions-${scope.startDate}-${scope.endDate}.csv`
     link.click()
     URL.revokeObjectURL(url)
   } catch (error) {
@@ -1126,16 +1209,31 @@ function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 
 }
 .filter-bar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(280px, 1.6fr) auto auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: end;
   gap: var(--adw-space-4);
   padding: var(--adw-space-4);
 }
 .filter-bar label {
+  min-width: 0;
   display: grid;
   gap: 7px;
   color: var(--adw-text-secondary);
   font-size: 13px;
+}
+.filter-bar__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+}
+.filter-bar__actions .el-button + .el-button {
+  margin-left: 0;
+}
+.usage-scope-hint {
+  margin: 0;
+  color: var(--adw-text-secondary);
+  font-size: var(--adw-font-size-caption);
+  line-height: 1.6;
 }
 .filter-bar__date :deep(.el-date-editor) {
   width: 100%;

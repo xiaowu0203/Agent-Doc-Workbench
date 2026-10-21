@@ -16,6 +16,8 @@ import type {
   OnlineQualityRequest,
   OnlineQualityResult,
   OnlineReport,
+  OnlineReportRevision,
+  OnlineReportRangeSuggestion,
   OnlineRecalculateRequest,
   OnlineDecisionRequest,
   OnlinePromptComparison,
@@ -131,6 +133,17 @@ export function getOnlineReviewContext(
 }
 export function createOnlineQuality(data: OnlineQualityRequest, signal?: AbortSignal) {
   return request<OnlineQualityResult>({ method: 'POST', url: '/evaluation/feedback', data, signal })
+}
+export function getOnlineReportRevisions(id: string, pageNum = 1, signal?: AbortSignal) {
+  return request<OnlinePage<OnlineReportRevision>>({
+    method: 'GET',
+    url: `${base}/${id}/reports`,
+    params: { pageNum, pageSize: 10 },
+    signal,
+  })
+}
+export function getOnlineReportRangeSuggestion(id: string, signal?: AbortSignal) {
+  return request<OnlineReportRangeSuggestion>({ method: 'GET', url: `${base}/${id}/reports/range-suggestion`, signal })
 }
 export function getOnlineReport(id: string, revision: number, full = false, signal?: AbortSignal) {
   return request<OnlineReport>({

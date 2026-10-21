@@ -57,6 +57,7 @@ public final class AgentExecutionConvertor {
         entity.setA2aTaskId(a2aTaskId);
         entity.setA2aContextId(a2aContextId);
         entity.setWorkbenchTaskId(input.workbenchTaskId());
+        entity.setExecutionMode(input.executionMode());
         if (input.onlineIdentity() != null) {
             var identity = input.onlineIdentity(); OnlineIdentityUtils.requireComplete(identity);
             entity.setOnlineExperimentId(OnlineProtocolUtils.id(identity.experimentId()));

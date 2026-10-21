@@ -189,12 +189,27 @@ public class EvaluationRunService {
                         Collectors.mapping(EvaluationFeedbackVO::from, Collectors.toList())
                 ));
 
+        var versions = caseRuns.isEmpty() ? Map.<Long, EvaluationTestCaseVersionEntity>of()
+                : testCaseVersionMapper.selectList(new LambdaQueryWrapper<EvaluationTestCaseVersionEntity>()
+                        .select(EvaluationTestCaseVersionEntity::getId, EvaluationTestCaseVersionEntity::getTestCaseId,
+                                EvaluationTestCaseVersionEntity::getVersionNo)
+                        .eq(EvaluationTestCaseVersionEntity::getSpaceId, run.getSpaceId())
+                        .in(EvaluationTestCaseVersionEntity::getId, caseRuns.stream().map(EvaluationCaseRunEntity::getTestCaseVersionId).distinct().toList()))
+                    .stream().collect(Collectors.toMap(EvaluationTestCaseVersionEntity::getId, Function.identity()));
+        var names = versions.isEmpty() ? Map.<Long, EvaluationTestCaseEntity>of()
+                : testCaseMapper.selectList(new LambdaQueryWrapper<EvaluationTestCaseEntity>()
+                        .select(EvaluationTestCaseEntity::getId, EvaluationTestCaseEntity::getName)
+                        .eq(EvaluationTestCaseEntity::getSpaceId, run.getSpaceId())
+                        .in(EvaluationTestCaseEntity::getId, versions.values().stream().map(EvaluationTestCaseVersionEntity::getTestCaseId).distinct().toList()))
+                    .stream().collect(Collectors.toMap(EvaluationTestCaseEntity::getId, Function.identity()));
         List<EvaluationCaseRunVO> cases = caseRuns.stream()
-                .map(caseRun -> EvaluationCaseRunVO.from(
-                        caseRun,
-                        requireAttempt(attempts, caseRun),
-                        feedbackByCaseRun.getOrDefault(caseRun.getId(), List.of())
-                ))
+                .map(caseRun -> {
+                    var version = versions.get(caseRun.getTestCaseVersionId());
+                    var parent = version == null ? null : names.get(version.getTestCaseId());
+                    return EvaluationCaseRunVO.from(caseRun, requireAttempt(attempts, caseRun),
+                            feedbackByCaseRun.getOrDefault(caseRun.getId(), List.of()))
+                            .withCatalogName(parent == null ? null : parent.getName(), version == null ? null : version.getVersionNo());
+                })
                 .toList();
 
         return EvaluationRunVO.from(run, cases);

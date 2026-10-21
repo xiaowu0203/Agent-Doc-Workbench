@@ -292,6 +292,7 @@ async function fillCreate(wrapper: VueWrapper) {
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(api.queryCaseVersionNames).mockResolvedValue([])
   setActivePinia(createPinia())
   useWorkspaceStore().setCurrentSpace('7')
   permissions([
@@ -598,6 +599,23 @@ describe('preflight, budget and mutations', () => {
   })
 })
 describe('report facts and compatibility', () => {
+  it('当前可见用例只批量补目录名称，不改写冻结报告或请求任务详情', async () => {
+    const id = content.cells[0]!.value.testCaseVersionId!
+    const before = JSON.stringify(report)
+    vi.mocked(api.queryCaseVersionNames).mockResolvedValue([
+      { spaceId: '7', versionId: id, testCaseId: '99', name: '当前用例名称', versionNo: 3 },
+    ])
+    const wrapper = await mountReport()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前用例名称 · v3（当前目录名称）')
+    expect(api.queryCaseVersionNames).toHaveBeenCalledWith(
+      '7',
+      expect.arrayContaining([id]),
+      expect.any(AbortSignal),
+    )
+    expect(JSON.stringify(report)).toBe(before)
+    expect(api.recalculateExperimentReport).not.toHaveBeenCalled()
+  })
   it('keeps zero, false, empty string and missing distinct and uses metric-specific pair expectation', async () => {
     const cells = content.cells
     const extra = [

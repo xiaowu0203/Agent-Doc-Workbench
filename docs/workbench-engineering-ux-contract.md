@@ -60,6 +60,18 @@ Dataset/TestCase 主资源归档后，既有 PUBLISHED 版本不能用于**新�
 
 所有列表沿用 `PageParam`：`pageNum=1`、`pageSize=10`、上限 100，返回 `PageVO(records,total,pageNum,pageSize)`。Service 同步接收 SearchParam，默认按创建时间、ID 倒序，不在列表展开完整报告或证据。
 
+Catalog 三类主资源搜索在每条记录中附带 `versionSummary`：版本总数（含归档）、草稿数、按版本号选取的最新 PUBLISHED 版本 ID/号及其绑定数。Dataset 绑定数只计该发布版本启用的用例；TestCase 计该发布版本绑定的评估器；Evaluator 计当前空间中引用该发布版本的不同用例版本（含历史版本，不等于当前运行数）。无已发布版本时发布身份与绑定数均为 null，零草稿/版本保持 0。仅对当前页资源进行一次批量元数据查询，不拉取配置 JSON、来源快照或逐行请求版本。概要仅供导航，创建/执行仍重新检查既有准入条件。
+
+用量查询与执行记录搜索/导出增加 `executionMode`（LIVE/ISOLATED）和 `onlineParticipation`（true 仅线上实验、false 非线上实验、null 全部）。Token 汇总、环比与趋势仍查询权威账本，按同空间 Task 的不可变模式/线上身份筛选；月度预算仍是整个空间的预算，审计记录仍按审计事件自身日期查询。工具汇总与独立分页查询使用相同筛选，按工具调用时间范围统计，执行记录仍按任务开始时间筛选，两者时间口径在页面明示。
+
+`POST /api/task/tasks/tool-calls/search` 接收空间、startAt（含）、endAt（不含）、Agent/模型/任务状态、上述模式/参与过滤及 PageParam；要求 usage:read + task:read。Task 服务通过 common-core Feign 调用 Agent 域的同名查询，Agent 服务也执行这两项权限检查，按调用时间/ID 倒序分页，并在返回明细前记录线上知情。仅对本页任务批量补齐名称，保留长 ID，不依赖执行记录当前页、不扫描全部 Task、不从其他服务直读表。
+
+Agent 执行新增只用于查询的 `execution_mode` 投影，取自已验证的 Task 输入；V43 一次性按同空间 Task 回填历史记录，缺失来源保留 null，不能把未知填成 LIVE。该投影不加入既有执行快照和哈希，不替代 Task/账本。Task 列表增加线上实验 ID/分配 ID，读取继续经过既有知情记录。
+
+Run 详情按同空间用例版本/主资源关系批量补齐 `testCaseName/testCaseVersionNo`，名称表示当前目录名称，不写回冻结报告或历史快照。盲评候选仅增加 `documentTitle`，通过 Document 域最小引用投影批量查询，验证同空间，仍不读取普通 Task/Experiment 详情、分组、Prompt、状态或成本；读取此候选列表不签发评审资格，资格仍由完整原始证据及冻结目标决定。
+
+`POST /api/evaluation/test-case-versions/names-query` 接收 `spaceId/versionIds`（去重、1～100 个），要求 evaluation:read，仅返回同空间版本及其主资源的 ID、当前目录名称和版本号，不返回配置/快照。冻结报告页面只对当前显示的用例批量补名称，身份仍以报告内 ID 为准，名称不可用时保留 ID，不修改或重新计算历史报告。
+
 | 接口 | 查询条件/返回 | 权限 |
 | --- | --- | --- |
 | `POST /api/evaluation/runs/search` | 必填 `spaceId`；可选 status、datasetVersionId、singleTestCaseVersionId、experimentVariantId、createdFrom/To、startedFrom/To | `evaluation:read` |

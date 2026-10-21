@@ -38,6 +38,7 @@ export function searchTasks(
     keyword?: string
     status?: TaskStatus
     executionMode?: TaskExecutionMode
+    onlineParticipation?: boolean
     agentId?: EntityId
     modelId?: EntityId
     documentId?: EntityId

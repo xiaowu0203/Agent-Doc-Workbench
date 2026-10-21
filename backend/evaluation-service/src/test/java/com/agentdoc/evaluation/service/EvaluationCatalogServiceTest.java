@@ -28,6 +28,9 @@ import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.dto.TestCaseVersionUpdateDTO;
 import com.agentdoc.evaluation.pojo.param.EvaluatorPublishedSearchParam;
+import com.agentdoc.evaluation.pojo.param.EvaluationResourceSearchParam;
+import com.agentdoc.evaluation.pojo.vo.CatalogVersionSummaryVO;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.agentdoc.common.utils.StableSnapshotUtils;
 import java.util.Map;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -52,6 +55,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
 
@@ -106,10 +110,41 @@ class EvaluationCatalogServiceTest {
     void setUp() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "catalog-test");
         TableInfoHelper.initTableInfo(assistant, EvaluatorVersionEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluationDatasetEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluatorEntity.class);
         TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseVersionEntity.class);
         service = new EvaluationCatalogService(datasetMapper, datasetVersionMapper, datasetCaseMapper,
                 testCaseMapper, testCaseVersionMapper, testCaseEvaluatorMapper, evaluatorMapper,
                 evaluatorVersionMapper, spaceAccessService, taskFeign, evaluatorContractValidator);
+    }
+
+    @Test
+    void catalogPageBatchesOnlyCurrentResourcesAndKeepsZeroSeparateFromNoPublishedVersion() {
+        var one = new EvaluationDatasetEntity(); one.setId(21L); one.setSpaceId(9L);
+        var two = new EvaluationDatasetEntity(); two.setId(22L); two.setSpaceId(9L);
+        var summary = new CatalogVersionSummaryVO(21L, 5L, 0L, 31L, 4, 0L);
+        when(datasetMapper.selectPage(any(Page.class), any())).thenReturn(new Page<EvaluationDatasetEntity>(2, 10).setRecords(List.of(one, two)).setTotal(12));
+        when(datasetVersionMapper.resourceSummaries(9L, List.of(21L, 22L))).thenReturn(List.of(summary));
+        var param = new EvaluationResourceSearchParam(); param.setSpaceId(9L); param.setPageNum(2);
+        var page = service.searchDatasets(param);
+        assertThat(page.records().getFirst().versionSummary()).isEqualTo(summary);
+        assertThat(page.records().getLast().versionSummary()).isEqualTo(CatalogVersionSummaryVO.empty(22L));
+        assertThat(page.total()).isEqualTo(12);
+        verify(datasetVersionMapper).resourceSummaries(9L, List.of(21L, 22L));
+        verify(datasetVersionMapper, never()).selectList(any());
+        verifyNoInteractions(datasetCaseMapper, taskFeign);
+    }
+
+    @Test
+    void emptyCatalogPageDoesNotQueryVersionsAndDeniedReadDoesNotQueryResources() {
+        var param = new EvaluationResourceSearchParam(); param.setSpaceId(9L);
+        when(evaluatorMapper.selectPage(any(Page.class), any())).thenReturn(new Page<EvaluatorEntity>(1, 10));
+        assertThat(service.searchEvaluators(param).records()).isEmpty();
+        verifyNoInteractions(evaluatorVersionMapper);
+        doThrow(new BusinessException(403, "denied")).when(spaceAccessService).requirePermission(9L, EVALUATION_READ);
+        assertThatThrownBy(() -> service.searchTestCases(param)).hasMessageContaining("denied");
+        verifyNoInteractions(testCaseMapper, testCaseVersionMapper);
     }
 
     @Test

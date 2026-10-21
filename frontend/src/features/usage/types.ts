@@ -1,5 +1,10 @@
 import type { PageResult } from '@/features/document/types'
-import type { TaskStatus } from '@/features/task/types'
+import type {
+  TaskStatus,
+  TaskExecutionMode,
+  TaskListItem,
+  TaskToolCallPageItem,
+} from '@/features/task/types'
 import type { EntityId } from '@/features/workspace/types'
 
 export interface UsageSummary {
@@ -54,6 +59,12 @@ export interface UsageDashboardQuery {
   agentId?: EntityId
   modelId?: EntityId
   status?: TaskStatus
+  executionMode?: TaskExecutionMode
+  onlineParticipation?: boolean
+}
+
+export interface UsageToolCallSearchItem extends TaskToolCallPageItem {
+  task: TaskListItem | null
 }
 
 export interface AuditLogItem {

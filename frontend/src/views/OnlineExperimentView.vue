@@ -230,8 +230,9 @@
               <tbody>
                 <tr v-for="item in assignments.records" :key="item.id">
                   <td>
-                    文档 #{{ item.documentId
-                    }}<small
+                    {{ item.documentTitle || `文档 #${item.documentId}`
+                    }}<small>文档 #{{ item.documentId }}</small
+                    ><small
                       ><RouterLink
                         v-if="canTaskRead"
                         :to="`/spaces/${spaceId}/tasks/${item.taskId}`"
@@ -277,7 +278,11 @@
         </section>
         <OnlineReportPanel
           id="online-report"
-          :requested-revision="Number(route.query.reportRevision || 1)"
+          :requested-revision="
+            route.query.reportRevision === undefined
+              ? undefined
+              : Number(route.query.reportRevision)
+          "
           :experiment="experiment"
           :readable="canRead"
           :manageable="canManageReport"

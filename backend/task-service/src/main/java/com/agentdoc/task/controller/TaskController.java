@@ -16,6 +16,8 @@ import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
 import com.agentdoc.task.pojo.param.TaskCreateOptionsParam;
 import com.agentdoc.task.pojo.param.TaskSearchParam;
 import com.agentdoc.task.pojo.param.TaskToolCallBatchQueryParam;
+import com.agentdoc.task.pojo.param.TaskToolCallSearchParam;
+import com.agentdoc.task.pojo.vo.TaskToolCallSearchVO;
 import com.agentdoc.task.pojo.vo.TaskActivityVO;
 import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;
@@ -163,6 +165,12 @@ public class TaskController {
     public Result<PageVO<TaskToolCallVO>> toolCalls(
             @Valid @RequestBody TaskToolCallBatchQueryParam param) {
         return Result.ok(taskExecutionQueryService.toolCalls(param));
+    }
+
+    @Operation(summary = "独立分页查询空间筛选范围的工具调用")
+    @PostMapping("/tool-calls/search")
+    public Result<PageVO<TaskToolCallSearchVO>> searchToolCalls(@RequestBody TaskToolCallSearchParam param) {
+        return Result.ok(taskExecutionQueryService.searchToolCalls(param));
     }
 
     @Operation(summary = "终止任务")

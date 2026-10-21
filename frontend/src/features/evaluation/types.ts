@@ -348,6 +348,8 @@ export interface EvaluationCaseAttemptHistory {
 }
 
 export interface EvaluationCaseRun {
+  testCaseName?: string | null
+  testCaseVersionNo?: number | null
   id: EntityId
   testCaseVersionId: EntityId | null
   status: EvaluationAttemptStatus
@@ -355,6 +357,22 @@ export interface EvaluationCaseRun {
   executionTaskId: EntityId | null
   attemptNo: number
   feedback: EvaluationFeedback[]
+}
+
+export interface CatalogVersionSummary {
+  resourceId: EntityId
+  versionCount: number
+  draftCount: number
+  latestPublishedVersionId: EntityId | null
+  latestPublishedVersionNo: number | null
+  publishedBindingCount: number | null
+}
+export interface CaseVersionName {
+  spaceId: EntityId
+  versionId: EntityId
+  testCaseId: EntityId
+  name: string
+  versionNo: number
 }
 
 export interface EvaluationDataset {
@@ -365,6 +383,7 @@ export interface EvaluationDataset {
   archived: boolean
   createdBy: EntityId | null
   createdAt: string | null
+  versionSummary?: CatalogVersionSummary | null
 }
 
 export interface EvaluationFeedback {
@@ -468,6 +487,7 @@ export interface EvaluationTestCase {
   description: string | null
   archived: boolean
   createdBy: EntityId | null
+  versionSummary?: CatalogVersionSummary | null
 }
 
 export interface EvaluatorVersion {
@@ -494,6 +514,7 @@ export interface Evaluator {
   description: string | null
   archived: boolean
   createdBy: EntityId | null
+  versionSummary?: CatalogVersionSummary | null
 }
 
 export interface ExperimentPreflightIssue {

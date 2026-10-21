@@ -65,6 +65,7 @@ export interface OnlinePreflight {
   issues: { code: string; severity: string; documentId: string | null; ruleKey: string | null }[]
 }
 export interface OnlineAssignment {
+  documentTitle?: string | null
   id: string
   experimentId: string
   spaceId: string
@@ -142,6 +143,7 @@ export type OnlinePage<T> = EvaluationPage<T>
 export type OnlineReviewTarget = 'TEXT' | 'CHANGE_SET'
 export type OnlineBlindness = 'BLINDED' | 'NON_BLINDED' | 'UNKNOWN'
 export interface OnlineReviewAssignment {
+  documentTitle?: string | null
   assignmentId: string
   documentId: string
 }
@@ -278,6 +280,21 @@ export interface OnlineReportPayload {
     confirmedSafetyFeedbackIds: string[]
     safetyRejectedAllowed: boolean
   }
+}
+export interface OnlineReportRevision {
+  experimentId: string
+  revision: number
+  schemaVersion: number
+  reportHash: string
+  generatedAt: string | null
+  observationCutoffAt: string | null
+  decisionReference: boolean
+}
+export interface OnlineReportRangeSuggestion {
+  experimentId: string
+  assignmentCutoffSequence: string
+  observationCutoffAt: string
+  timeZone: string
 }
 export interface OnlineReport {
   id: string

@@ -393,6 +393,10 @@ V40 的资格证明只能由这条完整隐藏读取链路创建；证明绑定�
 
 线上报告接口为 `POST /api/evaluation/online-experiments/{id}/reports/recalculate`、`GET /api/evaluation/online-experiments/{id}/reports/{revision}`、`POST /api/evaluation/online-experiments/{id}/decision`。重算请求是 clientRequestKey、十进制文本 assignmentCutoffSequence（允许0）、ISO毫秒 observationCutoffAt；截止不能超过已接受顺序或当前时间。操作者必须是当前OWNER并具备evaluation:manage，跨服务事实另行复核task:read/evaluation:read/usage:read。每批至多100个绑定，各领域只读本领域表，不扩大CONTROL/Worker权限。
 
+`GET /api/evaluation/online-experiments/{id}/reports?pageNum=1&pageSize=10` 提供按 revision 降序分页的报告索引，分页上限100。要求当前 space:read 和 evaluation:read，并在返回前记录 REPORT 知情事实。仅查询实验/空间内的版本、schema、摘要、生成时间和观察截止等元数据，不加载 input_json/report_json、分块或跨服务事实。索引不代表正文或完整输入已核验；决定引用仅在版本和 reportHash 都与既有决定一致时标记，不改写决定。前端无指定 revision 时选取第一页最新记录并读取概要；历史深链保持指定版本并自动读取其概要，即使该版本不在当前索引页；刷新链接或路由切换同样恢复指定概要，完整核验仍由用户显式触发。索引失败不能回退为“最新v1”，也不通过重算或逐个探测版本号发现版本。
+
+`GET /api/evaluation/online-experiments/{id}/reports/range-suggestion` 为 OWNER + evaluation:manage 且具备上述读取权限的用户提供当前 `acceptedSequence`（十进制文本）、服务端本地 `observationCutoffAt`（毫秒）及实际 JVM `timeZone`。读取前同样记录 REPORT 知情；不从 Task 数或浏览器时钟推算，不生成报告。建议是读取时观察到的范围，提交前序号仍可能增长；前端只填入表单，继续保留显式核对和确认。已有历史截止不做时区猜测或重新解释。
+
 返回包装字段为 id/experimentId/revision/reportType/schemaVersion/reportHash/inputHash/state/report；report 是 online.report schema2规范信封，payload 是 ONLINE_V1 schema2正文，包含第9节的窗口、分母、覆盖、诊断和门禁。未知schema或摘要损坏返回安全降级状态、空正文，不能作决定。小数和时间以规范文本进入哈希；原始正文、Prompt、诊断正文和Trace不进入报告冻结输入，相应私有字段只保留摘要。每个冻结ruleKey按截止内最大attemptNo取最近一次尝试，失败/缺失不得回退挑选更好的旧尝试；全部参与事实身份仍冻结。报告是当前读取的事实快照，不能声称从可变状态重建任意历史时刻。
 
 V41 为大型冻结输入追加 online_report_input_chunk，不改 V39/V40。小输入仍直接存 input_json；超过 262,144 个 UTF-16 单元的输入按此上限分块，避免拆开代理对，最多 256 块。报告行存 online.report-input-chunks schema2定位信封和完整逻辑输入 hash，每块存序号与独立 hash；报告、全部块及幂等映射在同一事务提交。读取/决定按序复核连续性、各块 hash、完整输入 hash及逻辑 schema，不用当前业务数据补缺块；损坏或缺块拒绝决定。分块是物理存储形式，不改变逻辑 online.report-input 或报告 hash。

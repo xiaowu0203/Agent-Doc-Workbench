@@ -35,6 +35,8 @@ import com.agentdoc.evaluation.pojo.entity.ExperimentEntity;
 import com.agentdoc.evaluation.pojo.entity.ExperimentVariantEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.param.EvaluationRunSearchParam;
+import com.agentdoc.evaluation.pojo.param.CaseVersionNamesSearchParam;
+import com.agentdoc.evaluation.pojo.vo.CaseVersionNameVO;
 import com.agentdoc.evaluation.pojo.param.ExperimentSearchParam;
 import com.agentdoc.evaluation.pojo.vo.DatasetCaseBindingVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationCaseAttemptHistoryVO;
@@ -67,6 +69,20 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
 @Slf4j
 @RequiredArgsConstructor
 public class EvaluationWorkbenchQueryService {
+    public List<CaseVersionNameVO> caseVersionNames(CaseVersionNamesSearchParam param) {
+        param.validate(); spaceAccessService.requirePermission(param.getSpaceId(), EVALUATION_READ);
+        var versions = testCaseVersionMapper.selectList(new LambdaQueryWrapper<EvaluationTestCaseVersionEntity>()
+                .select(EvaluationTestCaseVersionEntity::getId, EvaluationTestCaseVersionEntity::getTestCaseId, EvaluationTestCaseVersionEntity::getVersionNo)
+                .eq(EvaluationTestCaseVersionEntity::getSpaceId, param.getSpaceId()).in(EvaluationTestCaseVersionEntity::getId, param.getVersionIds()));
+        if (versions.isEmpty()) return List.of();
+        var names = testCaseMapper.selectList(new LambdaQueryWrapper<EvaluationTestCaseEntity>()
+                .select(EvaluationTestCaseEntity::getId, EvaluationTestCaseEntity::getName)
+                .eq(EvaluationTestCaseEntity::getSpaceId, param.getSpaceId())
+                .in(EvaluationTestCaseEntity::getId, versions.stream().map(EvaluationTestCaseVersionEntity::getTestCaseId).distinct().toList()))
+                .stream().collect(Collectors.toMap(EvaluationTestCaseEntity::getId, Function.identity()));
+        return versions.stream().filter(row -> names.containsKey(row.getTestCaseId()))
+                .map(row -> new CaseVersionNameVO(param.getSpaceId(), row.getId(), row.getTestCaseId(), names.get(row.getTestCaseId()).getName(), row.getVersionNo())).toList();
+    }
 
     private static final Set<String> ERROR_CASE_STATUSES = Set.of(
             EvaluationAttemptStatus.REPLAY_FAILED.name(), EvaluationAttemptStatus.EVALUATOR_FAILED.name(),

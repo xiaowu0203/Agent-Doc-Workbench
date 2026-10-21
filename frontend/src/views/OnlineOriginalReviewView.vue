@@ -44,7 +44,9 @@
             :key="item.assignmentId"
             :disabled="busy"
             @click="selectAssignment(item.assignmentId)"
-            >文档 #{{ item.documentId }} / 分配 #{{ item.assignmentId }}</el-button
+            >{{ item.documentTitle || `文档 #${item.documentId}` }} / 分配 #{{
+              item.assignmentId
+            }}</el-button
           >
         </div>
         <el-pagination

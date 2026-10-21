@@ -30,6 +30,8 @@ export interface TaskFocusRegion {
 }
 
 export interface TaskListItem {
+  onlineExperimentId?: EntityId | null
+  onlineAssignmentId?: EntityId | null
   id: EntityId
   parentTaskId: EntityId | null
   rootTaskId: EntityId

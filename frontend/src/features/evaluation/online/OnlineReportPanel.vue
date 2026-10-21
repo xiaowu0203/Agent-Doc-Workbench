@@ -2,6 +2,57 @@
   <section aria-label="线上报告与结论" class="report-panel">
     <h3>线上报告 · 固定版本</h3>
     <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
+    <div class="revision-index" aria-label="报告版本记录">
+      <div class="row">
+        <label
+          >历史报告<select
+            aria-label="选择历史报告"
+            :value="revision"
+            :disabled="indexBusy || busy || !readable || !revisions.length"
+            @change="selectRevision"
+          >
+            <option v-if="!revisions.some((item) => item.revision === revision)" :value="revision">
+              {{
+                requestedRevision === undefined && !report
+                  ? '请选择已生成版本'
+                  : `指定版本 v${revision}（不在本页）`
+              }}
+            </option>
+            <option v-for="item in revisions" :key="item.revision" :value="item.revision">
+              v{{ item.revision }} · {{ item.generatedAt || '生成时间未知'
+              }}{{ item.decisionReference ? ' · 已被人工结论引用' : '' }}
+            </option>
+          </select></label
+        >
+        <el-button :disabled="indexBusy || busy || !readable" @click="loadRevisions(1)"
+          >刷新版本记录</el-button
+        >
+      </div>
+      <p v-if="indexBusy" role="status">正在读取版本记录……</p>
+      <p v-else-if="indexError" role="alert">
+        版本记录读取失败：{{ indexError }}。可重试或按已知版本读取。
+      </p>
+      <p v-else-if="!revisionTotal">尚无已冻结报告。</p>
+      <p v-if="selectedMetadata" class="report-hint">
+        v{{ selectedMetadata.revision }} · 观察截止
+        {{
+          selectedMetadata.observationCutoffAt || '未知'
+        }}。版本记录只展示元数据，核验结果以读取报告后为准。
+      </p>
+      <div v-if="revisionTotal > 10" class="row">
+        <el-button
+          :disabled="indexBusy || revisionPage <= 1"
+          @click="loadRevisions(revisionPage - 1)"
+          >较新版本</el-button
+        >
+        <span>第 {{ revisionPage }} 页 / 共 {{ revisionTotal }} 个版本</span>
+        <el-button
+          :disabled="indexBusy || revisionPage * 10 >= revisionTotal"
+          @click="loadRevisions(revisionPage + 1)"
+          >较旧版本</el-button
+        >
+      </div>
+    </div>
     <form class="row" @submit.prevent="load(false)">
       <label
         >冻结报告版本<input
@@ -18,7 +69,7 @@
     </form>
     <p>概要读取核验报告正文；人工决定还需完整输入核验。新反馈不会改写已冻结的旧版本。</p>
     <p class="report-hint">
-      按指定版本读取，不代表最新报告。当前运行状态与下方冻结报告的观察时间可能不同。
+      首次打开时读取版本记录中的最新报告；链接已指定版本时保留该版本。当前运行状态与冻结报告的观察时间可能不同。
     </p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="busy" role="status">正在处理报告……</p>
@@ -429,6 +480,10 @@
         填写已接受序号及观察截止；不能用 Task 数替代序号。相同输入返回同一报告，新输入追加
         revision。
       </p>
+      <el-button :disabled="busy" @click="useSuggestedRange">填入当前接受范围</el-button>
+      <p v-if="suggestedZone">
+        建议来自服务端时区 {{ suggestedZone }}，分配序号可能继续增长；填入表单不会自动生成报告。
+      </p>
       <el-button v-if="payload" :disabled="busy" @click="useFrozenRange"
         >沿用当前冻结报告范围</el-button
       >
@@ -476,7 +531,13 @@ import { evaluationStatus } from '../status'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton, ElDialog } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
-import { decideOnlineExperiment, getOnlineReport, recalculateOnlineReport } from './api'
+import {
+  decideOnlineExperiment,
+  getOnlineReport,
+  getOnlineReportRevisions,
+  getOnlineReportRangeSuggestion,
+  recalculateOnlineReport,
+} from './api'
 import {
   ONLINE_DESCRIPTIVE_NOTICE,
   onlineIdentity,
@@ -489,6 +550,7 @@ import type {
   OnlineExperiment,
   OnlineRecalculateRequest,
   OnlineReport,
+  OnlineReportRevision,
 } from './types'
 const props = defineProps<{
   experiment: OnlineExperiment
@@ -570,6 +632,16 @@ const decision = ref<OnlineDecisionRequest['decision']>('INSUFFICIENT_EVIDENCE')
   safetyId = ref('')
 const confirmation = ref<'recalculate' | 'decision' | null>(null),
   captured = ref('')
+const revisions = ref<OnlineReportRevision[]>([]),
+  revisionTotal = ref(0),
+  revisionPage = ref(1),
+  indexBusy = ref(false),
+  indexError = ref('')
+const suggestedZone = ref('')
+let indexPending: AbortController | undefined
+const selectedMetadata = computed(() =>
+  revisions.value.find((item) => item.revision === revision.value),
+)
 let pending: AbortController | undefined, retry: { fingerprint: string; key: string } | undefined
 const payload = computed(() => onlineReportPayload(report.value, props.experiment))
 const validRevision = computed(
@@ -624,6 +696,7 @@ watch(
       busy.value = false
       revision.value = value
       report.value = null
+      void load(false)
     }
   },
 )
@@ -639,6 +712,11 @@ watch(
   ],
   () => {
     pending?.abort()
+    indexPending?.abort()
+    revisions.value = []
+    revisionTotal.value = 0
+    indexBusy.value = false
+    indexError.value = ''
     busy.value = false
     report.value = null
     error.value = ''
@@ -647,8 +725,15 @@ watch(
     safetyId.value = ''
     sequence.value = ''
     cutoff.value = ''
+    suggestedZone.value = ''
     confirmation.value = null
+    revision.value = props.requestedRevision ?? 1
+    if (props.readable) {
+      if (props.requestedRevision !== undefined) void load(false)
+      void loadRevisions(1, true)
+    }
   },
+  { immediate: true },
 )
 watch([() => props.manageable, () => props.canRecalculate], () => {
   pending?.abort()
@@ -693,6 +778,71 @@ function useFrozenRange() {
   sequence.value = String(payload.value.assignmentCutoffSequence)
   cutoff.value = payload.value.observationCutoffAt
   confirmation.value = null
+  suggestedZone.value = ''
+}
+async function useSuggestedRange() {
+  if (busy.value || !props.readable || !props.canRecalculate) return
+  pending?.abort()
+  const controller = new AbortController(),
+    id = props.experiment.id,
+    before = identity.value
+  pending = controller
+  busy.value = true
+  error.value = ''
+  try {
+    const value = await getOnlineReportRangeSuggestion(id, controller.signal)
+    if (controller.signal.aborted || !props.canRecalculate || before !== identity.value) return
+    if (value.experimentId !== id || !validOnlineId(value.assignmentCutoffSequence, true))
+      throw new Error('报告范围身份或序号无效')
+    sequence.value = value.assignmentCutoffSequence
+    cutoff.value = value.observationCutoffAt
+    suggestedZone.value = value.timeZone
+  } catch (e) {
+    if (!controller.signal.aborted) error.value = normalizeApiError(e).message
+  } finally {
+    if (!controller.signal.aborted) busy.value = false
+  }
+}
+async function loadRevisions(page: number, chooseLatest = false) {
+  if (!props.readable) return
+  indexPending?.abort()
+  const controller = new AbortController(),
+    id = props.experiment.id,
+    priorRevision = revision.value
+  indexPending = controller
+  indexBusy.value = true
+  indexError.value = ''
+  try {
+    const value = await getOnlineReportRevisions(id, page, controller.signal)
+    if (controller.signal.aborted || !props.readable) return
+    if (value.records.some((item) => item.experimentId !== id))
+      throw new Error('报告版本身份不一致')
+    revisions.value = value.records
+    revisionTotal.value = value.total
+    revisionPage.value = value.pageNum
+    const latest = value.records[0]
+    if (
+      chooseLatest &&
+      props.requestedRevision === undefined &&
+      latest &&
+      revision.value === priorRevision &&
+      !busy.value &&
+      !report.value
+    ) {
+      revision.value = latest.revision
+      await load(false)
+    }
+  } catch (e) {
+    if (!controller.signal.aborted) indexError.value = normalizeApiError(e).message
+  } finally {
+    if (!controller.signal.aborted) indexBusy.value = false
+  }
+}
+function selectRevision(event: Event) {
+  pending?.abort()
+  busy.value = false
+  revision.value = Number((event.target as HTMLSelectElement).value)
+  void load(false)
 }
 async function load(full: boolean) {
   if (!props.readable || !validRevision.value || busy.value) return
@@ -763,6 +913,7 @@ async function submit() {
       )
       if (controller.signal.aborted || !props.canRecalculate || snapshot !== identity.value) return
       store(value)
+      void loadRevisions(1)
     } else {
       await decideOnlineExperiment(
         id,
@@ -780,7 +931,10 @@ async function submit() {
     if (!controller.signal.aborted) busy.value = false
   }
 }
-onBeforeUnmount(() => pending?.abort())
+onBeforeUnmount(() => {
+  pending?.abort()
+  indexPending?.abort()
+})
 </script>
 <style scoped>
 .report-panel {
@@ -838,7 +992,8 @@ details {
   overflow-wrap: anywhere;
 }
 .report-summary,
-.report-details {
+.report-details,
+.revision-index {
   min-width: 0;
   border: 1px solid var(--adw-border-color);
   border-radius: var(--adw-radius-sm);

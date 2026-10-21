@@ -48,6 +48,7 @@ import com.agentdoc.evaluation.pojo.entity.EvaluatorEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.vo.DatasetVersionVO;
+import com.agentdoc.evaluation.pojo.vo.CatalogVersionSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationDatasetVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
@@ -159,7 +160,11 @@ public class EvaluationCatalogService {
                         .eq(param.getArchived() != null, EvaluationDatasetEntity::getArchived, param.getArchived())
                         .like(hasText(param.getKeyword()), EvaluationDatasetEntity::getName, trim(param.getKeyword()))
                         .orderByDesc(EvaluationDatasetEntity::getId));
-        return PageVO.of(result.getRecords().stream().map(EvaluationDatasetVO::from).toList(),
+        var summaries = result.getRecords().isEmpty() ? Map.<Long, CatalogVersionSummaryVO>of()
+                : datasetVersionMapper.resourceSummaries(param.getSpaceId(), result.getRecords().stream().map(EvaluationDatasetEntity::getId).toList())
+                    .stream().collect(Collectors.toMap(CatalogVersionSummaryVO::resourceId, Function.identity()));
+        return PageVO.of(result.getRecords().stream().map(row -> EvaluationDatasetVO.from(row,
+                summaries.getOrDefault(row.getId(), CatalogVersionSummaryVO.empty(row.getId())))).toList(),
                 result.getTotal(), param);
     }
 
@@ -175,7 +180,11 @@ public class EvaluationCatalogService {
                         .eq(param.getArchived() != null, EvaluationTestCaseEntity::getArchived, param.getArchived())
                         .like(hasText(param.getKeyword()), EvaluationTestCaseEntity::getName, trim(param.getKeyword()))
                         .orderByDesc(EvaluationTestCaseEntity::getId));
-        return PageVO.of(result.getRecords().stream().map(EvaluationTestCaseVO::from).toList(),
+        var summaries = result.getRecords().isEmpty() ? Map.<Long, CatalogVersionSummaryVO>of()
+                : testCaseVersionMapper.resourceSummaries(param.getSpaceId(), result.getRecords().stream().map(EvaluationTestCaseEntity::getId).toList())
+                    .stream().collect(Collectors.toMap(CatalogVersionSummaryVO::resourceId, Function.identity()));
+        return PageVO.of(result.getRecords().stream().map(row -> EvaluationTestCaseVO.from(row,
+                summaries.getOrDefault(row.getId(), CatalogVersionSummaryVO.empty(row.getId())))).toList(),
                 result.getTotal(), param);
     }
 
@@ -193,7 +202,11 @@ public class EvaluationCatalogService {
                                 .like(EvaluatorEntity::getName, trim(param.getKeyword())).or()
                                 .like(EvaluatorEntity::getEvaluatorKey, trim(param.getKeyword())))
                         .orderByDesc(EvaluatorEntity::getId));
-        return PageVO.of(result.getRecords().stream().map(EvaluatorVO::from).toList(),
+        var summaries = result.getRecords().isEmpty() ? Map.<Long, CatalogVersionSummaryVO>of()
+                : evaluatorVersionMapper.resourceSummaries(param.getSpaceId(), result.getRecords().stream().map(EvaluatorEntity::getId).toList())
+                    .stream().collect(Collectors.toMap(CatalogVersionSummaryVO::resourceId, Function.identity()));
+        return PageVO.of(result.getRecords().stream().map(row -> EvaluatorVO.from(row,
+                summaries.getOrDefault(row.getId(), CatalogVersionSummaryVO.empty(row.getId())))).toList(),
                 result.getTotal(), param);
     }
 

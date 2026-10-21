@@ -5,6 +5,8 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.evaluation.pojo.param.EvaluationRunSearchParam;
+import com.agentdoc.evaluation.pojo.param.CaseVersionNamesSearchParam;
+import com.agentdoc.evaluation.pojo.vo.CaseVersionNameVO;
 import com.agentdoc.evaluation.pojo.param.ExperimentSearchParam;
 import com.agentdoc.evaluation.pojo.vo.DatasetCaseBindingVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationCaseAttemptHistoryVO;
@@ -35,6 +37,12 @@ import java.util.List;
 public class EvaluationWorkbenchController {
 
     private final EvaluationWorkbenchQueryService queryService;
+
+    @Operation(summary = "批量读取用例版本的当前目录名称，不读取冻结输入")
+    @PostMapping("/test-case-versions/names-query")
+    public Result<List<CaseVersionNameVO>> caseVersionNames(@RequestBody CaseVersionNamesSearchParam param) {
+        return Result.ok(queryService.caseVersionNames(param));
+    }
 
     @Operation(summary = "查询执行 Task 的评估来源与返回身份")
     @GetMapping("/task-links/{taskId}")

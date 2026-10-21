@@ -20,10 +20,16 @@ import com.agentdoc.evaluation.pojo.dto.OnlineExperimentDecisionDTO;
 import com.agentdoc.evaluation.pojo.entity.OnlineExperimentEntity;
 import com.agentdoc.evaluation.pojo.entity.OnlineExperimentReportEntity;
 import com.agentdoc.evaluation.pojo.vo.OnlineExperimentReportVO;
+import com.agentdoc.evaluation.pojo.vo.OnlineExperimentReportRevisionVO;
+import com.agentdoc.evaluation.pojo.vo.OnlineReportRangeSuggestionVO;
+import com.agentdoc.common.pojo.dto.PageParam;
+import com.agentdoc.common.pojo.vo.PageVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +53,35 @@ public class OnlineExperimentReportService {
     private final OnlineAgentFeign agents;
     private final SpaceAccessService access;
     private final OnlineReviewExposureService exposures;
+
+    public OnlineReportRangeSuggestionVO rangeSuggestion(String id) {
+        var experiment = require(id); read(experiment);
+        access.requireOwner(experiment.getSpaceId()); access.requirePermission(experiment.getSpaceId(), EVALUATION_MANAGE);
+        exposures.record(experiment.getId(), experiment.getSpaceId(), AuthUtils.getUserIdOrException(), OnlineReviewExposureSource.REPORT);
+        var zone = ZoneId.systemDefault();
+        return new OnlineReportRangeSuggestionVO(id, Long.toString(experiment.getAcceptedSequence()),
+                LocalDateTime.now(zone).truncatedTo(ChronoUnit.MILLIS), zone.getId());
+    }
+
+    public PageVO<OnlineExperimentReportRevisionVO> revisions(String id, PageParam param) {
+        param.validate();
+        var experiment = require(id);
+        read(experiment);
+        exposures.record(experiment.getId(), experiment.getSpaceId(), AuthUtils.getUserIdOrException(), OnlineReviewExposureSource.REPORT);
+        var page = reports.selectPage(new Page<OnlineExperimentReportEntity>(param.getPageNum(), param.getPageSize()),
+                new LambdaQueryWrapper<OnlineExperimentReportEntity>()
+                        .select(OnlineExperimentReportEntity::getExperimentId, OnlineExperimentReportEntity::getRevision,
+                                OnlineExperimentReportEntity::getSchemaVersion, OnlineExperimentReportEntity::getReportHash,
+                                OnlineExperimentReportEntity::getCreatedAt, OnlineExperimentReportEntity::getObservedAt)
+                        .eq(OnlineExperimentReportEntity::getExperimentId, experiment.getId())
+                        .eq(OnlineExperimentReportEntity::getSpaceId, experiment.getSpaceId())
+                        .orderByDesc(OnlineExperimentReportEntity::getRevision));
+        return PageVO.of(page.getRecords().stream().map(row -> new OnlineExperimentReportRevisionVO(
+                id, row.getRevision(), row.getSchemaVersion(), row.getReportHash(), row.getCreatedAt(), row.getObservedAt(),
+                experiment.getDecision() != null && Objects.equals(experiment.getDecisionReportRevision(), row.getRevision())
+                        && Objects.equals(experiment.getDecisionReportHash(), row.getReportHash()))).toList(), page.getTotal(),
+                param);
+    }
 
     public OnlineExperimentReportVO detail(String id, Integer revision) {
         var experiment = require(id); read(experiment);
