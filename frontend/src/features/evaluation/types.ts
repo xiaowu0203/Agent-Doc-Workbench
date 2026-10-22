@@ -743,6 +743,15 @@ export interface TestCaseEvaluatorBinding {
   expectedJson: string | null
 }
 
+export interface TestCaseSource {
+  testCaseVersionId: EntityId
+  spaceId: EntityId
+  sourceTaskId: EntityId
+  sourceInputHash: string
+  documentId: EntityId
+  documentTitle: string | null
+}
+
 export interface TestCaseVersion {
   id: EntityId
   testCaseId: EntityId | null

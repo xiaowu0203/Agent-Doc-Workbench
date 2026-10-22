@@ -49,6 +49,7 @@ import type {
   TestCaseEvaluatorBinding,
   TestCaseEvaluatorBindingsRequest,
   TestCaseVersion,
+  TestCaseSource,
   TestCaseVersionCreateRequest,
   TestCaseVersionUpdateRequest,
 } from '@/features/evaluation/types'
@@ -225,6 +226,10 @@ export function getTestCaseVersion(id: EntityId, signal?: AbortSignal): Promise<
     url: `/evaluation/test-case-versions/${id}`,
     signal,
   })
+}
+
+export function getTestCaseSource(id: EntityId, signal?: AbortSignal): Promise<TestCaseSource> {
+  return request({ method: 'GET', url: `/evaluation/test-case-versions/${id}/source`, signal })
 }
 
 export function createTestCaseVersion(

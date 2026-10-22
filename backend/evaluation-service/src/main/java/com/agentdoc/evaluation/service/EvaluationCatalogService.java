@@ -4,6 +4,7 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
@@ -54,6 +55,7 @@ import com.agentdoc.evaluation.pojo.vo.EvaluatorVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
+import com.agentdoc.evaluation.pojo.vo.TestCaseSourceVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -67,12 +69,15 @@ import com.agentdoc.common.enums.TaskExecutionMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_EVALUATORS;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_SCHEMA_VERSION;
@@ -134,6 +139,7 @@ public class EvaluationCatalogService {
     private final EvaluatorVersionMapper evaluatorVersionMapper;
     private final SpaceAccessService spaceAccessService;
     private final TaskFeign taskFeign;
+    private final DocumentFeign documentFeign;
     private final EvaluatorContractValidator evaluatorContractValidator;
 
     /**
@@ -293,6 +299,35 @@ public class EvaluationCatalogService {
         EvaluationTestCaseVersionEntity entity = testCaseVersionMapper.selectById(id);
         requireReadable(entity == null ? null : entity.getSpaceId(), "TestCaseVersion");
         return TestCaseVersionVO.from(entity);
+    }
+
+    /** 仅在来源身份与全部冻结依据一致时补充当前文档名称，归档版本也可只读定位。 */
+    public TestCaseSourceVO getTestCaseSource(Long id) {
+        var version = testCaseVersionMapper.selectById(id);
+        requireReadable(version == null ? null : version.getSpaceId(), "TestCaseVersion");
+        spaceAccessService.requirePermission(version.getSpaceId(), TASK_READ);
+        spaceAccessService.requirePermission(version.getSpaceId(), DOCUMENT_READ);
+        var source = requireData(taskFeign.getReplaySource(version.getSourceTaskId(), version.getSpaceId()));
+        if (!source.replayable() || !Objects.equals(source.spaceId(), version.getSpaceId())
+                || !Objects.equals(source.sourceTaskId(), version.getSourceTaskId())
+                || !Objects.equals(source.sourceExecutionId(), version.getSourceExecutionId())
+                || !Objects.equals(source.inputSnapshotSchemaVersion(), version.getSourceInputSchemaVersion())
+                || version.getSourceInputHash() == null || !version.getSourceInputHash().equals(source.inputSnapshotHash())
+                || !Objects.equals(source.executionSnapshotSchemaVersion(), version.getSourceExecutionSchemaVersion())
+                || version.getSourceExecutionHash() == null || !version.getSourceExecutionHash().equals(source.executionSnapshotHash())
+                || !Objects.equals(source.documentVersionSnapshot(), version.getDocumentVersionSnapshot())
+                || version.getDocumentContentSha256() == null || !version.getDocumentContentSha256().equals(source.documentContentSha256())
+                || source.documentId() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源与用例冻结依据不一致");
+        }
+        var response = documentFeign.getDocumentRefs(List.of(source.documentId()));
+        if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取来源文档名称失败");
+        }
+        var document = response.data().stream().filter(ref -> Objects.equals(ref.id(), source.documentId())
+                && Objects.equals(ref.spaceId(), version.getSpaceId())).findFirst().orElse(null);
+        return new TestCaseSourceVO(version.getId(), version.getSpaceId(), version.getSourceTaskId(),
+                version.getSourceInputHash(), source.documentId(), document == null ? null : document.title());
     }
 
     public EvaluatorVO getEvaluator(Long id) {

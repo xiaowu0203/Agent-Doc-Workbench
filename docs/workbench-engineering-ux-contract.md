@@ -186,3 +186,11 @@ Run 和离线实验详情可通过现有目录读取接口查询单个来源版�
 `GET /api/evaluation/experiments/{id}/source-summary` 在 evaluation:read 校验后，仅从已核验 schema/manifestHash 的冻结清单返回 experimentId、spaceId、manifestHash、caseCount、distinctSourceTaskCount、missingSourceCaseCount。已知来源任务按 ID 去重，缺失身份单独计数；不加载当前目录、Task 或报告正文，不修改 reportJson、hash 或 revision。来源去重不是统计独立性证明。前端仅在实验/空间/manifestHash 和冻结用例数匹配时展示，失败保留已核验报告并说明来源摘要未知。
 
 报告按质量规则、执行状态、成本与用量、耗时、其他指标分组，分组同步作用于概要、展开汇总、配对比较和矩阵；全局冻结数量及分母不随筛选变化。差值直接使用报告的 meanCandidateMinusBaseline / meanCandidateMinusBaselineByCurrency，不用两侧均值另算；保留配对/期望分母、不可比币种数、缺失与零差值，比例差按百分点显示。多单位无法确认共同单位时保留原值并提示单位未确认，不把未知当作数值零。
+
+### 6.3 用例来源定位与阅读顺序
+
+测试用例详情按验证目标、冻结来源、预期与规则、评估器绑定、技术身份与审计信息阅读。用例名称/说明与来源任务/文档名称均标为当前取值，不能作为历史快照；冻结文档版本常显，输入/执行/文档与版本哈希保留在审计区。草稿保存和发布核对规则不变，已发布及归档版本只读。
+
+`GET /api/evaluation/test-case-versions/{id}/source` 校验 evaluation:read、task:read、document:read，再通过既有 Task Replay 来源契约核验准入及空间、Task/Execution、输入/执行 schema 与哈希、文档版本/哈希均与用例保存值一致；不一致时拒绝投影。返回 testCaseVersionId、spaceId、sourceTaskId、sourceInputHash、documentId、documentTitle，文档名称通过单次批量引用查询取得，仅接受匹配文档和空间的标题。不返回输入/执行快照正文、文档正文、Prompt 或凭证，不更新用例、历史哈希或绑定；归档版本仍可定位。当前来源已不可核验或名称不可访问时，前端保留原冻结依据并提示名称未知，不影响历史版本阅读。
+
+来源任务名称复用单次 names-query；前端校验空间、用例版本、来源任务和冻结输入哈希，切换版本/空间、撤销相关读取权限或卸载时取消请求并清除旧名称。来源读取属于普通工程详情，沿用既有 Task 知情记录，不用于专用盲评页面。

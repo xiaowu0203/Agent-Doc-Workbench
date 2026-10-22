@@ -3,7 +3,7 @@
     <div class="catalog-page__heading">
       <div>
         <h2>{{ resource?.name || label }}{{ resourceId ? ' · 版本管理' : '' }}</h2>
-        <p>
+        <p v-if="!resourceId || section !== 'test-cases'">
           {{
             resourceId
               ? resource?.description || `资源 #${resourceId}`
@@ -235,7 +235,7 @@
                     : '当前配置与绑定已保存；发布后将冻结此版本。'
                 }}
               </p>
-              <details>
+              <details v-if="!testCaseVersion">
                 <summary>版本冻结身份</summary>
                 <dl class="catalog-page__facts">
                   <dt>内容 hash</dt>
@@ -277,64 +277,54 @@
                 >
               </template>
               <template v-if="testCaseVersion">
-                <details>
-                  <summary>
-                    冻结来源与快照依据（文档 v{{
-                      testCaseVersion.documentVersionSnapshot ?? '未知'
-                    }}）
-                  </summary>
-                  <dl class="catalog-page__facts">
-                    <dt>来源 Task / Execution</dt>
-                    <dd>
-                      <RouterLink
-                        v-if="canReadTask && testCaseVersion.sourceTaskId"
-                        :to="`/spaces/${spaceId}/tasks/${testCaseVersion.sourceTaskId}?tab=evidence`"
-                        >#{{ testCaseVersion.sourceTaskId }}</RouterLink
-                      ><span v-else>{{ testCaseVersion.sourceTaskId || '未提供' }}</span> /
-                      {{ testCaseVersion.sourceExecutionId || '未提供' }}
-                    </dd>
-                    <dt>冻结文档版本</dt>
-                    <dd>{{ testCaseVersion.documentVersionSnapshot ?? '未提供' }}</dd>
-                    <dt>文档内容 hash</dt>
-                    <dd>{{ testCaseVersion.documentContentSha256 || '未提供' }}</dd>
-                    <dt>输入 snapshot schema / hash</dt>
-                    <dd>
-                      {{ testCaseVersion.sourceInputSchemaVersion }} /
-                      {{ testCaseVersion.sourceInputHash }}
-                    </dd>
-                    <dt>执行 snapshot schema / hash</dt>
-                    <dd>
-                      {{ testCaseVersion.sourceExecutionSchemaVersion }} /
-                      {{ testCaseVersion.sourceExecutionHash }}
-                    </dd>
-                    <dt>expected schema</dt>
-                    <dd>{{ testCaseVersion.expectedSchemaVersion }}</dd>
-                  </dl>
-                </details>
-                <JsonConfigEditor
-                  v-model="configForm.expectedJson"
-                  label="expectedJson"
-                  :readonly="!editable"
-                />
-                <el-form label-position="top"
-                  ><el-form-item label="来源类型"
-                    ><el-select
-                      v-model="configForm.sourceType"
-                      :disabled="!editable"
-                      aria-label="来源类型"
-                      ><el-option value="LIVE" label="LIVE" /></el-select></el-form-item
-                  ><el-form-item label="脱敏与裁剪说明"
-                    ><el-input
-                      v-model="configForm.sanitizationNote"
-                      type="textarea"
-                      :readonly="!editable"
-                      maxlength="1000"
-                      show-word-limit
-                      aria-label="脱敏与裁剪说明" /></el-form-item
-                ></el-form>
-                <el-button v-if="editable" :loading="busy" type="primary" @click="saveConfig"
-                  >保存草稿配置</el-button
-                >
+                <section class="catalog-page__case-section" aria-label="验证目标">
+                  <h3>验证目标</h3>
+                  <p>
+                    {{ resource.description || '尚未填写用例说明，请结合预期规则核对验证目标。' }}
+                  </p>
+                  <p class="catalog-page__hint">
+                    以上为当前用例名称和说明；历史版本的预期与冻结依据见下方。
+                  </p>
+                </section>
+                <section class="catalog-page__case-section" aria-label="冻结来源">
+                  <h3>冻结来源</h3>
+                  <TestCaseSourceSummary
+                    :version="testCaseVersion"
+                    :space-id="spaceId"
+                    :can-read-task="canRead && canReadTask"
+                    :can-read-document="canRead && canReadDocument"
+                  />
+                  <el-form label-position="top"
+                    ><el-form-item label="来源类型"
+                      ><el-select
+                        v-model="configForm.sourceType"
+                        :disabled="!editable"
+                        aria-label="来源类型"
+                        ><el-option
+                          value="LIVE"
+                          label="真实执行（LIVE）" /></el-select></el-form-item
+                    ><el-form-item label="脱敏与裁剪说明"
+                      ><el-input
+                        v-model="configForm.sanitizationNote"
+                        type="textarea"
+                        :readonly="!editable"
+                        maxlength="1000"
+                        show-word-limit
+                        aria-label="脱敏与裁剪说明" /></el-form-item
+                  ></el-form>
+                </section>
+                <section class="catalog-page__case-section" aria-label="预期与规则">
+                  <h3>预期与规则</h3>
+                  <p>用例预期作为默认基准；评估器绑定可单独设置预期，具体规则见下方绑定。</p>
+                  <JsonConfigEditor
+                    v-model="configForm.expectedJson"
+                    label="expectedJson"
+                    :readonly="!editable"
+                  />
+                  <el-button v-if="editable" :loading="busy" type="primary" @click="saveConfig"
+                    >保存草稿配置</el-button
+                  >
+                </section>
               </template>
               <CatalogBindings
                 v-if="section !== 'evaluators'"
@@ -345,6 +335,39 @@
                 :editable="editable"
                 @dirty="bindingDirty = $event"
               />
+              <details v-if="testCaseVersion" class="catalog-page__case-audit">
+                <summary>技术身份与审计信息</summary>
+                <p>发布前请核对冻结来源、快照与已保存绑定；名称变化不改变以下历史依据。</p>
+                <dl class="catalog-page__facts">
+                  <dt>用例 / 版本 ID</dt>
+                  <dd>{{ testCaseVersion.testCaseId }} / {{ testCaseVersion.id }}</dd>
+                  <dt>来源任务 / 执行 ID</dt>
+                  <dd>
+                    {{ testCaseVersion.sourceTaskId || '未提供' }} /
+                    {{ testCaseVersion.sourceExecutionId || '未提供' }}
+                  </dd>
+                  <dt>冻结文档版本</dt>
+                  <dd>{{ testCaseVersion.documentVersionSnapshot ?? '未提供' }}</dd>
+                  <dt>文档内容 hash</dt>
+                  <dd>{{ testCaseVersion.documentContentSha256 || '未提供' }}</dd>
+                  <dt>输入快照 schema / hash</dt>
+                  <dd>
+                    {{ testCaseVersion.sourceInputSchemaVersion ?? '未提供' }} /
+                    {{ testCaseVersion.sourceInputHash || '未提供' }}
+                  </dd>
+                  <dt>执行快照 schema / hash</dt>
+                  <dd>
+                    {{ testCaseVersion.sourceExecutionSchemaVersion ?? '未提供' }} /
+                    {{ testCaseVersion.sourceExecutionHash || '未提供' }}
+                  </dd>
+                  <dt>预期 schema</dt>
+                  <dd>{{ testCaseVersion.expectedSchemaVersion ?? '未提供' }}</dd>
+                  <dt>版本内容 hash</dt>
+                  <dd>{{ testCaseVersion.contentHash || '发布时生成' }}</dd>
+                  <dt>发布时间</dt>
+                  <dd>{{ testCaseVersion.publishedAt || '尚未发布' }}</dd>
+                </dl>
+              </details>
             </template>
             <p v-else>选择版本查看配置与冻结依据。</p>
           </DataState>
@@ -485,6 +508,7 @@ import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStat
 import JsonConfigEditor from '@/features/evaluation/components/JsonConfigEditor.vue'
 import EvaluatorConfigEditor from '@/features/evaluation/components/EvaluatorConfigEditor.vue'
 import TaskSourcePicker from '@/features/evaluation/components/TaskSourcePicker.vue'
+import TestCaseSourceSummary from '@/features/evaluation/components/TestCaseSourceSummary.vue'
 type CatalogResource = EvaluationDataset | EvaluationTestCase | Evaluator
 type CatalogVersion = DatasetVersion | TestCaseVersion | EvaluatorVersion
 const props = defineProps<{ section: CatalogSection; resourceId?: string }>()
@@ -524,6 +548,9 @@ function createFromVersion(target: 'runs' | 'experiments') {
 }
 const canReadTask = computed(
   () => inSpace.value && workspace.hasPermission(SPACE_PERMISSIONS.TASK_READ),
+)
+const canReadDocument = computed(
+  () => inSpace.value && workspace.hasPermission(SPACE_PERMISSIONS.DOCUMENT_READ),
 )
 const sourceTaskId = computed(() =>
   props.section === 'test-cases' &&
@@ -1089,6 +1116,15 @@ onBeforeUnmount(() => {
   min-width: 0;
   display: grid;
   gap: var(--adw-space-5);
+}
+.catalog-page__case-section {
+  display: grid;
+  gap: var(--adw-space-3);
+  padding-block: var(--adw-space-4);
+  border-top: 1px solid var(--adw-border-color-light);
+}
+.catalog-page__case-audit {
+  margin-top: var(--adw-space-4);
 }
 .catalog-page__heading {
   display: flex;

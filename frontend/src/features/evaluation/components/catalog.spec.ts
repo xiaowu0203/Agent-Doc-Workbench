@@ -12,7 +12,7 @@ import * as api from '../api/evaluation-api'
 import * as taskApi from '@/features/task/api/task-api'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
-import type { EvaluationTestCase, Evaluator, EvaluatorVersion } from '../types'
+import type { EvaluationTestCase, Evaluator, EvaluatorVersion, TestCaseVersion } from '../types'
 import type { TaskDetail, TaskListItem } from '@/features/task/types'
 import type { ReplayEligibility } from '@/features/task/engineering-types'
 
@@ -307,6 +307,100 @@ describe('catalog editing and frozen contracts', () => {
     await flushPromises()
     expect(wrapper.find('textarea').exists()).toBe(false)
   })
+})
+
+describe('test case source reading order', () => {
+  it.each(['DRAFT', 'PUBLISHED', 'ARCHIVED'] as const)(
+    'keeps %s frozen source and expected data while prioritizing the validation goal',
+    async (status) => {
+      const version = {
+        id: '31',
+        testCaseId: '20',
+        spaceId: '7',
+        versionNo: 2,
+        status,
+        sourceTaskId: '100',
+        sourceExecutionId: '101',
+        sourceInputSchemaVersion: 1,
+        sourceInputHash: 'frozen-input',
+        sourceExecutionSchemaVersion: 3,
+        sourceExecutionHash: 'frozen-execution',
+        documentVersionSnapshot: 4,
+        documentContentSha256: 'frozen-document',
+        expectedSchemaVersion: 1,
+        expectedJson: '{"goal":"完整引用"}',
+        sourceType: 'LIVE',
+        sanitizationNote: '已裁剪个人信息',
+        contentHash: status === 'DRAFT' ? null : 'frozen-content',
+        publishedAt: null,
+        createdBy: null,
+      } satisfies TestCaseVersion
+      vi.mocked(api.getTestCase).mockResolvedValue({
+        id: '20',
+        spaceId: '7',
+        name: '引用完整性',
+        description: '检查引用是否覆盖结论',
+        archived: false,
+      } as EvaluationTestCase)
+      vi.mocked(api.searchTestCaseVersions).mockResolvedValue(page([version]))
+      vi.mocked(api.getTestCaseVersion).mockResolvedValue(version)
+      vi.mocked(api.getTestCaseSource).mockResolvedValue({
+        testCaseVersionId: '31',
+        spaceId: '7',
+        sourceTaskId: '100',
+        sourceInputHash: 'frozen-input',
+        documentId: '4',
+        documentTitle: '引用规范',
+      })
+      vi.mocked(taskApi.getTaskNames).mockResolvedValue([
+        { id: '100', spaceId: '7', name: '检查引用规范' },
+      ])
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          {
+            path: '/spaces/:spaceId/evaluation/test-cases/:id',
+            component: { template: '<div />' },
+          },
+        ],
+      })
+      await router.push('/spaces/7/evaluation/test-cases/20')
+      const before = JSON.stringify(version)
+      const wrapper = mount(EvaluationCatalogView, {
+        props: { section: 'test-cases', resourceId: '20' },
+        global: { plugins: [router], stubs: { ElDialog: true } },
+      })
+      wrappers.push(wrapper)
+      await flushPromises()
+      const sections = wrapper
+        .findAll('section[aria-label]')
+        .map((item) => item.attributes('aria-label'))
+      expect(sections).toEqual(
+        expect.arrayContaining(['验证目标', '冻结来源', '预期与规则', '版本绑定']),
+      )
+      expect(sections.indexOf('验证目标')).toBeLessThan(sections.indexOf('冻结来源'))
+      expect(sections.indexOf('冻结来源')).toBeLessThan(sections.indexOf('预期与规则'))
+      expect(sections.indexOf('预期与规则')).toBeLessThan(sections.indexOf('版本绑定'))
+      expect(wrapper.html().indexOf('评估器绑定与预期')).toBeLessThan(
+        wrapper.html().indexOf('技术身份与审计信息'),
+      )
+      expect(wrapper.get('section[aria-label="冻结来源"]').text()).toContain('检查引用规范')
+      expect(wrapper.get('section[aria-label="冻结来源"]').text()).toContain('引用规范')
+      expect(wrapper.get('section[aria-label="冻结来源"]').text()).toContain('v4')
+      expect(wrapper.get('.catalog-page__case-audit').text()).toContain('frozen-input')
+      expect(wrapper.get('.catalog-page__case-audit').text()).toContain('frozen-execution')
+      expect(
+        wrapper.get<HTMLTextAreaElement>('textarea[aria-label="expectedJson"]').element.value,
+      ).toBe('{"goal":"完整引用"}')
+      if (status !== 'DRAFT')
+        expect(
+          wrapper.get('textarea[aria-label="expectedJson"]').attributes('readonly'),
+        ).toBeDefined()
+      expect(JSON.stringify(version)).toBe(before)
+      expect(api.updateTestCaseVersion).not.toHaveBeenCalled()
+      expect(api.publishTestCaseVersion).not.toHaveBeenCalled()
+    },
+  )
 })
 
 describe('paged source and binding selectors', () => {

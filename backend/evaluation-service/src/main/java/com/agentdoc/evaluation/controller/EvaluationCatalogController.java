@@ -26,6 +26,7 @@ import com.agentdoc.evaluation.pojo.vo.EvaluatorVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
+import com.agentdoc.evaluation.pojo.vo.TestCaseSourceVO;
 import com.agentdoc.evaluation.service.EvaluationCatalogService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -157,6 +158,12 @@ public class EvaluationCatalogController {
     public Result<TestCaseVersionVO> getTestCaseVersion(
             @Parameter(description = "测试用例版本ID") @PathVariable Long id) {
         return Result.ok(catalogService.getTestCaseVersion(id));
+    }
+
+    @Operation(summary = "读取匹配用例冻结依据的来源文档定位信息")
+    @GetMapping("/test-case-versions/{id}/source")
+    public Result<TestCaseSourceVO> getTestCaseSource(@PathVariable Long id) {
+        return Result.ok(catalogService.getTestCaseSource(id));
     }
 
     @Operation(summary = "归档测试用例版本", description = "软归档指定用例版本，该版本不再允许新建评估运行")

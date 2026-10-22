@@ -3,6 +3,10 @@ package com.agentdoc.evaluation.service;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.DocumentFeign;
+import com.agentdoc.common.api.Result;
+import com.agentdoc.common.feign.vo.ReplaySourceVO;
+import com.agentdoc.common.feign.vo.DocumentRefVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
@@ -49,15 +53,20 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 
 @ExtendWith(MockitoExtension.class)
 class EvaluationCatalogServiceTest {
@@ -72,9 +81,81 @@ class EvaluationCatalogServiceTest {
     @Mock private EvaluatorVersionMapper evaluatorVersionMapper;
     @Mock private SpaceAccessService spaceAccessService;
     @Mock private TaskFeign taskFeign;
+    @Mock private DocumentFeign documentFeign;
     @Mock private EvaluatorContractValidator evaluatorContractValidator;
 
     private EvaluationCatalogService service;
+
+    private EvaluationTestCaseVersionEntity sourceVersion() {
+        var version = new EvaluationTestCaseVersionEntity();
+        version.setId(31L); version.setSpaceId(9L); version.setStatus("ARCHIVED");
+        version.setSourceTaskId(100L); version.setSourceExecutionId(101L);
+        version.setSourceInputSchemaVersion(1); version.setSourceInputHash("input");
+        version.setSourceExecutionSchemaVersion(3); version.setSourceExecutionHash("execution");
+        version.setDocumentVersionSnapshot(4L); version.setDocumentContentSha256("document");
+        return version;
+    }
+
+    private ReplaySourceVO sourceProjection(String mismatch) {
+        return new ReplaySourceVO(!mismatch.equals("replayable"), null,
+                mismatch.equals("task") ? 200L : 100L, mismatch.equals("execution") ? 201L : 101L,
+                mismatch.equals("space") ? 8L : 9L, 3L, 100L, 100L, "ORIGINAL", 0,
+                mismatch.equals("input-schema") ? 2 : 1, mismatch.equals("input-hash") ? "other" : "input",
+                mismatch.equals("execution-schema") ? 4 : 3, mismatch.equals("execution-hash") ? "other" : "execution",
+                mismatch.equals("document-id") ? null : 4L, mismatch.equals("document-version") ? 5L : 4L,
+                mismatch.equals("document-hash") ? "other" : "document");
+    }
+
+    @Test
+    void sourceTitleIsReadOnlyAndMatchesArchivedVersionFrozenIdentity() {
+        var version = sourceVersion();
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(version);
+        when(taskFeign.getReplaySource(100L, 9L)).thenReturn(Result.ok(sourceProjection("")));
+        when(documentFeign.getDocumentRefs(List.of(4L))).thenReturn(Result.ok(List.of(new DocumentRefVO(4L, 9L, "当前文档"))));
+        var result = service.getTestCaseSource(31L);
+        assertThat(result.testCaseVersionId()).isEqualTo(31L);
+        assertThat(result.documentId()).isEqualTo(4L);
+        assertThat(result.documentTitle()).isEqualTo("当前文档");
+        assertThat(result.sourceInputHash()).isEqualTo("input");
+        verify(spaceAccessService).requirePermission(9L, EVALUATION_READ);
+        verify(spaceAccessService).requirePermission(9L, TASK_READ);
+        verify(spaceAccessService).requirePermission(9L, DOCUMENT_READ);
+        verify(testCaseVersionMapper, never()).updateById(any(EvaluationTestCaseVersionEntity.class));
+        assertThat(version.getStatus()).isEqualTo("ARCHIVED");
+        assertThat(version.getDocumentVersionSnapshot()).isEqualTo(4L);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"task", "execution", "space", "input-schema", "input-hash", "execution-schema", "execution-hash", "document-id", "document-version", "document-hash", "replayable"})
+    void sourceMismatchNeverQueriesDocumentNames(String mismatch) {
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(sourceVersion());
+        when(taskFeign.getReplaySource(100L, 9L)).thenReturn(Result.ok(sourceProjection(mismatch)));
+        assertThatThrownBy(() -> service.getTestCaseSource(31L)).isInstanceOf(BusinessException.class).hasMessageContaining("冻结依据");
+        verifyNoInteractions(documentFeign);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {EVALUATION_READ, TASK_READ, DOCUMENT_READ})
+    void sourceMetadataDeniesBeforeRemoteReads(String permission) {
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(sourceVersion());
+        doAnswer(call -> {
+            if (permission.equals(call.getArgument(1))) { throw new BusinessException(403, "denied"); }
+            return null;
+        }).when(spaceAccessService).requirePermission(eq(9L), anyString());
+        assertThatThrownBy(() -> service.getTestCaseSource(31L)).hasMessageContaining("denied");
+        verifyNoInteractions(taskFeign, documentFeign);
+    }
+
+    @Test
+    void missingOrForeignDocumentTitleCannotLeakIntoSource() {
+        when(testCaseVersionMapper.selectById(31L)).thenReturn(sourceVersion());
+        when(taskFeign.getReplaySource(100L, 9L)).thenReturn(Result.ok(sourceProjection("")));
+        when(documentFeign.getDocumentRefs(List.of(4L))).thenReturn(Result.ok(List.of(new DocumentRefVO(4L, 8L, "其他空间"), new DocumentRefVO(5L, 9L, "其他文档"))));
+        assertThat(service.getTestCaseSource(31L).documentTitle()).isNull();
+        when(documentFeign.getDocumentRefs(List.of(4L))).thenReturn(Result.ok(List.of()));
+        assertThat(service.getTestCaseSource(31L).documentId()).isEqualTo(4L);
+        assertThat(service.getTestCaseSource(31L).documentTitle()).isNull();
+    }
 
     @Test
     void publishedBatchChecksAllParentsWithTwoQueries() {
@@ -116,7 +197,7 @@ class EvaluationCatalogServiceTest {
         TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseVersionEntity.class);
         service = new EvaluationCatalogService(datasetMapper, datasetVersionMapper, datasetCaseMapper,
                 testCaseMapper, testCaseVersionMapper, testCaseEvaluatorMapper, evaluatorMapper,
-                evaluatorVersionMapper, spaceAccessService, taskFeign, evaluatorContractValidator);
+                evaluatorVersionMapper, spaceAccessService, taskFeign, documentFeign, evaluatorContractValidator);
     }
 
     @Test
