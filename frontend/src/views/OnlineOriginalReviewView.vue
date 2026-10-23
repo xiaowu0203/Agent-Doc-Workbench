@@ -107,7 +107,7 @@
           </article>
         </section>
         <OnlineQualityHistoryPanel
-          :key="identity"
+          :key="`${identity}/${saved?.id ?? ''}`"
           :space-id="spaceId"
           :experiment-id="experimentId"
           :context="context"
@@ -283,6 +283,14 @@ const blindness = ref<OnlineBlindness>('UNKNOWN'),
   safetyReason = ref('')
 const prepared = ref<OnlineQualityRequest | null>(null),
   saved = ref<OnlineQualityResult | null>(null)
+watch(saved, (value) => {
+  if (!value) return
+  candidates.value.records = candidates.value.records.map((item) =>
+    item.assignmentId === value.onlineQuality.assignmentId
+      ? { ...item, ownReviewRecorded: true }
+      : item,
+  )
+})
 const ratingDirty = ref(false),
   markdownPreview = ref(false)
 const markdown = new MarkdownIt({ html: false, linkify: false, breaks: true })
@@ -568,6 +576,7 @@ function prepare() {
   try {
     if (rubric.value === '' || !label.value) throw new Error('请主动选择质量等级和质量标签')
     if (unconfirmedRequest.value) throw new Error('上次响应未知，请先核对反馈链')
+    if (!currentHistory.value) throw new Error('反馈链尚未核验，请等待或重新核对反馈链')
     if (
       currentHistory.value?.currentTailFeedbackId &&
       supersedes.value !== currentHistory.value.currentTailFeedbackId

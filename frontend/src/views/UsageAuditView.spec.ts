@@ -6,6 +6,7 @@ import UsageAuditView from './UsageAuditView.vue'
 import * as usageApi from '@/features/usage/api/usage-api'
 import * as taskApi from '@/features/task/api/task-api'
 import * as agentApi from '@/features/agent/api/agent-api'
+import * as evaluationApi from '@/features/evaluation/api/evaluation-api'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS as P } from '@/shared/constants/permissions'
 import type { UsageDashboard } from '@/features/usage/types'
@@ -13,6 +14,7 @@ import type { UsageDashboard } from '@/features/usage/types'
 vi.mock('@/features/usage/api/usage-api')
 vi.mock('@/features/task/api/task-api')
 vi.mock('@/features/agent/api/agent-api')
+vi.mock('@/features/evaluation/api/evaluation-api')
 const wrappers: VueWrapper[] = []
 const summary = {
   hasData: true,
@@ -83,7 +85,11 @@ async function create() {
       plugins: [router],
       stubs: {
         EChartCanvas: true,
-        ElDrawer: true,
+        ElDrawer: {
+          name: 'ElDrawer',
+          props: ['modelValue'],
+          template: '<div v-if="modelValue"><slot /></div>',
+        },
         ElOption: true,
         ElSelect: { name: 'ElSelect', props: ['modelValue'], template: '<div><slot /></div>' },
       },
@@ -154,5 +160,74 @@ describe('用量全局筛选与独立工具分页', () => {
       expect.objectContaining({ executionMode: 'ISOLATED', onlineParticipation: false }),
       expect.any(AbortSignal),
     )
+  })
+})
+
+describe('用量执行的实验下钻', () => {
+  const detail = {
+    task: { id: '81', spaceId: '7', executionMode: 'ISOLATED', onlineExperimentId: null },
+    execution: null,
+    agentName: null,
+  } as Awaited<ReturnType<typeof taskApi.getTaskExecutionDetail>>
+  function permissions(evaluation = true) {
+    useWorkspaceStore().setEffectivePermissions({
+      spaceId: '7',
+      role: null,
+      platformSuperAdmin: false,
+      permissions: [P.USAGE_READ, P.TASK_READ, ...(evaluation ? [P.EVALUATION_READ] : [])],
+    })
+  }
+  async function open(wrapper: VueWrapper) {
+    wrapper.findComponent({ name: 'ElTable' }).vm.$emit('row-click', { id: '81' })
+    await flushPromises()
+  }
+  it('按当前任务核对离线关联，保留长实验 ID', async () => {
+    permissions()
+    vi.mocked(taskApi.getTaskExecutionDetail).mockResolvedValue(detail)
+    vi.mocked(evaluationApi.getEvaluationTaskLink).mockResolvedValue({
+      taskId: '81',
+      spaceId: '7',
+      experimentId: '9007199254740993',
+    } as Awaited<ReturnType<typeof evaluationApi.getEvaluationTaskLink>>)
+    const wrapper = await create()
+    await open(wrapper)
+    expect(wrapper.get('a[href="/spaces/7/evaluation/experiments/9007199254740993"]').text()).toBe(
+      '查看关联离线实验',
+    )
+    expect(evaluationApi.getEvaluationTaskLink).toHaveBeenCalledWith(
+      '7',
+      '81',
+      expect.any(AbortSignal),
+    )
+    permissions(false)
+    await flushPromises()
+    expect(wrapper.find('a[href*="/evaluation/experiments/"]').exists()).toBe(false)
+  })
+  it('没有评估读取权限时不发关联请求', async () => {
+    permissions(false)
+    vi.mocked(taskApi.getTaskExecutionDetail).mockResolvedValue(detail)
+    const wrapper = await create()
+    await open(wrapper)
+    expect(evaluationApi.getEvaluationTaskLink).not.toHaveBeenCalled()
+    expect(wrapper.find('[aria-label="执行关联实验"]').exists()).toBe(false)
+  })
+  it('关闭抽屉后忽略迟到的执行详情', async () => {
+    permissions()
+    let resolve!: (value: typeof detail) => void
+    vi.mocked(taskApi.getTaskExecutionDetail).mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    const wrapper = await create()
+    await open(wrapper)
+    const signal = vi.mocked(taskApi.getTaskExecutionDetail).mock.calls[0]![1]!
+    wrapper.findComponent({ name: 'ElDrawer' }).vm.$emit('update:modelValue', false)
+    await flushPromises()
+    resolve(detail)
+    await flushPromises()
+    expect(signal.aborted).toBe(true)
+    expect(evaluationApi.getEvaluationTaskLink).not.toHaveBeenCalled()
   })
 })

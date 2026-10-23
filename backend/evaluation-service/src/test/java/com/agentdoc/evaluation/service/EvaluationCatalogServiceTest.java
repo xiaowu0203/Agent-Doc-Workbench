@@ -106,6 +106,78 @@ class EvaluationCatalogServiceTest {
                 mismatch.equals("document-hash") ? "other" : "document");
     }
 
+    private void stubExperimentPreview() {
+        var datasetVersion = new EvaluationDatasetVersionEntity();
+        datasetVersion.setId(11L); datasetVersion.setDatasetId(12L); datasetVersion.setSpaceId(9L);
+        datasetVersion.setStatus("PUBLISHED");
+        when(datasetVersionMapper.selectById(11L)).thenReturn(datasetVersion);
+        when(datasetMapper.selectById(12L)).thenReturn(dataset(false));
+        var first = new EvaluationDatasetCaseEntity(); first.setTestCaseVersionId(31L);
+        var second = new EvaluationDatasetCaseEntity(); second.setTestCaseVersionId(33L);
+        when(datasetCaseMapper.selectList(any())).thenReturn(List.of(first, second));
+        var version = sourceVersion(); version.setTestCaseId(32L); version.setStatus("PUBLISHED");
+        version.setSourceExecutionHash("a".repeat(64));
+        var other = sourceVersion(); other.setId(33L); other.setTestCaseId(32L); other.setStatus("PUBLISHED");
+        other.setSourceExecutionHash("a".repeat(64));
+        when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(List.of(version, other));
+        when(testCaseMapper.selectBatchIds(any())).thenReturn(List.of(testCase(false)));
+    }
+
+    @Test
+    void experimentPreviewBatchesCasesAndReadsOnlyOneRepresentativeWithoutWrites() {
+        stubExperimentPreview();
+        when(taskFeign.getReplaySource(100L, 9L)).thenReturn(Result.ok(new ReplaySourceVO(true, null,
+                100L, 101L, 9L, 3L, 100L, 100L, "ORIGINAL", 0, 1, "input", 3, "a".repeat(64), 4L, 4L, "document")));
+        var preview = service.getDatasetExperimentSource(11L);
+        assertThat(preview.sourceConsistent()).isTrue();
+        assertThat(preview.enabledCaseCount()).isEqualTo(2);
+        assertThat(preview.executionSnapshotHash()).isEqualTo("a".repeat(64));
+        assertThat(preview.tokenBudget()).isEqualTo(100L);
+        verify(testCaseVersionMapper).selectBatchIds(List.of(31L, 33L));
+        verify(taskFeign).getReplaySource(100L, 9L);
+        verify(datasetVersionMapper, never()).updateById(any(EvaluationDatasetVersionEntity.class));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"hash", "schema", "space", "archived", "missing"})
+    void experimentPreviewRejectsInconsistentCasesBeforeRemoteRead(String kind) {
+        stubExperimentPreview();
+        var versions = testCaseVersionMapper.selectBatchIds(List.of(31L, 33L));
+        var changed = versions.get(1);
+        if (kind.equals("hash")) changed.setSourceExecutionHash("b".repeat(64));
+        if (kind.equals("schema")) changed.setSourceExecutionSchemaVersion(4);
+        if (kind.equals("space")) changed.setSpaceId(8L);
+        if (kind.equals("archived")) changed.setStatus("ARCHIVED");
+        if (kind.equals("missing")) changed.setSourceTaskId(null);
+        var preview = service.getDatasetExperimentSource(11L);
+        assertThat(preview.sourceConsistent()).isFalse();
+        assertThat(preview.issues()).isNotEmpty();
+        assertThat(preview.sourceTaskId()).isNull();
+        assertThat(preview.executionSnapshotHash()).isNull();
+        verifyNoInteractions(taskFeign, documentFeign);
+    }
+
+    @Test
+    void experimentPreviewRejectsRepresentativeWhoseFrozenIdentityChanged() {
+        stubExperimentPreview();
+        when(taskFeign.getReplaySource(100L, 9L)).thenReturn(Result.ok(sourceProjection("")));
+        var preview = service.getDatasetExperimentSource(11L);
+        assertThat(preview.sourceConsistent()).isFalse();
+        assertThat(preview.issues()).containsExactly("BASELINE_SOURCE_UNAVAILABLE");
+        assertThat(preview.agentId()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {EVALUATION_READ, TASK_READ})
+    void experimentPreviewDeniesBeforeBindingsAndRemoteReads(String permission) {
+        var datasetVersion = new EvaluationDatasetVersionEntity(); datasetVersion.setSpaceId(9L);
+        when(datasetVersionMapper.selectById(11L)).thenReturn(datasetVersion);
+        doAnswer(call -> { if (permission.equals(call.getArgument(1))) throw new BusinessException(403, "denied"); return null; })
+                .when(spaceAccessService).requirePermission(eq(9L), anyString());
+        assertThatThrownBy(() -> service.getDatasetExperimentSource(11L)).hasMessageContaining("denied");
+        verifyNoInteractions(datasetCaseMapper, testCaseVersionMapper, taskFeign, documentFeign);
+    }
+
     @Test
     void sourceTitleIsReadOnlyAndMatchesArchivedVersionFrozenIdentity() {
         var version = sourceVersion();

@@ -8,6 +8,7 @@ import ExperimentCreate from './ExperimentCreate.vue'
 import ExperimentReportPanel from './ExperimentReportPanel.vue'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import * as api from '../api/evaluation-api'
+import * as taskApi from '@/features/task/api/task-api'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS as P } from '@/shared/constants/permissions'
 import { RUN_POLL_INTERVAL } from '../run'
@@ -21,6 +22,7 @@ import type {
   DatasetVersion,
 } from '../types'
 vi.mock('../api/evaluation-api')
+vi.mock('@/features/task/api/task-api')
 const wrappers: VueWrapper[] = []
 const variant: ExperimentVariant = {
   id: '11',
@@ -383,6 +385,20 @@ beforeEach(() => {
   vi.mocked(api.getDatasetCases).mockResolvedValue([{ enabled: true }] as Awaited<
     ReturnType<typeof api.getDatasetCases>
   >)
+  vi.mocked(api.getDatasetExperimentSource).mockResolvedValue({
+    spaceId: '7',
+    datasetVersionId: '40',
+    enabledCaseCount: 1,
+    sourceConsistent: true,
+    issues: [],
+    sourceTaskId: '100',
+    sourceExecutionId: '101',
+    agentId: '3',
+    tokenBudget: 100,
+    executionSnapshotSchemaVersion: 3,
+    executionSnapshotHash: 'a'.repeat(64),
+  })
+  vi.mocked(taskApi.getTaskExecutionDetail).mockRejectedValue(new Error('审计详情暂不可用'))
 })
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
@@ -834,6 +850,47 @@ describe('report facts and compatibility', () => {
   })
 })
 describe('creation idempotency', () => {
+  it('来源快照不一致时显示原因并阻止创建，不读取任何代表执行', async () => {
+    vi.mocked(api.getDatasetExperimentSource).mockResolvedValue({
+      spaceId: '7',
+      datasetVersionId: '40',
+      enabledCaseCount: 1,
+      sourceConsistent: false,
+      issues: ['SOURCE_SNAPSHOT_MISMATCH'],
+      sourceTaskId: null,
+      sourceExecutionId: null,
+      agentId: null,
+      tokenBudget: null,
+      executionSnapshotSchemaVersion: null,
+      executionSnapshotHash: null,
+    })
+    const wrapper = mount(ExperimentCreate, {
+      props: { spaceId: '7', allowed: true, initialVersionId: '40' },
+      global: { stubs: { ElDialog: dialogStub } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('不同的执行配置快照')
+    expect(taskApi.getTaskExecutionDetail).not.toHaveBeenCalled()
+    await wrapper.get('[aria-label="候选 Prompt 1"]').setValue('候选')
+    await button(wrapper, '创建实验')!.trigger('click')
+    expect(api.createExperiment).not.toHaveBeenCalled()
+  })
+  it('执行快照身份不匹配时不展示模型工具内容，保留明确的读取失败', async () => {
+    vi.mocked(taskApi.getTaskExecutionDetail).mockResolvedValue({
+      task: { id: '100', spaceId: '7', agentId: '3' },
+      execution: { id: '999', model: { displayName: '不应展示的模型' } },
+    } as Awaited<ReturnType<typeof taskApi.getTaskExecutionDetail>>)
+    const wrapper = mount(ExperimentCreate, {
+      props: { spaceId: '7', allowed: true, initialVersionId: '40' },
+      global: { stubs: { ElDialog: dialogStub } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('冻结执行配置与来源预览不一致')
+    expect(wrapper.text()).not.toContain('不应展示的模型')
+    expect(taskApi.getTaskExecutionDetail).toHaveBeenCalledTimes(1)
+  })
   it('带入版本显示计划次数，空数据集不能创建实验', async () => {
     const wrapper = mount(ExperimentCreate, {
       props: { spaceId: '7', allowed: true, initialVersionId: String(dataset.id) },

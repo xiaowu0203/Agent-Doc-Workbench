@@ -60,6 +60,20 @@ afterEach(() => {
   vi.useRealTimers()
 })
 describe('线上观察权限与轮询', () => {
+  it('分配读取失败不显示为空，重新读取成功后才显示已核验空态', async () => {
+    vi.mocked(api.searchOnlineAssignments).mockRejectedValueOnce(new Error('分配读取失败'))
+    const { wrapper } = await create()
+    expect(wrapper.text()).toContain('分配读取失败')
+    expect(wrapper.text()).not.toContain('暂无已接受分配')
+    expect(wrapper.text()).toContain('不能判断是否为空')
+    await wrapper
+      .findAll('button')
+      .find((value) => value.text() === '刷新')!
+      .trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('暂无已接受分配')
+    expect(wrapper.text()).not.toContain('分配读取失败')
+  })
   it('停止后报告在事实之前，运行时仍先显示事实', async () => {
     vi.mocked(api.getOnlineExperiment).mockResolvedValue({ ...experiment, status: 'STOPPED' })
     const { wrapper } = await create()

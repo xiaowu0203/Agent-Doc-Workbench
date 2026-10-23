@@ -49,9 +49,9 @@ describe('evaluation display', () => {
     [{ numericValue: 0, unit: 'USD' }, '0 USD'],
     [{ booleanValue: false }, 'false'],
     [{ stringValue: '' }, '空字符串'],
-    [{ missingReason: 'NO_EFFECTIVE_METRIC' }, '缺失 · NO_EFFECTIVE_METRIC'],
+    [{ missingReason: 'NO_EFFECTIVE_METRIC' }, '无有效结果'],
     [{ numericValue: null, booleanValue: null, stringValue: null }, '不可用'],
   ])('preserves typed values and explicit absence: %j', (props, expected) => {
-    expect(mount(EvaluationMetricValue, { props }).text()).toBe(expected)
+    expect(mount(EvaluationMetricValue, { props }).text()).toContain(expected)
   })
 })

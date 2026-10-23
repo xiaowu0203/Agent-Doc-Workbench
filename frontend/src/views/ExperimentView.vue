@@ -14,7 +14,9 @@
           </template>
           <template v-else>{{ resourceId ? `离线实验 #${resourceId}` : '离线实验列表' }}</template>
         </h2>
-        <p v-if="resourceId">实验 #{{ resourceId }}</p>
+        <p v-if="resourceId">
+          实验 #{{ resourceId }} <CopyButton :value="resourceId" label="实验 ID" />
+        </p>
         <p>在冻结数据集上比较 Baseline 与 Prompt 候选；不修改生产 Agent，不分配线上流量。</p>
       </div>
       <div class="actions">
@@ -77,7 +79,7 @@
             <thead>
               <tr>
                 <th>实验 / 冻结来源</th>
-                <th>状态 / Variant</th>
+                <th>状态 / 配置组</th>
                 <th>授权 Token / 结论</th>
                 <th>时间</th>
               </tr>
@@ -95,7 +97,9 @@
                 </td>
                 <td>
                   <EvaluationStatusTag domain="experiment" :status="item.status" />
-                  <p>{{ item.linkedRunCount ?? '未提供' }} Run / {{ item.variantCount }} Variant</p>
+                  <p>
+                    {{ item.linkedRunCount ?? '未提供' }} 个运行 / {{ item.variantCount }} 个配置组
+                  </p>
                   <p v-if="item.failureCode">{{ item.failureCode }}</p>
                 </td>
                 <td>
@@ -398,6 +402,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { normalizeApiError } from '@/api/errors'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
 import EvaluationSourceTitle from '@/features/evaluation/components/EvaluationSourceTitle.vue'
 import ExperimentCreate from '@/features/evaluation/components/ExperimentCreate.vue'
@@ -1040,7 +1045,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .experiment {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-4);
+}
+.experiment > * {
+  min-width: 0;
 }
 .experiment-header {
   display: flex;

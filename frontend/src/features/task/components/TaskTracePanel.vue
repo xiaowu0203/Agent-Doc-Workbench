@@ -396,7 +396,13 @@ onBeforeUnmount(() => controller?.abort())
 .trace-main,
 .trace-side {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-4);
+  min-width: 0;
+}
+.trace-panel > *,
+.trace-main > *,
+.trace-side > * {
   min-width: 0;
 }
 .trace-heading {

@@ -39,6 +39,9 @@ export interface OnlineExperiment extends OnlineSummary {
     mdeAbsoluteRatio: string
     mdeReason: string
     humanQualityRequired: boolean
+    minDocumentsPerGroup?: number
+    minCoverageBps?: number
+    minBlindedCoverageBps?: number
   } | null
   budgetPlan: Record<string, unknown> | null
   windowPlan: Record<string, unknown> | null

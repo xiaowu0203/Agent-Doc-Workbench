@@ -77,10 +77,9 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach((item) => item.unmount()))
 describe('隐藏反馈更正链', () => {
-  it('明确核对后分页显示更正顺序，以真实链尾追加，0分有效', async () => {
+  it('自动核对后分页显示更正顺序，以真实链尾追加，0分有效', async () => {
     const wrapper = create()
-    expect(api.searchOnlineQualityHistory).not.toHaveBeenCalled()
-    await wrapper.get('button').trigger('click')
+    expect(api.searchOnlineQualityHistory).toHaveBeenCalledTimes(1)
     await flushPromises()
     expect(wrapper.findAll('ol > li')).toHaveLength(10)
     expect(wrapper.text()).toContain('当次链尾 #90')
@@ -141,10 +140,10 @@ describe('隐藏反馈更正链', () => {
         }),
     )
     const wrapper = create()
-    await wrapper.get('button').trigger('click')
     const signal = vi.mocked(api.searchOnlineQualityHistory).mock.calls[0]![4]!
+    const previousResolve = resolve
     await wrapper.setProps({ experimentId: '11' })
-    resolve(history())
+    previousResolve(history())
     await flushPromises()
     expect(signal.aborted).toBe(true)
     expect(wrapper.emitted('verified')).toBeUndefined()

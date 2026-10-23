@@ -2,7 +2,9 @@
   <section class="result-detail" aria-label="评估结果详情">
     <header>
       <h4>{{ summary.evaluatorName || '评估器名称不可用' }} · 评价结果</h4>
-      <p>Result #{{ summary.id }}</p>
+      <p>
+        评价结果 #{{ summary.id }} <CopyButton :value="String(summary.id)" label="评价结果 ID" />
+      </p>
       <EvaluationStatusTag domain="result" :status="summary.status" />
       <p>
         评价尝试 {{ summary.evaluationAttemptNo }}
@@ -43,11 +45,24 @@
             <tbody>
               <tr v-for="metric in detail.metrics" :key="String(metric.id)">
                 <td>
-                  {{ metricLabel(metric.metricKey)
-                  }}<small
-                    >{{ metric.metricKey }} · #{{ metric.id }} · 契约
-                    {{ metric.contractVersion ?? '不可用' }}</small
-                  >
+                  {{ metricLabel(metric.metricKey) }}
+                  <details>
+                    <summary>指标身份与原值</summary>
+                    <small
+                      >{{ metric.metricKey }}
+                      <CopyButton :value="metric.metricKey" label="指标 key"
+                    /></small>
+                    <small
+                      >指标 #{{ metric.id }} <CopyButton :value="String(metric.id)" label="指标 ID"
+                    /></small>
+                    <small>契约 {{ metric.contractVersion ?? '不可用' }}</small>
+                    <small
+                      >原值：{{
+                        metric.numericValue ?? metric.booleanValue ?? metric.stringValue ?? '未提供'
+                      }}
+                      {{ metric.unit || '' }}</small
+                    >
+                  </details>
                 </td>
                 <td>
                   <EvaluationMetricValue
@@ -134,6 +149,7 @@ import { metricLabel } from '../display'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
 import { getEvaluationResult } from '../api/evaluation-api'
 import type { EvaluationResultDetail, EvaluationResultSummary } from '../types'

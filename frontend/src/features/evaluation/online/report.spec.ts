@@ -132,6 +132,34 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('固定线上报告和人工决定', () => {
+  it('门槛取冻结分析计划，缺失保持未知，不从当前实验推算', async () => {
+    vi.mocked(api.getOnlineReport).mockResolvedValue({
+      ...frozen,
+      report: {
+        ...frozen.report!,
+        payload: {
+          ...frozen.report!.payload,
+          analysisPlan: {
+            ...experiment.analysisPlan!,
+            minDocumentsPerGroup: 40,
+            minCoverageBps: 8500,
+            minBlindedCoverageBps: 9000,
+            humanQualityRequired: true,
+          },
+        },
+      },
+    })
+    const wrapper = create()
+    await load(wrapper, false)
+    const gate = wrapper.get('[aria-label="冻结报告门槛对照"]')
+    expect(gate.text()).toContain('每组至少 40 个')
+    expect(gate.text()).toContain('每组至少 85%')
+    expect(gate.text()).toContain('每组至少 90%')
+    vi.mocked(api.getOnlineReport).mockResolvedValue(frozen)
+    await load(wrapper)
+    expect(wrapper.get('[aria-label="冻结报告门槛对照"]').text()).toContain('未知')
+    expect(wrapper.get('[aria-label="冻结报告门槛对照"]').text()).not.toContain('每组至少 85%')
+  })
   it('既有决定依据独立于当前报告，明确不同版本并可读取原依据', async () => {
     const wrapper = create()
     await flushPromises()

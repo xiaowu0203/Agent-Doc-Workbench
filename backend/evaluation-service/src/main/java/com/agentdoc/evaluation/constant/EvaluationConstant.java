@@ -16,6 +16,9 @@ public final class EvaluationConstant {
      */
     public static final int CONTENT_HASH_SCHEMA_VERSION = 1;
 
+    /** Prompt 离线实验支持的来源执行快照协议。 */
+    public static final int EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION = 3;
+
     /**
      * 评估指标契约版本号，用于指标结构、计算逻辑版本兼容
      */

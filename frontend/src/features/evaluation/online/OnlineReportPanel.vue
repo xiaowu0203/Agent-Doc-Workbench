@@ -24,9 +24,7 @@
           report.revision !== experiment.decisionReportRevision
         "
       >
-        当前查看 v{{ report.revision }}，与既有决定依据 v{{
-          experiment.decisionReportRevision
-        }}
+        当前查看 v{{ report.revision }}，与既有决定依据 v{{ experiment.decisionReportRevision }}
         不同；当前版本不会替换决定依据。
       </p>
       <p
@@ -133,9 +131,38 @@
       </p>
       <ul>
         <li v-for="code in payload.decisionEligibility.reasonCodes" :key="code">
-          {{ onlineIssue(code) }}
+          {{ reportIssue(code) }}
         </li>
       </ul>
+      <section aria-label="冻结报告门槛对照">
+        <h4>样本与覆盖门槛</h4>
+        <p>
+          当前值与门槛均来自此版冻结报告；未提供门槛时显示未知。达到样本门槛不改变工程验证模式。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>检查项</th>
+                <th>基线</th>
+                <th>候选</th>
+                <th>冻结门槛</th>
+                <th>报告说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="gate in coverageGates" :key="gate.key">
+                <th>{{ gate.label }}</th>
+                <td v-for="group in groups" :key="group">
+                  {{ formatMetricNumber(payload.groups[group][gate.key], gate.unit) }}
+                </td>
+                <td>{{ gate.requirement }}</td>
+                <td>{{ gate.reason }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section class="report-summary" aria-label="质量成本与耗时概览">
         <h4>质量、成本与耗时</h4>
         <p>以每文档首个接受任务为单位，缺失不填零；延迟差不能直接归因为 Prompt。</p>
@@ -599,6 +626,54 @@ const props = defineProps<{
 const emit = defineEmits<{ decided: []; loaded: [revision: number] }>()
 const groups = ['BASELINE', 'CANDIDATE'] as const,
   blindnessGroups = ['BLINDED', 'NON_BLINDED', 'UNKNOWN']
+function coverageRequirement(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10000
+    ? `每组至少 ${formatMetricNumber(value / 10000, 'ratio')}`
+    : '未知'
+}
+function reportIssue(code: string) {
+  const reasons: Record<string, string> = {
+    DOCUMENT_SAMPLE_INSUFFICIENT: '至少一组独立参与文档数未达到冻结门槛',
+    PRIMARY_COVERAGE_INSUFFICIENT: '至少一组主规则有效覆盖未达到冻结门槛',
+    BLINDED_QUALITY_COVERAGE_INSUFFICIENT: '至少一组有效盲态原始质量覆盖未达到冻结门槛',
+  }
+  return reasons[code] || onlineIssue(code)
+}
+const coverageGates = computed(() => {
+  const plan = payload.value?.analysisPlan
+  const reasons = payload.value?.decisionEligibility.reasonCodes || []
+  const reason = (code: string) =>
+    reasons.includes(code) ? reportIssue(code) : '本报告未列为此项阻塞；仍需核对整体结论。'
+  return [
+    {
+      key: 'participatingDocumentCount',
+      label: '独立参与文档',
+      unit: 'count',
+      requirement:
+        Number.isSafeInteger(plan?.minDocumentsPerGroup) && plan!.minDocumentsPerGroup! > 0
+          ? `每组至少 ${plan!.minDocumentsPerGroup} 个`
+          : '未知',
+      reason: reason('DOCUMENT_SAMPLE_INSUFFICIENT'),
+    },
+    {
+      key: 'primaryValidCoverage',
+      label: '主规则有效覆盖',
+      unit: 'ratio',
+      requirement: coverageRequirement(plan?.minCoverageBps),
+      reason: reason('PRIMARY_COVERAGE_INSUFFICIENT'),
+    },
+    {
+      key: 'blindedQualityCoverage',
+      label: '有效盲态原始质量覆盖',
+      unit: 'ratio',
+      requirement:
+        plan?.humanQualityRequired === false
+          ? '本计划未要求'
+          : coverageRequirement(plan?.minBlindedCoverageBps),
+      reason: reason('BLINDED_QUALITY_COVERAGE_INSUFFICIENT'),
+    },
+  ]
+})
 const primaryRows = [
   ['rangeDocumentCount', '范围文档数'],
   ['participatingDocumentCount', '独立参与文档'],
@@ -981,7 +1056,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .report-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  min-width: 0;
+}
+.report-panel > * {
   min-width: 0;
 }
 .row {

@@ -28,6 +28,7 @@ import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseSourceVO;
 import com.agentdoc.evaluation.service.EvaluationCatalogService;
+import com.agentdoc.evaluation.pojo.vo.DatasetExperimentSourceVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -130,6 +131,12 @@ public class EvaluationCatalogController {
     public Result<DatasetVersionVO> getDatasetVersion(
             @Parameter(description = "数据集版本ID") @PathVariable Long id) {
         return Result.ok(catalogService.getDatasetVersion(id));
+    }
+
+    @Operation(summary = "核对离线实验的冻结来源配置", description = "仅核对发布来源一致性，不代替创建和启动时动态预检")
+    @GetMapping("/dataset-versions/{id}/experiment-source")
+    public Result<DatasetExperimentSourceVO> experimentSource(@PathVariable Long id) {
+        return Result.ok(catalogService.getDatasetExperimentSource(id));
     }
 
     @Operation(summary = "归档数据集版本", description = "软归档指定数据集版本，已归档版本不能再被选为评估运行基线")

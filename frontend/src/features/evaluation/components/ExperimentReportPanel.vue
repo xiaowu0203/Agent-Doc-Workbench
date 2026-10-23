@@ -697,7 +697,11 @@ watch(
 .report-panel {
   min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-4);
+}
+.report-panel > * {
+  min-width: 0;
 }
 .report-overview {
   display: grid;

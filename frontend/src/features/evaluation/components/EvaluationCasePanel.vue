@@ -7,7 +7,9 @@
           · v{{ caseRun.testCaseVersionNo }}</template
         >
       </h3>
-      <p>用例运行 #{{ caseRun.id }}</p>
+      <p>
+        用例运行 #{{ caseRun.id }} <CopyButton :value="String(caseRun.id)" label="用例运行 ID" />
+      </p>
       <p>
         来源用例版本 #{{ caseRun.testCaseVersionId || '不可用' }}；默认查看当前尝试，历史尝试只读。
       </p>
@@ -168,6 +170,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElButton, ElPagination } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
 import { searchCaseAttempts } from '../api/evaluation-api'
 import type {

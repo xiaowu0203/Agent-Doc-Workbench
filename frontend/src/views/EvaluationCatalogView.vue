@@ -65,7 +65,11 @@
         <el-table :data="page.records" class="catalog-page__table" empty-text="暂无匹配资源">
           <template #empty>
             <p class="catalog-page__empty">
-              没有匹配的{{ label }}。{{
+              {{
+                keyword.trim() || archiveFilter !== 'active'
+                  ? `没有匹配的${label}，请调整查询条件。`
+                  : `当前没有未归档的${label}。`
+              }}{{
                 canManage
                   ? `可以新建${label}，再创建草稿版本。`
                   : '请调整查询条件，或联系空间管理者添加资源。'
@@ -138,7 +142,11 @@
                 "
                 >{{ row.versionSummary?.publishedBindingCount ?? '—' }}</span
               >
-              <p><RouterLink :to="resourcePath(row.id)">管理版本与绑定</RouterLink></p>
+              <p>
+                <RouterLink :to="resourcePath(row.id)">{{
+                  canManage ? '管理版本与绑定' : '查看版本与绑定'
+                }}</RouterLink>
+              </p>
             </template>
           </el-table-column>
         </el-table>

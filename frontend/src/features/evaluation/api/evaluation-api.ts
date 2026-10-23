@@ -3,6 +3,7 @@ import type { EntityId } from '@/features/workspace/types'
 import type { EvaluationTaskLink } from '@/features/task/engineering-types'
 import type {
   DatasetCaseBinding,
+  DatasetExperimentSource,
   CaseVersionName,
   DatasetCaseBindingsRequest,
   DatasetVersion,
@@ -96,6 +97,17 @@ export function getDataset(id: EntityId, signal?: AbortSignal): Promise<Evaluati
   return request<EvaluationDataset>({
     method: 'GET',
     url: `/evaluation/datasets/${id}`,
+    signal,
+  })
+}
+
+export function getDatasetExperimentSource(
+  id: EntityId,
+  signal?: AbortSignal,
+): Promise<DatasetExperimentSource> {
+  return request<DatasetExperimentSource>({
+    method: 'GET',
+    url: `/evaluation/dataset-versions/${id}/experiment-source`,
     signal,
   })
 }

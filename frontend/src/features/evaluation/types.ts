@@ -320,6 +320,20 @@ export interface DatasetCaseBinding {
   enabled: boolean
 }
 
+export interface DatasetExperimentSource {
+  spaceId: EntityId
+  datasetVersionId: EntityId
+  enabledCaseCount: number
+  sourceConsistent: boolean
+  issues: string[]
+  sourceTaskId: EntityId | null
+  sourceExecutionId: EntityId | null
+  agentId: EntityId | null
+  tokenBudget: number | string | null
+  executionSnapshotSchemaVersion: number | null
+  executionSnapshotHash: string | null
+}
+
 export interface DatasetVersion {
   id: EntityId
   datasetId: EntityId | null

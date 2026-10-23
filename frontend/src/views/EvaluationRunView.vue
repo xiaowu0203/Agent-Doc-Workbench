@@ -14,7 +14,9 @@
           </template>
           <template v-else>{{ resourceId ? `评估运行 #${resourceId}` : '评估运行列表' }}</template>
         </h2>
-        <p v-if="resourceId">运行 #{{ resourceId }}</p>
+        <p v-if="resourceId">
+          运行 #{{ resourceId }} <CopyButton :value="resourceId" label="运行 ID" />
+        </p>
         <p>每次回放保留独立执行尝试；每次评价保留独立评价结果，历史记录保持只读。</p>
       </div>
       <div class="run-actions">
@@ -82,7 +84,11 @@
         :loading="loading"
         :error="error"
         :empty="!list.records.length"
-        empty-text="暂无符合条件的评估运行。可调整筛选或创建运行。"
+        :empty-text="
+          statusFilter || sourceKind || sourceId || createdFrom || createdTo
+            ? '当前筛选没有匹配的评估运行，请调整条件后查询。'
+            : '尚未创建评估运行，请选择已发布的用例或数据集版本。'
+        "
         @retry="loadList(list.pageNum)"
       >
         <div class="run-table-wrap">
@@ -107,7 +113,7 @@
                   </RouterLink>
                   <p>运行 #{{ row.id }}</p>
                   <small v-if="row.experimentVariantId"
-                    >Experiment Variant #{{ row.experimentVariantId }}</small
+                    >实验配置组 #{{ row.experimentVariantId }}</small
                   >
                 </td>
                 <td>
@@ -251,7 +257,7 @@
             @retry-evaluation="openAction('evaluation', $event)"
             @feedback-saved="loadDetail(true)"
           />
-          <p v-else>请选择一个用例查看 Attempt 和评估结果。</p>
+          <p v-else>请选择一个用例查看执行尝试和评价结果。</p>
         </div>
       </template>
     </DataState>
@@ -305,6 +311,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'

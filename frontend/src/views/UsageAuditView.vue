@@ -412,6 +412,34 @@
               <dd>{{ executionDetail.execution?.externalMcps.length || 0 }}</dd>
             </div>
           </dl>
+          <section v-if="canReadExperiments" aria-label="执行关联实验">
+            <h3>关联实验</h3>
+            <p v-if="experimentLinkLoading" role="status">正在核对离线实验关联……</p>
+            <p v-else-if="experimentLinkError" role="alert">
+              {{ experimentLinkError }}
+              <el-button link @click="openExecution({ id: selectedTaskId })"
+                >重试关联读取</el-button
+              >
+            </p>
+            <RouterLink v-if="onlineExperimentPath" :to="onlineExperimentPath"
+              >查看关联线上实验</RouterLink
+            >
+            <RouterLink
+              v-if="evaluationLink?.experimentId"
+              :to="`/spaces/${evaluationLink.spaceId}/evaluation/experiments/${evaluationLink.experimentId}`"
+              >查看关联离线实验</RouterLink
+            >
+            <p
+              v-if="
+                !experimentLinkLoading &&
+                !experimentLinkError &&
+                !onlineExperimentPath &&
+                !evaluationLink?.experimentId
+              "
+            >
+              此执行没有已确认的实验关联。
+            </p>
+          </section>
           <section>
             <h3>工具调用（{{ executionDetail.execution?.toolCalls.length || 0 }}）</h3>
             <div
@@ -474,6 +502,8 @@ import { normalizeApiError } from '@/api/errors'
 import { listAgents, listModels, type AgentOption } from '@/features/agent/api/agent-api'
 import type { ModelOption } from '@/features/agent/types'
 import { getTaskExecutionDetail, searchTasks } from '@/features/task/api/task-api'
+import { getEvaluationTaskLink } from '@/features/evaluation/api/evaluation-api'
+import type { EvaluationTaskLink } from '@/features/task/engineering-types'
 import type { TaskExecutionDetail, TaskListItem, TaskPage, TaskStatus } from '@/features/task/types'
 import {
   exportUsageRecords,
@@ -508,6 +538,24 @@ interface UsageToolCallRow extends ToolCallItem {
 
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
+const canReadExperiments = computed(() =>
+  [SPACE_PERMISSIONS.TASK_READ, SPACE_PERMISSIONS.EVALUATION_READ].every((permission) =>
+    workspaceStore.hasPermission(permission),
+  ),
+)
+const evaluationLink = ref<EvaluationTaskLink | null>(null)
+const experimentLinkLoading = ref(false),
+  experimentLinkError = ref('')
+let detailController: AbortController | undefined
+const onlineExperimentPath = computed(() => {
+  const task = executionDetail.value?.task
+  return canReadExperiments.value &&
+    task &&
+    String(task.spaceId) === String(workspaceStore.currentSpaceId) &&
+    /^[1-9]\d{0,18}$/.test(String(task.onlineExperimentId || ''))
+    ? `/spaces/${task.spaceId}/evaluation/online-experiments/${task.onlineExperimentId}`
+    : null
+})
 function auditTarget(row: AuditLogItem) {
   if (
     String(row.spaceId) !== String(workspaceStore.currentSpaceId) ||
@@ -1047,19 +1095,70 @@ async function loadToolCalls() {
 
 async function openExecution(row: unknown) {
   const task = row as Pick<TaskListItem, 'id'>
+  detailController?.abort()
+  const current = new AbortController()
+  detailController = current
+  const spaceId = String(workspaceStore.currentSpaceId)
   selectedTaskId.value = task.id
   drawerVisible.value = true
   detailLoading.value = true
   detailError.value = ''
   executionDetail.value = null
+  evaluationLink.value = null
+  experimentLinkError.value = ''
+  experimentLinkLoading.value = false
   try {
-    executionDetail.value = await getTaskExecutionDetail(task.id)
+    const detail = await getTaskExecutionDetail(task.id, current.signal)
+    if (current.signal.aborted) return
+    if (String(detail.task.id) !== String(task.id) || String(detail.task.spaceId) !== spaceId)
+      throw new Error('执行详情不属于当前任务或空间')
+    executionDetail.value = detail
+    if (canReadExperiments.value && detail.task.executionMode === 'ISOLATED') {
+      experimentLinkLoading.value = true
+      try {
+        const link = await getEvaluationTaskLink(spaceId, task.id, current.signal)
+        if (current.signal.aborted) return
+        if (
+          link &&
+          (String(link.taskId) !== String(task.id) ||
+            String(link.spaceId) !== spaceId ||
+            (link.experimentId != null && !/^[1-9]\d{0,18}$/.test(String(link.experimentId))))
+        )
+          throw new Error('实验关联不属于当前执行')
+        evaluationLink.value = link
+      } catch (error) {
+        if (!current.signal.aborted) experimentLinkError.value = normalizeApiError(error).message
+      } finally {
+        if (!current.signal.aborted) experimentLinkLoading.value = false
+      }
+    }
   } catch (error) {
-    detailError.value = normalizeApiError(error).message
+    if (!current.signal.aborted) detailError.value = normalizeApiError(error).message
   } finally {
-    detailLoading.value = false
+    if (!current.signal.aborted) detailLoading.value = false
   }
 }
+
+watch(
+  () => [workspaceStore.currentSpaceId, canReadExperiments.value],
+  () => {
+    detailController?.abort()
+    evaluationLink.value = null
+    experimentLinkLoading.value = false
+    experimentLinkError.value = ''
+    detailLoading.value = false
+    if (String(executionDetail.value?.task.spaceId) !== String(workspaceStore.currentSpaceId))
+      executionDetail.value = null
+  },
+)
+watch(drawerVisible, (visible) => {
+  if (!visible) {
+    detailController?.abort()
+    executionDetail.value = null
+    evaluationLink.value = null
+  }
+})
+onBeforeUnmount(() => detailController?.abort())
 
 function goToTaskDetail() {
   if (selectedTaskId.value === null || workspaceStore.currentSpaceId === null) return
@@ -1216,7 +1315,11 @@ function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 
 <style scoped>
 .usage-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-5);
+}
+.usage-page > * {
+  min-width: 0;
 }
 .usage-breadcrumb {
   color: var(--adw-text-tertiary);
@@ -1459,6 +1562,11 @@ function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 
   }
   .insight-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 900px) {
+  .metric-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 720px) {

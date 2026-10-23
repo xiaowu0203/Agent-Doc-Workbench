@@ -294,7 +294,15 @@
                     </td>
                   </tr>
                   <tr v-if="!assignments.records.length">
-                    <td colspan="5">暂无已接受分配。</td>
+                    <td colspan="5">
+                      {{
+                        assignmentLoading
+                          ? '正在读取分配记录…'
+                          : assignmentError
+                            ? '分配记录暂不可用，不能判断是否为空。'
+                            : '暂无已接受分配。'
+                      }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -474,6 +482,7 @@ const loading = ref(false),
   pollError = ref(''),
   preflightError = ref(''),
   assignmentError = ref(''),
+  assignmentLoading = ref(false),
   statusFilter = ref(''),
   creating = ref(false)
 let read: AbortController | undefined,
@@ -524,6 +533,7 @@ async function loadAssignments(pageNum: number) {
   const controller = new AbortController()
   assignmentRead = controller
   assignmentError.value = ''
+  assignmentLoading.value = true
   try {
     const value = await searchOnlineAssignments(
       props.resourceId,
@@ -544,6 +554,8 @@ async function loadAssignments(pageNum: number) {
       assignmentError.value = normalizeApiError(e).message
       assignments.value = emptyPage()
     }
+  } finally {
+    if (assignmentRead === controller) assignmentLoading.value = false
   }
 }
 async function loadTaskNames(rows: OnlineAssignment[]) {
@@ -704,6 +716,8 @@ watch(
     clearProof()
     list.value = emptyPage()
     assignments.value = emptyPage()
+    assignmentError.value = ''
+    assignmentLoading.value = false
     experiment.value = null
     factsReadAt.value = ''
     nameRead?.abort()
@@ -738,7 +752,11 @@ onBeforeUnmount(() => {
 .online-experiment {
   min-width: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
+}
+.online-experiment > * {
+  min-width: 0;
 }
 .detail-navigation {
   display: flex;

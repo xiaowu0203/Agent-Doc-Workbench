@@ -56,6 +56,8 @@ import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseSourceVO;
+import com.agentdoc.evaluation.pojo.vo.DatasetExperimentSourceVO;
+import com.agentdoc.evaluation.enums.ExperimentSourceIssue;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -71,6 +73,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.ArrayList;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -81,6 +84,7 @@ import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_EVALUATORS;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_SCHEMA_VERSION;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION;
 
 /**
  * Evaluation 目录服务
@@ -287,6 +291,65 @@ public class EvaluationCatalogService {
         EvaluationDatasetVersionEntity entity = datasetVersionMapper.selectById(id);
         requireReadable(entity == null ? null : entity.getSpaceId(), "DatasetVersion");
         return DatasetVersionVO.from(entity);
+    }
+
+    /** 批量核对发布用例的冻结配置，只读取一次代表来源；全部来源动态资格仍由创建/启动预检检查。 */
+    public DatasetExperimentSourceVO getDatasetExperimentSource(Long id) {
+        var version = datasetVersionMapper.selectById(id);
+        requireReadable(version == null ? null : version.getSpaceId(), "DatasetVersion");
+        spaceAccessService.requirePermission(version.getSpaceId(), TASK_READ);
+        var dataset = requireDataset(version.getDatasetId());
+        if (!Objects.equals(dataset.getSpaceId(), version.getSpaceId())
+                || !EvaluationVersionStatus.PUBLISHED.name().equals(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "数据集版本未发布或归属不一致");
+        }
+        var bindings = datasetCaseMapper.selectList(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
+                .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, id)
+                .eq(EvaluationDatasetCaseEntity::getEnabled, true)
+                .orderByAsc(EvaluationDatasetCaseEntity::getSortOrder, EvaluationDatasetCaseEntity::getId));
+        if (bindings.isEmpty()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "数据集没有启用用例");
+        }
+        var versions = testCaseVersionMapper.selectBatchIds(bindings.stream()
+                .map(EvaluationDatasetCaseEntity::getTestCaseVersionId).toList());
+        var parents = versions.isEmpty() ? Map.<Long, EvaluationTestCaseEntity>of()
+                : testCaseMapper.selectBatchIds(versions.stream().map(EvaluationTestCaseVersionEntity::getTestCaseId).distinct().toList())
+                    .stream().collect(Collectors.toMap(EvaluationTestCaseEntity::getId, Function.identity()));
+        var issues = new ArrayList<String>();
+        if (versions.size() != bindings.size() || versions.stream().anyMatch(item -> {
+            var parent = parents.get(item.getTestCaseId());
+            return !Objects.equals(item.getSpaceId(), version.getSpaceId())
+                    || !EvaluationVersionStatus.PUBLISHED.name().equals(item.getStatus()) || parent == null
+                    || !Objects.equals(parent.getSpaceId(), version.getSpaceId()) || Boolean.TRUE.equals(parent.getArchived());
+        })) { issues.add(ExperimentSourceIssue.CASE_UNAVAILABLE.name()); }
+        if (versions.stream().anyMatch(item -> item.getSourceTaskId() == null || item.getSourceExecutionId() == null
+                || !Integer.valueOf(EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION).equals(item.getSourceExecutionSchemaVersion())
+                || item.getSourceExecutionHash() == null || !item.getSourceExecutionHash().matches("[0-9a-f]{64}"))) {
+            issues.add(ExperimentSourceIssue.SOURCE_IDENTITY_MISSING.name());
+        }
+        if (versions.stream().map(EvaluationTestCaseVersionEntity::getSourceExecutionHash).distinct().count() > 1) {
+            issues.add(ExperimentSourceIssue.SOURCE_SNAPSHOT_MISMATCH.name());
+        }
+        ReplaySourceVO source = null;
+        if (issues.isEmpty()) {
+            var representative = versions.stream().filter(item -> Objects.equals(item.getId(), bindings.getFirst().getTestCaseVersionId())).findFirst().orElseThrow();
+            source = requireData(taskFeign.getReplaySource(representative.getSourceTaskId(), version.getSpaceId()));
+            if (!source.replayable() || !Objects.equals(source.spaceId(), version.getSpaceId())
+                    || !Objects.equals(source.sourceTaskId(), representative.getSourceTaskId())
+                    || !Objects.equals(source.sourceExecutionId(), representative.getSourceExecutionId())
+                    || !Objects.equals(source.executionSnapshotSchemaVersion(), representative.getSourceExecutionSchemaVersion())
+                    || !Objects.equals(source.executionSnapshotHash(), representative.getSourceExecutionHash())
+                    || !Objects.equals(source.inputSnapshotSchemaVersion(), representative.getSourceInputSchemaVersion())
+                    || !Objects.equals(source.inputSnapshotHash(), representative.getSourceInputHash())
+                    || !Objects.equals(source.documentVersionSnapshot(), representative.getDocumentVersionSnapshot())
+                    || !Objects.equals(source.documentContentSha256(), representative.getDocumentContentSha256())
+                    || source.agentId() == null) { issues.add(ExperimentSourceIssue.BASELINE_SOURCE_UNAVAILABLE.name()); }
+        }
+        boolean consistent = issues.isEmpty();
+        return new DatasetExperimentSourceVO(version.getSpaceId(), id, bindings.size(), consistent, List.copyOf(issues),
+                consistent ? source.sourceTaskId() : null, consistent ? source.sourceExecutionId() : null,
+                consistent ? source.agentId() : null, consistent ? source.tokenBudget() : null,
+                consistent ? source.executionSnapshotSchemaVersion() : null, consistent ? source.executionSnapshotHash() : null);
     }
 
     public EvaluationTestCaseVO getTestCase(Long id) {

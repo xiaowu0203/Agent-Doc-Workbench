@@ -85,9 +85,95 @@ beforeEach(() => {
     pageSize: 10,
   })
   vi.mocked(api.getOnlineReviewContext).mockResolvedValue(original)
+  vi.mocked(api.searchOnlineQualityHistory).mockImplementation(
+    async (_id, _assignment, target) => ({
+      schemaVersion: 2,
+      spaceId: '7',
+      experimentId: '10',
+      assignmentId: original.assignmentId,
+      taskId: '81',
+      executionId: '82',
+      originalEvidenceType: target === 'TEXT' ? 'ORIGINAL_TEXT' : 'ORIGINAL_CHANGE_SET',
+      originalEvidenceId: target === 'TEXT' ? '83' : original.assignmentId,
+      originalEvidenceHash: hash,
+      currentTailFeedbackId: null,
+      currentTailBlindness: null,
+      lastOwnFeedback: null,
+      history: { records: [], total: 0, pageNum: 1, pageSize: 10 },
+    }),
+  )
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('隐藏分组原始评价', () => {
+  it('保存成功后重新核对反馈链并更新本人记录状态，不保留首评空态', async () => {
+    const emptyHistory = vi.mocked(api.searchOnlineQualityHistory).getMockImplementation()!
+    const initial = await emptyHistory('10', original.assignmentId, 'TEXT', 1)
+    const own: OnlineQualityHistoryItem = {
+      id: '9007199254740993',
+      sourceHash: hash,
+      supersedesFeedbackId: null,
+      rubricScore: 0,
+      label: 'NEEDS_CHANGES',
+      blindness: 'NON_BLINDED',
+      declaredBlindness: 'BLINDED',
+      ownFeedback: true,
+      comment: '首评理由',
+      reasonCodes: [],
+      seriousSafetyEvent: false,
+      safetyReason: null,
+      createdAt: null,
+    }
+    vi.mocked(api.searchOnlineQualityHistory)
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue({
+        ...initial,
+        currentTailFeedbackId: own.id,
+        currentTailBlindness: 'NON_BLINDED',
+        lastOwnFeedback: own,
+        history: { records: [own], total: 1, pageNum: 1, pageSize: 10 },
+      })
+    vi.mocked(api.createOnlineQuality).mockImplementation(async (payload) => ({
+      id: own.id,
+      spaceId: '7',
+      taskId: '81',
+      executionId: '82',
+      onlineQuality: {
+        ...payload.onlineQuality,
+        blindness: 'NON_BLINDED',
+        declaredBlindness: 'BLINDED',
+      },
+    }))
+    const wrapper = await create()
+    await read(wrapper)
+    expect(wrapper.text()).toContain('首评模式')
+    await wrapper.get('[aria-label="评价原因"]').setValue('首评理由')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    await button(wrapper, '确认评价').trigger('click')
+    await flushPromises()
+    expect(api.searchOnlineQualityHistory).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).not.toContain('首评模式')
+    expect(wrapper.text()).toContain(`更正模式：当次链尾 #${own.id}`)
+    expect(wrapper.text()).toContain('本人有历史评审记录')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.text()).toContain('当前评分与原因已经保存')
+    expect(api.createOnlineQuality).toHaveBeenCalledTimes(1)
+  })
+  it('自动反馈链核对失败时不能准备评分，重试成功后可继续', async () => {
+    const empty = vi.mocked(api.searchOnlineQualityHistory).getMockImplementation()!
+    vi.mocked(api.searchOnlineQualityHistory)
+      .mockRejectedValueOnce(new Error('读取失败'))
+      .mockImplementation(empty)
+    const wrapper = await create()
+    await read(wrapper)
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.text()).toContain('反馈链尚未核验')
+    expect(wrapper.find('[aria-label="原始评价确认"]').exists()).toBe(false)
+    await button(wrapper, '核对反馈链').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.find('[aria-label="原始评价确认"]').exists()).toBe(true)
+    expect(api.createOnlineQuality).not.toHaveBeenCalled()
+  })
   it('候选仅显示本人历史记录状态，缺字段保持未知且不提前读取原始产物', async () => {
     vi.mocked(api.searchOnlineReviewAssignments).mockResolvedValue({
       records: [
@@ -198,6 +284,7 @@ describe('隐藏分组原始评价', () => {
     await button(wrapper, '核对反馈链').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('已核对上次评分保存成功')
+    expect(wrapper.text()).toContain('本人有历史评审记录')
     await wrapper.findAll('form')[1]!.trigger('submit')
     expect(wrapper.text()).toContain('当前评分与原因已经保存')
     expect(api.createOnlineQuality).toHaveBeenCalledTimes(1)

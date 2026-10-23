@@ -194,3 +194,17 @@ Run 和离线实验详情可通过现有目录读取接口查询单个来源版�
 `GET /api/evaluation/test-case-versions/{id}/source` 校验 evaluation:read、task:read、document:read，再通过既有 Task Replay 来源契约核验准入及空间、Task/Execution、输入/执行 schema 与哈希、文档版本/哈希均与用例保存值一致；不一致时拒绝投影。返回 testCaseVersionId、spaceId、sourceTaskId、sourceInputHash、documentId、documentTitle，文档名称通过单次批量引用查询取得，仅接受匹配文档和空间的标题。不返回输入/执行快照正文、文档正文、Prompt 或凭证，不更新用例、历史哈希或绑定；归档版本仍可定位。当前来源已不可核验或名称不可访问时，前端保留原冻结依据并提示名称未知，不影响历史版本阅读。
 
 来源任务名称复用单次 names-query；前端校验空间、用例版本、来源任务和冻结输入哈希，切换版本/空间、撤销相关读取权限或卸载时取消请求并清除旧名称。来源读取属于普通工程详情，沿用既有 Task 知情记录，不用于专用盲评页面。
+
+### 6.4 创建前来源核对与反馈读取
+
+`GET /api/evaluation/dataset-versions/{id}/experiment-source` 校验 evaluation:read、task:read，要求数据集已发布且主资源未归档。启用绑定、用例版本与主资源分别批量读取，核对空间、发布/归档状态及共同执行快照 schema/hash；仅核验一次代表来源的 Task/Execution、输入与执行 schema/hash、文档版本/hash。返回空间/版本、启用数、sourceConsistent、问题码和通过核对的代表 Task/Execution、Agent、原任务预算与快照身份，失败时不投影代表身份。不创建候选或执行、不修改冻结内容；快照一致不代表所有来源当前都可回放，创建/启动继续执行完整动态预检。
+
+创建页可通过现有执行审计接口读取一次代表执行，严格匹配空间、Task、Agent、Execution 和执行快照身份后，展示冻结模型、迭代/超时、Prompt hash、工具白名单、Skill 和 MCP 版本；不读取当前 Agent 配置替代历史信息，不显示凭证。审计详情不可读时明确提示，与来源一致性结论区分。原任务预算不等于整个实验授权。
+
+线上报告门槛对照使用当前冻结报告 analysisPlan 中的 minDocumentsPerGroup、minCoverageBps、minBlindedCoverageBps 与 humanQualityRequired，当前数值取同一报告的组别统计；字段缺失保持未知。按 reasonCodes 解释整体阻塞，不由前端重新裁决比较资格，工程模式不因样本增加自动变成质量比较。
+
+独立评审加载原始上下文后自动读取当前目标反馈链，核验失败或在途时不允许核对评分；仍保留手动重试和显式选择当前链尾追加更正。保存成功后重新读取权威链尾，并更新本人记录标记，不保留旧的首评空态。自动读取不预选评分、不提交反馈、不授予盲态资格。切换目标或身份取消旧请求，响应未知的提交继续优先要求核对，禁止重复写入。
+
+线上分配读取中的状态与已核验空结果分开显示；读取失败时提示数量未知，不能显示“暂无已接受分配”而误导用户。重试成功后才按实际返回显示记录或空态。
+
+用量执行抽屉在当前任务/评估读取权限下提供关联实验入口：线上身份来自同空间任务详情，离线身份通过现有 task-links 单次查询并核对 Task/空间。关闭抽屉、切换空间、撤销权限时取消关联读取，不能把迟到结果挂到其他执行。

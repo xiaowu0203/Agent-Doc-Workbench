@@ -23,6 +23,80 @@
       {{ caseCount * (candidates.length + 1) }}
       次执行。来源配置兼容性由创建后的统一预检核验；预检通过前不能启动。
     </p>
+    <section v-if="baseline" aria-label="创建前冻结基线核对">
+      <h3>冻结来源配置核对</h3>
+      <p v-if="!baseline.sourceConsistent" role="alert">
+        {{ baseline.issues.map(sourceIssue).join('；') }}。请调整数据集版本。
+      </p>
+      <template v-else>
+        <p>
+          启用用例的执行配置快照一致；代表来源已核验。其他来源的当前可回放性和预算仍由创建及启动预检重新核验。
+        </p>
+        <dl>
+          <dt>冻结 Agent / 代表任务 / 执行</dt>
+          <dd>
+            #{{ baseline.agentId }} / #{{ baseline.sourceTaskId }} / #{{
+              baseline.sourceExecutionId
+            }}
+          </dd>
+          <dt>执行快照</dt>
+          <dd>
+            schema {{ baseline.executionSnapshotSchemaVersion }} ·
+            {{ baseline.executionSnapshotHash }}
+          </dd>
+          <dt>代表任务冻结 Token 预算</dt>
+          <dd>{{ baseline.tokenBudget ?? '未提供' }}（不代表整个实验授权）</dd>
+          <dt>当前操作授权</dt>
+          <dd>当前具备创建实验所需的评估管理与 Agent 管理权限；启动仍须执行权限和明确预算确认。</dd>
+        </dl>
+        <p v-if="baselineAuditError" role="alert">
+          冻结配置详情暂不可用：{{ baselineAuditError }}
+          <el-button link @click="inspectSource(source?.version)">重试冻结配置读取</el-button>
+        </p>
+        <details v-if="baselineAudit">
+          <summary>查看冻结模型、工具与能力范围</summary>
+          <p>仅展示原执行快照，不读取当前 Agent 配置或凭证。</p>
+          <dl>
+            <dt>模型 / 配置版本</dt>
+            <dd>
+              {{ baselineAudit.model.displayName || baselineAudit.model.modelKey || '未提供' }} /
+              {{ baselineAudit.model.configVersion ?? '未提供' }}
+            </dd>
+            <dt>迭代上限 / 超时</dt>
+            <dd>
+              {{ baselineAudit.maxIterations ?? '未提供' }} 次 /
+              {{ baselineAudit.executionTimeoutSeconds ?? '未提供' }} 秒
+            </dd>
+            <dt>Prompt hash</dt>
+            <dd>{{ baselineAudit.promptHash || '未提供' }}</dd>
+            <dt>工具白名单</dt>
+            <dd>
+              {{
+                baselineAudit.toolDefinitions.map((item) => item.name).join('、') || '未绑定工具'
+              }}
+            </dd>
+            <dt>绑定 Skill 版本</dt>
+            <dd>
+              {{
+                baselineAudit.skill.boundSkills
+                  .map((item) => `${item.name} v${item.versionNo}`)
+                  .join('、') || '未绑定 Skill'
+              }}
+            </dd>
+            <dt>实际选中 Skill 版本</dt>
+            <dd>{{ baselineAudit.skill.selectedSkillVersionIds.join('、') || '未选中 Skill' }}</dd>
+            <dt>外部 MCP</dt>
+            <dd>
+              {{
+                baselineAudit.externalMcps
+                  .map((item) => `${item.serverKey} v${item.configVersion}`)
+                  .join('、') || '未绑定外部 MCP'
+              }}
+            </dd>
+          </dl>
+        </details>
+      </template>
+    </section>
     <fieldset v-for="(candidate, index) in candidates" :key="candidate.rowId" :disabled="busy">
       <legend>Prompt 候选 {{ index + 1 }}</legend>
       <label
@@ -70,11 +144,14 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton, ElDialog, ElMessageBox } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
+import { getTaskExecutionDetail } from '@/features/task/api/task-api'
+import type { AgentExecutionAudit } from '@/features/task/types'
 import * as api from '../api/evaluation-api'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import { MAX_PROMPT_CANDIDATES } from '../experiment'
 import type {
   DatasetVersion,
+  DatasetExperimentSource,
   TestCaseVersion,
   EvaluatorVersion,
   Experiment,
@@ -83,6 +160,18 @@ import type {
 const props = defineProps<{ spaceId: string; allowed: boolean; initialVersionId?: string }>()
 const emit = defineEmits<{ close: []; created: [value: Experiment] }>()
 const source = ref<{ version: DatasetVersion; name: string }>()
+const baseline = ref<DatasetExperimentSource | null>(null)
+const baselineAudit = ref<AgentExecutionAudit | null>(null),
+  baselineAuditError = ref('')
+const sourceIssues: Record<string, string> = {
+  CASE_UNAVAILABLE: '用例缺失、归档、未发布或归属不一致',
+  SOURCE_IDENTITY_MISSING: '来源冻结身份不完整或协议不受支持',
+  SOURCE_SNAPSHOT_MISMATCH: '用例使用了不同的执行配置快照',
+  BASELINE_SOURCE_UNAVAILABLE: '代表来源不可回放或与冻结身份不一致',
+}
+function sourceIssue(code: string) {
+  return sourceIssues[code] || code
+}
 const picker = ref(false),
   busy = ref(false),
   error = ref('')
@@ -99,6 +188,7 @@ const valid = computed(
     !!source.value &&
     !sourceLoading.value &&
     !sourceError.value &&
+    baseline.value?.sourceConsistent === true &&
     candidates.value.every(
       (item) =>
         item.variantKey.trim() &&
@@ -148,6 +238,9 @@ async function inspectSource(loaded?: DatasetVersion) {
   sourceRead?.abort()
   const pending = new AbortController()
   sourceRead = pending
+  baseline.value = null
+  baselineAudit.value = null
+  baselineAuditError.value = ''
   sourceLoading.value = true
   sourceError.value = ''
   caseCount.value = null
@@ -175,6 +268,45 @@ async function inspectSource(loaded?: DatasetVersion) {
     if (pending.signal.aborted) return
     caseCount.value = cases.filter((item) => item.enabled).length
     if (!caseCount.value) throw new Error('数据集没有启用用例，请选择其他版本')
+    const preview = await api.getDatasetExperimentSource(version.id, pending.signal)
+    if (pending.signal.aborted) return
+    if (
+      String(preview.spaceId) !== props.spaceId ||
+      String(preview.datasetVersionId) !== String(version.id) ||
+      preview.enabledCaseCount !== caseCount.value ||
+      typeof preview.sourceConsistent !== 'boolean' ||
+      !Array.isArray(preview.issues) ||
+      preview.issues.some((item) => typeof item !== 'string') ||
+      (preview.sourceConsistent &&
+        (preview.issues.length > 0 ||
+          ![preview.sourceTaskId, preview.sourceExecutionId, preview.agentId].every((id) =>
+            /^[1-9]\d{0,18}$/.test(String(id)),
+          ) ||
+          preview.executionSnapshotSchemaVersion !== 3 ||
+          !/^[0-9a-f]{64}$/.test(preview.executionSnapshotHash || '')))
+    )
+      throw new Error('冻结来源预览身份或数量不一致')
+    baseline.value = preview
+    if (preview.sourceConsistent) {
+      try {
+        const detail = await getTaskExecutionDetail(preview.sourceTaskId!, pending.signal)
+        if (pending.signal.aborted) return
+        const execution = detail.execution
+        if (
+          String(detail.task.spaceId) !== props.spaceId ||
+          String(detail.task.id) !== String(preview.sourceTaskId) ||
+          String(detail.task.agentId) !== String(preview.agentId) ||
+          !execution ||
+          String(execution.id) !== String(preview.sourceExecutionId) ||
+          execution.executionSnapshotHash !== preview.executionSnapshotHash ||
+          execution.executionSnapshotSchemaVersion !== preview.executionSnapshotSchemaVersion
+        )
+          throw new Error('冻结执行配置与来源预览不一致')
+        baselineAudit.value = execution
+      } catch (failure) {
+        if (!pending.signal.aborted) baselineAuditError.value = normalizeApiError(failure).message
+      }
+    }
     source.value = { version, name: parent.name }
   } catch (failure) {
     if (!pending.signal.aborted) sourceError.value = normalizeApiError(failure).message
@@ -264,6 +396,9 @@ watch(
     sourceLoading.value = false
     sourceError.value = ''
     caseCount.value = null
+    baseline.value = null
+    baselineAudit.value = null
+    baselineAuditError.value = ''
     request?.abort()
     busy.value = false
     source.value = undefined
