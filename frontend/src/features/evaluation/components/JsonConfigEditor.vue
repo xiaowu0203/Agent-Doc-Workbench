@@ -4,10 +4,11 @@
       <label :for="inputId">{{ label }}</label>
       <el-button v-if="!readonly" link @click="format">校验并格式化</el-button>
     </div>
-    <textarea
+    <el-input
+      type="textarea"
       :id="inputId"
       :aria-label="label"
-      :value="modelValue"
+      :model-value="modelValue"
       :readonly="readonly"
       :rows="rows"
       spellcheck="false"
@@ -19,7 +20,7 @@
 </template>
 <script setup lang="ts">
 import { ref, useId } from 'vue'
-import { ElButton } from 'element-plus'
+import { ElButton, ElInput } from 'element-plus'
 import { formatJson } from '../catalog'
 const props = withDefaults(
   defineProps<{ modelValue: string; label: string; readonly?: boolean; rows?: number }>(),
@@ -29,10 +30,10 @@ const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const inputId = useId(),
   error = ref(''),
   validated = ref(false)
-function update(event: Event) {
+function update(value: string) {
   error.value = ''
   validated.value = false
-  emit('update:modelValue', (event.target as HTMLTextAreaElement).value)
+  emit('update:modelValue', value)
 }
 function format() {
   try {
@@ -55,7 +56,7 @@ function format() {
   justify-content: space-between;
   align-items: center;
 }
-textarea {
+:deep(.el-textarea__inner) {
   box-sizing: border-box;
   width: 100%;
   resize: vertical;
@@ -66,10 +67,10 @@ textarea {
   color: var(--adw-text-primary);
   font: 13px/1.65 monospace;
 }
-textarea:focus-visible {
+:deep(.el-textarea__inner:focus-visible) {
   outline: 2px solid var(--adw-color-primary);
 }
-textarea[readonly] {
+:deep(.el-textarea__inner[readonly]) {
   background: var(--adw-surface-muted);
 }
 p {

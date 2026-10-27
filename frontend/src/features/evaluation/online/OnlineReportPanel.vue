@@ -96,7 +96,7 @@
     </div>
     <form class="row" @submit.prevent="load(false)">
       <label
-        >冻结报告版本<input
+        >冻结报告版本<el-input
           v-model.number="revision"
           aria-label="线上报告版本"
           type="number"
@@ -526,11 +526,11 @@
           </select></label
         >
         <label
-          >判断理由<textarea
+          >判断理由<el-input type="textarea"
             v-model="reason"
             aria-label="线上结论理由"
             maxlength="2000"
-            rows="3"
+            :rows="3"
           /></label
         ><el-button native-type="submit" :disabled="busy || !decisionAllowed || !reason.trim()"
           >核对结论</el-button
@@ -557,12 +557,12 @@
         此操作仅复制当前报告的原始序号与截止时间，不代表当前最新范围；仍需核对后确认冻结。
       </p>
       <label
-        >分配截止序号<input
+        >分配截止序号<el-input
           v-model="sequence"
           aria-label="报告分配截止序号"
           inputmode="numeric" /></label
       ><label
-        >观察截止（部署服务本地时间，精确到毫秒）<input
+        >观察截止（部署服务本地时间，精确到毫秒）<el-input
           v-model="cutoff"
           aria-label="报告观察截止"
           placeholder="2026-10-12T16:00:00.000" /></label
@@ -597,7 +597,7 @@ import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { formatMetricNumber } from '../display'
 import { evaluationStatus } from '../status'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog } from 'element-plus'
+import { ElButton, ElDialog, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import {
   decideOnlineExperiment,

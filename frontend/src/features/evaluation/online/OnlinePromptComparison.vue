@@ -40,19 +40,19 @@
     <template v-if="value && allowed">
       <div class="prompt-pair">
         <label
-          >Baseline 完整系统提示词<textarea
-            :value="value.baselineSystemPrompt"
+          >Baseline 完整系统提示词<el-input type="textarea"
+            :model-value="value.baselineSystemPrompt"
             aria-label="冻结基线系统提示词"
             readonly
-            rows="10"
+            :rows="10"
           />
         </label>
         <label
-          >Candidate 完整系统提示词<textarea
-            :value="value.candidateSystemPrompt"
+          >Candidate 完整系统提示词<el-input type="textarea"
+            :model-value="value.candidateSystemPrompt"
             aria-label="冻结候选系统提示词"
             readonly
-            rows="10"
+            :rows="10"
           />
         </label>
       </div>
@@ -68,7 +68,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton } from 'element-plus'
+import { ElButton, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import { buildDiffHunks } from '@/diff/utils/line-diff'
 import { getOnlinePromptComparison } from './api'

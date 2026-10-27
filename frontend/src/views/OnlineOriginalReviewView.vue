@@ -180,18 +180,18 @@
               </select></label
             >
             <label
-              >原因说明<textarea
+              >原因说明<el-input type="textarea"
                 v-model="comment"
                 aria-label="评价原因"
                 maxlength="2000"
-                rows="3"
+                :rows="3"
               />
             </label>
             <label
-              >原因代码（逗号分隔大写代码）<input v-model="codes" aria-label="评价原因代码"
+              >原因代码（逗号分隔大写代码）<el-input v-model="codes" aria-label="评价原因代码"
             /></label>
             <label
-              >明确更正的当前反馈 ID（首评留空）<input
+              >明确更正的当前反馈 ID（首评留空）<el-input
                 v-model="supersedes"
                 aria-label="被更正反馈ID"
                 inputmode="numeric"
@@ -200,7 +200,7 @@
               ><input v-model="serious" type="checkbox" />确认严重安全事件</label
             >
             <label v-if="serious && isOwner"
-              >安全确认理由<textarea
+              >安全确认理由<el-input type="textarea"
                 v-model="safetyReason"
                 aria-label="安全确认理由"
                 maxlength="2000"
@@ -236,7 +236,7 @@
 import { ORIGINAL_QUALITY_LEVELS } from '@/features/evaluation/online/rubric'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, onBeforeRouteLeave } from 'vue-router'
-import { ElButton, ElPagination, ElMessageBox } from 'element-plus'
+import { ElButton, ElPagination, ElMessageBox, ElInput } from 'element-plus'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import { normalizeApiError } from '@/api/errors'

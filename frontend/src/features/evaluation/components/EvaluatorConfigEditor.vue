@@ -11,8 +11,8 @@
         <template v-if="evaluatorKey === 'artifact-contract'">
           <label v-for="field in countFields" :key="field.key"
             >{{ field.label }}
-            <input
-              :value="config[field.key] ?? ''"
+            <el-input
+              :model-value="String(config[field.key] ?? '')"
               type="number"
               :aria-label="field.label"
               :min="field.min"
@@ -23,15 +23,15 @@
             />
           </label>
           <label
-            >必需产物类型（每行一个）<textarea
-              :value="types"
+            >必需产物类型（每行一个）<el-input type="textarea"
+              :model-value="types"
               aria-label="必需产物类型"
-              rows="3"
+              :rows="3"
               placeholder="例如 RESULT_SUMMARY、CHANGE_PROPOSAL、DRAFT_CHANGES"
               @change="
                 setField(
                   'requiredTypes',
-                  ($event.target as HTMLTextAreaElement).value
+                  $event
                     .split('\n')
                     .map((value) => value.trim())
                     .filter(Boolean),
@@ -58,13 +58,13 @@
               </select></label
             >
             <label
-              >预期文本或摘要<textarea
-                :value="item.value"
+              >预期文本或摘要<el-input type="textarea"
+                :model-value="item.value"
                 :aria-label="`文本断言${index + 1}内容`"
                 maxlength="1000"
-                rows="2"
+                :rows="2"
                 @input="
-                  updateAssertion(index, 'value', ($event.target as HTMLTextAreaElement).value)
+                  updateAssertion(index, 'value', $event)
                 "
               />
             </label>
@@ -92,22 +92,22 @@
         </template>
         <template v-else>
           <label
-            >必需候选产物类型<input
-              :value="config.requiredArtifactType ?? ''"
+            >必需候选产物类型<el-input
+              :model-value="String(config.requiredArtifactType ?? '')"
               aria-label="必需候选产物类型"
               placeholder="例如 DRAFT_CHANGES 或 CHANGE_PROPOSAL"
               @input="
-                setField('requiredArtifactType', ($event.target as HTMLInputElement).value, true)
+                setField('requiredArtifactType', $event, true)
               "
           /></label>
           <label
-            >目标正文 SHA-256（可选）<input
-              :value="config.targetContentSha256 ?? ''"
+            >目标正文 SHA-256（可选）<el-input
+              :model-value="String(config.targetContentSha256 ?? '')"
               aria-label="目标正文摘要"
               maxlength="64"
               pattern="[0-9a-f]{64}"
               @input="
-                setField('targetContentSha256', ($event.target as HTMLInputElement).value, true)
+                setField('targetContentSha256', $event, true)
               "
           /></label>
         </template>
@@ -130,7 +130,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ElButton } from 'element-plus'
+import { ElButton, ElInput } from 'element-plus'
 import JsonConfigEditor from './JsonConfigEditor.vue'
 const props = withDefaults(
   defineProps<{
@@ -222,8 +222,7 @@ function setField(key: string, value: unknown, omitEmpty = false) {
   else next[key] = value
   emit('update:modelValue', JSON.stringify(next, null, 2))
 }
-function numberField(key: string, event: Event) {
-  const text = (event.target as HTMLInputElement).value
+function numberField(key: string, text: string) {
   if (text === '') setField(key, '', true)
   else if (Number.isSafeInteger(Number(text))) setField(key, Number(text))
 }

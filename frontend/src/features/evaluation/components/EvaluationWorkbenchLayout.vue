@@ -30,6 +30,7 @@ import { computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import { EVALUATION_SECTIONS, type EvaluationSection } from '@/features/evaluation/navigation'
 import PageHeader from '@/shared/components/PageHeader.vue'
+import './evaluation-records.css'
 
 const route = useRoute()
 const groups = [

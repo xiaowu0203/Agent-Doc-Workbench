@@ -43,50 +43,50 @@
       刷新失败：{{ pollError }}。页面保留上次结果，正在退避重试。
     </p>
     <template v-if="!resourceId">
-      <form class="filters" @submit.prevent="loadList(1)">
-        <label
-          >状态<select v-model="statusFilter" aria-label="实验状态">
-            <option value="">全部状态</option>
-            <option v-for="status in EXPERIMENT_STATUSES" :key="status" :value="status">
-              {{ evaluationStatus('experiment', status).label }}
-            </option>
-          </select></label
-        >
+      <form class="filters evaluation-filter" @submit.prevent="loadList(1)">
+        <label>
+          <span>状态</span>
+          <el-select v-model="statusFilter" aria-label="实验状态" placeholder="全部状态">
+            <el-option label="全部状态" value="" />
+            <el-option v-for="status in EXPERIMENT_STATUSES" :key="status" :value="status" :label="evaluationStatus('experiment', status).label" />
+          </el-select>
+        </label>
         <div class="source-filter">
-          <el-button @click="sourcePicker = true">按名称选择数据集版本</el-button
-          ><small v-if="sourceLabel">{{ sourceLabel }}</small
-          ><label
-            >数据集版本 ID<input
+          <label
+            >数据集版本 ID<el-input
               v-model="datasetFilter"
               aria-label="筛选数据集版本 ID"
               inputmode="numeric"
               @input="sourceLabel = ''"
           /></label>
+          <el-button aria-label="按名称选择数据集版本" @click="sourcePicker = true">按名称选择</el-button>
+          <small v-if="sourceLabel">{{ sourceLabel }}</small>
         </div>
-        <label
-          >创建起始<input
-            v-model="createdFrom"
-            aria-label="实验创建起始"
-            type="datetime-local" /></label
-        ><label
-          >创建截止<input
-            v-model="createdTo"
-            aria-label="实验创建截止"
-            type="datetime-local" /></label
-        ><el-button native-type="submit">查询</el-button>
+        <label class="evaluation-filter__date">
+          <span>创建日期</span>
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+        </label>
+        <div class="evaluation-filter__actions"><el-button type="primary" native-type="submit">查询</el-button></div>
       </form>
       <DataState
         :loading="loading"
         :error="error"
         :empty="!list.records.length"
         :empty-text="
-          statusFilter || datasetFilter || createdFrom || createdTo
+          statusFilter || datasetFilter || dateRange
             ? '当前筛选没有匹配的离线实验，请调整条件后查询。'
             : '尚无离线实验。选择已发布数据集，创建 Prompt 候选后预检。'
         "
         @retry="refresh"
         ><div class="table-wrap">
-          <table>
+          <table class="evaluation-record-table">
             <thead>
               <tr>
                 <th>实验 / 冻结来源</th>
@@ -97,8 +97,8 @@
             </thead>
             <tbody>
               <tr v-for="item in list.records" :key="String(item.id)">
-                <td>
-                  <RouterLink :to="`${basePath}/${item.id}`">
+                <td class="evaluation-record-table__primary" data-label="实验 / 冻结来源">
+                  <RouterLink :to="`${basePath}/${item.id}`" :title="item.name || undefined">
                     <template v-if="item.name">{{ item.name }}</template>
                     <template v-else
                       >{{ item.datasetName || '数据集名称不可用' }} · v{{
@@ -114,14 +114,14 @@
                   <p>实验 #{{ item.id }}</p>
                   <small>版本 #{{ item.datasetVersionId || '未提供' }}</small>
                 </td>
-                <td>
+                <td data-label="状态 / 配置组">
                   <EvaluationStatusTag domain="experiment" :status="item.status" />
                   <p>
                     {{ item.linkedRunCount ?? '未提供' }} 个运行 / {{ item.variantCount }} 个配置组
                   </p>
                   <p v-if="item.failureCode">{{ item.failureCode }}</p>
                 </td>
-                <td>
+                <td data-label="授权 Token / 结论">
                   {{ fact(item.authorizedTokenBudget) }}
                   <p>
                     {{ item.decision || '尚无结论'
@@ -130,7 +130,7 @@
                     >
                   </p>
                 </td>
-                <td>
+                <td data-label="时间">
                   创建 <BusinessTime :value="item.createdAt" empty-text="未提供" />
                   <p>开始 <BusinessTime :value="item.startedAt" empty-text="未开始" /></p>
                   <p>
@@ -355,14 +355,14 @@
         恢复必须使用原授权值 {{ experiment.authorizedTokenBudget }}，请重新输入并确认。
       </p>
       <label
-        >授权 Token 预算<input
+        >授权 Token 预算<el-input
           v-model.number="authorizedBudget"
           type="number"
           min="1"
           step="1"
           aria-label="授权 Token 预算" /></label
       ><label
-        >Worker 授权有效期（秒）<input
+        >Worker 授权有效期（秒）<el-input
           v-model.number="ttl"
           type="number"
           :min="WORKER_TTL_MIN"
@@ -398,10 +398,10 @@
           <option value="REJECTED">拒绝候选</option>
         </select></label
       ><label
-        >判断依据<textarea
+        >判断依据<el-input type="textarea"
           v-model="decisionReason"
           aria-label="实验结论依据"
-          rows="4"
+          :rows="4"
           maxlength="1000"
         /></label
       ><template #footer
@@ -419,7 +419,7 @@ import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { evaluationStatus } from '@/features/evaluation/status'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElDatePicker, ElDialog, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { normalizeApiError } from '@/api/errors'
@@ -496,8 +496,7 @@ const experiment = ref<Experiment | null>(null),
   creating = ref(false)
 const statusFilter = ref<ExperimentStatus | ''>(''),
   datasetFilter = ref(''),
-  createdFrom = ref(''),
-  createdTo = ref('')
+  dateRange = ref<[string, string] | null>(null)
 const sourcePicker = ref(false),
   sourceLabel = ref('')
 function closeCreate() {
@@ -620,15 +619,13 @@ async function loadList(pageNum: number) {
   try {
     if (datasetFilter.value && !/^[1-9]\d{0,18}$/.test(datasetFilter.value))
       throw new Error('请输入有效数据集版本 ID')
-    if (createdFrom.value && createdTo.value && createdFrom.value > createdTo.value)
-      throw new Error('创建起始不能晚于截止')
     const value = await api.searchExperiments(
       {
         spaceId: spaceId.value,
         status: statusFilter.value || undefined,
         datasetVersionId: datasetFilter.value || undefined,
-        createdFrom: createdFrom.value || undefined,
-        createdTo: createdTo.value || undefined,
+        createdFrom: dateRange.value ? `${dateRange.value[0]}T00:00:00` : undefined,
+        createdTo: dateRange.value ? `${dateRange.value[1]}T23:59:59.999999` : undefined,
         pageNum,
         pageSize: PAGE_SIZE,
       },
@@ -1031,8 +1028,7 @@ watch(
     datasetFilter.value = ''
     sourcePicker.value = false
     sourceLabel.value = ''
-    createdFrom.value = ''
-    createdTo.value = ''
+    dateRange.value = null
     void (props.resourceId ? loadDetail() : loadList(1))
   },
   { immediate: true },

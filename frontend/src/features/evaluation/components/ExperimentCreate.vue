@@ -14,7 +14,7 @@
     <el-button :disabled="busy" @click="picker = true">选择已发布数据集版本</el-button>
     <label class="experiment-create-name"
       >实验名称（可选）
-      <input
+      <el-input
         v-model="name"
         aria-label="实验名称（可选）"
         :maxlength="MAX_DISPLAY_NAME_LENGTH"
@@ -110,17 +110,18 @@
     <fieldset v-for="(candidate, index) in candidates" :key="candidate.rowId" :disabled="busy">
       <legend>Prompt 候选 {{ index + 1 }}</legend>
       <label
-        >候选标识<input
+        >候选标识<el-input
           v-model="candidate.variantKey"
           :aria-label="`候选标识 ${index + 1}`"
           maxlength="64"
           placeholder="例如 prompt-v2"
       /></label>
       <label
-        >候选 Prompt<textarea
+        >候选 Prompt<el-input
+          type="textarea"
           v-model="candidate.agentPrompt"
           :aria-label="`候选 Prompt ${index + 1}`"
-          rows="6"
+          :rows="6"
           placeholder="填写本次候选使用的完整 Agent Prompt"
         />
       </label>
@@ -152,7 +153,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog, ElMessageBox } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElMessageBox } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import { getTaskExecutionDetail } from '@/features/task/api/task-api'
 import type { AgentExecutionAudit } from '@/features/task/types'

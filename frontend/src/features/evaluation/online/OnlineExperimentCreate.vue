@@ -24,7 +24,7 @@
         <section v-show="step === 0">
           <h3>范围与候选</h3>
           <label
-            >实验名称<input v-model="name" aria-label="实验名称" maxlength="100" required
+            >实验名称<el-input v-model="name" aria-label="实验名称" maxlength="100" required
           /></label>
           <label
             >Agent<select v-model="agentId" aria-label="实验Agent" required>
@@ -41,7 +41,7 @@
             class="document-picker"
             aria-label="实验文档选择"
           >
-            <label>搜索文档名称<input v-model="documentKeyword" aria-label="搜索实验文档" /></label>
+            <label>搜索文档名称<el-input v-model="documentKeyword" aria-label="搜索实验文档" /></label>
             <div class="document-picker__list">
               <label v-for="item in visibleDocuments" :key="String(item.id)" class="check">
                 <input
@@ -60,30 +60,30 @@
           <details>
             <summary>按文档 ID 核对或补充</summary>
             <label
-              >文档范围 ID<textarea
+              >文档范围 ID<el-input type="textarea"
                 v-model="documents"
                 aria-label="文档范围ID"
-                rows="3"
+                :rows="3"
                 placeholder="每行一个文档 ID，或用逗号分隔"
               />
             </label>
           </details>
           <p>范围和比例在创建后固定，同一文档始终在同一组。文档版本由每次真实任务分别冻结。</p>
           <label
-            >候选系统提示词<textarea
+            >候选系统提示词<el-input type="textarea"
               v-model="prompt"
               aria-label="候选系统提示词"
-              rows="5"
+              ::rows="5"
               required
             />
           </label>
           <p v-if="baselineLoading">正在读取当前 Agent 的 Prompt 参考。</p>
           <label v-if="baseline"
             >当前 Agent 系统提示词参考（配置版本 {{ baseline.configVersion }}）
-            <textarea
-              :value="baseline.systemPrompt"
+            <el-input type="textarea"
+              :model-value="baseline.systemPrompt"
               aria-label="当前基线提示词参考"
-              rows="5"
+              :rows="5"
               readonly
             />
           </label>
@@ -96,7 +96,7 @@
           <h3>预算与分析要求</h3>
           <div class="row">
             <label
-              >候选文档概率（%）<input
+              >候选文档概率（%）<el-input
                 v-model="weightPercent"
                 aria-label="候选文档概率百分比"
                 type="number"
@@ -106,7 +106,7 @@
                 required
             /></label>
             <label
-              >任务数上限<input
+              >任务数上限<el-input
                 v-model.number="tasks"
                 aria-label="任务数上限"
                 type="number"
@@ -121,13 +121,13 @@
           </p>
           <div class="row">
             <label
-              >总授权 Token<input
+              >总授权 Token<el-input
                 v-model="total"
                 aria-label="总授权Token"
                 inputmode="numeric"
                 required /></label
             ><label
-              >每任务 Token 上限<input
+              >每任务 Token 上限<el-input
                 v-model="perTask"
                 aria-label="每任务Token上限"
                 inputmode="numeric"
@@ -157,14 +157,14 @@
             </select></label
           >
           <label
-            >最小有价值绝对差（比例）<input v-model="mde" aria-label="最小有价值差异" required
+            >最小有价值绝对差（比例）<el-input v-model="mde" aria-label="最小有价值差异" required
           /></label>
           <p>绝对比例差 0.1 表示 10 个百分点，并非相对提升 10%。</p>
           <label
-            >差异的业务理由<textarea
+            >差异的业务理由<el-input type="textarea"
               v-model="mdeReason"
               aria-label="差异业务理由"
-              rows="2"
+              :rows="2"
               maxlength="2000"
               required
             />
@@ -200,7 +200,7 @@
                   <option value="EXACT">完全一致</option>
                   <option value="SHA256">正文摘要一致</option>
                 </select>
-                <input
+                <el-input
                   v-model="assertion.value"
                   :aria-label="`断言${index + 1}内容`"
                   maxlength="2000"
@@ -224,7 +224,7 @@
               >
               <p>结构和原始目标必须有效。目标正文摘要可按文档填写，留空仅检查结构。</p>
               <label v-for="id in uniqueDocumentIds" :key="id"
-                >文档 #{{ id }} 目标正文 SHA-256<input
+                >文档 #{{ id }} 目标正文 SHA-256<el-input
                   v-model="targetHashes[id]"
                   :aria-label="`文档${id}目标摘要`"
                   maxlength="64"
@@ -240,10 +240,10 @@
                 </select></label
               >
               <label v-if="overrideDocument"
-                >该文档完整期望（留空恢复共同要求）<textarea
+                >该文档完整期望（留空恢复共同要求）<el-input type="textarea"
                   v-model="primaryOverrides[overrideDocument]"
                   aria-label="主规则文档期望"
-                  rows="4"
+                  :rows="4"
                 />
               </label>
             </details>
@@ -260,7 +260,7 @@
                 · {{ rule.comparison }} {{ rule.threshold }} · {{ uniqueDocumentIds.length }} 份文档
               </summary>
               <label
-                >稳定规则标识<input
+                >稳定规则标识<el-input
                   v-model="rule.ruleKey"
                   :aria-label="`附加规则${index + 1}标识`"
                   maxlength="64"
@@ -294,15 +294,15 @@
                 </select></label
               >
               <label
-                >阈值（比例填十进制文本，布尔填 true/false）<input
+                >阈值（比例填十进制文本，布尔填 true/false）<el-input
                   v-model="rule.threshold"
                   :aria-label="`附加规则${index + 1}阈值`"
               /></label>
               <label
-                >共同期望 JSON<textarea
+                >共同期望 JSON<el-input type="textarea"
                   v-model="rule.expected"
                   :aria-label="`附加规则${index + 1}共同期望`"
-                  rows="4"
+                  :rows="4"
                 />
               </label>
               <p>
@@ -319,10 +319,10 @@
                 </select></label
               >
               <label v-if="rule.documentId"
-                >文档完整期望（留空使用共同要求）<textarea
+                >文档完整期望（留空使用共同要求）<el-input type="textarea"
                   v-model="rule.overrides[rule.documentId]"
                   :aria-label="`附加规则${index + 1}文档期望`"
-                  rows="4"
+                  :rows="4"
                 />
               </label>
               <el-button @click="additionalRules.splice(index, 1)"
@@ -435,7 +435,7 @@
 </template>
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog } from 'element-plus'
+import { ElButton, ElDialog, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import { getAgent, listAgents, type AgentOption } from '@/features/agent/api/agent-api'
 import { listDocumentTree } from '@/features/document/api/document-api'

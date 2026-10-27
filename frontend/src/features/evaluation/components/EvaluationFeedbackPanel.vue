@@ -26,7 +26,7 @@
         </select></label
       >
       <label
-        >人工分数（可选，0～1）<input
+        >人工分数（可选，0～1）<el-input
           v-model="score"
           aria-label="人工分数"
           type="number"
@@ -35,10 +35,10 @@
           step="any"
       /></label>
       <label
-        >反馈说明<textarea
+        >反馈说明<el-input type="textarea"
           v-model="comment"
           aria-label="反馈说明"
-          rows="3"
+          :rows="3"
           maxlength="2000"
           placeholder="请填写判断依据，避免正文或敏感信息。"
         />
@@ -51,7 +51,7 @@
 <script setup lang="ts">
 import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElMessage, ElMessageBox } from 'element-plus'
+import { ElButton, ElMessage, ElMessageBox, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import { createEvaluationFeedback } from '../api/evaluation-api'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'

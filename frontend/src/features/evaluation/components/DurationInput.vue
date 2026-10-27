@@ -2,8 +2,8 @@
   <div class="duration-input">
     <label
       >{{ label
-      }}<input
-        :value="amount"
+      }}<el-input
+        :model-value="amount"
         :aria-label="`${label}数值`"
         type="number"
         min="0"
@@ -12,21 +12,20 @@
         @input="update"
     /></label>
     <label
-      >单位<select
-        v-model.number="unit"
+      >单位<el-select
+        v-model="unit"
         :aria-label="`${label}单位`"
         :disabled="disabled"
         @change="changeUnit"
       >
-        <option
+        <el-option
           v-for="item in units"
           :key="item.seconds"
           :value="item.seconds"
           :disabled="!Number.isInteger(modelValue / item.seconds)"
-        >
-          {{ item.label }}
-        </option>
-      </select></label
+          :label="item.label"
+        />
+      </el-select></label
     >
     <small
       >输入整数，精确
@@ -36,6 +35,7 @@
 </template>
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+import { ElInput, ElSelect, ElOption } from 'element-plus'
 const props = withDefaults(
   defineProps<{ modelValue: number; label: string; disabled?: boolean }>(),
   { disabled: false },
@@ -63,9 +63,9 @@ watch(
 function changeUnit() {
   amount.value = String(props.modelValue / unit.value)
 }
-function update(event: Event) {
+function update(value: string) {
   if (props.disabled) return
-  amount.value = (event.target as HTMLInputElement).value
+  amount.value = value
   const seconds = Number(amount.value) * unit.value
   emit(
     'update:modelValue',

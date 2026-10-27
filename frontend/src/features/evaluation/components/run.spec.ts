@@ -328,23 +328,24 @@ describe('run list, permissions and lifecycle', () => {
     expect(wrapper.text()).not.toContain('2020-01-01')
     expect(api.getEvaluationRun).toHaveBeenCalledTimes(2)
   })
-  it('queries one summary page, applies filters and rejects reversed times locally', async () => {
+  it('queries one summary page and includes the selected end date', async () => {
     const { wrapper } = await mountRun()
     expect(api.getEvaluationRun).not.toHaveBeenCalled()
     expect(api.searchCaseAttempts).not.toHaveBeenCalled()
-    await wrapper.get('select[aria-label="运行状态"]').setValue('PAUSED')
-    await wrapper.get('input[aria-label="创建起始"]').setValue('2026-10-04T12:00')
-    await wrapper.get('input[aria-label="创建截止"]').setValue('2026-10-03T12:00')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(api.searchEvaluationRuns).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('创建起始不能晚于截止')
-    await wrapper.get('input[aria-label="创建截止"]').setValue('2026-10-05T12:00')
+    wrapper.findAllComponents({ name: 'ElSelect' })[0]!.vm.$emit('update:modelValue', 'PAUSED')
+    wrapper.findComponent({ name: 'ElDatePicker' }).vm.$emit('update:modelValue', ['2026-10-04', '2026-10-05'])
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(api.searchEvaluationRuns).toHaveBeenLastCalledWith(
-      expect.objectContaining({ spaceId: '7', status: 'PAUSED', pageSize: 10 }),
+      expect.objectContaining({ spaceId: '7', status: 'PAUSED', pageSize: 10,
+        createdFrom: '2026-10-04T00:00:00', createdTo: '2026-10-05T23:59:59.999999' }),
       expect.any(AbortSignal),
+    )
+    wrapper.findComponent({ name: 'ElDatePicker' }).vm.$emit('update:modelValue', null)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.searchEvaluationRuns).toHaveBeenLastCalledWith(
+      expect.objectContaining({ createdFrom: undefined, createdTo: undefined }), expect.any(AbortSignal),
     )
   })
   it('has no execute controls for a catalog manager without evaluation:run', async () => {

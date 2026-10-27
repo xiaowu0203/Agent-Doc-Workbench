@@ -63,9 +63,8 @@
     </form>
     <DataState :loading="loading" :error="error" @retry="reload">
       <template v-if="!resourceId">
-        <el-table :data="page.records" class="catalog-page__table" empty-text="暂无匹配资源">
-          <template #empty>
-            <p class="catalog-page__empty">
+        <div v-if="!page.records.length" class="catalog-page__empty">
+            <p>
               {{
                 keyword.trim() || archiveFilter !== 'active'
                   ? `没有匹配的${label}，请调整查询条件。`
@@ -76,36 +75,28 @@
                   : '请调整查询条件，或联系空间管理者添加资源。'
               }}
             </p>
-          </template>
-          <el-table-column :label="label" min-width="230"
-            ><template #default="{ row }"
-              ><div class="catalog-page__name">
-                <span class="catalog-page__initial">{{ row.name.slice(0, 1) }}</span>
-                <div>
-                  <RouterLink :to="resourcePath(row.id)">{{ row.name }}</RouterLink>
-                  <p>{{ row.description || '暂无说明' }}</p>
-                </div>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column label="资源状态" width="110"
-            ><template #default="{ row }"
-              ><el-tag :type="row.archived ? 'info' : 'success'">{{
-                row.archived ? '已归档' : '未归档'
-              }}</el-tag></template
-            ></el-table-column
-          >
-          <el-table-column
-            v-if="section === 'evaluators'"
-            prop="evaluatorKey"
-            label="Evaluator key"
-            min-width="180"
-          />
-          <el-table-column label="资源 ID" min-width="185"
-            ><template #default="{ row }">{{ row.id }}</template></el-table-column
-          >
-          <el-table-column label="最新发布与草稿" min-width="180">
-            <template #default="{ row }">
+        </div>
+        <div v-else class="evaluation-record-table-wrap">
+          <table class="evaluation-record-table" :aria-label="`${label}列表`">
+            <thead>
+              <tr>
+                <th>{{ label }} / 说明</th>
+                <th>版本</th>
+                <th>{{ section === 'datasets' ? '已发布启用用例' : section === 'test-cases' ? '已发布绑定评估器' : '发布版本引用数' }}</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr v-for="row in page.records" :key="String(row.id)">
+            <td class="evaluation-record-table__primary">
+              <div class="evaluation-record__title-row">
+                <RouterLink class="evaluation-record__title" :to="resourcePath(row.id)" :title="row.name">{{ row.name }}</RouterLink>
+                <el-tag :type="row.archived ? 'info' : 'success'" size="small">{{ row.archived ? '已归档' : '未归档' }}</el-tag>
+              </div>
+              <p class="evaluation-record__description" :title="row.description || undefined">{{ row.description || '暂无说明' }}</p>
+              <p class="evaluation-record__identity">资源 #{{ row.id }}<template v-if="'evaluatorKey' in row"> · {{ row.evaluatorKey }}</template></p>
+            </td>
+              <td>
               <template v-if="row.versionSummary">
                 <RouterLink
                   v-if="row.versionSummary.latestPublishedVersionId"
@@ -116,25 +107,14 @@
                   >已发布 v{{ row.versionSummary.latestPublishedVersionNo }}</RouterLink
                 >
                 <span v-else>尚未发布</span>
-                <p>
+                <small>
                   {{ row.versionSummary.draftCount }} 个草稿 · 共
                   {{ row.versionSummary.versionCount }} 个版本
-                </p>
+                </small>
               </template>
               <span v-else>版本信息暂不可用</span>
-            </template>
-          </el-table-column>
-          <el-table-column
-            :label="
-              section === 'datasets'
-                ? '已发布启用用例'
-                : section === 'test-cases'
-                  ? '已发布绑定评估器'
-                  : '发布版本引用数'
-            "
-            min-width="150"
-          >
-            <template #default="{ row }">
+              </td>
+              <td>
               <span
                 :title="
                   section === 'evaluators'
@@ -143,14 +123,12 @@
                 "
                 >{{ row.versionSummary?.publishedBindingCount ?? '—' }}</span
               >
-              <p>
-                <RouterLink :to="resourcePath(row.id)">{{
-                  canManage ? '管理版本与绑定' : '查看版本与绑定'
-                }}</RouterLink>
-              </p>
-            </template>
-          </el-table-column>
-        </el-table>
+              </td>
+            <td><RouterLink class="evaluation-record__action" :to="resourcePath(row.id)">{{ canManage ? '管理版本与绑定' : '查看版本与绑定' }}<span aria-hidden="true"> ›</span></RouterLink></td>
+          </tr>
+            </tbody>
+          </table>
+        </div>
         <div class="catalog-page__pagination">
           <span>共 {{ page.total }} 条</span
           ><el-pagination
@@ -503,8 +481,6 @@ import {
   ElOption,
   ElPagination,
   ElSelect,
-  ElTable,
-  ElTableColumn,
   ElTag,
 } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
@@ -1204,25 +1180,6 @@ p {
 }
 .catalog-page__filters .el-select {
   width: 150px;
-}
-.catalog-page__name {
-  display: flex;
-  align-items: center;
-  gap: var(--adw-space-3);
-}
-.catalog-page__name p {
-  font-size: var(--adw-font-size-caption);
-}
-.catalog-page__initial {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: var(--adw-radius-sm);
-  background: var(--adw-color-primary-soft);
-  color: var(--adw-color-primary);
-  font-weight: 600;
 }
 a {
   color: var(--adw-color-primary);

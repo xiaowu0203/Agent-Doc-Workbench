@@ -406,10 +406,10 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('Experiment access and observation', () => {
-  it('uses one summary query with filters and validates reversed dates', async () => {
+  it('uses one summary query with filters and includes the selected end date', async () => {
     const { wrapper } = await mountView()
     expect(api.getExperiment).not.toHaveBeenCalled()
-    await wrapper.get('[aria-label="实验状态"]').setValue('PAUSED')
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'PAUSED')
     await wrapper.get('[aria-label="筛选数据集版本 ID"]').setValue('40')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -417,11 +417,13 @@ describe('Experiment access and observation', () => {
       expect.objectContaining({ status: 'PAUSED', datasetVersionId: '40', pageSize: 10 }),
       expect.anything(),
     )
-    await wrapper.get('[aria-label="实验创建起始"]').setValue('2026-10-04T12:00')
-    await wrapper.get('[aria-label="实验创建截止"]').setValue('2026-10-03T12:00')
+    wrapper.findComponent({ name: 'ElDatePicker' }).vm.$emit('update:modelValue', ['2026-10-04', '2026-10-05'])
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('创建起始不能晚于截止')
+    expect(api.searchExperiments).toHaveBeenLastCalledWith(
+      expect.objectContaining({ createdFrom: '2026-10-04T00:00:00', createdTo: '2026-10-05T23:59:59.999999' }),
+      expect.anything(),
+    )
   })
   it('requires both manage permissions to create and never infers run permission', async () => {
     permissions([P.EVALUATION_READ, P.EVALUATION_MANAGE])

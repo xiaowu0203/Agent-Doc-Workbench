@@ -20,15 +20,15 @@
     </p>
     <p v-if="pollError" role="status">刷新失败：{{ pollError }}。保留上次结果，正在退避重试。</p>
     <template v-if="!resourceId && canRead">
-      <form class="filters" @submit.prevent="loadList(1)">
-        <label
-          >状态<select v-model="statusFilter" aria-label="线上实验状态">
-            <option value="">全部状态</option>
-            <option v-for="status in ONLINE_STATUSES" :key="status" :value="status">
-              {{ onlineStatus(status) }}
-            </option>
-          </select></label
-        ><el-button native-type="submit">查询</el-button>
+      <form class="filters evaluation-filter evaluation-filter--compact" @submit.prevent="loadList(1)">
+        <label>
+          <span>状态</span>
+          <el-select v-model="statusFilter" aria-label="线上实验状态" placeholder="全部状态">
+            <el-option label="全部状态" value="" />
+            <el-option v-for="status in ONLINE_STATUSES" :key="status" :value="status" :label="onlineStatus(status)" />
+          </el-select>
+        </label>
+        <div class="evaluation-filter__actions"><el-button type="primary" native-type="submit">查询</el-button></div>
       </form>
       <DataState
         :loading="loading"
@@ -38,7 +38,7 @@
         @retry="refresh"
       >
         <div class="table-wrap">
-          <table>
+          <table class="evaluation-record-table evaluation-record-table--online">
             <thead>
               <tr>
                 <th>实验 / Agent</th>
@@ -50,29 +50,28 @@
             </thead>
             <tbody>
               <tr v-for="item in list.records" :key="item.id">
-                <td>
-                  <RouterLink :to="`${basePath}/${item.id}`">{{ item.name }}</RouterLink
+                <td class="evaluation-record-table__primary" data-label="实验 / Agent">
+                  <RouterLink :to="`${basePath}/${item.id}`" :title="item.name">{{ item.name }}</RouterLink
                   ><small>Agent #{{ item.agentId }}</small>
                 </td>
-                <td>
-                  {{ onlineStatus(item.status)
-                  }}<small v-for="code in item.reasonCodes" :key="code">{{
+                <td data-label="状态">
+                  <span class="evaluation-record__status" :data-status="item.status">{{ onlineStatus(item.status) }}</span><small v-for="code in item.reasonCodes" :key="code">{{
                     onlineIssue(code)
                   }}</small>
                 </td>
-                <td>
+                <td data-label="文档 / Task">
                   范围 {{ onlineFact(item.documentCount) }} / 参与
                   {{ onlineFact(item.participatingDocumentCount)
                   }}<small>Task {{ onlineFact(item.assignedTaskCount) }}</small>
                 </td>
-                <td>
+                <td data-label="Token / 未决">
                   授权 {{ onlineFact(item.authorizedTokenBudget)
                   }}<small
                     >实际 {{ onlineFact(item.consumedTokens) }} / 未决
                     {{ onlineFact(item.unknownTaskCount) }}</small
                   >
                 </td>
-                <td>
+                <td data-label="时间">
                   <BusinessTime :value="item.createdAt" empty-text="创建时间未知" /><small
                     >对账 <BusinessTime :value="item.lastReconciledAt" empty-text="尚未确认"
                   /></small>
@@ -384,7 +383,7 @@
 import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ElButton, ElPagination } from 'element-plus'
+import { ElButton, ElOption, ElPagination, ElSelect } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import DataState from '@/shared/components/DataState.vue'
 import { useWorkspaceStore } from '@/stores/workspace'

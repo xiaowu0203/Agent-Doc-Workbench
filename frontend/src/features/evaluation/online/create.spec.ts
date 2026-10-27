@@ -1,6 +1,8 @@
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import OnlineExperimentCreate from './OnlineExperimentCreate.vue'
+import DurationInput from '../components/DurationInput.vue'
+import { ElSelect } from 'element-plus'
 import PublishedVersionPicker from '../components/PublishedVersionPicker.vue'
 import * as api from './api'
 import * as catalogApi from '../api/evaluation-api'
@@ -122,9 +124,15 @@ describe('冻结草案创建', () => {
   it('多角色规则和文档覆盖一次冻结，秒级窗口与零观察窗口保持原值', async () => {
     const wrapper = await create()
     await wrapper.get('[aria-label="文档范围ID"]').setValue('41\n42')
-    await wrapper.get('[aria-label="分配窗口单位"]').setValue('1')
+    const assignmentUnit = wrapper.findAllComponents(DurationInput)[0]!.getComponent(ElSelect)
+    assignmentUnit.vm.$emit('update:modelValue', 1)
+    assignmentUnit.vm.$emit('change', 1)
+    await wrapper.vm.$nextTick()
     await wrapper.get('[aria-label="分配窗口数值"]').setValue('1')
-    await wrapper.get('[aria-label="观察窗口单位"]').setValue('1')
+    const observationUnit = wrapper.findAllComponents(DurationInput)[1]!.getComponent(ElSelect)
+    observationUnit.vm.$emit('update:modelValue', 1)
+    observationUnit.vm.$emit('change', 1)
+    await wrapper.vm.$nextTick()
     await wrapper.get('[aria-label="观察窗口数值"]').setValue('0')
     await wrapper.get('[aria-label="主规则覆盖文档"]').setValue('42')
     const override = {

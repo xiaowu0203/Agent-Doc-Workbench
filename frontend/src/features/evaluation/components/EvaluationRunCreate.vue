@@ -11,7 +11,7 @@
     <form class="run-create" @submit.prevent="create">
       <label
         >运行名称（可选）
-        <input
+        <el-input
           v-model="name"
           aria-label="运行名称（可选）"
           :maxlength="MAX_DISPLAY_NAME_LENGTH"
@@ -21,10 +21,10 @@
       </label>
       <label
         >评估来源
-        <select v-model="kind" aria-label="评估来源" :disabled="busy" @change="clearSource">
-          <option value="datasets">数据集版本</option>
-          <option value="test-cases">单个测试用例版本</option>
-        </select>
+        <el-select v-model="kind" aria-label="评估来源" :disabled="busy" @change="clearSource">
+          <el-option label="数据集版本" value="datasets" />
+          <el-option label="单个测试用例版本" value="test-cases" />
+        </el-select>
       </label>
       <el-button :disabled="busy" @click="pickerOpen = true">选择已发布版本</el-button>
       <p v-if="loading && !selected" role="status">正在核验带入的来源版本……</p>
@@ -42,7 +42,7 @@
       </DataState>
       <label
         >执行授权有效期（秒）
-        <input
+        <el-input
           v-model.number="ttl"
           type="number"
           aria-label="执行授权有效期（秒）"
@@ -71,7 +71,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog, ElMessageBox } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
 import { normalizeApiError } from '@/api/errors'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'

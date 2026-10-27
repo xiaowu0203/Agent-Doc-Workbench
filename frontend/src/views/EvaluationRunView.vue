@@ -54,56 +54,59 @@
     </header>
     <p v-if="!canRead" role="alert">需要当前空间的评估读取权限。</p>
     <template v-else-if="!resourceId">
-      <form class="run-filters" @submit.prevent="loadList(1)">
-        <label
-          >运行状态<select v-model="statusFilter" aria-label="运行状态">
-            <option value="">全部状态</option>
-            <option v-for="status in RUN_STATUSES" :key="status" :value="status">
-              {{ evaluationStatus('run', status).label }}
-            </option>
-          </select></label
-        >
-        <label
-          >来源范围<select v-model="sourceKind" aria-label="筛选来源类型">
-            <option value="">全部来源</option>
-            <option value="datasetVersionId">数据集版本</option>
-            <option value="singleTestCaseVersionId">测试用例版本</option>
-          </select></label
-        >
+      <form class="run-filters evaluation-filter" @submit.prevent="loadList(1)">
+        <label>
+          <span>运行状态</span>
+          <el-select v-model="statusFilter" aria-label="运行状态" placeholder="全部状态">
+            <el-option label="全部状态" value="" />
+            <el-option v-for="status in RUN_STATUSES" :key="status" :value="status" :label="evaluationStatus('run', status).label" />
+          </el-select>
+        </label>
+        <label>
+          <span>来源范围</span>
+          <el-select v-model="sourceKind" aria-label="筛选来源类型" placeholder="全部来源">
+            <el-option label="全部来源" value="" />
+            <el-option label="数据集版本" value="datasetVersionId" />
+            <el-option label="测试用例版本" value="singleTestCaseVersionId" />
+          </el-select>
+        </label>
         <div v-if="sourceKind" class="source-filter">
-          <el-button @click="sourcePicker = true">按名称选择来源版本</el-button>
-          <small v-if="sourceLabel">{{ sourceLabel }}</small>
           <label
-            >来源版本 ID<input
+            >来源版本 ID<el-input
               v-model="sourceId"
               aria-label="筛选来源版本 ID"
               placeholder="版本 ID"
               @input="sourceLabel = ''"
           /></label>
+          <el-button @click="sourcePicker = true">按名称选择来源版本</el-button>
+          <small v-if="sourceLabel">{{ sourceLabel }}</small>
         </div>
-        <label
-          >创建起始<input
-            v-model="createdFrom"
-            type="datetime-local"
-            aria-label="创建起始" /></label
-        ><label
-          >创建截止<input v-model="createdTo" type="datetime-local" aria-label="创建截止"
-        /></label>
-        <el-button native-type="submit">查询</el-button>
+        <label class="evaluation-filter__date">
+          <span>创建日期</span>
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+        </label>
+        <div class="evaluation-filter__actions"><el-button type="primary" native-type="submit">查询</el-button></div>
       </form>
       <DataState
         :loading="loading"
         :error="error"
         :empty="!list.records.length"
         :empty-text="
-          statusFilter || sourceKind || sourceId || createdFrom || createdTo
+          statusFilter || sourceKind || sourceId || dateRange
             ? '当前筛选没有匹配的评估运行，请调整条件后查询。'
             : '尚未创建评估运行，请选择已发布的用例或数据集版本。'
         "
         @retry="loadList(list.pageNum)"
       >
         <div class="run-table-wrap">
-          <table class="run-table">
+          <table class="run-table evaluation-record-table">
             <thead>
               <tr>
                 <th>运行 / 来源</th>
@@ -114,8 +117,8 @@
             </thead>
             <tbody>
               <tr v-for="row in list.records" :key="String(row.id)">
-                <td>
-                  <RouterLink :to="`${basePath}/${row.id}`">
+                <td class="evaluation-record-table__primary" data-label="运行 / 来源">
+                  <RouterLink :to="`${basePath}/${row.id}`" :title="row.name || undefined">
                     {{
                       row.name ||
                       (row.datasetVersionId
@@ -135,16 +138,16 @@
                     >实验配置组 #{{ row.experimentVariantId }}</small
                   >
                 </td>
-                <td>
+                <td data-label="状态">
                   <EvaluationStatusTag domain="run" :status="row.status" />
                   <p v-if="row.pauseReason">{{ pauseExplanation(row.pauseReason) }}</p>
                   <small v-if="row.cancelRequested">已请求取消</small>
                 </td>
-                <td>
+                <td data-label="用例进度">
                   {{ row.completedCaseCount ?? '不可用' }} / {{ row.caseCount }} 已完成
                   <p>异常 {{ row.errorCaseCount ?? '不可用' }}</p>
                 </td>
-                <td>
+                <td data-label="时间">
                   <p>创建 <BusinessTime :value="row.createdAt" empty-text="不可用" /></p>
                   <p>开始 <BusinessTime :value="row.startedAt" empty-text="尚未开始" /></p>
                   <p>
@@ -307,7 +310,7 @@
     <el-dialog v-model="actionDialog" :title="actionTitle" width="560px">
       <p>{{ actionDescription }}</p>
       <label class="run-ttl"
-        >执行授权有效期（秒）<input
+        >执行授权有效期（秒）<el-input
           v-model.number="ttl"
           aria-label="重试或恢复授权有效期（秒）"
           type="number"
@@ -334,7 +337,7 @@ import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { evaluationStatus } from '@/features/evaluation/status'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, RouterLink, useRoute, useRouter } from 'vue-router'
-import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElDatePicker, ElDialog, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
 import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
@@ -427,8 +430,7 @@ const busy = ref(false),
 const statusFilter = ref<EvaluationRunStatus | ''>(''),
   sourceKind = ref<'' | 'datasetVersionId' | 'singleTestCaseVersionId'>(''),
   sourceId = ref(''),
-  createdFrom = ref(''),
-  createdTo = ref('')
+  dateRange = ref<[string, string] | null>(null)
 const sourcePicker = ref(false),
   sourceLabel = ref('')
 function rememberSelection(attemptId: string, resultId?: string) {
@@ -550,15 +552,13 @@ async function loadList(pageNum: number) {
   list.value.records = []
   try {
     if (sourceKind.value && !queryId(sourceId.value)) throw new Error('请输入有效来源版本 ID')
-    if (createdFrom.value && createdTo.value && createdFrom.value > createdTo.value)
-      throw new Error('创建起始不能晚于截止')
     const value = await api.searchEvaluationRuns(
       {
         spaceId: spaceId.value,
         status: statusFilter.value || undefined,
         ...(sourceKind.value ? { [sourceKind.value]: sourceId.value } : {}),
-        createdFrom: createdFrom.value || undefined,
-        createdTo: createdTo.value || undefined,
+        createdFrom: dateRange.value ? `${dateRange.value[0]}T00:00:00` : undefined,
+        createdTo: dateRange.value ? `${dateRange.value[1]}T23:59:59.999999` : undefined,
         pageNum,
         pageSize: PAGE_SIZE,
       },
@@ -772,8 +772,7 @@ watch(
     statusFilter.value = ''
     sourceKind.value = ''
     sourceId.value = ''
-    createdFrom.value = ''
-    createdTo.value = ''
+    dateRange.value = null
     failures = 0
     void (props.resourceId ? loadDetail() : loadList(1))
   },
