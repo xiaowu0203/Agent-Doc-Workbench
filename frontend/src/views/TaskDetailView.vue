@@ -301,6 +301,7 @@
 </template>
 
 <script setup lang="ts">
+import { businessTimeMillis, formatBusinessTime } from '@/shared/utils/date-time'
 import { ElAlert, ElButton, ElMessage, ElMessageBox } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -570,7 +571,7 @@ const trail = computed<TrailEvent[]>(() => {
       order: 300000,
     })
   return events.sort((a, b) => {
-    const timeDiff = new Date(b.time).getTime() - new Date(a.time).getTime()
+    const timeDiff = businessTimeMillis(b.time) - businessTimeMillis(a.time)
     return timeDiff || b.order - a.order
   })
 })
@@ -817,7 +818,7 @@ function auditTone(status: string): TrailEvent['tone'] {
   return status === 'STARTED' ? 'active' : 'neutral'
 }
 function compareTrailAsc(a: TrailEvent, b: TrailEvent) {
-  const timeDiff = new Date(a.time).getTime() - new Date(b.time).getTime()
+  const timeDiff = businessTimeMillis(a.time) - businessTimeMillis(b.time)
   return timeDiff || a.order - b.order
 }
 function isRoundExpanded(roundId: string) {
@@ -880,12 +881,7 @@ function formatLimit(value: number | null | undefined, unit: string) {
   return value == null ? '—' : `${value} ${unit}`
 }
 function formatClock(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
+  return formatBusinessTime(value)
 }
 function shortHash(value: string | null) {
   return value ? `${value.slice(0, 10)}…` : '—'
@@ -895,7 +891,8 @@ function formatBytes(value: number | null) {
 }
 function durationBetween(start: string | null, end: string | null) {
   if (!start || !end) return '—'
-  const ms = Math.max(0, new Date(end).getTime() - new Date(start).getTime())
+  const ms = Math.max(0, businessTimeMillis(end) - businessTimeMillis(start))
+  if (!Number.isFinite(ms)) return '—'
   if (ms < 1000) return `${ms}ms`
   const seconds = Math.floor(ms / 1000)
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`

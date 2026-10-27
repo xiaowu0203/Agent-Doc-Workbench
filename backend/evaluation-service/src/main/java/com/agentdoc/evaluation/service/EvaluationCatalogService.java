@@ -85,6 +85,7 @@ import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_EVALU
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_SCHEMA_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.MAX_DATASET_BINDING_COUNT;
 
 /**
  * Evaluation 目录服务
@@ -500,12 +501,30 @@ public class EvaluationCatalogService {
      *
      * @param dto 数据集版本创建入参
      * @return 数据集版本VO
-     * @apiNote 版本初始状态为草稿DRAFT；自动递增版本号；刚创建无绑定用例，后续通过 replaceDatasetCases 添加
+     * @apiNote 默认创建空草稿；显式复制时与新绑定在同一事务写入，不修改来源版本
      */
     @Transactional
     public DatasetVersionVO createDatasetVersion(DatasetVersionCreateDTO dto) {
         EvaluationDatasetEntity dataset = requireDataset(dto.datasetId());
         spaceAccessService.requirePermission(dataset.getSpaceId(), EVALUATION_MANAGE);
+        List<DatasetCaseBindingDTO> copiedBindings = List.of();
+        if (dto.copyFromVersionId() != null) {
+            var source = datasetVersionMapper.selectById(dto.copyFromVersionId());
+            if (source == null || !Objects.equals(source.getDatasetId(), dataset.getId())
+                    || !Objects.equals(source.getSpaceId(), dataset.getSpaceId())
+                    || !EvaluationVersionStatus.PUBLISHED.name().equals(source.getStatus())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "只能复制当前数据集已发布版本的绑定");
+            }
+            var bindings = datasetCaseMapper.selectList(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
+                    .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, source.getId())
+                    .orderByAsc(EvaluationDatasetCaseEntity::getSortOrder, EvaluationDatasetCaseEntity::getId));
+            if (bindings.isEmpty() || bindings.size() > MAX_DATASET_BINDING_COUNT) {
+                throw new BusinessException(ErrorCode.CONFLICT, "复制来源绑定为空或数量超出上限");
+            }
+            copiedBindings = bindings.stream().map(binding -> new DatasetCaseBindingDTO(
+                    binding.getTestCaseVersionId(), binding.getSortOrder(), binding.getEnabled())).toList();
+            validateDatasetCases(dataset.getSpaceId(), copiedBindings);
+        }
         EvaluationDatasetVersionEntity entity = new EvaluationDatasetVersionEntity();
         entity.setId(IdWorker.getId());
         entity.setDatasetId(dataset.getId());
@@ -514,6 +533,16 @@ public class EvaluationCatalogService {
         entity.setStatus(EvaluationVersionStatus.DRAFT.name());
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         datasetVersionMapper.insert(entity);
+        if (!copiedBindings.isEmpty()) {
+            var targetId = entity.getId();
+            datasetCaseMapper.insertBatch(copiedBindings.stream().map(binding -> {
+                var copy = new EvaluationDatasetCaseEntity();
+                copy.setId(IdWorker.getId()); copy.setDatasetVersionId(targetId);
+                copy.setTestCaseVersionId(binding.testCaseVersionId());
+                copy.setSortOrder(binding.sortOrder()); copy.setEnabled(binding.enabled());
+                return copy;
+            }).toList());
+        }
         return DatasetVersionVO.from(entity);
     }
 
@@ -531,24 +560,7 @@ public class EvaluationCatalogService {
     public DatasetVersionVO replaceDatasetCases(Long versionId, DatasetCaseBindingsDTO dto) {
         EvaluationDatasetVersionEntity version = requireDraftDatasetVersion(versionId);
         spaceAccessService.requirePermission(version.getSpaceId(), EVALUATION_MANAGE);
-        // 校验入参无重复用例版本
-        if (dto.cases().stream().map(DatasetCaseBindingDTO::testCaseVersionId).distinct().count() != dto.cases().size()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "测试用例版本不能重复绑定");
-        }
-        List<EvaluationTestCaseVersionEntity> cases = testCaseVersionMapper.selectBatchIds(
-                dto.cases().stream().map(DatasetCaseBindingDTO::testCaseVersionId).toList());
-        // 取出所有父用例主资源，校验主资源未归档
-        Set<Long> activeTestCaseIds = testCaseMapper.selectBatchIds(cases.stream()
-                        .map(EvaluationTestCaseVersionEntity::getTestCaseId).collect(Collectors.toSet())).stream()
-                .filter(value -> !Boolean.TRUE.equals(value.getArchived()))
-                .map(EvaluationTestCaseEntity::getId).collect(Collectors.toSet());
-        // 校验：全部存在、同空间、版本已发布、父用例未归档
-        if (cases.size() != dto.cases().size() || cases.stream().anyMatch(value ->
-                !version.getSpaceId().equals(value.getSpaceId())
-                        || !EvaluationVersionStatus.PUBLISHED.name().equals(value.getStatus())
-                        || !activeTestCaseIds.contains(value.getTestCaseId()))) {
-            throw new BusinessException(ErrorCode.CONFLICT, "数据集只能绑定同空间已发布测试用例版本");
-        }
+        validateDatasetCases(version.getSpaceId(), dto.cases());
         // 清空旧绑定
         datasetCaseMapper.delete(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
                 .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, versionId));
@@ -566,6 +578,27 @@ public class EvaluationCatalogService {
             datasetCaseMapper.insertBatch(datasetCases);
         }
         return DatasetVersionVO.from(version);
+    }
+
+    private void validateDatasetCases(Long spaceId, List<DatasetCaseBindingDTO> bindings) {
+        // 校验入参无重复用例版本
+        if (bindings.stream().map(DatasetCaseBindingDTO::testCaseVersionId).distinct().count() != bindings.size()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "测试用例版本不能重复绑定");
+        }
+        List<EvaluationTestCaseVersionEntity> cases = testCaseVersionMapper.selectBatchIds(
+                bindings.stream().map(DatasetCaseBindingDTO::testCaseVersionId).toList());
+        // 取出所有父用例主资源，校验主资源未归档
+        Set<Long> activeTestCaseIds = testCaseMapper.selectBatchIds(cases.stream()
+                        .map(EvaluationTestCaseVersionEntity::getTestCaseId).collect(Collectors.toSet())).stream()
+                .filter(value -> Objects.equals(value.getSpaceId(), spaceId) && !Boolean.TRUE.equals(value.getArchived()))
+                .map(EvaluationTestCaseEntity::getId).collect(Collectors.toSet());
+        // 校验：全部存在、同空间、版本已发布、父用例未归档
+        if (cases.size() != bindings.size() || cases.stream().anyMatch(value ->
+                !spaceId.equals(value.getSpaceId())
+                        || !EvaluationVersionStatus.PUBLISHED.name().equals(value.getStatus())
+                        || !activeTestCaseIds.contains(value.getTestCaseId()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "数据集只能绑定同空间已发布测试用例版本");
+        }
     }
 
     /**

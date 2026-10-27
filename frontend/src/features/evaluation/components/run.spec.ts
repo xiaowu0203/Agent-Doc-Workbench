@@ -209,6 +209,37 @@ async function mountRun(id?: string, query = '') {
   return { wrapper, router }
 }
 
+it('从任务返回时在用例加载后恢复滚动位置和筛选', async () => {
+  window.sessionStorage.clear()
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/spaces/:spaceId/evaluation/runs/:runId', component: EvaluationRunView,
+        props: (route) => ({ resourceId: route.params.runId }) },
+      { path: '/spaces/:spaceId/tasks/:taskId', component: { template: '<div>任务</div>' } },
+    ],
+  })
+  const returnPath = '/spaces/7/evaluation/runs/10?caseRunId=20&errors=1'
+  await router.push(returnPath)
+  const wrapper = mount({ template: '<main class="workbench-layout__content"><router-view /></main>' }, {
+    attachTo: document.body,
+    global: { plugins: [router], stubs: { EvaluationCasePanel: true, EvaluationRunCreate: true } },
+  })
+  wrappers.push(wrapper)
+  await flushPromises()
+  const content = wrapper.get('main').element as HTMLElement
+  content.scrollTop = 325
+  await router.push('/spaces/7/tasks/50')
+  content.scrollTop = 0
+  await router.push(returnPath)
+  await flushPromises()
+  wrapper.findComponent({ name: 'EvaluationCasePanel' }).vm.$emit('settled')
+  await flushPromises()
+  expect(content.scrollTop).toBe(325)
+  expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
+  window.sessionStorage.clear()
+})
+
 it('已取消终态不再提示等待在途执行收敛', async () => {
   vi.mocked(api.getEvaluationRun).mockResolvedValue({
     ...run,
@@ -710,6 +741,17 @@ describe('creation from published resources', () => {
     expect(api.getDatasetVersion).toHaveBeenCalledTimes(2)
     expect(api.createEvaluationRun).toHaveBeenCalledWith(
       { spaceId: '7', datasetVersionId: '60', workerCapabilityTtlSeconds: 3600 },
+      expect.any(AbortSignal),
+    )
+  })
+  it('submits a trimmed optional name without changing the source identity', async () => {
+    vi.mocked(api.createEvaluationRun).mockResolvedValue({ ...run, name: '回归运行' })
+    const wrapper = await mountCreate()
+    await wrapper.get('[aria-label="运行名称（可选）"]').setValue('  回归运行  ')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.createEvaluationRun).toHaveBeenCalledWith(
+      { spaceId: '7', datasetVersionId: '60', workerCapabilityTtlSeconds: 3600, name: '回归运行' },
       expect.any(AbortSignal),
     )
   })

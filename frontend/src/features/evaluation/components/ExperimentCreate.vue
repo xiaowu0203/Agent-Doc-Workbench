@@ -12,6 +12,16 @@
       Baseline 来自数据集冻结来源；候选仅修改 Prompt。创建后仍需预检和单独确认 Token 预算才会启动。
     </p>
     <el-button :disabled="busy" @click="picker = true">选择已发布数据集版本</el-button>
+    <label class="experiment-create-name"
+      >实验名称（可选）
+      <input
+        v-model="name"
+        aria-label="实验名称（可选）"
+        :maxlength="MAX_DISPLAY_NAME_LENGTH"
+        :disabled="busy"
+        placeholder="留空时显示数据集名称"
+      />
+    </label>
     <p v-if="source">
       {{ source.name }} · v{{ source.version.versionNo }} · #{{ source.version.id }}
     </p>
@@ -149,6 +159,7 @@ import type { AgentExecutionAudit } from '@/features/task/types'
 import * as api from '../api/evaluation-api'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import { MAX_PROMPT_CANDIDATES } from '../experiment'
+import { MAX_DISPLAY_NAME_LENGTH } from '../display'
 import type {
   DatasetVersion,
   DatasetExperimentSource,
@@ -160,6 +171,7 @@ import type {
 const props = defineProps<{ spaceId: string; allowed: boolean; initialVersionId?: string }>()
 const emit = defineEmits<{ close: []; created: [value: Experiment] }>()
 const source = ref<{ version: DatasetVersion; name: string }>()
+const name = ref('')
 const baseline = ref<DatasetExperimentSource | null>(null)
 const baselineAudit = ref<AgentExecutionAudit | null>(null),
   baselineAuditError = ref('')
@@ -203,6 +215,7 @@ const fingerprint = computed(() =>
   JSON.stringify([
     props.spaceId,
     source.value?.version.id,
+    name.value.trim(),
     candidates.value.map(({ variantKey, agentPrompt }) => ({ variantKey, agentPrompt })),
   ]),
 )
@@ -329,6 +342,7 @@ async function create() {
     spaceId: props.spaceId,
     datasetVersionId: source.value.version.id,
     clientRequestKey: requestKey,
+    ...(name.value.trim() ? { name: name.value.trim() } : {}),
     candidateVariants: candidates.value.map(({ variantKey, agentPrompt }) => ({
       variantKey,
       agentPrompt,

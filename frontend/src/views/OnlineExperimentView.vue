@@ -73,8 +73,9 @@
                   >
                 </td>
                 <td>
-                  {{ item.createdAt || '创建时间未知'
-                  }}<small>对账 {{ item.lastReconciledAt || '尚未确认' }}</small>
+                  <BusinessTime :value="item.createdAt" empty-text="创建时间未知" /><small
+                    >对账 <BusinessTime :value="item.lastReconciledAt" empty-text="尚未确认"
+                  /></small>
                 </td>
               </tr>
             </tbody>
@@ -109,7 +110,8 @@
           <section v-if="section === 'facts'" id="online-facts" aria-label="线上运行事实">
             <h3>{{ onlineStatus(experiment.status) }}</h3>
             <p v-if="factsReadAt">
-              当前运行事实 · 浏览器最近成功读取于 {{ factsReadAt }}（UTC）；不代表报告观察截止时间。
+              当前运行事实 · 浏览器最近成功读取于
+              <BusinessTime :value="factsReadAt" />；不代表报告观察截止时间。
             </p>
             <p v-for="code in experiment.reasonCodes" :key="code" class="warning">
               {{ onlineIssue(code) }}
@@ -154,19 +156,21 @@
                   <tr>
                     <th>实际窗口</th>
                     <td>
-                      开始 {{ experiment.startedAt || '未开始'
-                      }}<small
-                        >分配截止 {{ experiment.assignmentDeadline || '未开始' }} / 观察截止
-                        {{ experiment.observationDeadline || '未开始' }}</small
-                      >
+                      开始 <BusinessTime :value="experiment.startedAt" empty-text="未开始" /><small
+                        >分配截止
+                        <BusinessTime :value="experiment.assignmentDeadline" empty-text="未开始" />
+                        / 观察截止
+                        <BusinessTime :value="experiment.observationDeadline" empty-text="未开始"
+                      /></small>
                     </td>
                   </tr>
                   <tr>
                     <th>对账</th>
                     <td>
-                      {{
-                        experiment.lastReconciledAt || '尚未确认'
-                      }}。已发取消请求不代表远端已停止。
+                      <BusinessTime
+                        :value="experiment.lastReconciledAt"
+                        empty-text="尚未确认"
+                      />。已发取消请求不代表远端已停止。
                     </td>
                   </tr>
                 </tbody>
@@ -194,7 +198,7 @@
               <p>
                 {{
                   preflight.startable ? '预检允许启动，仍需确认副作用和授权' : '当前不能启动'
-                }}。有效至 {{ preflight.expiresAt }}。
+                }}。有效至 <BusinessTime :value="preflight.expiresAt" />。
               </p>
               <p>
                 基线 {{ preflight.baselineDocumentCount }} 文档 / 候选
@@ -377,6 +381,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElButton, ElPagination } from 'element-plus'

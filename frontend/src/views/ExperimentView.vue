@@ -4,7 +4,9 @@
       <div>
         <h2>
           <template v-if="resourceId && experiment && canRead">
+            <span v-if="experiment.name">{{ experiment.name }}</span>
             <EvaluationSourceTitle
+              v-else
               :space-id="spaceId"
               kind="datasets"
               :version-id="String(experiment.datasetVersionId || '')"
@@ -14,6 +16,15 @@
           </template>
           <template v-else>{{ resourceId ? `离线实验 #${resourceId}` : '离线实验列表' }}</template>
         </h2>
+        <p v-if="resourceId && experiment?.name && canRead">
+          来源：
+          <EvaluationSourceTitle
+            :space-id="spaceId"
+            kind="datasets"
+            :version-id="String(experiment.datasetVersionId || '')"
+            fallback="数据集名称不可用"
+          />
+        </p>
         <p v-if="resourceId">
           实验 #{{ resourceId }} <CopyButton :value="resourceId" label="实验 ID" />
         </p>
@@ -88,10 +99,18 @@
               <tr v-for="item in list.records" :key="String(item.id)">
                 <td>
                   <RouterLink :to="`${basePath}/${item.id}`">
+                    <template v-if="item.name">{{ item.name }}</template>
+                    <template v-else
+                      >{{ item.datasetName || '数据集名称不可用' }} · v{{
+                        item.datasetVersionNo ?? '未提供'
+                      }}</template
+                    >
+                  </RouterLink>
+                  <p v-if="item.name">
                     {{ item.datasetName || '数据集名称不可用' }} · v{{
                       item.datasetVersionNo ?? '未提供'
                     }}
-                  </RouterLink>
+                  </p>
                   <p>实验 #{{ item.id }}</p>
                   <small>版本 #{{ item.datasetVersionId || '未提供' }}</small>
                 </td>
@@ -112,14 +131,14 @@
                   </p>
                 </td>
                 <td>
-                  创建 {{ item.createdAt || '未提供' }}
-                  <p>开始 {{ item.startedAt || '未开始' }}</p>
+                  创建 <BusinessTime :value="item.createdAt" empty-text="未提供" />
+                  <p>开始 <BusinessTime :value="item.startedAt" empty-text="未开始" /></p>
                   <p>
                     结束
                     {{
                       activeExperiment(item.status) || ['CREATED', 'PAUSED'].includes(item.status)
                         ? '尚未结束'
-                        : item.finishedAt || '未提供'
+                        : formatBusinessTime(item.finishedAt, '未提供')
                     }}
                   </p>
                 </td>
@@ -141,14 +160,14 @@
           <article>
             <EvaluationStatusTag domain="experiment" :status="experiment.status" />
             <p v-if="experiment.failureCode">失败码：{{ experiment.failureCode }}</p>
-            <p>开始 {{ experiment.startedAt || '未开始' }}</p>
+            <p>开始 <BusinessTime :value="experiment.startedAt" empty-text="未开始" /></p>
             <p>
               结束
               {{
                 activeExperiment(experiment.status) ||
                 ['CREATED', 'PAUSED'].includes(experiment.status)
                   ? '尚未结束'
-                  : experiment.finishedAt || '未提供'
+                  : formatBusinessTime(experiment.finishedAt, '未提供')
               }}
             </p>
           </article>
@@ -277,7 +296,7 @@
               @change="chooseRevision"
             >
               <option v-for="item in revisions" :key="item.revision" :value="item.revision">
-                Revision {{ item.revision }} · {{ item.generatedAt || '未提供' }}
+                Revision {{ item.revision }} · {{ formatBusinessTime(item.generatedAt, '未提供') }}
               </option>
             </select></label
           >
@@ -289,7 +308,8 @@
             >
             <p>{{ experiment.decisionReason }}</p>
             <p>
-              由 #{{ experiment.decidedBy }} 于 {{ experiment.decidedAt }} 记录。结论不修改生产
+              由 #{{ experiment.decidedBy }} 于
+              <BusinessTime :value="experiment.decidedAt" /> 记录。结论不修改生产
               Agent、不分配线上流量。
             </p>
           </article>
@@ -394,6 +414,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { evaluationStatus } from '@/features/evaluation/status'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
@@ -1057,6 +1079,13 @@ onBeforeUnmount(() => {
   gap: var(--adw-space-4);
   align-items: flex-start;
   flex-wrap: wrap;
+}
+.experiment-header > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.experiment-header h2 {
+  overflow-wrap: anywhere;
 }
 .actions {
   display: flex;

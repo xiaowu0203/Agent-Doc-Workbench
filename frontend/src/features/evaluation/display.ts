@@ -1,3 +1,6 @@
+/** 与创建请求及数据库字段一致的名称上限。 */
+export const MAX_DISPLAY_NAME_LENGTH = 200
+
 /** 仅用于展示，计算、比较与报告身份始终使用冻结原值。 */
 export function formatMetricNumber(value: unknown, unit?: string | null): string {
   if (value === null || value === undefined || value === '') return '未知'

@@ -218,7 +218,7 @@ public class EvaluationWorkbenchQueryService {
                     testCaseVersion == null ? null : testCaseVersion.getVersionNo(),
                     run.getExperimentVariantId(), run.getStatus(), run.getPauseReason(), run.getCancelRequested(),
                     run.getCaseCount(), completed, errors, run.getCreatedBy(), run.getCreatedAt(),
-                    run.getStartedAt(), run.getFinishedAt(), run.getUpdatedAt());
+                    run.getStartedAt(), run.getFinishedAt(), run.getUpdatedAt(), run.getName());
         }).toList();
         return PageVO.of(records, page.getTotal(), param);
     }
@@ -268,7 +268,7 @@ public class EvaluationWorkbenchQueryService {
                     linkedRuns, experiment.getAuthorizedTokenBudget(), experiment.getFailureCode(),
                     experiment.getDecision(), experiment.getDecisionReportRevision(), experiment.getCreatedBy(),
                     experiment.getCreatedAt(), experiment.getStartedAt(), experiment.getFinishedAt(),
-                    experiment.getUpdatedAt());
+                    experiment.getUpdatedAt(), experiment.getName());
         }).toList();
         return PageVO.of(records, page.getTotal(), param);
     }

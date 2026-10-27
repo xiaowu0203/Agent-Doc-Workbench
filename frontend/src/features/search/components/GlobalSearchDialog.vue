@@ -111,6 +111,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Cpu, Document, Search, Tickets } from '@element-plus/icons-vue'
 import { ElButton, ElDialog, ElIcon } from 'element-plus'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -337,11 +338,7 @@ function statusLabel(item: WorkbenchSearchItem): string {
 }
 
 function formatTime(value: string | null): string {
-  if (!value) return '暂无更新时间'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(date)
+  return formatBusinessTime(value, '暂无更新时间')
 }
 </script>
 

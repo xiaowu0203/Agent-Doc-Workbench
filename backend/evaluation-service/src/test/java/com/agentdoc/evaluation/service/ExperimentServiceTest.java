@@ -39,6 +39,9 @@ import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -101,8 +104,10 @@ class ExperimentServiceTest {
         SecurityContextHolder.clearContext();
     }
 
-    @Test
-    void createsIdempotentlyAndCalculatesPreflightBudget() {
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  本地回归实验  "})
+    void createsIdempotentlyAndCalculatesPreflightBudget(String name) {
         AtomicReference<ExperimentEntity> savedExperiment = new AtomicReference<>();
         AtomicReference<List<ExperimentVariantEntity>> savedVariants = new AtomicReference<>();
         when(experimentMapper.selectOne(any())).thenAnswer(invocation -> savedExperiment.get());
@@ -114,12 +119,19 @@ class ExperimentServiceTest {
             return null;
         }).when(persistenceService).create(any(), any());
         ExperimentCreateDTO request = new ExperimentCreateDTO(9L, "request-1", 10L,
-                List.of(new PromptCandidateCreateDTO("prompt-a", "更简洁地处理文档")));
+                List.of(new PromptCandidateCreateDTO("prompt-a", "更简洁地处理文档")), name);
 
         var created = service.create(request);
         var repeated = service.create(request);
 
         assertThat(created.id()).isEqualTo(repeated.id());
+        assertThat(created.name()).isEqualTo(name == null || name.isBlank() ? null : name.trim());
+        if (created.name() == null) {
+            assertThat(savedExperiment.get().getRequestHash()).isEqualTo(StableSnapshotUtils.snapshotHash(1,
+                    new LegacyCreateRequest(9L, 10L, request.candidateVariants())));
+        }
+        assertThatThrownBy(() -> service.create(new ExperimentCreateDTO(9L, "request-1", 10L,
+                request.candidateVariants(), "另一个名称"))).hasMessageContaining("幂等键");
         assertThat(created.variants()).extracting("role").containsExactly("BASELINE", "CANDIDATE");
         assertThat(created.variants().get(1).candidateConfigRef()).isEqualTo(61L);
         verify(agentFeign, times(1)).createCandidateConfig(any());
@@ -137,6 +149,8 @@ class ExperimentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("BUDGET_LIMIT_EXCEEDED");
     }
+
+    private record LegacyCreateRequest(Long spaceId, Long datasetVersionId, List<PromptCandidateCreateDTO> candidateVariants) { }
 
     @Test void sourceSummaryUsesOnlyVerifiedFrozenSourcesAndKeepsDuplicateAndMissingBoundaries() {
         var manifest = new ExperimentManifest(10L, List.of(

@@ -60,9 +60,9 @@ public class EvaluationRunPersistenceService {
      */
     @Transactional
     public RunDraft create(Long spaceId, Long datasetVersionId, Long singleTestCaseVersionId,
-                           Long createdBy, List<Long> testCaseVersionIds) {
+                           Long createdBy, List<Long> testCaseVersionIds, String name) {
         return createInternal(spaceId, datasetVersionId, singleTestCaseVersionId, null,
-                createdBy, testCaseVersionIds);
+                createdBy, testCaseVersionIds, name);
     }
 
     @Transactional
@@ -75,7 +75,7 @@ public class EvaluationRunPersistenceService {
         }
         try {
             return createInternal(spaceId, datasetVersionId, null, experimentVariantId,
-                    createdBy, testCaseVersionIds);
+                    createdBy, testCaseVersionIds, null);
         } catch (DuplicateKeyException exception) {
             EvaluationRunEntity concurrent = runMapper.selectOne(new LambdaQueryWrapper<EvaluationRunEntity>()
                     .eq(EvaluationRunEntity::getExperimentVariantId, experimentVariantId));
@@ -88,10 +88,11 @@ public class EvaluationRunPersistenceService {
 
     private RunDraft createInternal(Long spaceId, Long datasetVersionId, Long singleTestCaseVersionId,
                                     Long experimentVariantId, Long createdBy,
-                                    List<Long> testCaseVersionIds) {
+                                    List<Long> testCaseVersionIds, String name) {
         EvaluationRunEntity run = new EvaluationRunEntity();
         run.setId(IdWorker.getId());
         run.setSpaceId(spaceId);
+        run.setName(name);
         run.setDatasetVersionId(datasetVersionId);
         run.setSingleTestCaseVersionId(singleTestCaseVersionId);
         run.setExperimentVariantId(experimentVariantId);

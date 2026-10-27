@@ -775,6 +775,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import {
   CircleCheckFilled,
   Clock,
@@ -2440,13 +2441,7 @@ function activityStatusType(
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value))
+  return formatBusinessTime(value, '—')
 }
 
 function formatRelativeTime(value: string | null): string {

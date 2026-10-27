@@ -203,6 +203,7 @@ export interface DatasetCaseBindingsRequest {
 
 export interface DatasetVersionCreateRequest {
   datasetId: EntityId
+  copyFromVersionId?: EntityId
 }
 
 export interface EvaluationDatasetCreateRequest {
@@ -227,6 +228,7 @@ export interface EvaluationRetryRequest {
 }
 
 export interface EvaluationRunCreateRequest {
+  name?: string | null
   spaceId: EntityId
   datasetVersionId?: EntityId | null
   singleTestCaseVersionId?: EntityId | null
@@ -264,6 +266,7 @@ export type TestCaseVersionUpdateRequest = Omit<
 >
 
 export interface ExperimentCreateRequest {
+  name?: string | null
   spaceId: EntityId
   clientRequestKey: string
   datasetVersionId: EntityId
@@ -457,6 +460,7 @@ export interface EvaluationResultSummary {
 }
 
 export interface EvaluationRunSummary {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -480,6 +484,7 @@ export interface EvaluationRunSummary {
 }
 
 export interface EvaluationRun {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -684,6 +689,7 @@ export interface ExperimentSourceSummary {
 }
 
 export interface ExperimentSummary {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -720,6 +726,7 @@ export interface ExperimentVariant {
 }
 
 export interface Experiment {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null

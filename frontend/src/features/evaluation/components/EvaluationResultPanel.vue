@@ -26,7 +26,10 @@
           <dt>便捷得分</dt>
           <dd>{{ detail.score ?? '未提供' }}（不替代标准 Metric）</dd>
           <dt>评估时间</dt>
-          <dd>{{ detail.startedAt || '不可用' }} ～ {{ detail.finishedAt || '不可用' }}</dd>
+          <dd>
+            <BusinessTime :value="detail.startedAt" empty-text="不可用" /> ～
+            <BusinessTime :value="detail.finishedAt" empty-text="不可用" />
+          </dd>
         </dl>
         <h4>标准指标</h4>
         <p v-if="!detail.metrics.length">
@@ -145,6 +148,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { metricLabel } from '../display'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
@@ -172,6 +176,7 @@ const props = defineProps<{
   revision: number
   returnPath?: string
 }>()
+const emit = defineEmits<{ settled: [] }>()
 const detail = ref<EvaluationResultDetail | null>(null),
   loading = ref(false),
   error = ref('')
@@ -227,7 +232,10 @@ async function load() {
   } catch (e) {
     if (!pending.signal.aborted) error.value = normalizeApiError(e).message
   } finally {
-    if (!pending.signal.aborted) loading.value = false
+    if (!pending.signal.aborted) {
+      loading.value = false
+      emit('settled')
+    }
   }
 }
 watch(

@@ -16,6 +16,9 @@ public final class EvaluationConstant {
      */
     public static final int CONTENT_HASH_SCHEMA_VERSION = 1;
 
+    /** 评估运行与离线实验展示名称的字段上限。 */
+    public static final int MAX_DISPLAY_NAME_LENGTH = 200;
+
     /** Prompt 离线实验支持的来源执行快照协议。 */
     public static final int EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION = 3;
 
@@ -31,6 +34,9 @@ public final class EvaluationConstant {
      * 数据集最大用例数量上限，限制单次评估数据集规模
      */
     public static final int MAX_DATASET_CASE_COUNT = 100;
+
+    /** 一个数据集版本可保存的全部绑定上限（包含停用项），与单次执行上限不同。 */
+    public static final int MAX_DATASET_BINDING_COUNT = 1000;
 
     /**
      * 指标查询时允许传入的指标ID最大数量上限

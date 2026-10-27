@@ -19,6 +19,7 @@
         <el-button
           v-if="canManage && resource && !resource.archived"
           type="primary"
+          :disabled="loading || versionLoading || busy"
           @click="openVersionDialog"
           >新建草稿版本</el-button
         >
@@ -175,8 +176,9 @@
               <strong>v{{ version.versionNo }}</strong
               ><EvaluationStatusTag domain="version" :status="version.status" />
             </div>
-            <span>{{ version.publishedAt ? `发布于 ${version.publishedAt}` : '尚未发布' }}</span
-            ><span>#{{ version.id }}</span>
+            <span v-if="version.publishedAt"
+              >发布于 <BusinessTime :value="version.publishedAt" /></span
+            ><span v-else>尚未发布</span><span>#{{ version.id }}</span>
           </button>
           <p v-if="!versions.records.length">尚未创建版本。</p>
           <el-pagination
@@ -249,7 +251,9 @@
                   <dt>内容 hash</dt>
                   <dd>{{ selectedVersion.contentHash || '发布时生成' }}</dd>
                   <dt>发布时间</dt>
-                  <dd>{{ selectedVersion.publishedAt || '尚未发布' }}</dd>
+                  <dd>
+                    <BusinessTime :value="selectedVersion.publishedAt" empty-text="尚未发布" />
+                  </dd>
                 </dl>
               </details>
               <template v-if="evaluatorVersion">
@@ -373,7 +377,9 @@
                   <dt>版本内容 hash</dt>
                   <dd>{{ testCaseVersion.contentHash || '发布时生成' }}</dd>
                   <dt>发布时间</dt>
-                  <dd>{{ testCaseVersion.publishedAt || '尚未发布' }}</dd>
+                  <dd>
+                    <BusinessTime :value="testCaseVersion.publishedAt" empty-text="尚未发布" />
+                  </dd>
                 </dl>
               </details>
             </template>
@@ -456,7 +462,16 @@
           >
         </details></template
       >
-      <p v-else>创建空草稿版本后，从已发布测试用例版本中添加绑定并排序。</p>
+      <template v-else>
+        <p>默认创建空草稿。也可显式复制当前选中的已发布版本绑定，再在新草稿中调整。</p>
+        <el-checkbox v-if="copySourceVersion" v-model="copyBindings">
+          复制已选发布版本 v{{ copySourceVersion.versionNo }} 的绑定
+        </el-checkbox>
+        <p v-else>当前未选择已发布版本；如需复制，请先关闭窗口并选择一个已发布版本。</p>
+        <p v-if="copyBindings">
+          复制全部用例引用、顺序和启用状态（含停用项）。失效或归档依赖会使整次创建失败；旧版本保持不变，新草稿需另行核对和发布。
+        </p>
+      </template>
       <p v-if="dialogError" role="alert">{{ dialogError }}</p>
       <template #footer
         ><el-button @click="versionDialog = false">取消</el-button
@@ -472,11 +487,13 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
   ElButton,
+  ElCheckbox,
   ElDialog,
   ElForm,
   ElFormItem,
@@ -623,6 +640,8 @@ const resourceDialog = ref(false),
   versionDialog = ref(false),
   dialogError = ref(''),
   selectedSourceTask = ref<string | null>(null)
+const copyBindings = ref(false)
+const copySourceVersion = ref<DatasetVersion | null>(null)
 let mainRequest: AbortController | undefined,
   versionRequest: AbortController | undefined,
   versionsRequest: AbortController | undefined,
@@ -819,6 +838,11 @@ function openResourceDialog() {
   resourceDialog.value = true
 }
 function openVersionDialog() {
+  copyBindings.value = false
+  copySourceVersion.value =
+    props.section === 'datasets' && selectedVersion.value?.status === 'PUBLISHED'
+      ? (selectedVersion.value as DatasetVersion)
+      : null
   Object.assign(newVersionForm, {
     configJson: '{}',
     expectedJson: '{}',
@@ -908,7 +932,15 @@ async function createVersion() {
         request.signal,
       )
     } else if (props.section === 'datasets')
-      value = await api.createDatasetVersion({ datasetId: parentId }, request.signal)
+      value = await api.createDatasetVersion(
+        {
+          datasetId: parentId,
+          ...(copyBindings.value && copySourceVersion.value
+            ? { copyFromVersionId: copySourceVersion.value.id }
+            : {}),
+        },
+        request.signal,
+      )
     else
       value = await api.createEvaluatorVersion(
         {

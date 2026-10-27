@@ -111,7 +111,7 @@ class EvaluationRunServiceTest {
         EvaluationRunPersistenceService.RunDraft draft = draft();
         when(testCaseVersionMapper.selectById(31L)).thenReturn(version);
         when(testCaseMapper.selectById(32L)).thenReturn(activeTestCase());
-        when(persistenceService.create(eq(9L), eq(null), eq(31L), eq(501L), eq(List.of(31L))))
+        when(persistenceService.create(eq(9L), eq(null), eq(31L), eq(501L), eq(List.of(31L)), eq("验收回归")))
                 .thenReturn(draft);
         when(taskFeign.createReplayBatch(any())).thenReturn(Result.ok(new ReplayBatchCreateVO(
                 71L, 9L, List.of(new ReplayBatchItemVO(99L, "evaluation-case-attempt:73", 801L, "PENDING")),
@@ -123,7 +123,7 @@ class EvaluationRunServiceTest {
         draft.cases().getFirst().caseRun().setStatus(EvaluationAttemptStatus.REPLAY_CREATED.name());
         when(persistenceService.attachDispatch(eq(draft), any())).thenReturn(draft);
 
-        var result = service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L));
+        var result = service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L, "  验收回归  "));
 
         assertThat(result.status()).isEqualTo(EvaluationRunStatus.RUNNING.name());
         assertThat(result.cases()).singleElement().satisfies(item -> assertThat(item.executionTaskId()).isEqualTo(801L));
@@ -140,7 +140,7 @@ class EvaluationRunServiceTest {
         EvaluationRunPersistenceService.RunDraft draft = draft();
         when(testCaseVersionMapper.selectById(31L)).thenReturn(publishedCase());
         when(testCaseMapper.selectById(32L)).thenReturn(activeTestCase());
-        when(persistenceService.create(any(), any(), any(), any(), any())).thenReturn(draft);
+        when(persistenceService.create(any(), any(), any(), any(), any(), any())).thenReturn(draft);
         when(taskFeign.createReplayBatch(any())).thenReturn(Result.fail(ErrorCode.INTERNAL_ERROR));
         when(persistenceService.pauseDispatch(draft)).thenAnswer(invocation -> {
             draft.run().setStatus(EvaluationRunStatus.PAUSED.name());
@@ -148,7 +148,7 @@ class EvaluationRunServiceTest {
             return draft;
         });
 
-        var result = service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L));
+        var result = service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L, null));
 
         assertThat(result.status()).isEqualTo(EvaluationRunStatus.PAUSED.name());
         assertThat(result.pauseReason()).isEqualTo(EvaluationPauseReason.DISPATCH_UNAVAILABLE.name());
@@ -159,7 +159,7 @@ class EvaluationRunServiceTest {
     void rejectsNewRunWhenEmergencyCreationGateIsDisabled() {
         runtimeProperties.setRunCreationEnabled(false);
 
-        assertThatThrownBy(() -> service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L)))
+        assertThatThrownBy(() -> service.create(new EvaluationRunCreateDTO(9L, null, 31L, 600L, null)))
                 .isInstanceOfSatisfying(com.agentdoc.common.exception.BusinessException.class,
                         exception -> assertThat(exception.getCode()).isEqualTo(ErrorCode.SERVICE_UNAVAILABLE.getCode()));
     }

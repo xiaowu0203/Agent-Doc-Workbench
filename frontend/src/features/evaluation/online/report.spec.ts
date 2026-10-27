@@ -199,8 +199,7 @@ describe('固定线上报告和人工决定', () => {
     })
     const wrapper = create()
     await flushPromises()
-    await button(wrapper, '填入当前接受范围').trigger('click')
-    await flushPromises()
+    expect(api.getOnlineReportRangeSuggestion).toHaveBeenCalledWith(experiment.id, expect.any(AbortSignal))
     expect(wrapper.get('[aria-label="报告分配截止序号"]').element).toHaveProperty(
       'value',
       '9007199254740993',
@@ -210,6 +209,25 @@ describe('固定线上报告和人工决定', () => {
       '2026-10-12T12:34:56.123',
     )
     expect(wrapper.text()).toContain('Asia/Shanghai')
+    expect(api.recalculateOnlineReport).not.toHaveBeenCalled()
+  })
+  it('自动范围建议迟到时不覆盖用户已输入的截止范围', async () => {
+    let resolveSuggestion!: (value: Awaited<ReturnType<typeof api.getOnlineReportRangeSuggestion>>) => void
+    vi.mocked(api.getOnlineReportRangeSuggestion).mockReturnValue(new Promise((resolve) => {
+      resolveSuggestion = resolve
+    }))
+    const wrapper = create()
+    await wrapper.get('[aria-label="报告分配截止序号"]').setValue('42')
+    await wrapper.get('[aria-label="报告观察截止"]').setValue('2026-10-12T11:00:00.000')
+    resolveSuggestion({
+      experimentId: experiment.id,
+      assignmentCutoffSequence: '50',
+      observationCutoffAt: '2026-10-12T12:00:00.000',
+      timeZone: 'Asia/Shanghai',
+    })
+    await flushPromises()
+    expect(wrapper.get('[aria-label="报告分配截止序号"]').element).toHaveProperty('value', '42')
+    expect(wrapper.get('[aria-label="报告观察截止"]').element).toHaveProperty('value', '2026-10-12T11:00:00.000')
     expect(api.recalculateOnlineReport).not.toHaveBeenCalled()
   })
   const revisionRow = (revision: number) => ({

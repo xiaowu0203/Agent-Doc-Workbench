@@ -235,6 +235,8 @@ OnlineQualityFeedbackDTO：assignmentId、originalEvidenceType（ORIGINAL_TEXT/C
 
 既有 score 必须等于 rubricScore/4（0、0.25、0.5、0.75、1），服务端生成/校验，历史 0～1 值不改。label 继续现有 ACCEPTED/REJECTED/NEEDS_CHANGES/NOT_APPLICABLE，不把 rubric 直接写 4 到 score。
 
+新评分界面使用通用交付等级说明 v1：0 完全未达成、1 大量错误、2 部分达成、3 基本达成且需小改、4 完整达成。评分以冻结业务目标和完整原始证据为准；证据不可校验时禁止评分，不能以 0 代替缺证据。等级说明不自动决定质量标签、安全事件或正式审批结果，不反向为历史评分赋予新的等级含义，亦不重写旧反馈或冻结报告。说明的后续语义变更应另起版本评审。
+
 默认首份有效记录按 createdAt + id 选定；明确更正只能指向同一 Task/原产物及合法前序，理由必需、无环、并发更正只允许一个被选后继；报告选择规则固定。已知分组的评审不能声明 BLINDED，无法确认按 UNKNOWN；首评非盲态不能通过另造首评替换。
 
 当前人工入口每个 assignment 只允许一份首评，更正必须指向当前链尾，comment 或 reasonCodes 至少一项非空。服务端复查已完成 LIVE 冻结输入、实际 assignment 和不可变原始证据；多产物必须使用 ORIGINAL_CHANGE_SET 对整个任务原始变更集合评分，旧单产物类型在多产物场景继续拒绝，避免选择其中最好的一份。证据缺失、未完成或身份损坏不落零分；证据可校验时 rubric=0 是有效反馈。RPC 与求证在事务外，落库时以 assignment 行锁再次核验身份，首评和更正均只追加。

@@ -55,8 +55,8 @@
                 {{ selected.currentCaseAttempt ? '（当前）' : '（历史，只读）' }}
               </h4>
               <p>
-                开始 {{ selected.startedAt || '尚未开始' }} · 结束
-                {{ selected.finishedAt || '尚未结束' }}
+                开始 <BusinessTime :value="selected.startedAt" empty-text="尚未开始" /> · 结束
+                <BusinessTime :value="selected.finishedAt" empty-text="尚未结束" />
               </p>
               <p v-if="selected.failureCode">
                 失败阶段 {{ selected.failureStage || '不可用' }} · {{ selected.failureCode }}
@@ -145,6 +145,7 @@
             :can-read-task="canReadTask"
             :revision="revision"
             :return-path="returnPath"
+            @settled="$emit('settled')"
           />
           <EvaluationFeedbackPanel
             :space-id="spaceId"
@@ -166,6 +167,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElButton, ElPagination } from 'element-plus'
@@ -201,6 +203,7 @@ const emit = defineEmits<{
   retryEvaluation: [attemptId: string]
   feedbackSaved: []
   selection: [attemptId: string, resultId?: string]
+  settled: []
 }>()
 const PAGE_SIZE = 10
 const page = ref<EvaluationPage<EvaluationCaseAttemptHistory>>({
@@ -344,7 +347,10 @@ async function load(pageNum: number, locateDeepLink = false) {
       selectedResult.value = null
     }
   } finally {
-    if (!pending.signal.aborted) loading.value = false
+    if (!pending.signal.aborted) {
+      loading.value = false
+      if (!selectedResult.value) emit('settled')
+    }
   }
 }
 watch(

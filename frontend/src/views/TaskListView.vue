@@ -212,6 +212,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Plus } from '@element-plus/icons-vue'
 import {
   ElButton,
@@ -447,9 +448,7 @@ function formatNumber(value: number | null) {
   return value == null ? '—' : value.toLocaleString('zh-CN')
 }
 function formatTime(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' }).format(
-    new Date(value),
-  )
+  return formatBusinessTime(value, '—')
 }
 </script>
 <style scoped>

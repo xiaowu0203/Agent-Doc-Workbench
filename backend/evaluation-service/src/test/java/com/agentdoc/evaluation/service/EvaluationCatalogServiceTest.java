@@ -11,6 +11,7 @@ import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalTextEvaluator;
 import com.agentdoc.evaluation.evaluator.OnlineOriginalChangeEvaluator;
 import com.agentdoc.evaluation.pojo.dto.EvaluatorVersionCreateDTO;
+import com.agentdoc.evaluation.pojo.dto.DatasetVersionCreateDTO;
 import com.agentdoc.evaluation.enums.EvaluationVersionStatus;
 import com.agentdoc.evaluation.evaluator.EvaluatorContractValidator;
 import com.agentdoc.evaluation.mapper.EvaluationDatasetCaseMapper;
@@ -53,6 +54,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -264,6 +266,8 @@ class EvaluationCatalogServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "catalog-test");
         TableInfoHelper.initTableInfo(assistant, EvaluatorVersionEntity.class);
         TableInfoHelper.initTableInfo(assistant, EvaluationDatasetEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluationDatasetVersionEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluationDatasetCaseEntity.class);
         TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseEntity.class);
         TableInfoHelper.initTableInfo(assistant, EvaluatorEntity.class);
         TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseVersionEntity.class);
@@ -480,6 +484,101 @@ class EvaluationCatalogServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class,
                         exception -> org.assertj.core.api.Assertions.assertThat(exception.getCode())
                                 .isEqualTo(ErrorCode.NOT_FOUND.getCode()));
+    }
+
+    @Test
+    void explicitCopyPreservesDisabledBindingsAndOrderWithoutChangingPublishedSource() {
+        when(datasetMapper.selectById(1L)).thenReturn(dataset(false));
+        var source = datasetVersion(); source.setStatus("PUBLISHED"); source.setVersionNo(3);
+        source.setContentHash("frozen-hash");
+        when(datasetVersionMapper.selectById(11L)).thenReturn(source);
+        when(datasetVersionMapper.selectOne(any())).thenReturn(source);
+        var first = new EvaluationDatasetCaseEntity(); first.setId(51L); first.setTestCaseVersionId(31L);
+        first.setSortOrder(7); first.setEnabled(false);
+        var second = new EvaluationDatasetCaseEntity(); second.setId(52L); second.setTestCaseVersionId(33L);
+        second.setSortOrder(12); second.setEnabled(true);
+        when(datasetCaseMapper.selectList(any())).thenReturn(List.of(first, second));
+        var one = sourceVersion(); one.setStatus("PUBLISHED"); one.setTestCaseId(32L);
+        var two = sourceVersion(); two.setId(33L); two.setStatus("PUBLISHED"); two.setTestCaseId(32L);
+        when(testCaseVersionMapper.selectBatchIds(List.of(31L, 33L))).thenReturn(List.of(one, two));
+        when(testCaseMapper.selectBatchIds(any())).thenReturn(List.of(testCase(false)));
+        try (var auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUserIdOrException).thenReturn(5L);
+            var created = service.createDatasetVersion(new DatasetVersionCreateDTO(1L, 11L));
+            assertThat(created.status()).isEqualTo("DRAFT");
+            assertThat(created.versionNo()).isEqualTo(4);
+            assertThat(created.contentHash()).isNull();
+            verify(datasetCaseMapper).insertBatch(argThat(copies -> {
+                assertThat(copies).hasSize(2);
+                assertThat(copies).allMatch(copy -> copy.getDatasetVersionId().equals(created.id()));
+                assertThat(copies.getFirst().getId()).isNotEqualTo(first.getId());
+                assertThat(copies.getFirst().getSortOrder()).isEqualTo(7);
+                assertThat(copies.getFirst().getEnabled()).isFalse();
+                assertThat(copies.getLast().getSortOrder()).isEqualTo(12);
+                assertThat(copies.getLast().getEnabled()).isTrue();
+                return true;
+            }));
+        }
+        assertThat(source.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(source.getContentHash()).isEqualTo("frozen-hash");
+        verify(datasetVersionMapper, never()).updateById(any(EvaluationDatasetVersionEntity.class));
+        verifyNoInteractions(taskFeign, documentFeign);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"DRAFT", "ARCHIVED", "parent", "space", "missing"})
+    void copyRejectsUnavailableOrUnrelatedSourceBeforeWriting(String kind) {
+        when(datasetMapper.selectById(1L)).thenReturn(dataset(false));
+        var source = datasetVersion(); source.setStatus("PUBLISHED");
+        if (kind.equals("DRAFT") || kind.equals("ARCHIVED")) source.setStatus(kind);
+        if (kind.equals("parent")) source.setDatasetId(2L);
+        if (kind.equals("space")) source.setSpaceId(8L);
+        when(datasetVersionMapper.selectById(11L)).thenReturn(kind.equals("missing") ? null : source);
+        assertThatThrownBy(() -> service.createDatasetVersion(new DatasetVersionCreateDTO(1L, 11L)))
+                .hasMessageContaining("当前数据集已发布版本");
+        verify(datasetVersionMapper, never()).insert(any(EvaluationDatasetVersionEntity.class));
+        verifyNoInteractions(datasetCaseMapper, testCaseVersionMapper);
+    }
+
+    @Test
+    void emptyDraftDoesNotReadOrCopyOtherVersionBindings() {
+        when(datasetMapper.selectById(1L)).thenReturn(dataset(false));
+        try (var auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUserIdOrException).thenReturn(5L);
+            assertThat(service.createDatasetVersion(new DatasetVersionCreateDTO(1L, null)).status()).isEqualTo("DRAFT");
+        }
+        verifyNoInteractions(datasetCaseMapper, testCaseVersionMapper);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"version-archived", "parent-archived", "parent-space", "case-space", "missing"})
+    void copyRejectsInvalidDependenciesIncludingDisabledBindingsWithoutPartialInsert(String kind) {
+        when(datasetMapper.selectById(1L)).thenReturn(dataset(false));
+        var source = datasetVersion(); source.setStatus("PUBLISHED");
+        when(datasetVersionMapper.selectById(11L)).thenReturn(source);
+        var binding = new EvaluationDatasetCaseEntity(); binding.setTestCaseVersionId(31L);
+        binding.setSortOrder(1); binding.setEnabled(false);
+        when(datasetCaseMapper.selectList(any())).thenReturn(List.of(binding));
+        var child = sourceVersion(); child.setTestCaseId(32L); child.setStatus("PUBLISHED");
+        if (kind.equals("version-archived")) child.setStatus("ARCHIVED");
+        if (kind.equals("case-space")) child.setSpaceId(8L);
+        when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(kind.equals("missing") ? List.of() : List.of(child));
+        var parent = testCase(false);
+        parent.setArchived(kind.equals("parent-archived"));
+        if (kind.equals("parent-space")) parent.setSpaceId(8L);
+        when(testCaseMapper.selectBatchIds(any())).thenReturn(List.of(parent));
+        assertThatThrownBy(() -> service.createDatasetVersion(new DatasetVersionCreateDTO(1L, 11L)))
+                .hasMessageContaining("同空间已发布");
+        verify(datasetVersionMapper, never()).insert(any(EvaluationDatasetVersionEntity.class));
+        verify(datasetCaseMapper, never()).insertBatch(any());
+    }
+
+    @Test
+    void copyDeniesBeforeReadingSourceWithoutManagePermission() {
+        when(datasetMapper.selectById(1L)).thenReturn(dataset(false));
+        doThrow(new BusinessException(403, "denied")).when(spaceAccessService).requirePermission(9L, EVALUATION_MANAGE);
+        assertThatThrownBy(() -> service.createDatasetVersion(new DatasetVersionCreateDTO(1L, 11L))).hasMessage("denied");
+        verifyNoInteractions(datasetVersionMapper, datasetCaseMapper);
     }
 
     private static EvaluationDatasetVersionEntity datasetVersion() {

@@ -125,7 +125,8 @@ public class EvaluationRunService {
                 request.datasetVersionId(),
                 request.singleTestCaseVersionId(),
                 AuthUtils.getUserIdOrException(),
-                caseVersions.stream().map(EvaluationTestCaseVersionEntity::getId).toList()
+                caseVersions.stream().map(EvaluationTestCaseVersionEntity::getId).toList(),
+                request.name() == null || request.name().isBlank() ? null : request.name().trim()
         );
 
         Map<Long, EvaluationTestCaseVersionEntity> caseById = caseVersions.stream()

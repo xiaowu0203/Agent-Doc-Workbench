@@ -4,7 +4,9 @@
       <div>
         <h2>
           <template v-if="resourceId && run && canRead">
+            <span v-if="run.name">{{ run.name }}</span>
             <EvaluationSourceTitle
+              v-else
               :space-id="spaceId"
               :kind="run.datasetVersionId ? 'datasets' : 'test-cases'"
               :version-id="String(run.datasetVersionId || run.singleTestCaseVersionId || '')"
@@ -14,6 +16,15 @@
           </template>
           <template v-else>{{ resourceId ? `评估运行 #${resourceId}` : '评估运行列表' }}</template>
         </h2>
+        <p v-if="resourceId && run?.name && canRead">
+          来源：
+          <EvaluationSourceTitle
+            :space-id="spaceId"
+            :kind="run.datasetVersionId ? 'datasets' : 'test-cases'"
+            :version-id="String(run.datasetVersionId || run.singleTestCaseVersionId || '')"
+            fallback="来源名称不可用"
+          />
+        </p>
         <p v-if="resourceId">
           运行 #{{ resourceId }} <CopyButton :value="resourceId" label="运行 ID" />
         </p>
@@ -106,11 +117,19 @@
                 <td>
                   <RouterLink :to="`${basePath}/${row.id}`">
                     {{
+                      row.name ||
+                      (row.datasetVersionId
+                        ? `${row.datasetName || '数据集名称不可用'} · v${row.datasetVersionNo ?? '不可用'}`
+                        : `${row.testCaseName || '用例名称不可用'} · v${row.testCaseVersionNo ?? '不可用'}`)
+                    }}
+                  </RouterLink>
+                  <p v-if="row.name">
+                    {{
                       row.datasetVersionId
                         ? `${row.datasetName || '数据集名称不可用'} · v${row.datasetVersionNo ?? '不可用'}`
                         : `${row.testCaseName || '用例名称不可用'} · v${row.testCaseVersionNo ?? '不可用'}`
                     }}
-                  </RouterLink>
+                  </p>
                   <p>运行 #{{ row.id }}</p>
                   <small v-if="row.experimentVariantId"
                     >实验配置组 #{{ row.experimentVariantId }}</small
@@ -126,14 +145,14 @@
                   <p>异常 {{ row.errorCaseCount ?? '不可用' }}</p>
                 </td>
                 <td>
-                  <p>创建 {{ row.createdAt || '不可用' }}</p>
-                  <p>开始 {{ row.startedAt || '尚未开始' }}</p>
+                  <p>创建 <BusinessTime :value="row.createdAt" empty-text="不可用" /></p>
+                  <p>开始 <BusinessTime :value="row.startedAt" empty-text="尚未开始" /></p>
                   <p>
                     结束
                     {{
                       activeRun(row.status) || row.status === 'PAUSED'
                         ? '尚未结束'
-                        : row.finishedAt || '未提供'
+                        : formatBusinessTime(row.finishedAt, '未提供')
                     }}
                   </p>
                 </td>
@@ -175,8 +194,11 @@
               }}
             </p>
             <p>
-              开始 {{ run.startedAt || '尚未开始' }}<br />结束
-              {{ terminal ? run.finishedAt || '未提供' : '尚未结束' }}
+              开始 <BusinessTime :value="run.startedAt" empty-text="尚未开始" /><br />结束
+              <BusinessTime v-if="terminal" :value="run.finishedAt" empty-text="未提供" /><template
+                v-else
+                >尚未结束</template
+              >
             </p>
           </article>
           <article v-if="run.status === 'PAUSED' || run.cancelRequested" class="run-warning">
@@ -253,6 +275,7 @@
             :initial-result-id="queryId(route.query.resultId)"
             :return-path="route.fullPath"
             @selection="rememberSelection"
+            @settled="restoreScroll"
             @retry-replay="openAction('replay')"
             @retry-evaluation="openAction('evaluation', $event)"
             @feedback-saved="loadDetail(true)"
@@ -306,9 +329,11 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { evaluationStatus } from '@/features/evaluation/status'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
 import CopyButton from '@/shared/components/CopyButton.vue'
@@ -347,6 +372,31 @@ const props = defineProps<{ resourceId?: string }>()
 const route = useRoute(),
   router = useRouter(),
   workspace = useWorkspaceStore()
+const scrollKey = 'evaluation-run-return-scroll'
+onBeforeRouteLeave((to) => {
+  if (!props.resourceId || !to.path.startsWith(`/spaces/${spaceId.value}/tasks/`)) return
+  const content = document.querySelector<HTMLElement>('.workbench-layout__content')
+  if (!content) return
+  try {
+    window.sessionStorage.setItem(scrollKey, JSON.stringify({ path: route.fullPath, top: content.scrollTop }))
+  } catch {
+    // 存储不可用时保留已有用例定位。
+  }
+})
+async function restoreScroll() {
+  try {
+    const raw = window.sessionStorage.getItem(scrollKey)
+    if (!raw) return
+    const saved = JSON.parse(raw) as { path?: string; top?: number }
+    if (saved.path !== route.fullPath || !Number.isFinite(saved.top) || saved.top! < 0) return
+    await nextTick()
+    const content = document.querySelector<HTMLElement>('.workbench-layout__content')
+    if (content) content.scrollTop = saved.top!
+    window.sessionStorage.removeItem(scrollKey)
+  } catch {
+    // 存储不可用或内容无效时保留已有用例定位。
+  }
+}
 const PAGE_SIZE = 10
 const spaceId = computed(() => String(route.params.spaceId))
 const scoped = computed(() => String(workspace.currentSpaceId) === spaceId.value)
@@ -763,6 +813,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: var(--adw-space-5);
 }
+.run-heading > div {
+  min-width: 0;
+  max-width: 100%;
+}
 .run-heading,
 .run-actions,
 .run-cases header {
@@ -778,6 +832,7 @@ h3 {
 }
 h2 {
   font-size: var(--adw-font-size-subtitle);
+  overflow-wrap: anywhere;
 }
 p,
 small {

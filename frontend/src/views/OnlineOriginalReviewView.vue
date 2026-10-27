@@ -146,8 +146,12 @@
             <label
               >原始质量等级<select v-model.number="rubric" aria-label="原始质量等级">
                 <option value="" disabled>请选择质量等级</option>
-                <option v-for="value in [0, 1, 2, 3, 4]" :key="value" :value="value">
-                  {{ value }} / 4
+                <option
+                  v-for="level in ORIGINAL_QUALITY_LEVELS"
+                  :key="level.score"
+                  :value="level.score"
+                >
+                  {{ level.score }} / 4 · {{ level.label }}
                 </option>
               </select></label
             >
@@ -155,6 +159,17 @@
               0 是有效评分；无法取得证据时不能评分。依据冻结目标评价完整产物，等级会映射为
               {{ rubric === '' ? '待选择' : rubric / 4 }}，与正式审批接受与否分开。
             </p>
+            <details>
+              <summary>通用交付等级说明 v1</summary>
+              <ul>
+                <li v-for="level in ORIGINAL_QUALITY_LEVELS" :key="level.score">
+                  {{ level.score }} / 4：{{ level.label }}
+                </li>
+              </ul>
+              <p>
+                用于本次新评分。请按冻结目标和完整证据说明依据；历史评分不按此说明重新解释，质量标签与安全事件仍需分别判断。
+              </p>
+            </details>
             <label
               >质量标签<select v-model="label" aria-label="质量标签">
                 <option value="" disabled>请选择质量标签</option>
@@ -218,6 +233,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { ORIGINAL_QUALITY_LEVELS } from '@/features/evaluation/online/rubric'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, onBeforeRouteLeave } from 'vue-router'
 import { ElButton, ElPagination, ElMessageBox } from 'element-plus'

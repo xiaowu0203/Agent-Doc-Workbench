@@ -86,6 +86,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Clock, Collection, MoreFilled, Operation, User } from '@element-plus/icons-vue'
 import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElIcon, ElTag } from 'element-plus'
 import { computed } from 'vue'
@@ -117,15 +118,7 @@ function handleCommand(command: string): void {
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
+  return formatBusinessTime(value)
 }
 </script>
 

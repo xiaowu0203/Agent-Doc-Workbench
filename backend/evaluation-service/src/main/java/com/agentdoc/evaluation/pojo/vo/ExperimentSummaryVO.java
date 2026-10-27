@@ -22,5 +22,6 @@ public record ExperimentSummaryVO(
         @Schema(description = "创建时间") LocalDateTime createdAt,
         @Schema(description = "开始时间") LocalDateTime startedAt,
         @Schema(description = "结束时间") LocalDateTime finishedAt,
-        @Schema(description = "更新时间") LocalDateTime updatedAt
+        @Schema(description = "更新时间") LocalDateTime updatedAt,
+        @Schema(description = "可选离线实验名称") String name
 ) { }

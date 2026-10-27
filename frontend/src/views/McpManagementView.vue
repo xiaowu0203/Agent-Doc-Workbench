@@ -279,6 +279,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Grid, List, Plus, Search } from '@element-plus/icons-vue'
 import {
   ElAlert,
@@ -689,15 +690,7 @@ function syncSelectedServer(): void {
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return '尚未测试'
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
+  return formatBusinessTime(value, '尚未测试')
 }
 
 function formatDuration(value: number | null): string {

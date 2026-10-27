@@ -12,7 +12,13 @@ import * as api from '../api/evaluation-api'
 import * as taskApi from '@/features/task/api/task-api'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
-import type { EvaluationTestCase, Evaluator, EvaluatorVersion, TestCaseVersion } from '../types'
+import type {
+  DatasetVersion,
+  EvaluationTestCase,
+  Evaluator,
+  EvaluatorVersion,
+  TestCaseVersion,
+} from '../types'
 import type { TaskDetail, TaskListItem } from '@/features/task/types'
 import type { ReplayEligibility } from '@/features/task/engineering-types'
 
@@ -306,6 +312,97 @@ describe('catalog editing and frozen contracts', () => {
     resolve(draft)
     await flushPromises()
     expect(wrapper.find('textarea').exists()).toBe(false)
+  })
+})
+
+describe('dataset draft binding copy', () => {
+  async function datasetCatalog(
+    status: DatasetVersion['status'] = 'PUBLISHED',
+    pending?: Promise<DatasetVersion>,
+  ) {
+    const version = {
+      id: '31',
+      datasetId: '20',
+      spaceId: '7',
+      versionNo: 3,
+      status,
+      contentHash: 'frozen',
+      publishedAt: '2026-10-23T12:00:00',
+    } as DatasetVersion
+    vi.mocked(api.getDataset).mockResolvedValue({
+      id: '20',
+      spaceId: '7',
+      name: '回归数据集',
+      description: null,
+      archived: false,
+      createdBy: null,
+      createdAt: null,
+    })
+    vi.mocked(api.searchDatasetVersions).mockResolvedValue(page([version]))
+    vi.mocked(api.getDatasetVersion).mockReturnValue(pending || Promise.resolve(version))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/spaces/:spaceId/evaluation/datasets/:id', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/spaces/7/evaluation/datasets/20?versionId=31')
+    const wrapper = mount(EvaluationCatalogView, {
+      props: { section: 'datasets', resourceId: '20' },
+      global: {
+        plugins: [router],
+        stubs: {
+          CatalogBindings: true,
+          ElDialog: {
+            props: ['modelValue'],
+            template: '<div v-if="modelValue"><slot /><slot name="footer" /></div>',
+          },
+        },
+      },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    if (!pending) await button(wrapper, '新建草稿版本').trigger('click')
+    return wrapper
+  }
+  it('waits for the selected version before enabling the draft dialog', async () => {
+    let resolve!: (value: DatasetVersion) => void
+    const pending = new Promise<DatasetVersion>((done) => {
+      resolve = done
+    })
+    const wrapper = await datasetCatalog('PUBLISHED', pending)
+    expect(button(wrapper, '新建草稿版本').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('当前未选择已发布版本')
+    const versions = await vi.mocked(api.searchDatasetVersions).mock.results[0]!.value
+    resolve(versions.records[0]!)
+    await flushPromises()
+    expect(button(wrapper, '新建草稿版本').attributes('disabled')).toBeUndefined()
+    await button(wrapper, '新建草稿版本').trigger('click')
+    expect(wrapper.text()).toContain('复制已选发布版本 v3 的绑定')
+  })
+  it.each([false, true])(
+    'only explicitly selected copy=%s sends a source version',
+    async (copy) => {
+      const wrapper = await datasetCatalog()
+      const checkbox = wrapper.get('input[type="checkbox"]')
+      expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+      if (copy) await checkbox.setValue(true)
+      vi.mocked(api.createDatasetVersion).mockRejectedValue(new Error('依赖已归档'))
+      await button(wrapper, '创建草稿版本').trigger('click')
+      await flushPromises()
+      expect(api.createDatasetVersion).toHaveBeenCalledWith(
+        { datasetId: '20', ...(copy ? { copyFromVersionId: '31' } : {}) },
+        expect.any(AbortSignal),
+      )
+      expect(wrapper.text()).toContain('依赖已归档')
+      expect(wrapper.text()).toContain('复制已选发布版本 v3 的绑定')
+      expect(api.replaceDatasetCases).not.toHaveBeenCalled()
+    },
+  )
+  it('does not offer copying an unfrozen draft', async () => {
+    const wrapper = await datasetCatalog('DRAFT')
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('当前未选择已发布版本')
   })
 })
 

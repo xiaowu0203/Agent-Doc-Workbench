@@ -89,7 +89,7 @@
                 <dt>schema</dt>
                 <dd>{{ entry.artifact.schemaVersion }}</dd>
                 <dt>生成时间</dt>
-                <dd>{{ entry.artifact.createdAt }}</dd>
+                <dd><BusinessTime :value="entry.artifact.createdAt" /></dd>
               </dl>
             </details>
           </section>
@@ -106,7 +106,10 @@
             <span class="evidence-dot"></span>
             <div>
               <h3>Task 已创建</h3>
-              <p>{{ lineageLabel }} · {{ task.executionMode }} · {{ task.createdAt }}</p>
+              <p>
+                {{ lineageLabel }} · {{ task.executionMode }} ·
+                <BusinessTime :value="task.createdAt" />
+              </p>
               <small>当前 Run / Task {{ task.id }}</small>
             </div>
           </li>
@@ -271,6 +274,7 @@
 </template>
 
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { ElButton, ElTag } from 'element-plus'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'

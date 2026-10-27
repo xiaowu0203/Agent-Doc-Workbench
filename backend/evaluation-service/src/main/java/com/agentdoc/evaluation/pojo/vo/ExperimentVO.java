@@ -2,6 +2,7 @@ package com.agentdoc.evaluation.pojo.vo;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /** Experiment 状态和编排身份投影。 */
 public record ExperimentVO(Long id, Long spaceId, Long datasetVersionId, String status,
@@ -12,7 +13,8 @@ public record ExperimentVO(Long id, Long spaceId, Long datasetVersionId, String 
                            Long cancelRequestedBy, LocalDateTime cancelRequestedAt,
                            String decision, String decisionReason, Integer decisionReportRevision,
                            Long decidedBy, LocalDateTime decidedAt,
-                           LocalDateTime finishedAt, List<ExperimentVariantVO> variants) {
+                           LocalDateTime finishedAt, List<ExperimentVariantVO> variants,
+                           @Schema(description = "可选离线实验名称") String name) {
     public ExperimentVO {
         variants = List.copyOf(variants);
     }

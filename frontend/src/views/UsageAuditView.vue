@@ -209,7 +209,7 @@
           </p>
           <p>
             汇总时区 {{ dashboard.timeZone }}；统计生成于
-            {{ dashboard.calculatedAt }}（服务端原始时间）。
+            <BusinessTime :value="dashboard.calculatedAt" />。
           </p>
         </details>
 
@@ -478,6 +478,8 @@
 </template>
 
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
+import { businessTimeMillis, formatBusinessTime } from '@/shared/utils/date-time'
 import { Checked, Coin, Download, Money, Tools } from '@element-plus/icons-vue'
 import {
   ElButton,
@@ -1240,11 +1242,7 @@ function formatCost(value: number | null) {
 }
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value.replace('T', ' ')
-    : date.toLocaleString('zh-CN', { hour12: false })
+  return formatBusinessTime(value, '—')
 }
 
 function changeLabel(current: number | null, previous: number | null): MetricChange {
@@ -1270,8 +1268,9 @@ function durationLabel(start: string | null, end: string | null) {
   if (!start) return '—'
   const duration = Math.max(
     0,
-    ((end ? new Date(end) : new Date()).getTime() - new Date(start).getTime()) / 1000,
+    ((end ? businessTimeMillis(end) : Date.now()) - businessTimeMillis(start)) / 1000,
   )
+  if (!Number.isFinite(duration)) return '—'
   if (duration >= 60) return `${Math.floor(duration / 60)}m${Math.round(duration % 60)}s`
   return `${Math.round(duration)}s`
 }

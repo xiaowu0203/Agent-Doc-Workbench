@@ -4,6 +4,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.MAX_DISPLAY_NAME_LENGTH;
 
 /**
  * 创建评估运行DTO
@@ -33,5 +35,8 @@ public record EvaluationRunCreateDTO(
         @Min(value = 300, message = "令牌有效期不能小于300秒")
         @Max(value = 86400, message = "令牌有效期不能大于86400秒")
         @Schema(description = "WorkerCapability 有效期秒数")
-        Long workerCapabilityTtlSeconds
+        Long workerCapabilityTtlSeconds,
+
+        @Size(max = MAX_DISPLAY_NAME_LENGTH)
+        @Schema(description = "可选运行名称，不改变冻结来源身份") String name
 ) {}

@@ -59,7 +59,7 @@
               }}
             </option>
             <option v-for="item in revisions" :key="item.revision" :value="item.revision">
-              v{{ item.revision }} · {{ item.generatedAt || '生成时间未知'
+              v{{ item.revision }} · {{ formatBusinessTime(item.generatedAt, '生成时间未知')
               }}{{ item.decisionReference ? ' · 已被人工结论引用' : '' }}
             </option>
           </select></label
@@ -75,9 +75,10 @@
       <p v-else-if="!revisionTotal">尚无已冻结报告。</p>
       <p v-if="selectedMetadata" class="report-hint">
         v{{ selectedMetadata.revision }} · 观察截止
-        {{
-          selectedMetadata.observationCutoffAt || '未知'
-        }}。版本记录只展示元数据，核验结果以读取报告后为准。
+        <BusinessTime
+          :value="selectedMetadata.observationCutoffAt"
+          empty-text="未知"
+        />。版本记录只展示元数据，核验结果以读取报告后为准。
       </p>
       <div v-if="revisionTotal > 10" class="row">
         <el-button
@@ -120,7 +121,8 @@
       <p class="report-identity">
         冻结报告 v{{ report.revision }} ·
         {{ report.state === 'SUPPORTED' ? '完整核验通过' : '概要核验通过' }} · 分配截止序号
-        {{ payload.assignmentCutoffSequence }} · 观察截止 {{ payload.observationCutoffAt }}
+        {{ payload.assignmentCutoffSequence }} · 观察截止
+        <BusinessTime :value="payload.observationCutoffAt" />
       </p>
       <p role="status">
         {{
@@ -590,6 +592,8 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { formatMetricNumber } from '../display'
 import { evaluationStatus } from '../status'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -751,6 +755,7 @@ const revisions = ref<OnlineReportRevision[]>([]),
   indexError = ref('')
 const suggestedZone = ref('')
 let indexPending: AbortController | undefined
+let suggestionPending: AbortController | undefined
 const selectedMetadata = computed(() =>
   revisions.value.find((item) => item.revision === revision.value),
 )
@@ -853,6 +858,27 @@ watch([() => props.manageable, () => props.canRecalculate], () => {
   confirmation.value = null
   retry = undefined
 })
+watch(
+  () => [props.experiment.id, props.experiment.spaceId, props.experiment.manifestSchemaVersion, props.readable, props.canRecalculate],
+  async () => {
+    suggestionPending?.abort()
+    if (!props.readable || !props.canRecalculate || props.experiment.manifestSchemaVersion !== 2) return
+    const controller = new AbortController()
+    suggestionPending = controller
+    const id = props.experiment.id
+    try {
+      const value = await getOnlineReportRangeSuggestion(id, controller.signal)
+      if (controller.signal.aborted || sequence.value || cutoff.value || value.experimentId !== id ||
+          !validOnlineId(value.assignmentCutoffSequence, true)) return
+      sequence.value = value.assignmentCutoffSequence
+      cutoff.value = value.observationCutoffAt
+      suggestedZone.value = value.timeZone
+    } catch {
+      // 手动填入仍可重试，自动建议失败不妨碍查看报告。
+    }
+  },
+  { immediate: true },
+)
 function quality(group: (typeof groups)[number], stratum: string) {
   return reportObject(reportObject(payload.value?.groups[group].qualityByBlindness)[stratum])
 }
@@ -1051,6 +1077,7 @@ async function submit() {
 onBeforeUnmount(() => {
   pending?.abort()
   indexPending?.abort()
+  suggestionPending?.abort()
 })
 </script>
 <style scoped>

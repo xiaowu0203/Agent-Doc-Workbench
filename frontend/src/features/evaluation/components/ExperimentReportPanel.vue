@@ -3,7 +3,7 @@
     <header>
       <h3>Prompt 候选对比报告 · Revision {{ report.revision }}</h3>
       <p>
-        生成 {{ report.generatedAt || '未提供' }} · 生成者 #{{
+        生成 <BusinessTime :value="report.generatedAt" empty-text="未提供" /> · 生成者 #{{
           report.generatedBy || '未提供'
         }}。历史报告只读，分母以冻结数据集为准。
       </p>
@@ -398,6 +398,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElPagination } from 'element-plus'

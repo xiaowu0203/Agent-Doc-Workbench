@@ -495,6 +495,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import {
   Collection,
   Connection,
@@ -1110,16 +1111,7 @@ function versionStatus(status: TemplateVersionStatus): string {
   return status === 1 || status === 'PUBLISHED' ? '已发布' : '草稿'
 }
 function formatDate(value?: string | null): string {
-  return value
-    ? new Intl.DateTimeFormat('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).format(new Date(value))
-    : '—'
+  return formatBusinessTime(value, '—')
 }
 </script>
 

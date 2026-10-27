@@ -207,6 +207,7 @@ class EvaluationWorkbenchQueryServiceTest {
     @Test
     void batchesRunNamesAndCountsWithoutExpandingAttempts() {
         EvaluationRunEntity first = run(1L);
+        first.setName("第一次回归");
         first.setDatasetVersionId(11L);
         first.setCaseCount(3);
         EvaluationRunEntity second = run(2L);
@@ -228,6 +229,7 @@ class EvaluationWorkbenchQueryServiceTest {
         assertThat(result.pageNum()).isEqualTo(2);
         assertThat(result.records()).hasSize(2);
         assertThat(result.records().getFirst().datasetName()).isEqualTo("回归数据集");
+        assertThat(result.records().getFirst().name()).isEqualTo("第一次回归");
         assertThat(result.records().getFirst().datasetVersionNo()).isEqualTo(3);
         assertThat(result.records().getFirst().completedCaseCount()).isEqualTo(1);
         assertThat(result.records().getFirst().errorCaseCount()).isEqualTo(1);
@@ -283,6 +285,7 @@ class EvaluationWorkbenchQueryServiceTest {
     void experimentSummaryCountsOnlyLinkedVariants() {
         ExperimentEntity experiment = new ExperimentEntity();
         experiment.setId(4L);
+        experiment.setName("候选复核");
         experiment.setSpaceId(9L);
         experiment.setDatasetVersionId(11L);
         experiment.setAuthorizedTokenBudget(12000L);
@@ -305,6 +308,7 @@ class EvaluationWorkbenchQueryServiceTest {
         assertThat(summary.linkedRunCount()).isEqualTo(1);
         assertThat(summary.authorizedTokenBudget()).isEqualTo(12000L);
         assertThat(summary.datasetName()).isEqualTo("回归数据集");
+        assertThat(summary.name()).isEqualTo("候选复核");
         verify(spaceAccessService).requirePermission(9L, EVALUATION_READ);
     }
 

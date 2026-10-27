@@ -931,6 +931,25 @@ describe('creation idempotency', () => {
       'candidateVariants',
     ])
   })
+  it('includes an optional name in creation identity and renews the key after renaming', async () => {
+    const wrapper = mountCreate()
+    await fillCreate(wrapper)
+    await wrapper.get('[aria-label="实验名称（可选）"]').setValue('  基线回归  ')
+    vi.mocked(api.createExperiment).mockRejectedValue(new Error('offline'))
+    await button(wrapper, '创建实验')!.trigger('click')
+    await flushPromises()
+    const first = vi.mocked(api.createExperiment).mock.calls[0]![0]
+    expect(first.name).toBe('基线回归')
+    await wrapper.get('[aria-label="实验名称（可选）"]').setValue('另一次回归')
+    await button(wrapper, '创建实验')!.trigger('click')
+    await flushPromises()
+    expect(vi.mocked(api.createExperiment).mock.calls[1]![0].clientRequestKey).not.toBe(
+      first.clientRequestKey,
+    )
+    expect(vi.mocked(api.createExperiment).mock.calls[1]![0].candidateVariants).toEqual(
+      first.candidateVariants,
+    )
+  })
   it('rejects reserved keys, duplicate candidates and a newly archived dataset', async () => {
     const wrapper = mountCreate()
     await fillCreate(wrapper)

@@ -283,6 +283,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import {
   ArrowRight,
   Checked,
@@ -556,30 +557,11 @@ function formatTokens(tokens: number | null | undefined): string {
 }
 
 function formatTime(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
+  return formatBusinessTime(value, '—')
 }
 
 function formatActivityTime(value: string | null): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  const time = new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
-  const today = new Date()
-  if (date.toDateString() === today.toDateString()) return time
-  const yesterday = new Date(today)
-  yesterday.setDate(today.getDate() - 1)
-  if (date.toDateString() === yesterday.toDateString()) return `昨天 ${time}`
-  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')} ${time}`
+  return formatBusinessTime(value)
 }
 
 function taskStatusLabel(status: TaskActivitySummary['status']): string {

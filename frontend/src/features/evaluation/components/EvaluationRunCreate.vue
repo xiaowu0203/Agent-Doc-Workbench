@@ -10,6 +10,16 @@
   >
     <form class="run-create" @submit.prevent="create">
       <label
+        >运行名称（可选）
+        <input
+          v-model="name"
+          aria-label="运行名称（可选）"
+          :maxlength="MAX_DISPLAY_NAME_LENGTH"
+          :disabled="busy"
+          placeholder="留空时显示来源名称"
+        />
+      </label>
+      <label
         >评估来源
         <select v-model="kind" aria-label="评估来源" :disabled="busy" @change="clearSource">
           <option value="datasets">数据集版本</option>
@@ -68,6 +78,7 @@ import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import * as api from '../api/evaluation-api'
 import type { DatasetVersion, TestCaseVersion, EvaluatorVersion, EvaluationRun } from '../types'
 import { WORKER_TTL_DEFAULT, WORKER_TTL_MIN, WORKER_TTL_MAX, validWorkerTtl } from '../run'
+import { MAX_DISPLAY_NAME_LENGTH } from '../display'
 const props = defineProps<{
   spaceId: string
   canRun: boolean
@@ -79,6 +90,7 @@ const kind = ref<'datasets' | 'test-cases'>('datasets'),
   pickerOpen = ref(false)
 const selected = ref<DatasetVersion | TestCaseVersion | null>(null),
   sourceName = ref('')
+const name = ref('')
 const ttl = ref(WORKER_TTL_DEFAULT),
   caseCount = ref<number | null>(null)
 const loading = ref(false),
@@ -199,7 +211,7 @@ async function checkSource() {
 }
 async function create() {
   if (!ready.value || !props.canRun || busy.value) return
-  const identity = `${props.spaceId}/${kind.value}/${selected.value!.id}/${ttl.value}`
+  const identity = `${props.spaceId}/${kind.value}/${selected.value!.id}/${ttl.value}/${name.value.trim()}`
   const count = caseCount.value
   try {
     await ElMessageBox.confirm(
@@ -213,7 +225,8 @@ async function create() {
   if (
     !props.canRun ||
     !ready.value ||
-    identity !== `${props.spaceId}/${kind.value}/${selected.value?.id}/${ttl.value}`
+    identity !==
+      `${props.spaceId}/${kind.value}/${selected.value?.id}/${ttl.value}/${name.value.trim()}`
   )
     return
   request?.abort()
@@ -232,6 +245,7 @@ async function create() {
           ? { datasetVersionId: selected.value!.id }
           : { singleTestCaseVersionId: selected.value!.id }),
         workerCapabilityTtlSeconds: ttl.value,
+        ...(name.value.trim() ? { name: name.value.trim() } : {}),
       },
       pending.signal,
     )

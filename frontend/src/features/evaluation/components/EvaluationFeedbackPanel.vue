@@ -6,7 +6,7 @@
       <EvaluationStatusTag domain="feedback" :status="item.label" />
       <p>
         {{ item.sourceType || '来源不可用' }} · #{{ item.id }} ·
-        {{ item.createdAt || '时间不可用' }}
+        <BusinessTime :value="item.createdAt" empty-text="时间不可用" />
       </p>
       <p>人工分数 {{ item.score ?? '未提供' }}</p>
       <p v-if="item.comment">{{ item.comment }}</p>
@@ -49,6 +49,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton, ElMessage, ElMessageBox } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
