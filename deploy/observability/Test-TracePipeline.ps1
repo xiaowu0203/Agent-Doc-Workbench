@@ -44,6 +44,9 @@ $payload = @{
                     @{ key = "http.request.header.cookie"; value = @{ stringValue = $forbiddenMarkers.Cookie } },
                     @{ key = "url.full"; value = @{ stringValue = "https://example.invalid/task?token=$($forbiddenMarkers.QueryToken)" } },
                     @{ key = "db.query.text"; value = @{ stringValue = "select * from task where secret='$($forbiddenMarkers.SqlParameter)'" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT '$($forbiddenMarkers.SqlParameter)'" } },
+                    @{ key = "agentdoc.db.sql_template"; value = @{ stringValue = $forbiddenMarkers.SqlParameter } },
+                    @{ key = "agentdoc.db.sql_candidate"; value = @{ stringValue = $forbiddenMarkers.SqlParameter } },
                     @{ key = "gen_ai.prompt"; value = @{ stringValue = $forbiddenMarkers.Prompt } },
                     @{ key = "agentdoc.document.body"; value = @{ stringValue = $forbiddenMarkers.DocumentBody } },
                     @{ key = "gen_ai.tool.call.arguments"; value = @{ stringValue = $forbiddenMarkers.ToolArguments } },
@@ -58,6 +61,75 @@ $payload = @{
                         @{ key = "exception.stacktrace"; value = @{ stringValue = $forbiddenMarkers.ExceptionStack } }
                     )
                 })
+            })
+        }, @{
+            scope = @{ name = "io.opentelemetry.jdbc" }
+            spans = @(@{
+                traceId = $traceId
+                spanId = $traceId.Substring(16, 16)
+                name = "jdbc.probe"
+                kind = 3
+                startTimeUnixNano = "$startedAt"
+                endTimeUnixNano = "$finishedAt"
+                attributes = @(
+                    @{ key = "db.system"; value = @{ stringValue = "mysql" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT a2a_task_id FROM task WHERE id = ? AND secret = ?" } }
+                )
+            }, @{
+                traceId = $traceId
+                spanId = "0000000000000001"
+                name = "jdbc.comment.probe"
+                kind = 3
+                startTimeUnixNano = "$startedAt"
+                endTimeUnixNano = "$finishedAt"
+                attributes = @(
+                    @{ key = "db.system"; value = @{ stringValue = "mysql" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT id FROM task /* $($forbiddenMarkers.DocumentBody) */" } }
+                )
+            }, @{
+                traceId = $traceId
+                spanId = "0000000000000002"
+                name = "jdbc.raw.probe"
+                kind = 3
+                startTimeUnixNano = "$startedAt"
+                endTimeUnixNano = "$finishedAt"
+                attributes = @(
+                    @{ key = "db.system"; value = @{ stringValue = "mysql" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT id FROM task WHERE id = 123 AND secret = '$($forbiddenMarkers.SqlParameter)'" } }
+                )
+            }, @{
+                traceId = $traceId
+                spanId = "0000000000000003"
+                name = "jdbc.number.probe"
+                kind = 3
+                startTimeUnixNano = "$startedAt"
+                endTimeUnixNano = "$finishedAt"
+                attributes = @(
+                    @{ key = "db.system"; value = @{ stringValue = "mysql" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT id FROM task WHERE id = 123" } }
+                )
+            }, @{
+                traceId = $traceId
+                spanId = "0000000000000004"
+                name = "jdbc.unsupported.probe"
+                kind = 3
+                startTimeUnixNano = "$startedAt"
+                endTimeUnixNano = "$finishedAt"
+                attributes = @(
+                    @{ key = "db.system"; value = @{ stringValue = "postgresql" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT id FROM task WHERE id = ?" } }
+                )
+            }, @{
+                traceId = $traceId
+                spanId = "0000000000000005"
+                name = "jdbc.server.probe"
+                kind = 2
+                startTimeUnixNano = "$startedAt"
+                endTimeUnixNano = "$finishedAt"
+                attributes = @(
+                    @{ key = "db.system"; value = @{ stringValue = "mysql" } },
+                    @{ key = "db.statement"; value = @{ stringValue = "SELECT id FROM task WHERE id = ?" } }
+                )
             })
         })
     })
@@ -89,6 +161,16 @@ if ($null -eq $trace -or $trace.data.Count -eq 0) {
 $traceJson = $trace | ConvertTo-Json -Depth 20 -Compress
 if (-not $traceJson.Contains("run.id") -or -not $traceJson.Contains("safe-tool")) {
     throw "允许列表字段未完整保留：$traceId"
+}
+if (-not $traceJson.Contains("agentdoc.db.sql_template") -or -not $traceJson.Contains("SELECT a2a_task_id FROM task WHERE id = ? AND secret = ?")) {
+    throw "安全 SQL 模板未保留：$traceId"
+}
+$sqlSpans = @($trace.data[0].spans | Where-Object { $_.tags.key -contains "agentdoc.db.sql_template" })
+if ($sqlSpans.Count -ne 1 -or $sqlSpans[0].operationName -ne "jdbc.probe") {
+    throw "非目标或未处理的 SQL 不应进入 Trace：$traceId"
+}
+if ($traceJson.Contains('db.statement') -or $traceJson.Contains('db.query.text')) {
+    throw "原始 SQL 属性未移除：$traceId"
 }
 $leakedMarkers = @($forbiddenMarkers.Values | Where-Object { $traceJson.Contains($_) })
 if ($leakedMarkers.Count -gt 0) {

@@ -1,5 +1,5 @@
 <template>
-  <section class="experiment" aria-label="离线实验">
+  <section class="experiment" :class="{ 'experiment--detail': resourceId }" aria-label="离线实验">
     <header class="experiment-header">
       <div>
         <h2>
@@ -156,7 +156,12 @@
     </template>
     <DataState v-else :loading="loading && !experiment" :error="error" @retry="refresh">
       <template v-if="experiment">
-        <div class="summary-grid">
+        <nav class="experiment-detail-nav" aria-label="离线实验详情分区">
+          <a href="#experiment-overview">运行概览</a>
+          <a href="#experiment-variants">配置组与运行</a>
+          <a href="#experiment-report">报告与结论</a>
+        </nav>
+        <div id="experiment-overview" class="summary-grid">
           <article>
             <EvaluationStatusTag domain="experiment" :status="experiment.status" />
             <p v-if="experiment.failureCode">失败码：{{ experiment.failureCode }}</p>
@@ -210,7 +215,7 @@
             </li>
           </ul>
         </section>
-        <section aria-label="冻结 Variant" class="variants">
+        <section id="experiment-variants" aria-label="冻结 Variant" class="variants">
           <h3>冻结配置组与关联运行</h3>
           <p>
             首版仅改变 Prompt。选中一项查看其 Run 进度；历史 Run 的恢复与重试通过 Run
@@ -271,7 +276,7 @@
             <p v-if="selectedRun.pauseReason">暂停原因：{{ selectedRun.pauseReason }}</p>
           </article>
         </section>
-        <section aria-label="报告版本与结论" class="reports">
+        <section id="experiment-report" aria-label="报告版本与结论" class="reports">
           <header class="experiment-header">
             <h3>报告版本与人工结论</h3>
             <div class="actions">
@@ -1083,6 +1088,17 @@ onBeforeUnmount(() => {
 .experiment-header h2 {
   overflow-wrap: anywhere;
 }
+.experiment--detail > .experiment-header {
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+.experiment--detail > .experiment-header h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+.experiment--detail > .experiment-header p { margin: 7px 0 0; color: var(--adw-text-secondary); line-height: 1.6; }
+.experiment-detail-nav { display: flex; gap: 24px; overflow-x: auto; border-bottom: 1px solid #dfe7f1; margin-bottom: 20px; }
+.experiment-detail-nav a { flex-shrink: 0; padding: 10px 0; color: #45617f; text-decoration: none; font-size: 14px; font-weight: 600; }
+.experiment-detail-nav a:hover, .experiment-detail-nav a:focus-visible { color: #245bd6; }
+#experiment-overview, #experiment-variants, #experiment-report { scroll-margin-top: 80px; }
 .actions {
   display: flex;
   gap: var(--adw-space-2);
@@ -1118,8 +1134,14 @@ textarea {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--adw-space-4);
+  gap: 0;
+  border-block: 1px solid #dfe7f1;
+  background: transparent;
 }
+.summary-grid article { margin: 0; border: 0; border-radius: 0; padding: 18px 20px; }
+.summary-grid article + article { border-left: 1px solid #e1e8f1; }
+.summary-grid p { margin: 8px 0 0; color: var(--adw-text-secondary); line-height: 1.6; }
+.summary-grid strong { color: #253c5a; }
 article,
 .variants,
 .reports,
@@ -1134,6 +1156,11 @@ article,
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--adw-space-3);
 }
+.variants > h3, .reports h3, .preflight > h3 { margin: 0; font-size: 16px; }
+.variants > p, .reports > p, .preflight > p { color: var(--adw-text-secondary); line-height: 1.65; }
+.variant-list article { margin: 0; background: #f8fafd; border-color: #e1e8f1; }
+.variant-list article > strong { color: #253c5a; }
+.variants, .reports, .preflight { margin: 24px 0 0; padding: 24px 0 0; border: 0; border-top: 1px solid #dfe7f1; border-radius: 0; }
 .variant-list a {
   display: block;
   margin-top: var(--adw-space-2);
@@ -1176,5 +1203,9 @@ textarea:focus-visible,
 a:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--adw-color-primary);
+}
+@media (max-width: 760px) {
+  .summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .summary-grid article + article { border-left: 0; border-top: 1px solid #e1e8f1; }
 }
 </style>

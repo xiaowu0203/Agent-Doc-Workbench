@@ -390,6 +390,48 @@ describe('execution evidence', () => {
   })
 })
 describe('technical Trace and authoritative facts', () => {
+  it('shows the safe SQL template for a database span and an unavailable state for older spans', async () => {
+    const database = { ...span('database', 'DATABASE', 1000), attributes: [
+      { key: 'agentdoc.db.sql_template', valueType: 'STRING' as const, value: 'SELECT id FROM task WHERE id = ?' },
+      { key: 'db.statement', valueType: 'STRING' as const, value: 'RAW_SECRET' },
+    ] }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([database]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    expect(wrapper.get('.trace-sql').text()).toContain('SELECT id FROM task WHERE id = ?')
+    expect(wrapper.text()).toContain('执行 SQL')
+    expect(wrapper.get('.span-detail').text()).not.toContain('RAW_SECRET')
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([{ ...database, attributes: [] }]))
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.trace-sql').text()).toContain('未采集')
+  })
+  it('links a database execution to its direct SQL parent and filters to SQL-bearing spans', async () => {
+    const sql = { ...span('sql', 'DATABASE', 2000), attributes: [
+      { key: 'agentdoc.db.sql_template', valueType: 'STRING' as const, value: 'SELECT id FROM task WHERE id = ?' },
+    ] }
+    const child = { ...span('execution', 'DATABASE', 1000), name: 'db.execute', parentSpanId: 'sql' }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([sql, child]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '数据库 / Redis')!.trigger('click')
+    await wrapper.findAll('.span-row').find((row) => row.text().includes('执行数据库语句'))!.trigger('click')
+    expect(wrapper.get('.trace-sql').text()).toContain('来自直接父级 SQL 调用')
+    expect(wrapper.get('.trace-sql').text()).toContain('SELECT id FROM task WHERE id = ?')
+    expect(wrapper.get('.trace-sql').find('[aria-label="复制SQL 模板"]').exists()).toBe(true)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '仅 SQL')!.trigger('click')
+    expect(wrapper.findAll('.span-row')).toHaveLength(1)
+  })
+  it('does not associate SQL from a parent in another service', async () => {
+    const parent = { ...span('parent', 'DATABASE', 2000), service: 'other-service', attributes: [
+      { key: 'agentdoc.db.sql_template', valueType: 'STRING' as const, value: 'SELECT id FROM task' },
+    ] }
+    const child = { ...span('execution', 'DATABASE', 1000), name: 'db.execute', parentSpanId: 'parent' }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([parent, child]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '数据库 / Redis')!.trigger('click')
+    await wrapper.findAll('.span-row').find((row) => row.text().includes('执行数据库语句'))!.trigger('click')
+    expect(wrapper.get('.trace-sql').text()).not.toContain('SELECT id FROM task')
+    expect(wrapper.get('.trace-sql').text()).toContain('无可展示的 SQL 模板')
+  })
   it('clears old technical success data after a failed refresh while keeping business facts', async () => {
     vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([span('root', 'AGENT', 100000)]))
     const { wrapper } = await mountPage(TaskTracePanel)
@@ -438,6 +480,48 @@ describe('technical Trace and authoritative facts', () => {
     expect(wrapper.findAll('a')).toHaveLength(0)
     await wrapper.findAll('.trace-filters button')[1]!.trigger('click')
     expect(wrapper.findAll('.span-row')).toHaveLength(2)
+  })
+  it('shows available tool identity and an honest code-location fallback in span details and hover', async () => {
+    const node = span('tool-call', 'TOOL', 1500)
+    node.attributes = [
+      { key: 'agentdoc.tool.technical_name', valueType: 'STRING', value: 'read_document' },
+      { key: 'db.statement', valueType: 'STRING', value: 'SECRET_SQL' },
+    ]
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([node]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    const row = wrapper.get('.span-row')
+    expect(row.attributes('title')).toContain('工具标识：read_document')
+    expect(row.attributes('title')).toContain('调用方法：未采集')
+    expect(row.attributes('title')).not.toContain('SECRET_SQL')
+    expect(wrapper.get('.span-detail').text()).toContain('工具标识')
+    expect(wrapper.get('.span-detail').text()).toContain('read_document')
+    expect(wrapper.get('.span-detail').text()).toContain('调用方法未采集')
+    expect(wrapper.get('.span-detail').text()).not.toContain('SECRET_SQL')
+  })
+  it('shows collected call-site details without duplicating raw attributes', async () => {
+    const node = span('tool-call', 'TOOL', 1500)
+    node.attributes = [
+      { key: 'agentdoc.code.class', valueType: 'STRING', value: 'com/agentdoc/agent/ToolRunner' },
+      { key: 'agentdoc.code.method', valueType: 'STRING', value: 'execute' },
+      { key: 'agentdoc.code.file', valueType: 'STRING', value: 'ToolRunner.java' },
+      { key: 'agentdoc.code.line', valueType: 'LONG', value: '42' },
+    ]
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([node]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    expect(wrapper.get('.span-row').attributes('title')).toContain('源码文件 / 行：ToolRunner.java:42')
+    expect(wrapper.get('.span-detail').text()).toContain('com.agentdoc.agent.ToolRunner')
+    expect(wrapper.get('.span-detail').text()).toContain('ToolRunner.java:42')
+    expect(wrapper.get('.span-detail').text()).not.toContain('agentdoc.code.file')
+  })
+  it('shows folded database and Redis operations when filtering for data access', async () => {
+    const database = { ...span('database', 'DATABASE', 1000), name: 'db.execute' }
+    const redis = { ...span('redis', 'REDIS', 1000), name: 'redis.operation' }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([span('root', 'AGENT', 100000), database, redis]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '数据库 / Redis')!.trigger('click')
+    expect(wrapper.findAll('.span-row')).toHaveLength(2)
+    expect(wrapper.text()).toContain('执行数据库语句')
+    expect(wrapper.text()).toContain('Redis 操作')
   })
   it.each([
     'NO_TRACE',

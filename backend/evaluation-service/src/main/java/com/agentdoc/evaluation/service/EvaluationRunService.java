@@ -346,8 +346,12 @@ public class EvaluationRunService {
                 new LambdaQueryWrapper<EvaluationCaseAttemptEntity>()
                         .eq(EvaluationCaseAttemptEntity::getRunId, id)
         );
+        Set<Long> currentAttemptIds = caseRunMapper.selectList(new LambdaQueryWrapper<EvaluationCaseRunEntity>()
+                        .eq(EvaluationCaseRunEntity::getRunId, id)).stream()
+                .map(EvaluationCaseRunEntity::getCurrentAttemptId).collect(Collectors.toSet());
 
         Map<Long, List<EvaluationCaseAttemptEntity>> bySegment = allAttempts.stream()
+                .filter(attempt -> currentAttemptIds.contains(attempt.getId()))
                 .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getExecutionTaskId() != null)
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 

@@ -44,6 +44,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Collection;
 import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -85,6 +86,32 @@ class EvaluationRunProcessorTest {
                 testCaseEvaluatorMapper, evaluatorVersionMapper, resultMapper, segmentService, taskFeign,
                 executionMetricWriteService, resultWriteService, evaluatorEngine, evaluationTelemetry,
                 runtimeMetrics, directExecutor, properties);
+    }
+
+    @Test
+    void ignoresExpiredSegmentsOfHistoricalAttemptsDuringReconciliation() {
+        EvaluationRunEntity run = run();
+        EvaluationCaseRunEntity caseRun = caseRun();
+        EvaluationCaseAttemptEntity current = attempt(EvaluationAttemptStatus.REPLAY_CREATED);
+        EvaluationCaseAttemptEntity historical = attempt(EvaluationAttemptStatus.COMPLETED);
+        historical.setId(72L);
+        historical.setCapabilitySegmentId(82L);
+        historical.setExecutionTaskId(802L);
+        stubRun(run, caseRun, current);
+        when(attemptMapper.selectList(any())).thenReturn(List.of(current, historical));
+        when(segmentService.requireActiveCapabilities(any(), eq(71L), eq(9L))).thenAnswer(invocation -> {
+            Collection<?> ids = invocation.getArgument(0);
+            if (ids.contains(82L)) throw new BusinessException(ErrorCode.CONFLICT, "WorkerCapability 已过期或撤销");
+            return Map.of(81L, "capability");
+        });
+        when(taskFeign.queryEvaluationTaskStatuses(eq("capability"), any())).thenReturn(Result.ok(List.of(
+                new EvaluationTaskStatusVO(801L, 2, "RUNNING", false, 901L, "trace", null, null))));
+
+        processor.process(71L);
+
+        assertThat(run.getStatus()).isEqualTo(EvaluationRunStatus.RUNNING.name());
+        assertThat(current.getStatus()).isEqualTo(EvaluationAttemptStatus.REPLAY_RUNNING.name());
+        verify(segmentService).requireActiveCapabilities(eq(Set.of(81L)), eq(71L), eq(9L));
     }
 
     @Test

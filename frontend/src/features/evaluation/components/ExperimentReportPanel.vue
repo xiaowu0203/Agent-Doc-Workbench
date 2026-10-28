@@ -743,9 +743,10 @@ watch(
   outline-offset: 2px;
 }
 .report-overview article {
-  border-left: 3px solid var(--adw-color-primary);
-  padding: var(--adw-space-3);
-  background: var(--adw-color-primary-soft);
+  border: 1px solid #dfe7f1;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f5f8fd;
 }
 .report-overview strong {
   display: block;
@@ -788,6 +789,7 @@ td {
   overflow-wrap: anywhere;
   min-width: 70px;
 }
+thead th { background: #f3f6fa; color: #52647b; font-size: 13px; }
 .report-comparison table {
   min-width: 420px;
 }

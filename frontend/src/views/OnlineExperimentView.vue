@@ -1,5 +1,5 @@
 <template>
-  <section class="online-experiment" aria-label="受控线上实验">
+  <section class="online-experiment" :class="{ 'online-experiment--detail': resourceId }" aria-label="受控线上实验">
     <header class="header">
       <div>
         <h2>{{ experiment?.name || (resourceId ? `线上实验 #${resourceId}` : '线上实验') }}</h2>
@@ -764,11 +764,16 @@ onBeforeUnmount(() => {
 }
 .detail-navigation {
   display: flex;
-  gap: var(--adw-space-4);
+  gap: 24px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--adw-border-color);
-  padding-bottom: var(--adw-space-3);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid #dfe7f1;
+  border-radius: 0;
+  background: transparent;
 }
+.detail-navigation a { padding: 10px 0; color: #405c80; font-weight: 600; text-decoration: none; }
+.detail-navigation a:hover, .detail-navigation a:focus-visible { color: #245bd6; }
 [id] {
   scroll-margin-top: 80px;
 }
@@ -785,6 +790,22 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: var(--adw-font-size-subtitle);
 }
+.online-experiment--detail > .header { align-items: center; padding-bottom: 20px; border-bottom: 1px solid #e5ebf3; }
+.online-experiment--detail > .header h2 { font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
+.online-experiment--detail > .header p { margin: 7px 0 0; }
+.online-experiment--detail section[id^='online-'] { padding: 24px 0 0; border: 0; border-top: 1px solid #e1e8f1; border-radius: 0; background: #fff; }
+.online-experiment--detail section[id^='online-'] > h3 { margin: 0 0 12px; font-size: 16px; }
+.online-experiment--detail section[id^='online-'] table th { color: #52647b; }
+.online-experiment--detail section[id^='online-'] table tr:last-child th,
+.online-experiment--detail section[id^='online-'] table tr:last-child td { border-bottom: 0; }
+#online-facts .table-wrap { overflow-x: visible; }
+#online-facts table { min-width: 0; }
+#online-facts tbody { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #e5ebf3; }
+#online-facts tr { display: block; min-width: 0; padding: 16px 18px 16px 0; border-bottom: 1px solid #e5ebf3; }
+#online-facts th, #online-facts td { display: block; padding: 0; border: 0; background: transparent; }
+#online-facts th { margin-bottom: 8px; font-size: 13px; }
+#online-facts td { line-height: 1.6; }
+@media (max-width: 760px) { #online-facts tbody { grid-template-columns: minmax(0, 1fr); } }
 p,
 small {
   color: var(--adw-text-secondary);

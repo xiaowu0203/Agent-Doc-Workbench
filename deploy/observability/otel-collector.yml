@@ -33,6 +33,17 @@ processors:
           - keep_keys(attributes, ["exception.type", "agentdoc.retry.count", "agentdoc.retry.reason", "agentdoc.budget.limit", "agentdoc.budget.used", "agentdoc.operation.status"])
           - set(name, "agentdoc.event.redacted") where name != "exception" and name != "agentdoc.retry" and name != "agentdoc.budget.warning" and name != "agentdoc.budget.exhausted" and name != "agentdoc.execution.cancelled" and name != "agentdoc.stream.interrupted" and name != "agentdoc.fallback.applied"
 
+  transform/sql_source:
+    error_mode: propagate
+    trace_statements:
+      - context: span
+        statements:
+          - delete_key(attributes, "agentdoc.db.sql_candidate")
+          - delete_key(attributes, "db.statement") where instrumentation_scope.name != "io.opentelemetry.jdbc" or attributes["db.system"] != "mysql" or kind != SPAN_KIND_CLIENT
+          - delete_key(attributes, "db.statement") where attributes["db.statement"] != nil and (Len(attributes["db.statement"]) > 4096 or IsMatch(attributes["db.statement"], "[^A-Za-z0-9_`?.,()=<>!+*/%|&^~\\s-]") or IsMatch(attributes["db.statement"], "(--|/\\*|\\*/|(^|[^A-Za-z0-9_])[0-9])"))
+          - set(attributes["agentdoc.db.sql_candidate"], attributes["db.statement"]) where attributes["db.statement"] != nil
+          - delete_key(attributes, "db.statement")
+
   redaction/span_allowlist:
     allow_all_keys: false
     allowed_keys:
@@ -61,6 +72,8 @@ processors:
       - messaging.destination.name
       - messaging.operation.name
       - db.system.name
+      - db.system
+      - agentdoc.db.sql_candidate
       - db.namespace
       - db.operation.name
       - error.type
@@ -69,6 +82,10 @@ processors:
       - agentdoc.space.id
       - agentdoc.agent.id
       - agentdoc.agent.config_version
+      - agentdoc.code.class
+      - agentdoc.code.method
+      - agentdoc.code.file
+      - agentdoc.code.line
       - agentdoc.execution.mode
       - agentdoc.lineage.type
       - agentdoc.runtime.type
@@ -122,6 +139,14 @@ processors:
         enabled: true
         attributes: [db.statement, db.query.text]
 
+  transform/sql_template:
+    error_mode: propagate
+    trace_statements:
+      - context: span
+        statements:
+          - set(attributes["agentdoc.db.sql_template"], attributes["agentdoc.db.sql_candidate"]) where attributes["agentdoc.db.sql_candidate"] != nil
+          - delete_key(attributes, "agentdoc.db.sql_candidate")
+
   batch:
     send_batch_size: 1024
     timeout: 1s
@@ -145,7 +170,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, resource/environment, transform/resource_allowlist, redaction/span_allowlist, batch]
+      processors: [memory_limiter, resource/environment, transform/resource_allowlist, transform/sql_source, redaction/span_allowlist, transform/sql_template, batch]
       exporters: [otlp/jaeger]
   telemetry:
     resource:

@@ -47,6 +47,7 @@ public class AgentTelemetry {
     public static final String GEN_AI_SEMCONV_VERSION = "1.41.1";
     /** 字符串属性最大长度限制，防止超长字段污染遥测存储 */
     private static final int MAX_TECHNICAL_NAME_LENGTH = 128;
+    private static final StackWalker CODE_LOCATION_WALKER = StackWalker.getInstance();
 
     private final Tracer tracer;
 
@@ -75,11 +76,12 @@ public class AgentTelemetry {
      * @param operation 待执行的Agent业务逻辑
      */
     public void execute(AgentTaskInputDTO input, Runnable operation) {
-        Span span = tracer.spanBuilder(EXECUTE_SPAN_NAME)
+        SpanBuilder builder = tracer.spanBuilder(EXECUTE_SPAN_NAME)
                 .setAttribute("run.id", input.workbenchTaskId())
                 .setAttribute("agentdoc.space.id", input.spaceId())
-                .setAttribute("agentdoc.agent.id", input.agentId())
-                .startSpan();
+                .setAttribute("agentdoc.agent.id", input.agentId());
+        recordCallSite(builder);
+        Span span = builder.startSpan();
         try (Scope ignored = span.makeCurrent()) {
             operation.run();
         } catch (RuntimeException exception) {
@@ -135,6 +137,7 @@ public class AgentTelemetry {
         if (context.executionId() != null) {
             spanBuilder.setAttribute("execution.id", context.executionId());
         }
+        recordCallSite(spanBuilder);
         return new ModelCallSpan(spanBuilder.startSpan());
     }
 
@@ -173,6 +176,7 @@ public class AgentTelemetry {
                 spanBuilder.setAttribute("agentdoc.mcp.server_id", mcpServerId);
             }
         }
+        recordCallSite(spanBuilder);
         return new ToolCallSpan(spanBuilder.startSpan());
     }
 
@@ -193,6 +197,7 @@ public class AgentTelemetry {
                 .setSpanKind(SpanKind.INTERNAL)
                 .setAttribute("agentdoc.skill.candidate_count", candidateCount);
         setAttribute(spanBuilder, "agentdoc.skill.selection_mode", selectionMode);
+        recordCallSite(spanBuilder);
         Span span = spanBuilder.startSpan();
         try (Scope ignored = span.makeCurrent()) {
             SkillSelectionResult result = operation.get();
@@ -231,6 +236,7 @@ public class AgentTelemetry {
         if (external) {
             spanBuilder.setAttribute("agentdoc.mcp.server_id", mcpServerId);
         }
+        recordCallSite(spanBuilder);
         Span span = spanBuilder.startSpan();
         try (Scope ignored = span.makeCurrent()) {
             T result = operation.get();
@@ -299,6 +305,25 @@ public class AgentTelemetry {
         if (value != null && !value.isBlank() && value.length() <= MAX_TECHNICAL_NAME_LENGTH) {
             spanBuilder.setAttribute(key, value);
         }
+    }
+
+    /** 只记录应用内埋点调用位置；外部服务及框架内部实现不能由此推断。 */
+    private static void recordCallSite(SpanBuilder builder) {
+        CODE_LOCATION_WALKER.walk(frames -> frames
+                .filter(frame -> frame.getClassName().startsWith("com.agentdoc.")
+                        && !frame.getClassName().equals(AgentTelemetry.class.getName()))
+                .findFirst())
+                .ifPresent(frame -> {
+                    setAttribute(builder, "agentdoc.code.class", frame.getClassName().replace('.', '/'));
+                    setAttribute(builder, "agentdoc.code.method", frame.getMethodName());
+                    String file = frame.getFileName();
+                    if (file != null && file.matches("[A-Za-z_$][A-Za-z0-9_$]*\\.java")) {
+                        setAttribute(builder, "agentdoc.code.file", file);
+                    }
+                    if (frame.getLineNumber() > 0) {
+                        builder.setAttribute("agentdoc.code.line", frame.getLineNumber());
+                    }
+                });
     }
 
     /**

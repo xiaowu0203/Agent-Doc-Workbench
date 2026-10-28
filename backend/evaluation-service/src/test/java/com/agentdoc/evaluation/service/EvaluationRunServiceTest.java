@@ -48,6 +48,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -56,6 +59,7 @@ import java.time.Instant;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -90,6 +94,9 @@ class EvaluationRunServiceTest {
 
     @BeforeEach
     void setUp() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
+        TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseVersionEntity.class);
+        TableInfoHelper.initTableInfo(assistant, EvaluationTestCaseEntity.class);
         runtimeProperties = new EvaluationRuntimeProperties();
         service = new EvaluationRunService(datasetVersionMapper, datasetMapper, datasetCaseMapper,
                 testCaseVersionMapper, testCaseMapper, variantMapper,
@@ -280,7 +287,11 @@ class EvaluationRunServiceTest {
         when(attemptMapper.selectBatchIds(any())).thenReturn(List.of(attempt));
         when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(List.of(publishedCase()));
         when(segmentService.nextBatchNo(71L)).thenReturn(2);
-        when(attemptMapper.selectList(any())).thenReturn(List.of(attempt));
+        EvaluationCaseAttemptEntity historical = new EvaluationCaseAttemptEntity();
+        historical.setId(72L);
+        historical.setExecutionTaskId(802L);
+        historical.setCapabilitySegmentId(81L);
+        when(attemptMapper.selectList(any())).thenReturn(List.of(attempt, historical));
         when(feedbackMapper.selectList(any())).thenReturn(List.of());
         Instant expiresAt = Instant.now().plusSeconds(600);
         String taskIdsHash = StableSnapshotUtils.snapshotHash(1, List.of(801L));
@@ -302,6 +313,7 @@ class EvaluationRunServiceTest {
         verify(taskFeign, never()).createExperimentBatch(any());
         verify(taskFeign, never()).createReplayBatch(any());
         verify(taskFeign).cancelEvaluationTasks(eq("renewed-token"), any());
+        verify(segmentService).requireActiveCapabilities(eq(Set.of(82L)), eq(71L), eq(9L));
     }
 
     private EvaluationRunPersistenceService.RunDraft pausedExperimentDraft() {

@@ -1143,10 +1143,13 @@ details {
 .report-details,
 .revision-index {
   min-width: 0;
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-sm);
-  padding: var(--adw-space-3);
+  border: 1px solid #dfe7f1;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafd;
 }
+.report-panel > h3, .report-panel > header h3 { margin: 0; font-size: 17px; }
+thead th { color: #52647b; font-size: 13px; }
 summary {
   cursor: pointer;
   font-weight: 600;

@@ -17,6 +17,64 @@ class TaskTraceConvertorTest {
     private final TaskTraceConvertor convertor = new TaskTraceConvertor();
 
     @Test
+    void exposesOnlyOwnedSafeDatabaseTemplates() {
+        var view = convertor.project(11L, 7L, TRACE, payload(List.of(
+                span(1, null, "shared", List.of(tag("otel.scope.name", "io.opentelemetry.jdbc"),
+                        tag("agentdoc.db.sql_template", "SELECT ancestor FROM task"))),
+                span(2, 1, "agentdoc.agent.execute", List.of(tag("run.id", 11))),
+                span(3, 2, "SELECT task", List.of(tag("otel.scope.name", "io.opentelemetry.jdbc"),
+                        tag("agentdoc.db.sql_template", "SELECT id FROM task WHERE id = ?"),
+                        tag("db.statement", "raw-secret"))),
+                span(4, 2, "SELECT task", List.of(tag("otel.scope.name", "io.opentelemetry.jdbc"),
+                        tag("agentdoc.db.sql_template", "SELECT * FROM task WHERE x = 'secret'"))),
+                span(5, 2, "agentdoc.mcp.tool.execute", List.of(
+                        tag("agentdoc.db.sql_template", "SELECT unrelated FROM task"))),
+                span(6, 1, "agentdoc.agent.execute", List.of(tag("run.id", 12),
+                        tag("agentdoc.db.sql_template", "SELECT foreign_data FROM task"))))));
+        assertThat(view.spans().getFirst().attributes()).isEmpty();
+        assertThat(view.spans().get(2).category()).isEqualTo("DATABASE");
+        assertThat(view.spans().get(2).attributes()).anySatisfy(attribute -> {
+            assertThat(attribute.key()).isEqualTo("agentdoc.db.sql_template");
+            assertThat(attribute.value()).isEqualTo("SELECT id FROM task WHERE id = ?");
+        });
+        assertThat(JsonUtils.toJson(view)).doesNotContain("ancestor", "raw-secret", "secret'", "unrelated", "foreign_data");
+    }
+
+    @Test
+    void classifiesKnownDatabaseInstrumentationWithoutExposingDynamicOperationNames() {
+        var view = convertor.project(11L, 7L, TRACE, payload(List.of(
+                span(1, null, "agentdoc.agent.execute", List.of(tag("run.id", 11))),
+                span(2, 1, "Execute prepared statement", List.of(tag("otel.scope.name", "MySQL Connector/J"))),
+                span(3, 1, "SELECT private_body FROM document", List.of(tag("otel.scope.name", "MySQL Connector/J"))),
+                span(4, 1, "EVALSHA private-value", List.of(tag("otel.scope.name", "io.opentelemetry.lettuce-5.1"))),
+                span(5, 1, "Execute prepared statement", List.of(tag("otel.scope.name", "unknown"))))));
+        assertThat(view.spans().get(1).category()).isEqualTo("DATABASE");
+        assertThat(view.spans().get(1).name()).isEqualTo("db.execute");
+        assertThat(view.spans().get(2).name()).isEqualTo("db.client.operation");
+        assertThat(view.spans().get(3).category()).isEqualTo("REDIS");
+        assertThat(view.spans().get(4).category()).isNotEqualTo("DATABASE");
+        assertThat(JsonUtils.toJson(view)).doesNotContain("private_body", "private-value");
+    }
+
+    @Test
+    void projectsOnlySafeOwnedCodeLocations() {
+        var view = convertor.project(11L, 7L, TRACE, payload(List.of(
+                span(1, null, "agentdoc.agent.execute", List.of(tag("run.id", 11),
+                        tag("agentdoc.code.class", "com/agentdoc/agent/runtime/AgentExecutor"),
+                        tag("agentdoc.code.method", "execute"), tag("agentdoc.code.file", "AgentExecutor.java"),
+                        tag("agentdoc.code.line", 42))),
+                span(2, 1, "agentdoc.mcp.tool.execute", List.of(
+                        tag("agentdoc.code.class", "com/agentdoc/agent/runtime/AgentExecutor"),
+                        tag("agentdoc.code.method", "execute"), tag("agentdoc.code.file", "../../secret.java"),
+                        tag("agentdoc.code.line", -1))))));
+        assertThat(view.spans().getFirst().attributes()).extracting(attribute -> attribute.key())
+                .contains("agentdoc.code.class", "agentdoc.code.method", "agentdoc.code.file", "agentdoc.code.line");
+        assertThat(view.spans().get(1).attributes()).extracting(attribute -> attribute.key())
+                .doesNotContain("agentdoc.code.file", "agentdoc.code.line");
+        assertThat(JsonUtils.toJson(view)).doesNotContain("../../secret.java");
+    }
+
+    @Test
     void keepsOwnedBranchAndSharedAncestorsButNotOtherRunBranchesOrSensitiveFields() {
         List<Map<String, Object>> spans = List.of(
                 span(1, null, "GET /secret?token=abc", List.of(tag("http.request.method", "GET"), tag("execution.id", 999))),

@@ -387,13 +387,16 @@ onBeforeUnmount(() => request?.abort())
 .case-panel {
   container-type: inline-size;
   min-width: 0;
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-md);
+  border: 0;
+  border-left: 1px solid #e0e7f0;
+  border-radius: 0;
   overflow: hidden;
+  background: #fff;
 }
 header {
-  padding: var(--adw-space-4);
+  padding: 0 24px 18px;
   border-bottom: 1px solid var(--adw-border-color);
+  background: transparent;
 }
 h3,
 h4 {
@@ -424,9 +427,11 @@ small {
   border-left: 1px solid var(--adw-border-color);
 }
 .attempts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  display: flex;
+  overflow-x: auto;
+  background: #f7f9fc;
 }
+.attempts .attempt { flex: 0 0 190px; }
 .attempt,
 .result-row {
   width: 100%;
@@ -442,9 +447,11 @@ small {
   overflow-wrap: anywhere;
 }
 button[aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
-  border-left: 3px solid var(--adw-color-primary);
+  background: #eaf1ff;
+  box-shadow: inset 3px 0 #3266d8;
 }
+.attempt:hover, .result-row:hover { background: #f1f5fb; }
+.attempt[aria-pressed='true']:hover, .result-row[aria-pressed='true']:hover { background: #eaf1ff; }
 .attempt-detail {
   min-width: 0;
 }
@@ -457,6 +464,8 @@ button[aria-pressed='true'] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   margin-top: var(--adw-space-2);
+  border: 1px solid #e1e8f1;
+  border-radius: 7px;
 }
 .attempt-actions {
   display: flex;
@@ -482,9 +491,7 @@ button:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
   .attempts {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    border-right: 0;
+    display: flex;
   }
   .result-column {
     border-left: 0;

@@ -1,5 +1,5 @@
 <template>
-  <section class="run-page" aria-label="评估运行">
+  <section class="run-page" :class="{ 'run-page--detail': resourceId }" aria-label="评估运行">
     <header class="run-heading">
       <div>
         <h2>
@@ -816,6 +816,12 @@ onBeforeUnmount(() => {
   min-width: 0;
   max-width: 100%;
 }
+.run-page--detail .run-heading {
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+.run-page--detail .run-heading h2 { font-size: 20px; line-height: 1.4; }
 .run-heading,
 .run-actions,
 .run-cases header {
@@ -889,19 +895,23 @@ th {
 }
 .run-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--adw-space-4);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0;
+  border-block: 1px solid #e0e7f0;
 }
 .run-summary article {
-  padding: var(--adw-space-4);
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-md);
+  padding: 20px 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .run-progress {
-  border-left: 3px solid var(--adw-color-primary) !important;
   display: grid;
   gap: var(--adw-space-2);
 }
+.run-summary article + article { border-left: 1px solid #e0e7f0; }
+.run-progress :deep(.el-tag) { justify-self: start; }
+.run-progress > strong { font-size: 23px; line-height: 1.3; }
 progress {
   width: 100%;
   accent-color: var(--adw-color-primary);
@@ -911,25 +921,26 @@ progress {
 }
 .run-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
   gap: var(--adw-space-4);
   align-items: start;
 }
 .run-cases {
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-md);
+  border: 0;
+  border-radius: 0;
   min-width: 0;
+  background: transparent;
 }
 .run-cases header {
-  padding: var(--adw-space-4);
-  border-bottom: 1px solid var(--adw-border-color);
+  padding: 0 0 14px;
+  border-bottom: 1px solid #dfe7f1;
 }
 .run-cases label {
   display: block;
 }
 .run-case-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 .run-case {
   display: flex;
@@ -938,7 +949,7 @@ progress {
   gap: var(--adw-space-2);
   width: 100%;
   text-align: left;
-  padding: var(--adw-space-4);
+  padding: 16px 12px;
   border: 0;
   border-bottom: 1px solid var(--adw-border-color);
   background: transparent;
@@ -947,7 +958,7 @@ progress {
   overflow-wrap: anywhere;
 }
 .run-case[aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
+  background: #eaf1ff;
   border-left: 3px solid var(--adw-color-primary);
 }
 .run-case strong {
@@ -972,5 +983,10 @@ select:focus-visible {
   .run-case-list {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
+}
+@media (max-width: 640px) {
+  .run-summary { grid-template-columns: minmax(0, 1fr); }
+  .run-summary article { padding: 16px 0; }
+  .run-summary article + article { border-left: 0; border-top: 1px solid #e0e7f0; }
 }
 </style>

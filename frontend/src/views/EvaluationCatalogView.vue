@@ -1,5 +1,5 @@
 <template>
-  <section class="catalog-page" :aria-label="label">
+  <section class="catalog-page" :class="{ 'catalog-page--detail': resourceId }" :aria-label="label">
     <div class="catalog-page__heading">
       <div>
         <h2>{{ resource?.name || label }}{{ resourceId ? ' · 版本管理' : '' }}</h2>
@@ -142,7 +142,8 @@
       </template>
       <div v-else-if="resource" class="catalog-page__detail">
         <aside class="catalog-page__timeline" aria-label="版本时间线">
-          <h3>版本时间线</h3>
+          <div class="catalog-page__timeline-heading"><h3>版本</h3><p>选择版本查看对应配置与绑定</p></div>
+          <div class="catalog-page__timeline-list">
           <button
             v-for="version in versions.records"
             :key="String(version.id)"
@@ -159,6 +160,7 @@
             ><span v-else>尚未发布</span><span>#{{ version.id }}</span>
           </button>
           <p v-if="!versions.records.length">尚未创建版本。</p>
+          </div>
           <el-pagination
             v-if="versions.total > 10"
             small
@@ -1198,33 +1200,42 @@ button:focus-visible {
 }
 .catalog-page__detail {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: var(--adw-space-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
 }
 .catalog-page__timeline {
-  border-right: 1px solid var(--adw-border-color);
-  padding-right: var(--adw-space-4);
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+  padding: 18px 0;
+  border-top: 1px solid #e1e8f1;
+  border-bottom: 1px solid #e1e8f1;
 }
+.catalog-page__timeline-heading h3 { font-size: 15px; }
+.catalog-page__timeline-heading p { font-size: 12px; }
+.catalog-page__timeline-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .catalog-page__timeline button {
   display: grid;
-  gap: 6px;
-  width: 100%;
-  margin-top: var(--adw-space-3);
-  padding: var(--adw-space-3);
+  flex: 0 0 190px;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
   border: 1px solid var(--adw-border-color-light);
-  border-radius: var(--adw-radius-sm);
+  border-radius: 6px;
   text-align: left;
   color: var(--adw-text-primary);
-  background: transparent;
+  background: #fff;
   cursor: pointer;
 }
 .catalog-page__timeline {
-  max-height: 480px;
-  overflow-y: auto;
+  min-width: 0;
 }
 .catalog-page__timeline button[aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
-  border-color: var(--adw-color-primary);
+  background: #edf3ff;
+  border-color: #8baded;
+  box-shadow: inset 3px 0 #3266d8;
 }
 .catalog-page__timeline button div {
   display: flex;
@@ -1238,7 +1249,17 @@ button:focus-visible {
 }
 .catalog-page__version {
   min-width: 0;
+  padding: 0;
 }
+.catalog-page--detail > .catalog-page__heading {
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+.catalog-page--detail > .catalog-page__heading h2 { font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
+.catalog-page__version > :deep(.data-state) { min-width: 0; }
+.catalog-page__version .catalog-page__heading { align-items: center; }
+.catalog-page__version .catalog-page__heading h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 20px; }
 .catalog-page__facts {
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
@@ -1256,7 +1277,11 @@ dd {
   overflow-wrap: anywhere;
 }
 .catalog-page__rule {
-  margin-bottom: var(--adw-space-4);
+  margin: 14px 0 20px;
+  padding: 9px 12px;
+  border-left: 3px solid #7ea3e8;
+  background: #f4f7fc;
+  font-size: 13px;
 }
 .catalog-page__hint,
 .catalog-page__source {
@@ -1283,19 +1308,9 @@ p[role='alert'] {
   color: var(--adw-color-danger);
 }
 @media (max-width: 1100px) {
-  .catalog-page__detail {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .catalog-page__timeline {
-    max-height: 180px;
-    border-right: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--adw-space-2);
-  }
-  .catalog-page__timeline button {
-    width: auto;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 }
 @media (max-width: 600px) {
