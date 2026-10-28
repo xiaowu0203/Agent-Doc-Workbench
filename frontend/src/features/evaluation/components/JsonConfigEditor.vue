@@ -5,8 +5,8 @@
       <el-button v-if="!readonly" link @click="format">校验并格式化</el-button>
     </div>
     <el-input
-      type="textarea"
       :id="inputId"
+      type="textarea"
       :aria-label="label"
       :model-value="modelValue"
       :readonly="readonly"

@@ -403,8 +403,9 @@
           <option value="REJECTED">拒绝候选</option>
         </select></label
       ><label
-        >判断依据<el-input type="textarea"
+        >判断依据<el-input
           v-model="decisionReason"
+          type="textarea"
           aria-label="实验结论依据"
           :rows="4"
           maxlength="1000"

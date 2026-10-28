@@ -23,7 +23,8 @@
             />
           </label>
           <label
-            >必需产物类型（每行一个）<el-input type="textarea"
+            >必需产物类型（每行一个）<el-input
+              type="textarea"
               :model-value="types"
               aria-label="必需产物类型"
               :rows="3"
@@ -58,7 +59,8 @@
               </select></label
             >
             <label
-              >预期文本或摘要<el-input type="textarea"
+              >预期文本或摘要<el-input
+                type="textarea"
                 :model-value="item.value"
                 :aria-label="`文本断言${index + 1}内容`"
                 maxlength="1000"

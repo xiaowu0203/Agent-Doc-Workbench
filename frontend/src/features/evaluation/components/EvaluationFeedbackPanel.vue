@@ -35,8 +35,9 @@
           step="any"
       /></label>
       <label
-        >反馈说明<el-input type="textarea"
+        >反馈说明<el-input
           v-model="comment"
+          type="textarea"
           aria-label="反馈说明"
           :rows="3"
           maxlength="2000"

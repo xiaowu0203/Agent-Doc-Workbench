@@ -526,8 +526,9 @@
           </select></label
         >
         <label
-          >判断理由<el-input type="textarea"
+          >判断理由<el-input
             v-model="reason"
+            type="textarea"
             aria-label="线上结论理由"
             maxlength="2000"
             :rows="3"

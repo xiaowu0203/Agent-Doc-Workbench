@@ -40,7 +40,8 @@
     <template v-if="value && allowed">
       <div class="prompt-pair">
         <label
-          >Baseline 完整系统提示词<el-input type="textarea"
+          >Baseline 完整系统提示词<el-input
+            type="textarea"
             :model-value="value.baselineSystemPrompt"
             aria-label="冻结基线系统提示词"
             readonly
@@ -48,7 +49,8 @@
           />
         </label>
         <label
-          >Candidate 完整系统提示词<el-input type="textarea"
+          >Candidate 完整系统提示词<el-input
+            type="textarea"
             :model-value="value.candidateSystemPrompt"
             aria-label="冻结候选系统提示词"
             readonly

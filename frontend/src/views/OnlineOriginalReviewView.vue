@@ -180,8 +180,9 @@
               </select></label
             >
             <label
-              >原因说明<el-input type="textarea"
+              >原因说明<el-input
                 v-model="comment"
+                type="textarea"
                 aria-label="评价原因"
                 maxlength="2000"
                 :rows="3"
@@ -200,8 +201,9 @@
               ><input v-model="serious" type="checkbox" />确认严重安全事件</label
             >
             <label v-if="serious && isOwner"
-              >安全确认理由<el-input type="textarea"
+              >安全确认理由<el-input
                 v-model="safetyReason"
+                type="textarea"
                 aria-label="安全确认理由"
                 maxlength="2000"
               />

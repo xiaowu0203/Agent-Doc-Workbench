@@ -62,7 +62,7 @@
           >
         </template>
         <label v-else
-          >操作原因<el-input type="textarea" v-model="reason" aria-label="操作原因" maxlength="2000" :rows="3" />
+          >操作原因<el-input v-model="reason" type="textarea" aria-label="操作原因" maxlength="2000" :rows="3" />
         </label>
         <p v-if="!confirmationValid" role="alert">确认已失效：请重新预检或刷新当前状态。</p>
       </template>

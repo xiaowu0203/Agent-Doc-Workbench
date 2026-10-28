@@ -118,8 +118,8 @@
       /></label>
       <label
         >候选 Prompt<el-input
-          type="textarea"
           v-model="candidate.agentPrompt"
+          type="textarea"
           :aria-label="`候选 Prompt ${index + 1}`"
           :rows="6"
           placeholder="填写本次候选使用的完整 Agent Prompt"

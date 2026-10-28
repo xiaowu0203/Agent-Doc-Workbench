@@ -60,8 +60,9 @@
           <details>
             <summary>按文档 ID 核对或补充</summary>
             <label
-              >文档范围 ID<el-input type="textarea"
+              >文档范围 ID<el-input
                 v-model="documents"
+                type="textarea"
                 aria-label="文档范围ID"
                 :rows="3"
                 placeholder="每行一个文档 ID，或用逗号分隔"
@@ -70,8 +71,9 @@
           </details>
           <p>范围和比例在创建后固定，同一文档始终在同一组。文档版本由每次真实任务分别冻结。</p>
           <label
-            >候选系统提示词<el-input type="textarea"
+            >候选系统提示词<el-input
               v-model="prompt"
+              type="textarea"
               aria-label="候选系统提示词"
               ::rows="5"
               required
@@ -80,7 +82,8 @@
           <p v-if="baselineLoading">正在读取当前 Agent 的 Prompt 参考。</p>
           <label v-if="baseline"
             >当前 Agent 系统提示词参考（配置版本 {{ baseline.configVersion }}）
-            <el-input type="textarea"
+            <el-input
+              type="textarea"
               :model-value="baseline.systemPrompt"
               aria-label="当前基线提示词参考"
               :rows="5"
@@ -161,8 +164,9 @@
           /></label>
           <p>绝对比例差 0.1 表示 10 个百分点，并非相对提升 10%。</p>
           <label
-            >差异的业务理由<el-input type="textarea"
+            >差异的业务理由<el-input
               v-model="mdeReason"
+              type="textarea"
               aria-label="差异业务理由"
               :rows="2"
               maxlength="2000"
@@ -240,8 +244,9 @@
                 </select></label
               >
               <label v-if="overrideDocument"
-                >该文档完整期望（留空恢复共同要求）<el-input type="textarea"
+                >该文档完整期望（留空恢复共同要求）<el-input
                   v-model="primaryOverrides[overrideDocument]"
+                  type="textarea"
                   aria-label="主规则文档期望"
                   :rows="4"
                 />
@@ -299,8 +304,9 @@
                   :aria-label="`附加规则${index + 1}阈值`"
               /></label>
               <label
-                >共同期望 JSON<el-input type="textarea"
+                >共同期望 JSON<el-input
                   v-model="rule.expected"
+                  type="textarea"
                   :aria-label="`附加规则${index + 1}共同期望`"
                   :rows="4"
                 />
@@ -319,8 +325,9 @@
                 </select></label
               >
               <label v-if="rule.documentId"
-                >文档完整期望（留空使用共同要求）<el-input type="textarea"
+                >文档完整期望（留空使用共同要求）<el-input
                   v-model="rule.overrides[rule.documentId]"
+                  type="textarea"
                   :aria-label="`附加规则${index + 1}文档期望`"
                   :rows="4"
                 />
