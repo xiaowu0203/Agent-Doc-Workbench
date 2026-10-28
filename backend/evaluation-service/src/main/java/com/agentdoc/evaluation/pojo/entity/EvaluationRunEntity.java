@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 @Schema(description = "评估运行")
 public class EvaluationRunEntity extends BaseEntity {
     @Schema(description = "所属空间 ID") private Long spaceId;
+    @Schema(description = "创建时填写的可选运行名称") private String name;
     @Schema(description = "数据集版本 ID") private Long datasetVersionId;
     @Schema(description = "单测试用例版本 ID") private Long singleTestCaseVersionId;
     @Schema(description = "Experiment Variant ID；普通 Run 为空") private Long experimentVariantId;

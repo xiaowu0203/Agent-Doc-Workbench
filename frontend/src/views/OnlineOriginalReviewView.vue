@@ -9,10 +9,20 @@
     <template v-else>
       <form class="selection" @submit.prevent="loadContext">
         <label
-          >分配 ID<input v-model="assignmentId" aria-label="评审分配ID" inputmode="numeric"
+          >分配 ID<input
+            :value="assignmentId"
+            aria-label="评审分配ID"
+            inputmode="numeric"
+            :disabled="busy"
+            @change="changeAssignment"
         /></label>
         <label
-          >原始产物<select v-model="target" aria-label="原始评审目标">
+          >原始产物<select
+            :value="target"
+            aria-label="原始评审目标"
+            :disabled="busy"
+            @change="changeTarget"
+          >
             <option value="TEXT">原始文本</option>
             <option value="CHANGE_SET">完整原始变更集合</option>
           </select></label
@@ -33,10 +43,25 @@
             v-for="item in candidates.records"
             :key="item.assignmentId"
             :disabled="busy"
-            @click="assignmentId = item.assignmentId"
-            >文档 #{{ item.documentId }} / 分配 #{{ item.assignmentId }}</el-button
+            :aria-pressed="assignmentId === item.assignmentId"
+            @click="selectAssignment(item.assignmentId)"
+            ><span class="candidate-label"
+              ><strong>{{ item.documentTitle || `文档 #${item.documentId}` }}</strong
+              ><small>分配 #{{ item.assignmentId }}</small
+              ><span>{{
+                item.ownReviewRecorded === true
+                  ? '本人有历史评审记录'
+                  : item.ownReviewRecorded === false
+                    ? '本人尚无评审记录'
+                    : '本人记录状态未知'
+              }}</span
+              ><small v-if="assignmentId === item.assignmentId">当前选择</small></span
+            ></el-button
           >
         </div>
+        <p>
+          这里只显示本人是否曾提交评审，不透露他人评分；文本与变更集合的具体记录、当前证据和链尾仍需点开核对。
+        </p>
         <el-pagination
           :current-page="candidates.pageNum"
           :page-size="10"
@@ -56,7 +81,16 @@
         </section>
         <section aria-label="完整原始产物">
           <h3>完整原始产物</h3>
-          <pre v-if="target === 'TEXT'">{{ context.originalContext.originalText }}</pre>
+          <template v-if="target === 'TEXT'">
+            <el-button
+              :aria-pressed="markdownPreview"
+              @click="markdownPreview = !markdownPreview"
+              >{{ markdownPreview ? '查看原始文本' : '预览 Markdown' }}</el-button
+            >
+            <!-- eslint-disable-next-line vue/no-v-html -- Markdown 禁用 HTML，输出再经 DOMPurify 移除外部媒体和链接。 -->
+            <div v-if="markdownPreview" class="original-markdown" v-html="renderedOriginal"></div>
+            <pre v-else>{{ context.originalContext.originalText }}</pre>
+          </template>
           <article
             v-for="(item, index) in context.originalContext.originals || []"
             :key="item.evidenceId"
@@ -73,7 +107,7 @@
           </article>
         </section>
         <OnlineQualityHistoryPanel
-          :key="identity"
+          :key="`${identity}/${saved?.id ?? ''}`"
           :space-id="spaceId"
           :experiment-id="experimentId"
           :context="context"
@@ -86,7 +120,11 @@
         <p v-if="unconfirmedRequest" role="alert">
           上次提交尚未确认；先核对反馈链，不能重复提交或自动追加更正。
         </p>
-        <form @submit.prevent="prepare">
+        <form
+          @submit.prevent="prepare"
+          @input.capture="ratingDirty = true"
+          @change.capture="ratingDirty = true"
+        >
           <fieldset :disabled="busy">
             <p>
               服务端知情状态：{{
@@ -107,17 +145,34 @@
             >
             <label
               >原始质量等级<select v-model.number="rubric" aria-label="原始质量等级">
-                <option v-for="value in [0, 1, 2, 3, 4]" :key="value" :value="value">
-                  {{ value }} / 4
+                <option value="" disabled>请选择质量等级</option>
+                <option
+                  v-for="level in ORIGINAL_QUALITY_LEVELS"
+                  :key="level.score"
+                  :value="level.score"
+                >
+                  {{ level.score }} / 4 · {{ level.label }}
                 </option>
               </select></label
             >
             <p>
               0 是有效评分；无法取得证据时不能评分。依据冻结目标评价完整产物，等级会映射为
-              {{ rubric / 4 }}，与正式审批接受与否分开。
+              {{ rubric === '' ? '待选择' : rubric / 4 }}，与正式审批接受与否分开。
             </p>
+            <details>
+              <summary>通用交付等级说明 v1</summary>
+              <ul>
+                <li v-for="level in ORIGINAL_QUALITY_LEVELS" :key="level.score">
+                  {{ level.score }} / 4：{{ level.label }}
+                </li>
+              </ul>
+              <p>
+                用于本次新评分。请按冻结目标和完整证据说明依据；历史评分不按此说明重新解释，质量标签与安全事件仍需分别判断。
+              </p>
+            </details>
             <label
               >质量标签<select v-model="label" aria-label="质量标签">
+                <option value="" disabled>请选择质量标签</option>
                 <option value="ACCEPTED">可接受</option>
                 <option value="REJECTED">不可接受</option>
                 <option value="NEEDS_CHANGES">需要修改</option>
@@ -125,18 +180,19 @@
               </select></label
             >
             <label
-              >原因说明<textarea
+              >原因说明<el-input
                 v-model="comment"
+                type="textarea"
                 aria-label="评价原因"
                 maxlength="2000"
-                rows="3"
+                :rows="3"
               />
             </label>
             <label
-              >原因代码（逗号分隔大写代码）<input v-model="codes" aria-label="评价原因代码"
+              >原因代码（逗号分隔大写代码）<el-input v-model="codes" aria-label="评价原因代码"
             /></label>
             <label
-              >明确更正的当前反馈 ID（首评留空）<input
+              >明确更正的当前反馈 ID（首评留空）<el-input
                 v-model="supersedes"
                 aria-label="被更正反馈ID"
                 inputmode="numeric"
@@ -145,8 +201,9 @@
               ><input v-model="serious" type="checkbox" />确认严重安全事件</label
             >
             <label v-if="serious && isOwner"
-              >安全确认理由<textarea
+              >安全确认理由<el-input
                 v-model="safetyReason"
+                type="textarea"
                 aria-label="安全确认理由"
                 maxlength="2000"
               />
@@ -170,14 +227,20 @@
           已保存反馈 #{{ saved.id }}，有效知情状态
           {{ saved.onlineQuality.blindness }}。更正须引用当前链尾并填写理由。
         </p>
+        <el-button :disabled="busy || !nextAssignment" @click="selectAssignment(nextAssignment)"
+          >查看下一项（不提交评分）</el-button
+        >
       </template>
     </template>
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElButton, ElPagination } from 'element-plus'
+import { ORIGINAL_QUALITY_LEVELS } from '@/features/evaluation/online/rubric'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, onBeforeRouteLeave } from 'vue-router'
+import { ElButton, ElPagination, ElMessageBox, ElInput } from 'element-plus'
+import MarkdownIt from 'markdown-it'
+import DOMPurify from 'dompurify'
 import { normalizeApiError } from '@/api/errors'
 import DataState from '@/shared/components/DataState.vue'
 import OnlineQualityHistoryPanel from '@/features/evaluation/online/OnlineQualityHistoryPanel.vue'
@@ -229,8 +292,8 @@ const listing = ref(false),
   listError = ref(''),
   error = ref('')
 const blindness = ref<OnlineBlindness>('UNKNOWN'),
-  rubric = ref(0),
-  label = ref<OnlineQualityRequest['label']>('NEEDS_CHANGES'),
+  rubric = ref<number | ''>(''),
+  label = ref<OnlineQualityRequest['label'] | ''>(''),
   comment = ref(''),
   codes = ref(''),
   supersedes = ref(''),
@@ -238,6 +301,63 @@ const blindness = ref<OnlineBlindness>('UNKNOWN'),
   safetyReason = ref('')
 const prepared = ref<OnlineQualityRequest | null>(null),
   saved = ref<OnlineQualityResult | null>(null)
+watch(saved, (value) => {
+  if (!value) return
+  candidates.value.records = candidates.value.records.map((item) =>
+    item.assignmentId === value.onlineQuality.assignmentId
+      ? { ...item, ownReviewRecorded: true }
+      : item,
+  )
+})
+const ratingDirty = ref(false),
+  markdownPreview = ref(false)
+const markdown = new MarkdownIt({ html: false, linkify: false, breaks: true })
+const renderedOriginal = computed(() =>
+  DOMPurify.sanitize(markdown.render(context.value?.originalContext.originalText || ''), {
+    FORBID_TAGS: ['img', 'a', 'video', 'audio', 'iframe', 'object', 'style'],
+    FORBID_ATTR: ['style'],
+  }),
+)
+const nextAssignment = computed(() => {
+  const index = candidates.value.records.findIndex(
+    (item) => item.assignmentId === assignmentId.value,
+  )
+  return index >= 0 ? candidates.value.records[index + 1]?.assignmentId || '' : ''
+})
+async function discardRating() {
+  if (busy.value) return false
+  if (!ratingDirty.value) return true
+  try {
+    await ElMessageBox.confirm(
+      '当前评分尚未提交。离开将丢弃本页评分输入，已保存的历史反馈保持不变。',
+      '保留评分输入？',
+      { confirmButtonText: '丢弃输入并继续', cancelButtonText: '留在当前评审', type: 'warning' },
+    )
+    ratingDirty.value = false
+    return true
+  } catch {
+    return false
+  }
+}
+onBeforeRouteLeave(discardRating)
+function beforeUnload(event: Event) {
+  if (ratingDirty.value || busy.value) {
+    event.preventDefault()
+  }
+}
+onMounted(() => window.addEventListener('beforeunload', beforeUnload))
+async function changeAssignment(event: Event) {
+  const input = event.target as HTMLInputElement,
+    value = input.value
+  if (await discardRating()) assignmentId.value = value
+  else input.value = assignmentId.value
+}
+async function changeTarget(event: Event) {
+  const input = event.target as HTMLSelectElement,
+    value = input.value as typeof target.value
+  if (await discardRating()) target.value = value
+  else input.value = target.value
+}
 const currentHistory = ref<OnlineQualityHistory | null>(null),
   unconfirmedRequest = ref<OnlineQualityRequest | null>(null)
 let acknowledgedContent: string | null = null
@@ -284,6 +404,7 @@ function historyVerified(value: OnlineQualityHistory) {
       },
     }
     acknowledgedContent = contentSignature(attempted)
+    ratingDirty.value = false
     supersedes.value = value.currentTailFeedbackId ?? ''
     error.value = '已核对上次评分保存成功；没有重复提交。修改需要更正的内容后，再明确选择当前链尾。'
   } else if (attempted)
@@ -323,6 +444,8 @@ watch(formIdentity, () => {
   prepared.value = null
 })
 function clearContext() {
+  ratingDirty.value = false
+  markdownPreview.value = false
   read?.abort()
   write?.abort()
   context.value = null
@@ -330,6 +453,8 @@ function clearContext() {
   saved.value = null
   loading.value = false
   busy.value = false
+  rubric.value = ''
+  label.value = ''
   comment.value = ''
   codes.value = ''
   supersedes.value = ''
@@ -384,7 +509,14 @@ async function loadCandidates(pageNum: number) {
     if (!controller.signal.aborted) listing.value = false
   }
 }
+async function selectAssignment(id: string) {
+  if (!(await discardRating())) return
+  assignmentId.value = id
+  await nextTick()
+  await loadContext()
+}
 async function loadContext() {
+  if (!(await discardRating())) return
   clearContext()
   error.value = ''
   if (!allowed.value || !validOnlineId(props.experimentId) || !validOnlineId(assignmentId.value))
@@ -449,7 +581,6 @@ async function loadContext() {
       value.blindedEligible && value.knowledgeStatus === 'BLINDED'
         ? 'BLINDED'
         : value.knowledgeStatus
-    rubric.value = 0
   } catch (e) {
     if (!controller.signal.aborted) error.value = normalizeApiError(e).message
   } finally {
@@ -461,7 +592,9 @@ function prepare() {
   error.value = ''
   if (!allowed.value || !context.value) return
   try {
+    if (rubric.value === '' || !label.value) throw new Error('请主动选择质量等级和质量标签')
     if (unconfirmedRequest.value) throw new Error('上次响应未知，请先核对反馈链')
+    if (!currentHistory.value) throw new Error('反馈链尚未核验，请等待或重新核对反馈链')
     if (
       currentHistory.value?.currentTailFeedbackId &&
       supersedes.value !== currentHistory.value.currentTailFeedbackId
@@ -551,6 +684,7 @@ async function submit() {
     )
       throw new Error('反馈结果身份不一致，请核对当前反馈链')
     saved.value = value
+    ratingDirty.value = false
     acknowledgedContent = contentSignature(payload)
     supersedes.value = String(value.id)
     prepared.value = null
@@ -587,6 +721,7 @@ watch(
   { immediate: true },
 )
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', beforeUnload)
   listRead?.abort()
   read?.abort()
   write?.abort()
@@ -597,12 +732,38 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 20px;
 }
+.original-markdown {
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
 .selection,
 .candidates {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
   align-items: end;
+}
+.candidates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: stretch;
+}
+.candidates .el-button {
+  min-width: 0;
+  height: auto;
+  margin-left: 0;
+  padding: 12px;
+}
+.candidate-label {
+  display: grid;
+  gap: 6px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.candidates .el-button[aria-pressed='true'] {
+  border-width: 2px;
+  border-color: var(--adw-color-primary);
 }
 label {
   display: flex;

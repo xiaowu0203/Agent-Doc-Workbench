@@ -42,7 +42,8 @@ public record EvaluationRunVO(
         LocalDateTime finishedAt,
 
         @Schema(description = "下属用例运行列表")
-        List<EvaluationCaseRunVO> cases
+        List<EvaluationCaseRunVO> cases,
+        @Schema(description = "可选运行名称") String name
 ) {
     /**
      * 实体转VO，携带用例运行数据
@@ -55,6 +56,6 @@ public record EvaluationRunVO(
                 run.getSingleTestCaseVersionId(), run.getStatus(), run.getPauseReason(),
                 run.getCancelRequested(), run.getCaseCount(), run.getReconciliationFailureCount(),
                 run.getStartedAt(), run.getFinishedAt(),
-                List.copyOf(cases));
+                List.copyOf(cases), run.getName());
     }
 }

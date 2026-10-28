@@ -4,6 +4,7 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
+import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.ReplaySourceVO;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.AuthUtils;
@@ -48,11 +49,15 @@ import com.agentdoc.evaluation.pojo.entity.EvaluatorEntity;
 import com.agentdoc.evaluation.pojo.entity.EvaluatorVersionEntity;
 import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.vo.DatasetVersionVO;
+import com.agentdoc.evaluation.pojo.vo.CatalogVersionSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationDatasetVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
+import com.agentdoc.evaluation.pojo.vo.TestCaseSourceVO;
+import com.agentdoc.evaluation.pojo.vo.DatasetExperimentSourceVO;
+import com.agentdoc.evaluation.enums.ExperimentSourceIssue;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -66,15 +71,21 @@ import com.agentdoc.common.enums.TaskExecutionMode;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.ArrayList;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_MANAGE;
 import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_EVALUATORS;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.BUILT_IN_IMPLEMENTATION_VERSION;
 import static com.agentdoc.evaluation.constant.EvaluationConstant.CONTENT_HASH_SCHEMA_VERSION;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.MAX_DATASET_BINDING_COUNT;
 
 /**
  * Evaluation 目录服务
@@ -133,6 +144,7 @@ public class EvaluationCatalogService {
     private final EvaluatorVersionMapper evaluatorVersionMapper;
     private final SpaceAccessService spaceAccessService;
     private final TaskFeign taskFeign;
+    private final DocumentFeign documentFeign;
     private final EvaluatorContractValidator evaluatorContractValidator;
 
     /**
@@ -159,7 +171,11 @@ public class EvaluationCatalogService {
                         .eq(param.getArchived() != null, EvaluationDatasetEntity::getArchived, param.getArchived())
                         .like(hasText(param.getKeyword()), EvaluationDatasetEntity::getName, trim(param.getKeyword()))
                         .orderByDesc(EvaluationDatasetEntity::getId));
-        return PageVO.of(result.getRecords().stream().map(EvaluationDatasetVO::from).toList(),
+        var summaries = result.getRecords().isEmpty() ? Map.<Long, CatalogVersionSummaryVO>of()
+                : datasetVersionMapper.resourceSummaries(param.getSpaceId(), result.getRecords().stream().map(EvaluationDatasetEntity::getId).toList())
+                    .stream().collect(Collectors.toMap(CatalogVersionSummaryVO::resourceId, Function.identity()));
+        return PageVO.of(result.getRecords().stream().map(row -> EvaluationDatasetVO.from(row,
+                summaries.getOrDefault(row.getId(), CatalogVersionSummaryVO.empty(row.getId())))).toList(),
                 result.getTotal(), param);
     }
 
@@ -175,7 +191,11 @@ public class EvaluationCatalogService {
                         .eq(param.getArchived() != null, EvaluationTestCaseEntity::getArchived, param.getArchived())
                         .like(hasText(param.getKeyword()), EvaluationTestCaseEntity::getName, trim(param.getKeyword()))
                         .orderByDesc(EvaluationTestCaseEntity::getId));
-        return PageVO.of(result.getRecords().stream().map(EvaluationTestCaseVO::from).toList(),
+        var summaries = result.getRecords().isEmpty() ? Map.<Long, CatalogVersionSummaryVO>of()
+                : testCaseVersionMapper.resourceSummaries(param.getSpaceId(), result.getRecords().stream().map(EvaluationTestCaseEntity::getId).toList())
+                    .stream().collect(Collectors.toMap(CatalogVersionSummaryVO::resourceId, Function.identity()));
+        return PageVO.of(result.getRecords().stream().map(row -> EvaluationTestCaseVO.from(row,
+                summaries.getOrDefault(row.getId(), CatalogVersionSummaryVO.empty(row.getId())))).toList(),
                 result.getTotal(), param);
     }
 
@@ -193,7 +213,11 @@ public class EvaluationCatalogService {
                                 .like(EvaluatorEntity::getName, trim(param.getKeyword())).or()
                                 .like(EvaluatorEntity::getEvaluatorKey, trim(param.getKeyword())))
                         .orderByDesc(EvaluatorEntity::getId));
-        return PageVO.of(result.getRecords().stream().map(EvaluatorVO::from).toList(),
+        var summaries = result.getRecords().isEmpty() ? Map.<Long, CatalogVersionSummaryVO>of()
+                : evaluatorVersionMapper.resourceSummaries(param.getSpaceId(), result.getRecords().stream().map(EvaluatorEntity::getId).toList())
+                    .stream().collect(Collectors.toMap(CatalogVersionSummaryVO::resourceId, Function.identity()));
+        return PageVO.of(result.getRecords().stream().map(row -> EvaluatorVO.from(row,
+                summaries.getOrDefault(row.getId(), CatalogVersionSummaryVO.empty(row.getId())))).toList(),
                 result.getTotal(), param);
     }
 
@@ -270,6 +294,65 @@ public class EvaluationCatalogService {
         return DatasetVersionVO.from(entity);
     }
 
+    /** 批量核对发布用例的冻结配置，只读取一次代表来源；全部来源动态资格仍由创建/启动预检检查。 */
+    public DatasetExperimentSourceVO getDatasetExperimentSource(Long id) {
+        var version = datasetVersionMapper.selectById(id);
+        requireReadable(version == null ? null : version.getSpaceId(), "DatasetVersion");
+        spaceAccessService.requirePermission(version.getSpaceId(), TASK_READ);
+        var dataset = requireDataset(version.getDatasetId());
+        if (!Objects.equals(dataset.getSpaceId(), version.getSpaceId())
+                || !EvaluationVersionStatus.PUBLISHED.name().equals(version.getStatus())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "数据集版本未发布或归属不一致");
+        }
+        var bindings = datasetCaseMapper.selectList(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
+                .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, id)
+                .eq(EvaluationDatasetCaseEntity::getEnabled, true)
+                .orderByAsc(EvaluationDatasetCaseEntity::getSortOrder, EvaluationDatasetCaseEntity::getId));
+        if (bindings.isEmpty()) {
+            throw new BusinessException(ErrorCode.CONFLICT, "数据集没有启用用例");
+        }
+        var versions = testCaseVersionMapper.selectBatchIds(bindings.stream()
+                .map(EvaluationDatasetCaseEntity::getTestCaseVersionId).toList());
+        var parents = versions.isEmpty() ? Map.<Long, EvaluationTestCaseEntity>of()
+                : testCaseMapper.selectBatchIds(versions.stream().map(EvaluationTestCaseVersionEntity::getTestCaseId).distinct().toList())
+                    .stream().collect(Collectors.toMap(EvaluationTestCaseEntity::getId, Function.identity()));
+        var issues = new ArrayList<String>();
+        if (versions.size() != bindings.size() || versions.stream().anyMatch(item -> {
+            var parent = parents.get(item.getTestCaseId());
+            return !Objects.equals(item.getSpaceId(), version.getSpaceId())
+                    || !EvaluationVersionStatus.PUBLISHED.name().equals(item.getStatus()) || parent == null
+                    || !Objects.equals(parent.getSpaceId(), version.getSpaceId()) || Boolean.TRUE.equals(parent.getArchived());
+        })) { issues.add(ExperimentSourceIssue.CASE_UNAVAILABLE.name()); }
+        if (versions.stream().anyMatch(item -> item.getSourceTaskId() == null || item.getSourceExecutionId() == null
+                || !Integer.valueOf(EXPERIMENT_SOURCE_EXECUTION_SCHEMA_VERSION).equals(item.getSourceExecutionSchemaVersion())
+                || item.getSourceExecutionHash() == null || !item.getSourceExecutionHash().matches("[0-9a-f]{64}"))) {
+            issues.add(ExperimentSourceIssue.SOURCE_IDENTITY_MISSING.name());
+        }
+        if (versions.stream().map(EvaluationTestCaseVersionEntity::getSourceExecutionHash).distinct().count() > 1) {
+            issues.add(ExperimentSourceIssue.SOURCE_SNAPSHOT_MISMATCH.name());
+        }
+        ReplaySourceVO source = null;
+        if (issues.isEmpty()) {
+            var representative = versions.stream().filter(item -> Objects.equals(item.getId(), bindings.getFirst().getTestCaseVersionId())).findFirst().orElseThrow();
+            source = requireData(taskFeign.getReplaySource(representative.getSourceTaskId(), version.getSpaceId()));
+            if (!source.replayable() || !Objects.equals(source.spaceId(), version.getSpaceId())
+                    || !Objects.equals(source.sourceTaskId(), representative.getSourceTaskId())
+                    || !Objects.equals(source.sourceExecutionId(), representative.getSourceExecutionId())
+                    || !Objects.equals(source.executionSnapshotSchemaVersion(), representative.getSourceExecutionSchemaVersion())
+                    || !Objects.equals(source.executionSnapshotHash(), representative.getSourceExecutionHash())
+                    || !Objects.equals(source.inputSnapshotSchemaVersion(), representative.getSourceInputSchemaVersion())
+                    || !Objects.equals(source.inputSnapshotHash(), representative.getSourceInputHash())
+                    || !Objects.equals(source.documentVersionSnapshot(), representative.getDocumentVersionSnapshot())
+                    || !Objects.equals(source.documentContentSha256(), representative.getDocumentContentSha256())
+                    || source.agentId() == null) { issues.add(ExperimentSourceIssue.BASELINE_SOURCE_UNAVAILABLE.name()); }
+        }
+        boolean consistent = issues.isEmpty();
+        return new DatasetExperimentSourceVO(version.getSpaceId(), id, bindings.size(), consistent, List.copyOf(issues),
+                consistent ? source.sourceTaskId() : null, consistent ? source.sourceExecutionId() : null,
+                consistent ? source.agentId() : null, consistent ? source.tokenBudget() : null,
+                consistent ? source.executionSnapshotSchemaVersion() : null, consistent ? source.executionSnapshotHash() : null);
+    }
+
     public EvaluationTestCaseVO getTestCase(Long id) {
         EvaluationTestCaseEntity entity = testCaseMapper.selectById(id);
         requireReadable(entity == null ? null : entity.getSpaceId(), "TestCase");
@@ -280,6 +363,35 @@ public class EvaluationCatalogService {
         EvaluationTestCaseVersionEntity entity = testCaseVersionMapper.selectById(id);
         requireReadable(entity == null ? null : entity.getSpaceId(), "TestCaseVersion");
         return TestCaseVersionVO.from(entity);
+    }
+
+    /** 仅在来源身份与全部冻结依据一致时补充当前文档名称，归档版本也可只读定位。 */
+    public TestCaseSourceVO getTestCaseSource(Long id) {
+        var version = testCaseVersionMapper.selectById(id);
+        requireReadable(version == null ? null : version.getSpaceId(), "TestCaseVersion");
+        spaceAccessService.requirePermission(version.getSpaceId(), TASK_READ);
+        spaceAccessService.requirePermission(version.getSpaceId(), DOCUMENT_READ);
+        var source = requireData(taskFeign.getReplaySource(version.getSourceTaskId(), version.getSpaceId()));
+        if (!source.replayable() || !Objects.equals(source.spaceId(), version.getSpaceId())
+                || !Objects.equals(source.sourceTaskId(), version.getSourceTaskId())
+                || !Objects.equals(source.sourceExecutionId(), version.getSourceExecutionId())
+                || !Objects.equals(source.inputSnapshotSchemaVersion(), version.getSourceInputSchemaVersion())
+                || version.getSourceInputHash() == null || !version.getSourceInputHash().equals(source.inputSnapshotHash())
+                || !Objects.equals(source.executionSnapshotSchemaVersion(), version.getSourceExecutionSchemaVersion())
+                || version.getSourceExecutionHash() == null || !version.getSourceExecutionHash().equals(source.executionSnapshotHash())
+                || !Objects.equals(source.documentVersionSnapshot(), version.getDocumentVersionSnapshot())
+                || version.getDocumentContentSha256() == null || !version.getDocumentContentSha256().equals(source.documentContentSha256())
+                || source.documentId() == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "来源与用例冻结依据不一致");
+        }
+        var response = documentFeign.getDocumentRefs(List.of(source.documentId()));
+        if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取来源文档名称失败");
+        }
+        var document = response.data().stream().filter(ref -> Objects.equals(ref.id(), source.documentId())
+                && Objects.equals(ref.spaceId(), version.getSpaceId())).findFirst().orElse(null);
+        return new TestCaseSourceVO(version.getId(), version.getSpaceId(), version.getSourceTaskId(),
+                version.getSourceInputHash(), source.documentId(), document == null ? null : document.title());
     }
 
     public EvaluatorVO getEvaluator(Long id) {
@@ -389,12 +501,30 @@ public class EvaluationCatalogService {
      *
      * @param dto 数据集版本创建入参
      * @return 数据集版本VO
-     * @apiNote 版本初始状态为草稿DRAFT；自动递增版本号；刚创建无绑定用例，后续通过 replaceDatasetCases 添加
+     * @apiNote 默认创建空草稿；显式复制时与新绑定在同一事务写入，不修改来源版本
      */
     @Transactional
     public DatasetVersionVO createDatasetVersion(DatasetVersionCreateDTO dto) {
         EvaluationDatasetEntity dataset = requireDataset(dto.datasetId());
         spaceAccessService.requirePermission(dataset.getSpaceId(), EVALUATION_MANAGE);
+        List<DatasetCaseBindingDTO> copiedBindings = List.of();
+        if (dto.copyFromVersionId() != null) {
+            var source = datasetVersionMapper.selectById(dto.copyFromVersionId());
+            if (source == null || !Objects.equals(source.getDatasetId(), dataset.getId())
+                    || !Objects.equals(source.getSpaceId(), dataset.getSpaceId())
+                    || !EvaluationVersionStatus.PUBLISHED.name().equals(source.getStatus())) {
+                throw new BusinessException(ErrorCode.CONFLICT, "只能复制当前数据集已发布版本的绑定");
+            }
+            var bindings = datasetCaseMapper.selectList(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
+                    .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, source.getId())
+                    .orderByAsc(EvaluationDatasetCaseEntity::getSortOrder, EvaluationDatasetCaseEntity::getId));
+            if (bindings.isEmpty() || bindings.size() > MAX_DATASET_BINDING_COUNT) {
+                throw new BusinessException(ErrorCode.CONFLICT, "复制来源绑定为空或数量超出上限");
+            }
+            copiedBindings = bindings.stream().map(binding -> new DatasetCaseBindingDTO(
+                    binding.getTestCaseVersionId(), binding.getSortOrder(), binding.getEnabled())).toList();
+            validateDatasetCases(dataset.getSpaceId(), copiedBindings);
+        }
         EvaluationDatasetVersionEntity entity = new EvaluationDatasetVersionEntity();
         entity.setId(IdWorker.getId());
         entity.setDatasetId(dataset.getId());
@@ -403,6 +533,16 @@ public class EvaluationCatalogService {
         entity.setStatus(EvaluationVersionStatus.DRAFT.name());
         entity.setCreatedBy(AuthUtils.getUserIdOrException());
         datasetVersionMapper.insert(entity);
+        if (!copiedBindings.isEmpty()) {
+            var targetId = entity.getId();
+            datasetCaseMapper.insertBatch(copiedBindings.stream().map(binding -> {
+                var copy = new EvaluationDatasetCaseEntity();
+                copy.setId(IdWorker.getId()); copy.setDatasetVersionId(targetId);
+                copy.setTestCaseVersionId(binding.testCaseVersionId());
+                copy.setSortOrder(binding.sortOrder()); copy.setEnabled(binding.enabled());
+                return copy;
+            }).toList());
+        }
         return DatasetVersionVO.from(entity);
     }
 
@@ -420,24 +560,7 @@ public class EvaluationCatalogService {
     public DatasetVersionVO replaceDatasetCases(Long versionId, DatasetCaseBindingsDTO dto) {
         EvaluationDatasetVersionEntity version = requireDraftDatasetVersion(versionId);
         spaceAccessService.requirePermission(version.getSpaceId(), EVALUATION_MANAGE);
-        // 校验入参无重复用例版本
-        if (dto.cases().stream().map(DatasetCaseBindingDTO::testCaseVersionId).distinct().count() != dto.cases().size()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "测试用例版本不能重复绑定");
-        }
-        List<EvaluationTestCaseVersionEntity> cases = testCaseVersionMapper.selectBatchIds(
-                dto.cases().stream().map(DatasetCaseBindingDTO::testCaseVersionId).toList());
-        // 取出所有父用例主资源，校验主资源未归档
-        Set<Long> activeTestCaseIds = testCaseMapper.selectBatchIds(cases.stream()
-                        .map(EvaluationTestCaseVersionEntity::getTestCaseId).collect(Collectors.toSet())).stream()
-                .filter(value -> !Boolean.TRUE.equals(value.getArchived()))
-                .map(EvaluationTestCaseEntity::getId).collect(Collectors.toSet());
-        // 校验：全部存在、同空间、版本已发布、父用例未归档
-        if (cases.size() != dto.cases().size() || cases.stream().anyMatch(value ->
-                !version.getSpaceId().equals(value.getSpaceId())
-                        || !EvaluationVersionStatus.PUBLISHED.name().equals(value.getStatus())
-                        || !activeTestCaseIds.contains(value.getTestCaseId()))) {
-            throw new BusinessException(ErrorCode.CONFLICT, "数据集只能绑定同空间已发布测试用例版本");
-        }
+        validateDatasetCases(version.getSpaceId(), dto.cases());
         // 清空旧绑定
         datasetCaseMapper.delete(new LambdaQueryWrapper<EvaluationDatasetCaseEntity>()
                 .eq(EvaluationDatasetCaseEntity::getDatasetVersionId, versionId));
@@ -455,6 +578,27 @@ public class EvaluationCatalogService {
             datasetCaseMapper.insertBatch(datasetCases);
         }
         return DatasetVersionVO.from(version);
+    }
+
+    private void validateDatasetCases(Long spaceId, List<DatasetCaseBindingDTO> bindings) {
+        // 校验入参无重复用例版本
+        if (bindings.stream().map(DatasetCaseBindingDTO::testCaseVersionId).distinct().count() != bindings.size()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "测试用例版本不能重复绑定");
+        }
+        List<EvaluationTestCaseVersionEntity> cases = testCaseVersionMapper.selectBatchIds(
+                bindings.stream().map(DatasetCaseBindingDTO::testCaseVersionId).toList());
+        // 取出所有父用例主资源，校验主资源未归档
+        Set<Long> activeTestCaseIds = testCaseMapper.selectBatchIds(cases.stream()
+                        .map(EvaluationTestCaseVersionEntity::getTestCaseId).collect(Collectors.toSet())).stream()
+                .filter(value -> Objects.equals(value.getSpaceId(), spaceId) && !Boolean.TRUE.equals(value.getArchived()))
+                .map(EvaluationTestCaseEntity::getId).collect(Collectors.toSet());
+        // 校验：全部存在、同空间、版本已发布、父用例未归档
+        if (cases.size() != bindings.size() || cases.stream().anyMatch(value ->
+                !spaceId.equals(value.getSpaceId())
+                        || !EvaluationVersionStatus.PUBLISHED.name().equals(value.getStatus())
+                        || !activeTestCaseIds.contains(value.getTestCaseId()))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "数据集只能绑定同空间已发布测试用例版本");
+        }
     }
 
     /**

@@ -52,6 +52,7 @@ import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightIssueVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVO;
+import com.agentdoc.evaluation.pojo.vo.ExperimentSourceSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVariantVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
@@ -82,6 +83,7 @@ public class ExperimentService {
 
     private static final int MANIFEST_SCHEMA_VERSION = 1;
     private static final int REQUEST_SCHEMA_VERSION = 1;
+    private static final int NAMED_REQUEST_SCHEMA_VERSION = 2;
 
     private final ExperimentMapper experimentMapper;
     private final ExperimentReportMapper reportMapper;
@@ -108,6 +110,11 @@ public class ExperimentService {
         spaceAccessService.requirePermission(request.spaceId(), AGENT_MANAGE);
         String requestHash = StableSnapshotUtils.snapshotHash(REQUEST_SCHEMA_VERSION,
                 new CreateRequest(request.spaceId(), request.datasetVersionId(), request.candidateVariants()));
+        String name = request.name() == null || request.name().isBlank() ? null : request.name().trim();
+        if (name != null) {
+            requestHash = StableSnapshotUtils.snapshotHash(NAMED_REQUEST_SCHEMA_VERSION,
+                    new NamedCreateRequest(requestHash, name));
+        }
         ExperimentEntity existing = findByRequestKey(request.spaceId(), request.clientRequestKey());
         if (existing != null) {
             requireSameRequest(existing, requestHash);
@@ -135,6 +142,7 @@ public class ExperimentService {
         ExperimentEntity experiment = new ExperimentEntity();
         experiment.setId(IdWorker.getId());
         experiment.setSpaceId(request.spaceId());
+        experiment.setName(name);
         experiment.setDatasetVersionId(request.datasetVersionId());
         experiment.setStatus(ExperimentStatus.CREATED.name());
         experiment.setClientRequestKey(request.clientRequestKey());
@@ -170,6 +178,19 @@ public class ExperimentService {
             return detailInternal(concurrent);
         }
         return toVO(experiment, variants);
+    }
+
+    public ExperimentSourceSummaryVO sourceSummary(Long id) {
+        var experiment = requireExperiment(id);
+        spaceAccessService.requirePermission(experiment.getSpaceId(), EVALUATION_READ);
+        if (!Objects.equals(experiment.getManifestSchemaVersion(), MANIFEST_SCHEMA_VERSION)) {
+            throw new BusinessException(ErrorCode.CONFLICT, "MANIFEST_MISMATCH");
+        }
+        var manifest = requireManifest(experiment);
+        var sources = manifest.cases().stream().map(ManifestCase::sourceTaskId).toList();
+        return new ExperimentSourceSummaryVO(experiment.getId(), experiment.getSpaceId(), experiment.getManifestHash(),
+                sources.size(), sources.stream().filter(source -> source != null && source > 0).distinct().count(),
+                sources.stream().filter(source -> source == null || source <= 0).count());
     }
 
     public ExperimentVO detail(Long id) {
@@ -567,7 +588,7 @@ public class ExperimentService {
                 experiment.getCancelRequestedBy(), experiment.getCancelRequestedAt(),
                 experiment.getDecision(), experiment.getDecisionReason(), experiment.getDecisionReportRevision(),
                 experiment.getDecidedBy(), experiment.getDecidedAt(), experiment.getFinishedAt(),
-                variants.stream().map(this::toVariantVO).toList());
+                variants.stream().map(this::toVariantVO).toList(), experiment.getName());
     }
 
     private ExperimentVariantVO toVariantVO(ExperimentVariantEntity variant) {
@@ -621,6 +642,7 @@ public class ExperimentService {
 
     private record CreateRequest(Long spaceId, Long datasetVersionId,
                                  List<PromptCandidateCreateDTO> candidateVariants) { }
+    private record NamedCreateRequest(String contentRequestHash, String name) { }
     private record CandidateDraft(String variantKey, AgentCandidateConfigVO identity) { }
     private record ManifestBuild(ExperimentManifest manifest, List<ReplaySourceVO> sources) { }
 }

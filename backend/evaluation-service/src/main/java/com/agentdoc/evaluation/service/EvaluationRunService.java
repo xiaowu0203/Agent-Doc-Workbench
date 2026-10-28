@@ -125,7 +125,8 @@ public class EvaluationRunService {
                 request.datasetVersionId(),
                 request.singleTestCaseVersionId(),
                 AuthUtils.getUserIdOrException(),
-                caseVersions.stream().map(EvaluationTestCaseVersionEntity::getId).toList()
+                caseVersions.stream().map(EvaluationTestCaseVersionEntity::getId).toList(),
+                request.name() == null || request.name().isBlank() ? null : request.name().trim()
         );
 
         Map<Long, EvaluationTestCaseVersionEntity> caseById = caseVersions.stream()
@@ -189,12 +190,27 @@ public class EvaluationRunService {
                         Collectors.mapping(EvaluationFeedbackVO::from, Collectors.toList())
                 ));
 
+        var versions = caseRuns.isEmpty() ? Map.<Long, EvaluationTestCaseVersionEntity>of()
+                : testCaseVersionMapper.selectList(new LambdaQueryWrapper<EvaluationTestCaseVersionEntity>()
+                        .select(EvaluationTestCaseVersionEntity::getId, EvaluationTestCaseVersionEntity::getTestCaseId,
+                                EvaluationTestCaseVersionEntity::getVersionNo)
+                        .eq(EvaluationTestCaseVersionEntity::getSpaceId, run.getSpaceId())
+                        .in(EvaluationTestCaseVersionEntity::getId, caseRuns.stream().map(EvaluationCaseRunEntity::getTestCaseVersionId).distinct().toList()))
+                    .stream().collect(Collectors.toMap(EvaluationTestCaseVersionEntity::getId, Function.identity()));
+        var names = versions.isEmpty() ? Map.<Long, EvaluationTestCaseEntity>of()
+                : testCaseMapper.selectList(new LambdaQueryWrapper<EvaluationTestCaseEntity>()
+                        .select(EvaluationTestCaseEntity::getId, EvaluationTestCaseEntity::getName)
+                        .eq(EvaluationTestCaseEntity::getSpaceId, run.getSpaceId())
+                        .in(EvaluationTestCaseEntity::getId, versions.values().stream().map(EvaluationTestCaseVersionEntity::getTestCaseId).distinct().toList()))
+                    .stream().collect(Collectors.toMap(EvaluationTestCaseEntity::getId, Function.identity()));
         List<EvaluationCaseRunVO> cases = caseRuns.stream()
-                .map(caseRun -> EvaluationCaseRunVO.from(
-                        caseRun,
-                        requireAttempt(attempts, caseRun),
-                        feedbackByCaseRun.getOrDefault(caseRun.getId(), List.of())
-                ))
+                .map(caseRun -> {
+                    var version = versions.get(caseRun.getTestCaseVersionId());
+                    var parent = version == null ? null : names.get(version.getTestCaseId());
+                    return EvaluationCaseRunVO.from(caseRun, requireAttempt(attempts, caseRun),
+                            feedbackByCaseRun.getOrDefault(caseRun.getId(), List.of()))
+                            .withCatalogName(parent == null ? null : parent.getName(), version == null ? null : version.getVersionNo());
+                })
                 .toList();
 
         return EvaluationRunVO.from(run, cases);
@@ -330,8 +346,12 @@ public class EvaluationRunService {
                 new LambdaQueryWrapper<EvaluationCaseAttemptEntity>()
                         .eq(EvaluationCaseAttemptEntity::getRunId, id)
         );
+        Set<Long> currentAttemptIds = caseRunMapper.selectList(new LambdaQueryWrapper<EvaluationCaseRunEntity>()
+                        .eq(EvaluationCaseRunEntity::getRunId, id)).stream()
+                .map(EvaluationCaseRunEntity::getCurrentAttemptId).collect(Collectors.toSet());
 
         Map<Long, List<EvaluationCaseAttemptEntity>> bySegment = allAttempts.stream()
+                .filter(attempt -> currentAttemptIds.contains(attempt.getId()))
                 .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getExecutionTaskId() != null)
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 

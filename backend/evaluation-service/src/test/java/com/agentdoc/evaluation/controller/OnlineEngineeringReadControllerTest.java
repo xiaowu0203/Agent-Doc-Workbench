@@ -1,12 +1,14 @@
 package com.agentdoc.evaluation.controller;
 
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.pojo.dto.PageParam;
 import com.agentdoc.evaluation.pojo.param.EvaluatorPublishedSearchParam;
 import com.agentdoc.evaluation.pojo.param.OnlineQualityHistorySearchParam;
 import com.agentdoc.evaluation.service.EvaluationCatalogService;
 import com.agentdoc.evaluation.service.OnlineBlindReviewService;
 import com.agentdoc.evaluation.service.OnlineExperimentService;
 import com.agentdoc.evaluation.service.OnlineQualityHistoryService;
+import com.agentdoc.evaluation.service.OnlineExperimentReportService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
@@ -18,6 +20,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class OnlineEngineeringReadControllerTest {
+    @Test void reportIndexBindsPaginationAndPreservesTextIdentity() throws Exception {
+        var service = mock(OnlineExperimentReportService.class);
+        MockMvcBuilders.standaloneSetup(new OnlineExperimentReportController(service)).build()
+                .perform(get("/api/evaluation/online-experiments/9007199254740993/reports?pageNum=2&pageSize=10"))
+                .andExpect(status().isOk());
+        var param = ArgumentCaptor.forClass(PageParam.class);
+        verify(service).revisions(eq("9007199254740993"), param.capture());
+        assertEquals(2, param.getValue().getPageNum()); assertEquals(10, param.getValue().getPageSize());
+    }
     @Test void fullFrozenPromptIsNeverCacheable() throws Exception {
         var service = mock(OnlineExperimentService.class);
         MockMvcBuilders.standaloneSetup(new OnlineExperimentController(service)).build()

@@ -5,12 +5,13 @@
       评分按更正顺序保留；只显示自己的自由文本。历史记录不是新的盲态资格，也不代替当前原始证据核验。
     </p>
     <el-button :disabled="busy" :loading="loading" @click="load(1)">核对反馈链</el-button>
+    <p v-if="loading" role="status">正在读取当前反馈链，核对完成后可评价。</p>
     <p v-if="error" role="alert">反馈链未知：{{ error }}</p>
     <template v-if="value">
-      <p v-if="!value.history.total">已核验当前原始目标尚无人工反馈。</p>
+      <p v-if="!value.history.total">首评模式：已核验当前原始目标尚无人工反馈。</p>
       <template v-else>
         <p>
-          当次链尾 #{{ value.currentTailFeedbackId }}，有效知情状态
+          更正模式：当次链尾 #{{ value.currentTailFeedbackId }}，有效知情状态
           {{ value.currentTailBlindness }}；提交时服务端仍会重新核对。
         </p>
         <el-button
@@ -179,7 +180,9 @@ watch(
     value.value = null
     error.value = ''
     loading.value = false
+    void load(1)
   },
+  { immediate: true },
 )
 onBeforeUnmount(() => controller?.abort())
 </script>

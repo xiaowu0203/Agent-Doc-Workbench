@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assignmentStatus,
   onlineActionAvailable,
   onlineFact,
   onlineStateVersion,
@@ -10,6 +11,14 @@ import {
 import { experiment, proof } from './fixtures.spec-support'
 
 describe('线上事实与门禁', () => {
+  it('同名状态按阶段解释，缺失和未知新码不被推断为完成', () => {
+    expect(assignmentStatus('confirmation', 'PENDING')).toBe('待确认')
+    expect(assignmentStatus('dispatch', 'PENDING')).toBe('待派发')
+    expect(assignmentStatus('settlement', 'SETTLED')).toBe('已结算')
+    expect(assignmentStatus('execution', 'TIMED_OUT')).toBe('执行超时')
+    expect(assignmentStatus('execution', null)).toBe('未知')
+    expect(assignmentStatus('slot', 'FUTURE')).toBe('未知状态（FUTURE）')
+  })
   it('保留零、false 和长整数；缺失显示未知', () => {
     expect([0, false, '9007199254740993', null, undefined, ''].map(onlineFact)).toEqual([
       '0',

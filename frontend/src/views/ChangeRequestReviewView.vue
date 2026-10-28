@@ -130,7 +130,9 @@
             </header>
 
             <el-alert
-              v-if="detail.conflicted && (detail.status === 'PENDING' || detail.status === 'APPROVED')"
+              v-if="
+                detail.conflicted && (detail.status === 'PENDING' || detail.status === 'APPROVED')
+              "
               type="error"
               :closable="false"
               show-icon
@@ -306,6 +308,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Refresh } from '@element-plus/icons-vue'
 import {
   ElAlert,
@@ -753,14 +756,7 @@ function auditLabel(action: string): string {
 }
 
 function formatTime(value: string | null): string {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(new Date(value))
+  return formatBusinessTime(value, '—')
 }
 
 function formatTokens(value: number): string {

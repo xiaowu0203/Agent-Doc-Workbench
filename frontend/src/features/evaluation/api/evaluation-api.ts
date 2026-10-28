@@ -3,6 +3,8 @@ import type { EntityId } from '@/features/workspace/types'
 import type { EvaluationTaskLink } from '@/features/task/engineering-types'
 import type {
   DatasetCaseBinding,
+  DatasetExperimentSource,
+  CaseVersionName,
   DatasetCaseBindingsRequest,
   DatasetVersion,
   DatasetVersionCreateRequest,
@@ -34,6 +36,7 @@ import type {
   ExperimentDecisionRequest,
   ExperimentPreflight,
   ExperimentReport,
+  ExperimentSourceSummary,
   ExperimentReportRecalculateRequest,
   ExperimentReportRevision,
   ExperimentSearch,
@@ -47,9 +50,23 @@ import type {
   TestCaseEvaluatorBinding,
   TestCaseEvaluatorBindingsRequest,
   TestCaseVersion,
+  TestCaseSource,
   TestCaseVersionCreateRequest,
   TestCaseVersionUpdateRequest,
 } from '@/features/evaluation/types'
+
+export function queryCaseVersionNames(
+  spaceId: EntityId,
+  versionIds: EntityId[],
+  signal?: AbortSignal,
+) {
+  return request<CaseVersionName[]>({
+    method: 'POST',
+    url: '/evaluation/test-case-versions/names-query',
+    data: { spaceId, versionIds },
+    signal,
+  })
+}
 
 export function getEvaluationTaskLink(
   spaceId: EntityId,
@@ -80,6 +97,17 @@ export function getDataset(id: EntityId, signal?: AbortSignal): Promise<Evaluati
   return request<EvaluationDataset>({
     method: 'GET',
     url: `/evaluation/datasets/${id}`,
+    signal,
+  })
+}
+
+export function getDatasetExperimentSource(
+  id: EntityId,
+  signal?: AbortSignal,
+): Promise<DatasetExperimentSource> {
+  return request<DatasetExperimentSource>({
+    method: 'GET',
+    url: `/evaluation/dataset-versions/${id}/experiment-source`,
     signal,
   })
 }
@@ -210,6 +238,10 @@ export function getTestCaseVersion(id: EntityId, signal?: AbortSignal): Promise<
     url: `/evaluation/test-case-versions/${id}`,
     signal,
   })
+}
+
+export function getTestCaseSource(id: EntityId, signal?: AbortSignal): Promise<TestCaseSource> {
+  return request({ method: 'GET', url: `/evaluation/test-case-versions/${id}/source`, signal })
 }
 
 export function createTestCaseVersion(
@@ -634,6 +666,13 @@ export function cancelExperiment(id: EntityId, signal?: AbortSignal): Promise<Ex
     url: `/evaluation/experiments/${id}/cancel`,
     signal,
   })
+}
+
+export function getExperimentSourceSummary(
+  id: EntityId,
+  signal?: AbortSignal,
+): Promise<ExperimentSourceSummary> {
+  return request({ method: 'GET', url: `/evaluation/experiments/${id}/source-summary`, signal })
 }
 
 export function getExperimentReportRevisions(

@@ -2,6 +2,8 @@ package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.utils.JsonUtils;
+import com.agentdoc.common.utils.StableSnapshotUtils;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.TaskFeign;
@@ -37,6 +39,9 @@ import com.agentdoc.evaluation.pojo.entity.TestCaseEvaluatorEntity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -56,6 +61,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
+import static com.agentdoc.common.constant.SpacePermissionConstant.EVALUATION_READ;
 
 @ExtendWith(MockitoExtension.class)
 class ExperimentServiceTest {
@@ -97,8 +104,10 @@ class ExperimentServiceTest {
         SecurityContextHolder.clearContext();
     }
 
-    @Test
-    void createsIdempotentlyAndCalculatesPreflightBudget() {
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  本地回归实验  "})
+    void createsIdempotentlyAndCalculatesPreflightBudget(String name) {
         AtomicReference<ExperimentEntity> savedExperiment = new AtomicReference<>();
         AtomicReference<List<ExperimentVariantEntity>> savedVariants = new AtomicReference<>();
         when(experimentMapper.selectOne(any())).thenAnswer(invocation -> savedExperiment.get());
@@ -110,12 +119,19 @@ class ExperimentServiceTest {
             return null;
         }).when(persistenceService).create(any(), any());
         ExperimentCreateDTO request = new ExperimentCreateDTO(9L, "request-1", 10L,
-                List.of(new PromptCandidateCreateDTO("prompt-a", "更简洁地处理文档")));
+                List.of(new PromptCandidateCreateDTO("prompt-a", "更简洁地处理文档")), name);
 
         var created = service.create(request);
         var repeated = service.create(request);
 
         assertThat(created.id()).isEqualTo(repeated.id());
+        assertThat(created.name()).isEqualTo(name == null || name.isBlank() ? null : name.trim());
+        if (created.name() == null) {
+            assertThat(savedExperiment.get().getRequestHash()).isEqualTo(StableSnapshotUtils.snapshotHash(1,
+                    new LegacyCreateRequest(9L, 10L, request.candidateVariants())));
+        }
+        assertThatThrownBy(() -> service.create(new ExperimentCreateDTO(9L, "request-1", 10L,
+                request.candidateVariants(), "另一个名称"))).hasMessageContaining("幂等键");
         assertThat(created.variants()).extracting("role").containsExactly("BASELINE", "CANDIDATE");
         assertThat(created.variants().get(1).candidateConfigRef()).isEqualTo(61L);
         verify(agentFeign, times(1)).createCandidateConfig(any());
@@ -132,6 +148,35 @@ class ExperimentServiceTest {
         assertThatThrownBy(() -> service.start(created.id(), new ExperimentStartDTO(1_999L, 600L)))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("BUDGET_LIMIT_EXCEEDED");
+    }
+
+    private record LegacyCreateRequest(Long spaceId, Long datasetVersionId, List<PromptCandidateCreateDTO> candidateVariants) { }
+
+    @Test void sourceSummaryUsesOnlyVerifiedFrozenSourcesAndKeepsDuplicateAndMissingBoundaries() {
+        var manifest = new ExperimentManifest(10L, List.of(
+                new ManifestCase(11L, 101L, 201L, 1, "a", 1L, 0L, "b", List.of()),
+                new ManifestCase(12L, 101L, 201L, 1, "a", 1L, 0L, "b", List.of()),
+                new ManifestCase(13L, 102L, 202L, 1, "a", 2L, 0L, "b", List.of()),
+                new ManifestCase(14L, null, null, 1, "a", 3L, 0L, "b", List.of())), 3, "config", 1, List.of(), "metrics");
+        var entity = new ExperimentEntity(); entity.setId(71L); entity.setSpaceId(9L); entity.setManifestSchemaVersion(1);
+        entity.setManifestJson(JsonUtils.toJson(manifest)); entity.setManifestHash(StableSnapshotUtils.snapshotHash(1, manifest));
+        when(experimentMapper.selectById(71L)).thenReturn(entity);
+        var result = service.sourceSummary(71L);
+        assertThat(result.caseCount()).isEqualTo(4); assertThat(result.distinctSourceTaskCount()).isEqualTo(2);
+        assertThat(result.missingSourceCaseCount()).isEqualTo(1); assertThat(result.manifestHash()).isEqualTo(entity.getManifestHash());
+        verifyNoInteractions(testCaseVersionMapper, taskFeign, agentFeign, persistenceService, reportMapper);
+        entity.setManifestHash("damaged");
+        assertThatThrownBy(() -> service.sourceSummary(71L)).hasMessageContaining("MANIFEST_MISMATCH");
+        entity.setManifestSchemaVersion(99);
+        assertThatThrownBy(() -> service.sourceSummary(71L)).hasMessageContaining("MANIFEST_MISMATCH");
+    }
+
+    @Test void sourceSummaryCannotBypassEvaluationRead() {
+        var entity = new ExperimentEntity(); entity.setId(71L); entity.setSpaceId(9L);
+        when(experimentMapper.selectById(71L)).thenReturn(entity);
+        doThrow(new BusinessException(403, "权限不足")).when(spaceAccessService).requirePermission(9L, EVALUATION_READ);
+        assertThatThrownBy(() -> service.sourceSummary(71L)).hasMessageContaining("权限不足");
+        verifyNoInteractions(taskFeign, reportMapper, testCaseVersionMapper);
     }
 
     @Test

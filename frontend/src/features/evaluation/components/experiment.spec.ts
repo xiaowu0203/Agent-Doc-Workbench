@@ -8,6 +8,7 @@ import ExperimentCreate from './ExperimentCreate.vue'
 import ExperimentReportPanel from './ExperimentReportPanel.vue'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import * as api from '../api/evaluation-api'
+import * as taskApi from '@/features/task/api/task-api'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS as P } from '@/shared/constants/permissions'
 import { RUN_POLL_INTERVAL } from '../run'
@@ -21,6 +22,7 @@ import type {
   DatasetVersion,
 } from '../types'
 vi.mock('../api/evaluation-api')
+vi.mock('@/features/task/api/task-api')
 const wrappers: VueWrapper[] = []
 const variant: ExperimentVariant = {
   id: '11',
@@ -288,9 +290,19 @@ async function fillCreate(wrapper: VueWrapper) {
   await button(wrapper, '选择已发布数据集版本')!.trigger('click')
   wrapper.findComponent(PublishedVersionPicker).vm.$emit('select', dataset, '数据集')
   await wrapper.get('[aria-label="候选 Prompt 1"]').setValue('测试候选 Prompt')
+  await flushPromises()
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(api.queryCaseVersionNames).mockResolvedValue([])
+  vi.mocked(api.getExperimentSourceSummary).mockResolvedValue({
+    experimentId: '10',
+    spaceId: '7',
+    manifestHash: report.manifestHash!,
+    caseCount: 1,
+    distinctSourceTaskCount: 1,
+    missingSourceCaseCount: 0,
+  })
   setActivePinia(createPinia())
   useWorkspaceStore().setCurrentSpace('7')
   permissions([
@@ -370,6 +382,23 @@ beforeEach(() => {
     createdAt: null,
   })
   vi.mocked(api.createExperiment).mockResolvedValue(experiment)
+  vi.mocked(api.getDatasetCases).mockResolvedValue([{ enabled: true }] as Awaited<
+    ReturnType<typeof api.getDatasetCases>
+  >)
+  vi.mocked(api.getDatasetExperimentSource).mockResolvedValue({
+    spaceId: '7',
+    datasetVersionId: '40',
+    enabledCaseCount: 1,
+    sourceConsistent: true,
+    issues: [],
+    sourceTaskId: '100',
+    sourceExecutionId: '101',
+    agentId: '3',
+    tokenBudget: 100,
+    executionSnapshotSchemaVersion: 3,
+    executionSnapshotHash: 'a'.repeat(64),
+  })
+  vi.mocked(taskApi.getTaskExecutionDetail).mockRejectedValue(new Error('审计详情暂不可用'))
 })
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
@@ -377,10 +406,10 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('Experiment access and observation', () => {
-  it('uses one summary query with filters and validates reversed dates', async () => {
+  it('uses one summary query with filters and includes the selected end date', async () => {
     const { wrapper } = await mountView()
     expect(api.getExperiment).not.toHaveBeenCalled()
-    await wrapper.get('[aria-label="实验状态"]').setValue('PAUSED')
+    wrapper.findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'PAUSED')
     await wrapper.get('[aria-label="筛选数据集版本 ID"]').setValue('40')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -388,11 +417,13 @@ describe('Experiment access and observation', () => {
       expect.objectContaining({ status: 'PAUSED', datasetVersionId: '40', pageSize: 10 }),
       expect.anything(),
     )
-    await wrapper.get('[aria-label="实验创建起始"]').setValue('2026-10-04T12:00')
-    await wrapper.get('[aria-label="实验创建截止"]').setValue('2026-10-03T12:00')
+    wrapper.findComponent({ name: 'ElDatePicker' }).vm.$emit('update:modelValue', ['2026-10-04', '2026-10-05'])
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('创建起始不能晚于截止')
+    expect(api.searchExperiments).toHaveBeenLastCalledWith(
+      expect.objectContaining({ createdFrom: '2026-10-04T00:00:00', createdTo: '2026-10-05T23:59:59.999999' }),
+      expect.anything(),
+    )
   })
   it('requires both manage permissions to create and never infers run permission', async () => {
     permissions([P.EVALUATION_READ, P.EVALUATION_MANAGE])
@@ -594,6 +625,151 @@ describe('preflight, budget and mutations', () => {
   })
 })
 describe('report facts and compatibility', () => {
+  it('冻结用例数与去重来源数分开展示，元数据不改写报告', async () => {
+    const value = { ...report, report: { ...content, expectedCaseCount: 3 } }
+    const before = JSON.stringify(value)
+    vi.mocked(api.getExperimentSourceSummary).mockResolvedValue({
+      experimentId: '10',
+      spaceId: '7',
+      manifestHash: report.manifestHash!,
+      caseCount: 3,
+      distinctSourceTaskCount: 2,
+      missingSourceCaseCount: 0,
+    })
+    const wrapper = await mountReport(value)
+    expect(wrapper.get('[aria-label="冻结来源摘要"]').text()).toContain(
+      '冻结 3 个用例，已知来源按任务 ID 去重为 2 个',
+    )
+    expect(wrapper.text()).toContain('不代表统计独立性')
+    expect(JSON.stringify(value)).toBe(before)
+    expect(api.recalculateExperimentReport).not.toHaveBeenCalled()
+  })
+  it('来源摘要跨空间或摘要不匹配不展示，不阻断已核验报告', async () => {
+    vi.mocked(api.getExperimentSourceSummary).mockResolvedValue({
+      experimentId: '10',
+      spaceId: '9',
+      manifestHash: 'wrong',
+      caseCount: 1,
+      distinctSourceTaskCount: 1,
+      missingSourceCaseCount: 0,
+    })
+    const wrapper = await mountReport()
+    expect(wrapper.get('[aria-label="冻结来源摘要"]').text()).toContain('来源摘要身份或计数不一致')
+    expect(wrapper.get('[aria-label="Candidate 配对比较"]').text()).toContain('1 / 1')
+    expect(wrapper.text()).not.toContain('去重为 1 个')
+  })
+  it('分组同步筛选概要/配对/矩阵，差值采用冻结配对数而非两侧均值相减', async () => {
+    const summary = content.summaries[0]!
+    const comparison = content.comparisons[0]!
+    const value: ExperimentReport = {
+      ...report,
+      report: {
+        ...content,
+        summaries: [
+          {
+            ...summary,
+            metricKey: 'execution.latency',
+            numericMeansByUnit: { millisecond: 1000 },
+            numericTotalsByUnit: { millisecond: 1000 },
+          },
+          {
+            ...summary,
+            variantKey: 'prompt-v2',
+            metricKey: 'execution.latency',
+            numericMeansByUnit: { millisecond: 5000 },
+            numericTotalsByUnit: { millisecond: 5000 },
+          },
+          {
+            ...summary,
+            metricKey: 'evaluation.document-change.accuracy',
+            numericMeansByUnit: { ratio: 0.2 },
+            numericTotalsByUnit: { ratio: 0.2 },
+          },
+          {
+            ...summary,
+            variantKey: 'prompt-v2',
+            metricKey: 'evaluation.document-change.accuracy',
+            numericMeansByUnit: { ratio: 0.8 },
+            numericTotalsByUnit: { ratio: 0.8 },
+          },
+        ],
+        comparisons: [
+          { ...comparison, metricKey: 'execution.latency', meanCandidateMinusBaseline: 2000 },
+          {
+            ...comparison,
+            metricKey: 'evaluation.document-change.accuracy',
+            meanCandidateMinusBaseline: 0.1,
+          },
+        ],
+      },
+    }
+    const before = JSON.stringify(value)
+    const wrapper = await mountReport(value)
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('2 秒')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('10 个百分点')
+    await button(wrapper, '质量规则')!.trigger('click')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).not.toContain('执行耗时')
+    expect(wrapper.get('[aria-label="Candidate 配对比较"]').text()).toContain('文档变更准确率')
+    expect(wrapper.get('[aria-label="Candidate 配对比较"]').text()).not.toContain('执行耗时')
+    await button(wrapper, '耗时')!.trigger('click')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('执行耗时')
+    expect(wrapper.get('[aria-label="逐用例原值矩阵"]').text()).toContain('当前匹配 0 项')
+    expect(JSON.stringify(value)).toBe(before)
+  })
+  it('零差值合法、币种分开，无有效配对不显示虚构数值差', async () => {
+    const summary = {
+      ...content.summaries[0]!,
+      metricKey: 'execution.cost',
+      numericMeansByUnit: { CNY: 1 },
+      numericTotalsByUnit: { CNY: 1 },
+    }
+    const value = {
+      ...report,
+      report: {
+        ...content,
+        summaries: [summary, { ...summary, variantKey: 'prompt-v2' }],
+        comparisons: [
+          {
+            ...content.comparisons[0]!,
+            metricKey: 'execution.cost',
+            meanCandidateMinusBaseline: null,
+            meanCandidateMinusBaselineByCurrency: { CNY: 0, USD: 0.000001 },
+          },
+        ],
+      },
+    }
+    const wrapper = await mountReport(value)
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('0 CNY')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('0.000001 USD')
+    await wrapper.setProps({
+      report: {
+        ...value,
+        report: {
+          ...value.report,
+          comparisons: value.report.comparisons.map((row) => ({ ...row, pairedCount: 0 })),
+        },
+      },
+    })
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).toContain('无有效配对，不计算差值')
+    expect(wrapper.get('[aria-label="重点指标对照"]').text()).not.toContain('0.000001 USD')
+  })
+  it('当前可见用例只批量补目录名称，不改写冻结报告或请求任务详情', async () => {
+    const id = content.cells[0]!.value.testCaseVersionId!
+    const before = JSON.stringify(report)
+    vi.mocked(api.queryCaseVersionNames).mockResolvedValue([
+      { spaceId: '7', versionId: id, testCaseId: '99', name: '当前用例名称', versionNo: 3 },
+    ])
+    const wrapper = await mountReport()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前用例名称 · v3（当前目录名称）')
+    expect(api.queryCaseVersionNames).toHaveBeenCalledWith(
+      '7',
+      expect.arrayContaining([id]),
+      expect.any(AbortSignal),
+    )
+    expect(JSON.stringify(report)).toBe(before)
+    expect(api.recalculateExperimentReport).not.toHaveBeenCalled()
+  })
   it('keeps zero, false, empty string and missing distinct and uses metric-specific pair expectation', async () => {
     const cells = content.cells
     const extra = [
@@ -676,6 +852,64 @@ describe('report facts and compatibility', () => {
   })
 })
 describe('creation idempotency', () => {
+  it('来源快照不一致时显示原因并阻止创建，不读取任何代表执行', async () => {
+    vi.mocked(api.getDatasetExperimentSource).mockResolvedValue({
+      spaceId: '7',
+      datasetVersionId: '40',
+      enabledCaseCount: 1,
+      sourceConsistent: false,
+      issues: ['SOURCE_SNAPSHOT_MISMATCH'],
+      sourceTaskId: null,
+      sourceExecutionId: null,
+      agentId: null,
+      tokenBudget: null,
+      executionSnapshotSchemaVersion: null,
+      executionSnapshotHash: null,
+    })
+    const wrapper = mount(ExperimentCreate, {
+      props: { spaceId: '7', allowed: true, initialVersionId: '40' },
+      global: { stubs: { ElDialog: dialogStub } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('不同的执行配置快照')
+    expect(taskApi.getTaskExecutionDetail).not.toHaveBeenCalled()
+    await wrapper.get('[aria-label="候选 Prompt 1"]').setValue('候选')
+    await button(wrapper, '创建实验')!.trigger('click')
+    expect(api.createExperiment).not.toHaveBeenCalled()
+  })
+  it('执行快照身份不匹配时不展示模型工具内容，保留明确的读取失败', async () => {
+    vi.mocked(taskApi.getTaskExecutionDetail).mockResolvedValue({
+      task: { id: '100', spaceId: '7', agentId: '3' },
+      execution: { id: '999', model: { displayName: '不应展示的模型' } },
+    } as Awaited<ReturnType<typeof taskApi.getTaskExecutionDetail>>)
+    const wrapper = mount(ExperimentCreate, {
+      props: { spaceId: '7', allowed: true, initialVersionId: '40' },
+      global: { stubs: { ElDialog: dialogStub } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('冻结执行配置与来源预览不一致')
+    expect(wrapper.text()).not.toContain('不应展示的模型')
+    expect(taskApi.getTaskExecutionDetail).toHaveBeenCalledTimes(1)
+  })
+  it('带入版本显示计划次数，空数据集不能创建实验', async () => {
+    const wrapper = mount(ExperimentCreate, {
+      props: { spaceId: '7', allowed: true, initialVersionId: String(dataset.id) },
+      global: { stubs: { ElDialog: dialogStub, PublishedVersionPicker: true } },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('共 2 次执行')
+    expect(api.createExperiment).not.toHaveBeenCalled()
+    vi.mocked(api.getDatasetCases).mockResolvedValue([])
+    await button(wrapper, '选择已发布数据集版本')!.trigger('click')
+    wrapper.findComponent(PublishedVersionPicker).vm.$emit('select', dataset, '数据集')
+    await flushPromises()
+    await wrapper.get('[aria-label="候选 Prompt 1"]').setValue('候选')
+    expect(button(wrapper, '创建实验')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('没有启用用例')
+  })
   it('preserves key for identical failed submissions and generates a new key after editing', async () => {
     const wrapper = mountCreate()
     await fillCreate(wrapper)
@@ -698,6 +932,25 @@ describe('creation idempotency', () => {
       'clientRequestKey',
       'candidateVariants',
     ])
+  })
+  it('includes an optional name in creation identity and renews the key after renaming', async () => {
+    const wrapper = mountCreate()
+    await fillCreate(wrapper)
+    await wrapper.get('[aria-label="实验名称（可选）"]').setValue('  基线回归  ')
+    vi.mocked(api.createExperiment).mockRejectedValue(new Error('offline'))
+    await button(wrapper, '创建实验')!.trigger('click')
+    await flushPromises()
+    const first = vi.mocked(api.createExperiment).mock.calls[0]![0]
+    expect(first.name).toBe('基线回归')
+    await wrapper.get('[aria-label="实验名称（可选）"]').setValue('另一次回归')
+    await button(wrapper, '创建实验')!.trigger('click')
+    await flushPromises()
+    expect(vi.mocked(api.createExperiment).mock.calls[1]![0].clientRequestKey).not.toBe(
+      first.clientRequestKey,
+    )
+    expect(vi.mocked(api.createExperiment).mock.calls[1]![0].candidateVariants).toEqual(
+      first.candidateVariants,
+    )
   })
   it('rejects reserved keys, duplicate candidates and a newly archived dataset', async () => {
     const wrapper = mountCreate()

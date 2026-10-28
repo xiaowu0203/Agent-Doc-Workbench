@@ -49,8 +49,23 @@
                   >
                     <strong>{{ row.name }}</strong
                     ><small>{{ row.taskNo }}</small>
-                  </button></template
-                ></el-table-column
+                  </button>
+                  <el-tag
+                    size="small"
+                    :type="row.executionMode === 'ISOLATED' ? 'warning' : 'info'"
+                    >{{
+                      row.onlineExperimentId
+                        ? '线上实验'
+                        : row.lineageType === 'LEGACY_UNKNOWN'
+                          ? '来源未确认'
+                          : row.lineageType === 'EXPERIMENT'
+                            ? '离线实验'
+                            : row.executionMode === 'ISOLATED'
+                              ? '隔离回放'
+                              : '正式业务'
+                    }}</el-tag
+                  >
+                </template></el-table-column
               >
               <el-table-column label="状态" width="120"
                 ><template #default="{ row }"
@@ -197,6 +212,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Plus } from '@element-plus/icons-vue'
 import {
   ElButton,
@@ -432,9 +448,7 @@ function formatNumber(value: number | null) {
   return value == null ? '—' : value.toLocaleString('zh-CN')
 }
 function formatTime(value: string) {
-  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' }).format(
-    new Date(value),
-  )
+  return formatBusinessTime(value, '—')
 }
 </script>
 <style scoped>

@@ -3,7 +3,7 @@
     <p v-if="error" role="alert">{{ error }}</p>
     <div class="actions">
       <el-button
-        v-for="action in actions"
+        v-for="action in visibleActions"
         :key="action"
         :type="action === 'emergency-stop' ? 'danger' : 'default'"
         :disabled="busy || !available(action)"
@@ -11,6 +11,15 @@
         >{{ onlineActionLabel(action) }}</el-button
       >
     </div>
+    <p v-if="!visibleActions.length">
+      当前状态没有可执行的运行操作；历史任务、报告和结算记录仍可查看。
+    </p>
+    <details>
+      <summary>查看全部操作说明</summary>
+      <p>
+        启动须完成预检及业务授权；暂停关闭新分配；恢复沿用原截止时间；结束等待在途任务收敛；紧急熔断还会请求取消在途任务。已发生的费用和文档变更不会自动撤回。
+      </p>
+    </details>
     <p v-if="experiment.status === 'STOPPING'">
       停止中仍保留空间占位。取消、执行槽及预算须分别等待权威确认。
     </p>
@@ -53,7 +62,7 @@
           >
         </template>
         <label v-else
-          >操作原因<textarea v-model="reason" aria-label="操作原因" maxlength="2000" rows="3" />
+          >操作原因<el-input v-model="reason" type="textarea" aria-label="操作原因" maxlength="2000" :rows="3" />
         </label>
         <p v-if="!confirmationValid" role="alert">确认已失效：请重新预检或刷新当前状态。</p>
       </template>
@@ -68,7 +77,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog } from 'element-plus'
+import { ElButton, ElDialog, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import { changeOnlineState } from './api'
 import {
@@ -95,7 +104,20 @@ const props = defineProps<{
   canTerminate: boolean
 }>()
 const emit = defineEmits<{ changed: [value: OnlineActionResult] }>()
-const actions: OnlineAction[] = ['start', 'pause', 'resume', 'stop', 'emergency-stop']
+const visibleActions = computed<OnlineAction[]>(() => {
+  switch (props.experiment.status) {
+    case 'CREATED':
+      return ['start', 'stop']
+    case 'ACTIVE':
+      return ['pause', 'stop', 'emergency-stop']
+    case 'PAUSED':
+      return ['resume', 'stop', 'emergency-stop']
+    case 'STOPPING':
+      return ['emergency-stop']
+    default:
+      return []
+  }
+})
 const selected = ref<OnlineAction | null>(null),
   reason = ref(''),
   busy = ref(false),

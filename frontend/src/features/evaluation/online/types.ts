@@ -39,6 +39,9 @@ export interface OnlineExperiment extends OnlineSummary {
     mdeAbsoluteRatio: string
     mdeReason: string
     humanQualityRequired: boolean
+    minDocumentsPerGroup?: number
+    minCoverageBps?: number
+    minBlindedCoverageBps?: number
   } | null
   budgetPlan: Record<string, unknown> | null
   windowPlan: Record<string, unknown> | null
@@ -48,6 +51,8 @@ export interface OnlineExperiment extends OnlineSummary {
   assignmentDeadline: string | null
   observationDeadline: string | null
   decision: string | null
+  decisionReportRevision?: number | null
+  decisionReportHash?: string | null
 }
 export interface OnlinePreflight {
   experimentId: string
@@ -65,6 +70,7 @@ export interface OnlinePreflight {
   issues: { code: string; severity: string; documentId: string | null; ruleKey: string | null }[]
 }
 export interface OnlineAssignment {
+  documentTitle?: string | null
   id: string
   experimentId: string
   spaceId: string
@@ -142,6 +148,8 @@ export type OnlinePage<T> = EvaluationPage<T>
 export type OnlineReviewTarget = 'TEXT' | 'CHANGE_SET'
 export type OnlineBlindness = 'BLINDED' | 'NON_BLINDED' | 'UNKNOWN'
 export interface OnlineReviewAssignment {
+  documentTitle?: string | null
+  ownReviewRecorded?: boolean
   assignmentId: string
   documentId: string
 }
@@ -278,6 +286,21 @@ export interface OnlineReportPayload {
     confirmedSafetyFeedbackIds: string[]
     safetyRejectedAllowed: boolean
   }
+}
+export interface OnlineReportRevision {
+  experimentId: string
+  revision: number
+  schemaVersion: number
+  reportHash: string
+  generatedAt: string | null
+  observationCutoffAt: string | null
+  decisionReference: boolean
+}
+export interface OnlineReportRangeSuggestion {
+  experimentId: string
+  assignmentCutoffSequence: string
+  observationCutoffAt: string
+  timeZone: string
 }
 export interface OnlineReport {
   id: string

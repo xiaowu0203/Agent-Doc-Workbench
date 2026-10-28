@@ -24,7 +24,7 @@ public class OnlineExperimentConvertor {
                 payload == null ? null : payload.get("windowPlan"),
                 payload == null ? null : payload.get("protectionPlan"),
                 entity.getActiveSlot(), entity.getStartedAt(), entity.getAssignmentDeadline(),
-                entity.getObservationDeadline(), entity.getDecision());
+                entity.getObservationDeadline(), entity.getDecision(), entity.getDecisionReportRevision(), entity.getDecisionReportHash());
     }
 
     public OnlineExperimentSummaryVO summary(OnlineExperimentEntity entity, JsonNode payload, Long participating) {

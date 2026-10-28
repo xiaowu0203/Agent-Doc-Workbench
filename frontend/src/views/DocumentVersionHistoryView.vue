@@ -242,6 +242,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Back, Document } from '@element-plus/icons-vue'
 import { ElAlert, ElButton, ElMessage, ElMessageBox, ElOption, ElSelect, ElTag } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -481,18 +482,7 @@ function signed(value: number): string {
   return value > 0 ? `+${formatNumber(value)}` : formatNumber(value)
 }
 function formatTime(value: string | null): string {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).format(date)
+  return formatBusinessTime(value, '—')
 }
 </script>
 

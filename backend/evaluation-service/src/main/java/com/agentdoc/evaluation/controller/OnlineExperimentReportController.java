@@ -9,6 +9,10 @@ import com.agentdoc.common.utils.OnlineProtocolUtils;
 import com.agentdoc.evaluation.pojo.dto.OnlineExperimentDecisionDTO;
 import com.agentdoc.evaluation.pojo.dto.OnlineReportRecalculateDTO;
 import com.agentdoc.evaluation.pojo.vo.OnlineExperimentReportVO;
+import com.agentdoc.evaluation.pojo.vo.OnlineExperimentReportRevisionVO;
+import com.agentdoc.evaluation.pojo.vo.OnlineReportRangeSuggestionVO;
+import com.agentdoc.common.pojo.dto.PageParam;
+import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.evaluation.service.OnlineExperimentReportService;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +25,14 @@ import java.util.Set;
 @RequestMapping("/api/evaluation/online-experiments/{id}")
 public class OnlineExperimentReportController {
     private final OnlineExperimentReportService service;
+    @GetMapping("/reports/range-suggestion")
+    public Result<OnlineReportRangeSuggestionVO> rangeSuggestion(@PathVariable String id) {
+        return Result.ok(service.rangeSuggestion(id));
+    }
+    @GetMapping("/reports")
+    public Result<PageVO<OnlineExperimentReportRevisionVO>> revisions(@PathVariable String id, PageParam param) {
+        return Result.ok(service.revisions(id, param));
+    }
     @GetMapping("/reports/{revision}")
     public Result<OnlineExperimentReportVO> report(@PathVariable String id, @PathVariable Integer revision) { return Result.ok(service.detail(id, revision)); }
     @GetMapping("/reports/{revision}/summary")

@@ -1,7 +1,15 @@
 <template>
   <section class="case-panel" aria-label="执行尝试与结果">
     <header>
-      <h3>CaseRun #{{ caseRun.id }}</h3>
+      <h3>
+        {{ caseRun.testCaseName || '用例名称不可用'
+        }}<template v-if="caseRun.testCaseVersionNo != null">
+          · v{{ caseRun.testCaseVersionNo }}</template
+        >
+      </h3>
+      <p>
+        用例运行 #{{ caseRun.id }} <CopyButton :value="String(caseRun.id)" label="用例运行 ID" />
+      </p>
       <p>
         来源用例版本 #{{ caseRun.testCaseVersionId || '不可用' }}；默认查看当前尝试，历史尝试只读。
       </p>
@@ -21,14 +29,14 @@
               :key="String(attempt.id)"
               class="attempt"
               :aria-pressed="String(attempt.id) === String(selected?.id)"
-              @click="selectAttempt(attempt)"
+              @click="selectAttempt(attempt, true)"
             >
               <strong
-                >Attempt {{ attempt.attemptNo }}
+                >执行尝试 {{ attempt.attemptNo }}
                 {{ attempt.currentCaseAttempt ? '（当前）' : '（历史，只读）' }}</strong
               ><EvaluationStatusTag domain="attempt" :status="attempt.status" /><small
                 >#{{ attempt.id }}</small
-              ><small>{{ attempt.failureCode || '未提供失败码' }}</small>
+              ><small v-if="attempt.failureCode">{{ attempt.failureCode }}</small>
             </button>
             <el-pagination
               v-if="page.total > PAGE_SIZE"
@@ -43,12 +51,12 @@
           <div v-if="selected" class="attempt-detail">
             <div class="attempt-facts">
               <h4>
-                Attempt {{ selected.attemptNo }}
+                执行尝试 {{ selected.attemptNo }}
                 {{ selected.currentCaseAttempt ? '（当前）' : '（历史，只读）' }}
               </h4>
               <p>
-                开始 {{ selected.startedAt || '尚未开始' }} · 结束
-                {{ selected.finishedAt || '尚未结束' }}
+                开始 <BusinessTime :value="selected.startedAt" empty-text="尚未开始" /> · 结束
+                <BusinessTime :value="selected.finishedAt" empty-text="尚未结束" />
               </p>
               <p v-if="selected.failureCode">
                 失败阶段 {{ selected.failureStage || '不可用' }} · {{ selected.failureCode }}
@@ -81,7 +89,7 @@
             <section class="result-history" aria-label="Result 历史">
               <h4>评估结果与评价尝试</h4>
               <p v-if="!selected.results.length">
-                尚未产生 Result。{{
+                尚未产生评价结果。{{
                   selected.status === 'REPLAY_FAILED'
                     ? '回放失败，缺少评估结果与指标。'
                     : selected.status === 'EVALUATOR_FAILED'
@@ -96,7 +104,7 @@
                 :key="String(result.id)"
                 class="result-row"
                 :aria-pressed="String(result.id) === String(selectedResult?.id)"
-                @click="chooseResult(result)"
+                @click="chooseResult(result, true)"
               >
                 <span
                   ><strong
@@ -136,6 +144,8 @@
             :task-id="selected.executionTaskId ? String(selected.executionTaskId) : null"
             :can-read-task="canReadTask"
             :revision="revision"
+            :return-path="returnPath"
+            @settled="$emit('settled')"
           />
           <EvaluationFeedbackPanel
             :space-id="spaceId"
@@ -157,10 +167,12 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { ElButton, ElPagination } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
 import { searchCaseAttempts } from '../api/evaluation-api'
 import type {
@@ -184,8 +196,15 @@ const props = defineProps<{
   busy: boolean
   initialAttemptId?: string
   initialResultId?: string
+  returnPath?: string
 }>()
-defineEmits<{ retryReplay: []; retryEvaluation: [attemptId: string]; feedbackSaved: [] }>()
+const emit = defineEmits<{
+  retryReplay: []
+  retryEvaluation: [attemptId: string]
+  feedbackSaved: []
+  selection: [attemptId: string, resultId?: string]
+  settled: []
+}>()
 const PAGE_SIZE = 10
 const page = ref<EvaluationPage<EvaluationCaseAttemptHistory>>({
   records: [],
@@ -224,12 +243,16 @@ const visibleResults = computed(
     ) || [],
 )
 function taskPath(id: string | number) {
-  return `/spaces/${props.spaceId}/tasks/${id}?tab=evidence`
+  return {
+    path: `/spaces/${props.spaceId}/tasks/${id}`,
+    query: { tab: 'evidence', evaluationReturn: props.returnPath },
+  }
 }
-function chooseResult(value: EvaluationResultSummary) {
+function chooseResult(value: EvaluationResultSummary, notify = false) {
   selectedResult.value = value
+  if (notify && selected.value) emit('selection', String(selected.value.id), String(value.id))
 }
-function selectAttempt(value: EvaluationCaseAttemptHistory) {
+function selectAttempt(value: EvaluationCaseAttemptHistory, notify = false) {
   followCurrent = value.currentCaseAttempt
   const previous = selectedResult.value
   selected.value = value
@@ -255,6 +278,12 @@ function selectAttempt(value: EvaluationCaseAttemptHistory) {
         PAGE_SIZE,
     ),
   )
+  if (notify)
+    emit(
+      'selection',
+      String(value.id),
+      selectedResult.value ? String(selectedResult.value.id) : undefined,
+    )
 }
 async function load(pageNum: number, locateDeepLink = false) {
   request?.abort()
@@ -318,7 +347,10 @@ async function load(pageNum: number, locateDeepLink = false) {
       selectedResult.value = null
     }
   } finally {
-    if (!pending.signal.aborted) loading.value = false
+    if (!pending.signal.aborted) {
+      loading.value = false
+      if (!selectedResult.value) emit('settled')
+    }
   }
 }
 watch(
@@ -330,6 +362,12 @@ watch(
     props.initialResultId,
   ],
   () => {
+    if (
+      selected.value &&
+      String(selected.value.id) === props.initialAttemptId &&
+      (!props.initialResultId || String(selectedResult.value?.id) === props.initialResultId)
+    )
+      return
     selected.value = null
     selectedResult.value = null
     followCurrent = !props.initialAttemptId
@@ -347,14 +385,18 @@ onBeforeUnmount(() => request?.abort())
 </script>
 <style scoped>
 .case-panel {
+  container-type: inline-size;
   min-width: 0;
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-md);
+  border: 0;
+  border-left: 1px solid #e0e7f0;
+  border-radius: 0;
   overflow: hidden;
+  background: #fff;
 }
 header {
-  padding: var(--adw-space-4);
+  padding: 0 24px 18px;
   border-bottom: 1px solid var(--adw-border-color);
+  background: transparent;
 }
 h3,
 h4 {
@@ -385,9 +427,11 @@ small {
   border-left: 1px solid var(--adw-border-color);
 }
 .attempts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  display: flex;
+  overflow-x: auto;
+  background: #f7f9fc;
 }
+.attempts .attempt { flex: 0 0 190px; }
 .attempt,
 .result-row {
   width: 100%;
@@ -403,9 +447,11 @@ small {
   overflow-wrap: anywhere;
 }
 button[aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
-  border-left: 3px solid var(--adw-color-primary);
+  background: #eaf1ff;
+  box-shadow: inset 3px 0 #3266d8;
 }
+.attempt:hover, .result-row:hover { background: #f1f5fb; }
+.attempt[aria-pressed='true']:hover, .result-row[aria-pressed='true']:hover { background: #eaf1ff; }
 .attempt-detail {
   min-width: 0;
 }
@@ -418,6 +464,8 @@ button[aria-pressed='true'] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   margin-top: var(--adw-space-2);
+  border: 1px solid #e1e8f1;
+  border-radius: 7px;
 }
 .attempt-actions {
   display: flex;
@@ -438,14 +486,12 @@ button:focus-visible {
   outline: 2px solid var(--adw-color-primary);
   outline-offset: -2px;
 }
-@media (max-width: 700px) {
+@container (max-width: 720px) {
   .case-panel__columns {
     grid-template-columns: minmax(0, 1fr);
   }
   .attempts {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    border-right: 0;
+    display: flex;
   }
   .result-column {
     border-left: 0;

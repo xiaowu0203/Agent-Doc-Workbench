@@ -6,7 +6,7 @@
       <EvaluationStatusTag domain="feedback" :status="item.label" />
       <p>
         {{ item.sourceType || '来源不可用' }} · #{{ item.id }} ·
-        {{ item.createdAt || '时间不可用' }}
+        <BusinessTime :value="item.createdAt" empty-text="时间不可用" />
       </p>
       <p>人工分数 {{ item.score ?? '未提供' }}</p>
       <p v-if="item.comment">{{ item.comment }}</p>
@@ -18,6 +18,7 @@
     <form v-if="canWrite" @submit.prevent="submit">
       <label
         >反馈标签<select v-model="label" aria-label="反馈标签">
+          <option value="" disabled>请选择反馈标签</option>
           <option value="ACCEPTED">接受</option>
           <option value="REJECTED">拒绝</option>
           <option value="NEEDS_CHANGES">需要修改</option>
@@ -25,7 +26,7 @@
         </select></label
       >
       <label
-        >人工分数（可选，0～1）<input
+        >人工分数（可选，0～1）<el-input
           v-model="score"
           aria-label="人工分数"
           type="number"
@@ -34,10 +35,11 @@
           step="any"
       /></label>
       <label
-        >反馈说明<textarea
+        >反馈说明<el-input
           v-model="comment"
+          type="textarea"
           aria-label="反馈说明"
-          rows="3"
+          :rows="3"
           maxlength="2000"
           placeholder="请填写判断依据，避免正文或敏感信息。"
         />
@@ -48,8 +50,9 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElMessage, ElMessageBox } from 'element-plus'
+import { ElButton, ElMessage, ElMessageBox, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
 import { createEvaluationFeedback } from '../api/evaluation-api'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
@@ -63,7 +66,7 @@ const props = defineProps<{
   canWrite: boolean
 }>()
 const emit = defineEmits<{ saved: [] }>()
-const label = ref<EvaluationFeedbackLabel>('ACCEPTED'),
+const label = ref<EvaluationFeedbackLabel | ''>(''),
   score = ref(''),
   comment = ref(''),
   busy = ref(false),
@@ -72,6 +75,10 @@ let request: AbortController | undefined,
   generation = 0
 async function submit() {
   if (!props.canWrite || busy.value) return
+  if (!label.value) {
+    error.value = '请选择反馈标签'
+    return
+  }
   const numeric = score.value === '' ? null : Number(score.value)
   if (numeric !== null && (!Number.isFinite(numeric) || numeric < 0 || numeric > 1)) {
     error.value = '人工分数必须在 0～1 之间'
@@ -110,6 +117,7 @@ async function submit() {
       String(value.caseRunId) !== props.caseRunId
     )
       throw new Error('反馈目标归属不一致')
+    label.value = ''
     score.value = ''
     comment.value = ''
     ElMessage.success('人工反馈已新增')
@@ -125,6 +133,9 @@ watch(
   () => [props.spaceId, props.runId, props.caseRunId, props.taskId, props.canWrite],
   () => {
     generation++
+    label.value = ''
+    score.value = ''
+    comment.value = ''
     request?.abort()
     busy.value = false
     error.value = ''

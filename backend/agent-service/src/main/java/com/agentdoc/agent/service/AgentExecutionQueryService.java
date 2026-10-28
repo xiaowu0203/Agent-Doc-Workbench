@@ -15,6 +15,7 @@ import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.dto.AgentExecutionTokenUsageBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentEvaluationEvidenceQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolCallSearchDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentExecutionTokenUsageBatchVO;
@@ -62,6 +63,28 @@ public class AgentExecutionQueryService {
     private final AgentExecutionToolCallMapper toolCallMapper;
     private final SpaceAccessService spaceAccessService;
     private final OnlineEvaluationFeign onlineEvaluation;
+
+    public PageVO<AgentToolCallVO> searchToolCalls(AgentToolCallSearchDTO request) {
+        if (request == null) throw new BusinessException(ErrorCode.BAD_REQUEST, "工具明细查询参数缺失");
+        var query = request.query();
+        validateUsageQuery(query);
+        var param = new PageParam(); param.setPageNum(request.pageNum()); param.setPageSize(request.pageSize()); param.validate();
+        spaceAccessService.requirePermission(query.spaceId(), USAGE_READ);
+        spaceAccessService.requirePermission(query.spaceId(), TASK_READ);
+        var page = toolCallMapper.search(new Page<>(param.getPageNum(), param.getPageSize()), query);
+        if (page.getRecords().isEmpty()) return PageVO.of(List.of(), page.getTotal(), param);
+        var executions = executionMapper.selectList(new LambdaQueryWrapper<AgentExecutionEntity>()
+                .select(AgentExecutionEntity::getId, AgentExecutionEntity::getWorkbenchTaskId,
+                        AgentExecutionEntity::getSpaceId, AgentExecutionEntity::getOnlineExperimentId)
+                .eq(AgentExecutionEntity::getSpaceId, query.spaceId())
+                .in(AgentExecutionEntity::getId, page.getRecords().stream().map(AgentExecutionToolCallEntity::getExecutionId).distinct().toList()));
+        var ids = executions.stream().collect(Collectors.toMap(AgentExecutionEntity::getId, AgentExecutionEntity::getWorkbenchTaskId));
+        if (page.getRecords().stream().anyMatch(row -> !ids.containsKey(row.getExecutionId()))) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "工具调用的执行身份不可用");
+        }
+        recordOnlineExposure(executions);
+        return PageVO.of(page.getRecords().stream().map(row -> new AgentToolCallVO(ids.get(row.getExecutionId()), toolCall(row))).toList(), page.getTotal(), param);
+    }
 
     /**
      * 根据工作台任务ID查询单次Agent完整执行审计信息
@@ -287,10 +310,7 @@ public class AgentExecutionQueryService {
      */
     public AgentToolUsageStatsVO getToolUsageStats(AgentToolUsageQueryDTO query) {
         // 参数合法性校验：空间、起止时间不能为空，开始时间必须早于结束时间
-        if (query == null || query.spaceId() == null || query.startAt() == null || query.endAt() == null
-                || !query.startAt().isBefore(query.endAt())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "工具用量查询条件不合法");
-        }
+        validateUsageQuery(query);
         // 校验空间用量读取权限
         spaceAccessService.requirePermission(query.spaceId(), USAGE_READ);
 
@@ -302,6 +322,13 @@ public class AgentExecutionQueryService {
         // 计算总工具调用次数，组装返回
         return new AgentToolUsageStatsVO(
                 sources.stream().mapToLong(AgentToolSourceCountVO::calls).sum(), sources);
+    }
+
+    private static void validateUsageQuery(AgentToolUsageQueryDTO query) {
+        if (query == null || query.spaceId() == null || query.spaceId() <= 0 || query.startAt() == null
+                || query.endAt() == null || !query.startAt().isBefore(query.endAt())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "工具用量查询条件不合法");
+        }
     }
 
     /**

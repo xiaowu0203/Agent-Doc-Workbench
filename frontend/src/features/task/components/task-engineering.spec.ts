@@ -279,6 +279,66 @@ describe('execution evidence', () => {
     await flushPromises()
     expect(taskApi.getTaskArtifacts).toHaveBeenCalledTimes(1)
   })
+  it.each(['CHANGE_PROPOSAL', 'DRAFT_CHANGES'] as const)(
+    '按已知 schema 核对 %s 正文，隐藏未知字段并响应文档权限撤销',
+    async (artifactType) => {
+      const data = detail()
+      data.task.executionMode = 'ISOLATED'
+      data.task.lineageType = 'REPLAY'
+      vi.mocked(taskApi.getTaskArtifacts).mockResolvedValue([
+        {
+          id: '1',
+          taskId: '100',
+          executionId: '200',
+          sourceTaskId: '80',
+          sequenceNo: 1,
+          sourceToolCallId: null,
+          artifactType,
+          schemaVersion: 1,
+          payloadSha256: 'artifact-hash',
+          createdAt: '2026-10-03',
+          payloadJson: JSON.stringify({
+            token: 'SECRET',
+            proposal: {
+              baseVersion: 0,
+              summary: '冻结变更摘要',
+              changes: [
+                {
+                  op: 'replace',
+                  oldText: '冻结原文',
+                  newText: '<script>候选文本</script>',
+                  extra: 'PRIVATE',
+                },
+                { op: 'append', newText: '追加片段' },
+                { op: 'unknown', newText: 'INVALID_ITEM' },
+                { op: 'append', newText: 7 },
+              ],
+            },
+          }),
+        },
+      ])
+      const { wrapper, workspace } = await mountPage(TaskEvidencePanel, data)
+      expect(wrapper.text()).toContain('冻结基线 v0')
+      expect(wrapper.text()).toContain('冻结原文')
+      expect(wrapper.text()).toContain('<script>候选文本</script>')
+      expect(wrapper.text()).toContain('未捕获原文')
+      expect(wrapper.text()).toContain('结构不可用')
+      expect(wrapper.text()).not.toContain('SECRET')
+      expect(wrapper.text()).not.toContain('PRIVATE')
+      expect(wrapper.text()).toContain('未识别操作（unknown）')
+      expect(wrapper.text()).toContain('INVALID_ITEM')
+      expect(wrapper.find('script').exists()).toBe(false)
+      workspace.setEffectivePermissions({
+        spaceId: '7',
+        platformSuperAdmin: false,
+        role: null,
+        permissions: [SPACE_PERMISSIONS.TASK_READ],
+      })
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('冻结原文')
+      expect(wrapper.text()).toContain('需要文档读取权限')
+    },
+  )
   it('returns to formal frozen case/run/experiment IDs instead of lineage root and obeys resource read permissions', async () => {
     const data = detail()
     data.task.lineageType = 'EXPERIMENT'
@@ -330,6 +390,48 @@ describe('execution evidence', () => {
   })
 })
 describe('technical Trace and authoritative facts', () => {
+  it('shows the safe SQL template for a database span and an unavailable state for older spans', async () => {
+    const database = { ...span('database', 'DATABASE', 1000), attributes: [
+      { key: 'agentdoc.db.sql_template', valueType: 'STRING' as const, value: 'SELECT id FROM task WHERE id = ?' },
+      { key: 'db.statement', valueType: 'STRING' as const, value: 'RAW_SECRET' },
+    ] }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([database]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    expect(wrapper.get('.trace-sql').text()).toContain('SELECT id FROM task WHERE id = ?')
+    expect(wrapper.text()).toContain('执行 SQL')
+    expect(wrapper.get('.span-detail').text()).not.toContain('RAW_SECRET')
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([{ ...database, attributes: [] }]))
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.trace-sql').text()).toContain('未采集')
+  })
+  it('links a database execution to its direct SQL parent and filters to SQL-bearing spans', async () => {
+    const sql = { ...span('sql', 'DATABASE', 2000), attributes: [
+      { key: 'agentdoc.db.sql_template', valueType: 'STRING' as const, value: 'SELECT id FROM task WHERE id = ?' },
+    ] }
+    const child = { ...span('execution', 'DATABASE', 1000), name: 'db.execute', parentSpanId: 'sql' }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([sql, child]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '数据库 / Redis')!.trigger('click')
+    await wrapper.findAll('.span-row').find((row) => row.text().includes('执行数据库语句'))!.trigger('click')
+    expect(wrapper.get('.trace-sql').text()).toContain('来自直接父级 SQL 调用')
+    expect(wrapper.get('.trace-sql').text()).toContain('SELECT id FROM task WHERE id = ?')
+    expect(wrapper.get('.trace-sql').find('[aria-label="复制SQL 模板"]').exists()).toBe(true)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '仅 SQL')!.trigger('click')
+    expect(wrapper.findAll('.span-row')).toHaveLength(1)
+  })
+  it('does not associate SQL from a parent in another service', async () => {
+    const parent = { ...span('parent', 'DATABASE', 2000), service: 'other-service', attributes: [
+      { key: 'agentdoc.db.sql_template', valueType: 'STRING' as const, value: 'SELECT id FROM task' },
+    ] }
+    const child = { ...span('execution', 'DATABASE', 1000), name: 'db.execute', parentSpanId: 'parent' }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([parent, child]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '数据库 / Redis')!.trigger('click')
+    await wrapper.findAll('.span-row').find((row) => row.text().includes('执行数据库语句'))!.trigger('click')
+    expect(wrapper.get('.trace-sql').text()).not.toContain('SELECT id FROM task')
+    expect(wrapper.get('.trace-sql').text()).toContain('无可展示的 SQL 模板')
+  })
   it('clears old technical success data after a failed refresh while keeping business facts', async () => {
     vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([span('root', 'AGENT', 100000)]))
     const { wrapper } = await mountPage(TaskTracePanel)
@@ -379,6 +481,48 @@ describe('technical Trace and authoritative facts', () => {
     await wrapper.findAll('.trace-filters button')[1]!.trigger('click')
     expect(wrapper.findAll('.span-row')).toHaveLength(2)
   })
+  it('shows available tool identity and an honest code-location fallback in span details and hover', async () => {
+    const node = span('tool-call', 'TOOL', 1500)
+    node.attributes = [
+      { key: 'agentdoc.tool.technical_name', valueType: 'STRING', value: 'read_document' },
+      { key: 'db.statement', valueType: 'STRING', value: 'SECRET_SQL' },
+    ]
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([node]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    const row = wrapper.get('.span-row')
+    expect(row.attributes('title')).toContain('工具标识：read_document')
+    expect(row.attributes('title')).toContain('调用方法：未采集')
+    expect(row.attributes('title')).not.toContain('SECRET_SQL')
+    expect(wrapper.get('.span-detail').text()).toContain('工具标识')
+    expect(wrapper.get('.span-detail').text()).toContain('read_document')
+    expect(wrapper.get('.span-detail').text()).toContain('调用方法未采集')
+    expect(wrapper.get('.span-detail').text()).not.toContain('SECRET_SQL')
+  })
+  it('shows collected call-site details without duplicating raw attributes', async () => {
+    const node = span('tool-call', 'TOOL', 1500)
+    node.attributes = [
+      { key: 'agentdoc.code.class', valueType: 'STRING', value: 'com/agentdoc/agent/ToolRunner' },
+      { key: 'agentdoc.code.method', valueType: 'STRING', value: 'execute' },
+      { key: 'agentdoc.code.file', valueType: 'STRING', value: 'ToolRunner.java' },
+      { key: 'agentdoc.code.line', valueType: 'LONG', value: '42' },
+    ]
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([node]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    expect(wrapper.get('.span-row').attributes('title')).toContain('源码文件 / 行：ToolRunner.java:42')
+    expect(wrapper.get('.span-detail').text()).toContain('com.agentdoc.agent.ToolRunner')
+    expect(wrapper.get('.span-detail').text()).toContain('ToolRunner.java:42')
+    expect(wrapper.get('.span-detail').text()).not.toContain('agentdoc.code.file')
+  })
+  it('shows folded database and Redis operations when filtering for data access', async () => {
+    const database = { ...span('database', 'DATABASE', 1000), name: 'db.execute' }
+    const redis = { ...span('redis', 'REDIS', 1000), name: 'redis.operation' }
+    vi.mocked(taskApi.getTaskTrace).mockResolvedValue(trace([span('root', 'AGENT', 100000), database, redis]))
+    const { wrapper } = await mountPage(TaskTracePanel)
+    await wrapper.findAll('.trace-filters button').find((button) => button.text() === '数据库 / Redis')!.trigger('click')
+    expect(wrapper.findAll('.span-row')).toHaveLength(2)
+    expect(wrapper.text()).toContain('执行数据库语句')
+    expect(wrapper.text()).toContain('Redis 操作')
+  })
   it.each([
     'NO_TRACE',
     'BACKEND_UNAVAILABLE',
@@ -397,7 +541,9 @@ describe('technical Trace and authoritative facts', () => {
         retryCount: null,
       })
       const { wrapper } = await mountPage(TaskTracePanel)
-      expect(wrapper.find('.trace-summary').text()).toContain('不可用 / 不可用 / 不可用')
+      expect(wrapper.find('.trace-summary').text()).toContain('不可用')
+      expect(wrapper.find('.trace-summary').text()).not.toContain('端到端遥测耗时')
+      expect(wrapper.text()).toContain(availabilityCode)
       expect(wrapper.find('.trace-facts').text()).toContain('1200')
       expect(wrapper.find('.trace-facts').text()).toContain('snapshot-hash')
       expect(wrapper.findAll('.span-row')).toHaveLength(0)
@@ -415,6 +561,34 @@ describe('technical Trace and authoritative facts', () => {
   })
 })
 describe('Task detail integration', () => {
+  it('返回评估保留用例和结果身份，拒绝跨空间与外部返回目标', async () => {
+    const target = '/spaces/7/evaluation/runs/10?caseRunId=20&attemptId=40&resultId=80'
+    const { wrapper, router } = await mountPage(
+      TaskDetailView,
+      detail(),
+      permissions,
+      `evidence&evaluationReturn=${encodeURIComponent(target)}`,
+    )
+    const back = wrapper.findAll('button').find((button) => button.text() === '返回评估运行')!
+    expect(back.exists()).toBe(true)
+    await back.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe(target)
+    await router.push('/spaces/7/tasks/100?evaluationReturn=https%3A%2F%2Fexample.com')
+    await flushPromises()
+    expect(wrapper.findAll('button').some((button) => button.text() === '返回评估运行')).toBe(false)
+    await router.push('/spaces/7/tasks/100?evaluationReturn=%2Fspaces%2F8%2Fevaluation%2Fruns%2F10')
+    await flushPromises()
+    expect(wrapper.findAll('button').some((button) => button.text() === '返回评估运行')).toBe(false)
+  })
+  it('执行终态缺少产物时不再提示等待完成', async () => {
+    const data = detail()
+    data.task.resultSummary = null
+    vi.mocked(taskApi.getTaskExecutionDetail).mockResolvedValue(data)
+    const { wrapper } = await mountPage(TaskDetailView, data)
+    expect(wrapper.text()).toContain('执行已结束，本次未生成业务产物')
+    expect(wrapper.text()).not.toContain('执行完成后将在这里显示结果引用')
+  })
   it('shows isolated candidates without claiming a document write even when the legacy output projection returns a draft', async () => {
     const isolated = detail()
     isolated.task.executionMode = 'ISOLATED'
@@ -433,7 +607,7 @@ describe('Task detail integration', () => {
       .find((button) => button.text() === '查看候选产物')!
       .trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Artifact 只读预览')
+    expect(wrapper.text()).toContain('隔离候选产物')
   })
   it('does not show a change request action for a draft output when document read is missing', async () => {
     const data = detail()

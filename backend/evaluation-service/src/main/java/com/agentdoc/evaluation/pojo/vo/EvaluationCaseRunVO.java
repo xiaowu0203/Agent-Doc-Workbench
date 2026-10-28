@@ -32,7 +32,9 @@ public record EvaluationCaseRunVO(
         Integer attemptNo,
 
         @Schema(description = "关联的人工反馈列表")
-        List<EvaluationFeedbackVO> feedback
+        List<EvaluationFeedbackVO> feedback,
+        @Schema(description = "当前目录用例名称，缺失时为空，不替代冻结输入") String testCaseName,
+        @Schema(description = "来源用例版本号，缺失时为空") Integer testCaseVersionNo
 ) {
     /**
      * 实体转VO，不带反馈数据
@@ -43,7 +45,7 @@ public record EvaluationCaseRunVO(
     public static EvaluationCaseRunVO from(EvaluationCaseRunEntity caseRun,
                                            EvaluationCaseAttemptEntity attempt) {
         return new EvaluationCaseRunVO(caseRun.getId(), caseRun.getTestCaseVersionId(), caseRun.getStatus(),
-                caseRun.getCurrentAttemptId(), attempt.getExecutionTaskId(), attempt.getAttemptNo(), List.of());
+                caseRun.getCurrentAttemptId(), attempt.getExecutionTaskId(), attempt.getAttemptNo(), List.of(), null, null);
     }
 
     /**
@@ -58,6 +60,11 @@ public record EvaluationCaseRunVO(
                                            List<EvaluationFeedbackVO> feedback) {
         return new EvaluationCaseRunVO(caseRun.getId(), caseRun.getTestCaseVersionId(), caseRun.getStatus(),
                 caseRun.getCurrentAttemptId(), attempt.getExecutionTaskId(), attempt.getAttemptNo(),
-                List.copyOf(feedback));
+                List.copyOf(feedback), null, null);
+    }
+
+    public EvaluationCaseRunVO withCatalogName(String name, Integer versionNo) {
+        return new EvaluationCaseRunVO(id, testCaseVersionId, status, currentAttemptId, executionTaskId,
+                attemptNo, feedback, name, versionNo);
     }
 }

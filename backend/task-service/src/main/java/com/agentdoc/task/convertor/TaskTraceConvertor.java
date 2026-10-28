@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /** Jaeger 原始结构到 Task 范围的白名单投影。动态名称、日志、资源全量属性均不透传。 */
 @Component
@@ -35,7 +36,7 @@ public class TaskTraceConvertor {
             "agentdoc.retry.count", "agentdoc.model.call.sequence", "gen_ai.usage.input_tokens",
             "gen_ai.usage.output_tokens", "agentdoc.skill.id", "agentdoc.skill.version_id",
             "agentdoc.skill.candidate_count", "agentdoc.skill.selected_count", "agentdoc.mcp.server_id",
-            "agentdoc.tool.result_size_bytes");
+            "agentdoc.tool.result_size_bytes", "agentdoc.code.line");
     private static final Map<String, Set<String>> ENUM_ATTRIBUTES = Map.of(
             "agentdoc.execution.mode", Set.of("LIVE", "ISOLATED"),
             "agentdoc.runtime.type", Set.of("SPRING_AI", "SPRING_AI_ALIBABA", "CUSTOM"),
@@ -47,6 +48,7 @@ public class TaskTraceConvertor {
             "agentdoc.tool.technical_name", "agentdoc.skill.technical_name", "agentdoc.mcp.transport",
             "agentdoc.tool.result_type");
     private static final Set<String> BOOLEAN_ATTRIBUTES = Set.of("agentdoc.model.stream", "agentdoc.mcp.external");
+    private static final Pattern SQL_NUMBER_LITERAL = Pattern.compile("(?<![A-Za-z0-9_])\\d");
 
     public TaskTraceViewVO unavailable(Long taskId, Long spaceId, String traceId, TaskTraceAvailability code) {
         return new TaskTraceViewVO(taskId, spaceId, traceId, code, false, false,
@@ -167,10 +169,10 @@ public class TaskTraceConvertor {
             String parent = span.parent();
             if (parent != null && !displayedIds.contains(parent)) { partial = true; parent = null; }
             String category = category(span);
-            String name = DOMAIN_NAMES.containsKey(span.operation()) ? span.operation() : stableName(category);
+            String name = DOMAIN_NAMES.containsKey(span.operation()) ? span.operation() : stableName(category, span.operation());
             nodes.add(new SpanNodeVO(span.id(), parent, name, span.service(), category,
                     kind(span.tags()), status(span.tags()), span.start(), span.duration(),
-                    owned.contains(span.id()) ? attributes(span.tags()) : List.of()));
+                    owned.contains(span.id()) ? attributes(span.tags(), category) : List.of()));
         }
         List<ServiceSummaryVO> services = new ArrayList<>();
         Map<String, List<RawSpan>> byService = new LinkedHashMap<>();
@@ -264,6 +266,9 @@ public class TaskTraceConvertor {
         if (DOMAIN_NAMES.containsKey(span.operation())) { return DOMAIN_NAMES.get(span.operation()); }
         if ("redis".equals(text(span.tags(), "db.system.name"))) { return "REDIS"; }
         if (span.tags().containsKey("db.system.name")) { return "DATABASE"; }
+        String scope = text(span.tags(), "otel.scope.name");
+        if ("MySQL Connector/J".equals(scope) || "io.opentelemetry.jdbc".equals(scope)) { return "DATABASE"; }
+        if ("io.opentelemetry.lettuce-5.1".equals(scope)) { return "REDIS"; }
         if (span.tags().containsKey("messaging.system")) { return "MESSAGING"; }
         if (span.tags().containsKey("rpc.system")) { return "A2A"; }
         if ("gateway-service".equals(span.service())) { return "GATEWAY"; }
@@ -272,9 +277,15 @@ public class TaskTraceConvertor {
         return "TECHNICAL";
     }
 
-    private static String stableName(String category) {
+    private static String stableName(String category, String operation) {
         return switch (category) {
-            case "DATABASE" -> "db.client.operation";
+            case "DATABASE" -> switch (operation) {
+                case "Prepare statement" -> "db.prepare";
+                case "Execute prepared statement" -> "db.execute";
+                case "Commit" -> "db.commit";
+                case "Rollback" -> "db.rollback";
+                default -> "db.client.operation";
+            };
             case "REDIS" -> "redis.operation";
             case "MESSAGING" -> "messaging.operation";
             case "A2A" -> "a2a.operation";
@@ -285,18 +296,23 @@ public class TaskTraceConvertor {
         };
     }
 
-    private static List<AttributeVO> attributes(Map<String, JsonNode> tags) {
+    private static List<AttributeVO> attributes(Map<String, JsonNode> tags, String category) {
         List<AttributeVO> result = new ArrayList<>();
         for (var entry : tags.entrySet()) {
             String key = entry.getKey();
             JsonNode value = entry.getValue();
             Long numeric = LONG_ATTRIBUTES.contains(key) ? nonnegativeLong(value) : null;
-            if (numeric != null) {
+            if ("DATABASE".equals(category) && "agentdoc.db.sql_template".equals(key)
+                    && value.isTextual() && sqlTemplateAllowed(value.textValue())) {
+                result.add(new AttributeVO(key, "STRING", value.textValue()));
+            } else if (numeric != null) {
                 result.add(new AttributeVO(key, "LONG", Long.toString(numeric)));
             } else if (BOOLEAN_ATTRIBUTES.contains(key) && value.isBoolean()) {
                 result.add(new AttributeVO(key, "BOOLEAN", Boolean.toString(value.booleanValue())));
             } else if (ENUM_ATTRIBUTES.containsKey(key) && value.isTextual()
                     && ENUM_ATTRIBUTES.get(key).contains(value.textValue())) {
+                result.add(new AttributeVO(key, "STRING", value.textValue()));
+            } else if (value.isTextual() && codeLocationAllowed(key, value.textValue())) {
                 result.add(new AttributeVO(key, "STRING", value.textValue()));
             } else if (TECHNICAL_ATTRIBUTES.contains(key) && value.isTextual()
                     && value.textValue().matches("[A-Za-z0-9][A-Za-z0-9._/-]{0,127}")
@@ -306,6 +322,26 @@ public class TaskTraceConvertor {
         }
         result.sort(Comparator.comparing(AttributeVO::key));
         return List.copyOf(result);
+    }
+
+    /** 只接受采集器处理过的有限 SQL 模板，其他 SQL 属性仍不透传。 */
+    private static boolean sqlTemplateAllowed(String value) {
+        return !value.isBlank() && value.length() <= 4096
+                && value.matches("[A-Za-z0-9_`?.,()=<>!+*/%|&^~\\-\\s]+")
+                && !value.contains("--") && !value.contains("/*") && !value.contains("*/")
+                && !SQL_NUMBER_LITERAL.matcher(value).find()
+                && Objects.equals(value, LogSanitizer.sanitizeText(value));
+    }
+
+    /** 只返回应用类名与文件名，拒绝路径、URL 和任意非代码文本。 */
+    private static boolean codeLocationAllowed(String key, String value) {
+        if (value.length() > 128 || !Objects.equals(value, LogSanitizer.sanitizeText(value))) { return false; }
+        return switch (key) {
+            case "agentdoc.code.class" -> value.matches("com/agentdoc/[A-Za-z_$][A-Za-z0-9_$/]*");
+            case "agentdoc.code.method" -> value.matches("[A-Za-z_$][A-Za-z0-9_$]*");
+            case "agentdoc.code.file" -> value.matches("[A-Za-z_$][A-Za-z0-9_$]*\\.java");
+            default -> false;
+        };
     }
 
     private static void require(boolean condition) {

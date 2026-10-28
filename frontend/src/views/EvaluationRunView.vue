@@ -1,9 +1,34 @@
 <template>
-  <section class="run-page" aria-label="评估运行">
+  <section class="run-page" :class="{ 'run-page--detail': resourceId }" aria-label="评估运行">
     <header class="run-heading">
       <div>
-        <h2>{{ resourceId ? `评估运行 #${resourceId}` : '评估运行列表' }}</h2>
-        <p>每次回放保留独立 Attempt；每次评价保留独立 Result，历史记录保持只读。</p>
+        <h2>
+          <template v-if="resourceId && run && canRead">
+            <span v-if="run.name">{{ run.name }}</span>
+            <EvaluationSourceTitle
+              v-else
+              :space-id="spaceId"
+              :kind="run.datasetVersionId ? 'datasets' : 'test-cases'"
+              :version-id="String(run.datasetVersionId || run.singleTestCaseVersionId || '')"
+              :fallback="`评估运行 #${resourceId}`"
+            />
+            · 评估运行
+          </template>
+          <template v-else>{{ resourceId ? `评估运行 #${resourceId}` : '评估运行列表' }}</template>
+        </h2>
+        <p v-if="resourceId && run?.name && canRead">
+          来源：
+          <EvaluationSourceTitle
+            :space-id="spaceId"
+            :kind="run.datasetVersionId ? 'datasets' : 'test-cases'"
+            :version-id="String(run.datasetVersionId || run.singleTestCaseVersionId || '')"
+            fallback="来源名称不可用"
+          />
+        </p>
+        <p v-if="resourceId">
+          运行 #{{ resourceId }} <CopyButton :value="resourceId" label="运行 ID" />
+        </p>
+        <p>每次回放保留独立执行尝试；每次评价保留独立评价结果，历史记录保持只读。</p>
       </div>
       <div class="run-actions">
         <el-button v-if="resourceId" @click="router.push(basePath)">返回列表</el-button>
@@ -29,44 +54,59 @@
     </header>
     <p v-if="!canRead" role="alert">需要当前空间的评估读取权限。</p>
     <template v-else-if="!resourceId">
-      <form class="run-filters" @submit.prevent="loadList(1)">
-        <label
-          >运行状态<select v-model="statusFilter" aria-label="运行状态">
-            <option value="">全部状态</option>
-            <option v-for="status in RUN_STATUSES" :key="status" :value="status">
-              {{ status }}
-            </option>
-          </select></label
-        >
-        <label
-          >来源范围<select v-model="sourceKind" aria-label="筛选来源类型">
-            <option value="">全部来源</option>
-            <option value="datasetVersionId">数据集版本</option>
-            <option value="singleTestCaseVersionId">测试用例版本</option>
-          </select></label
-        >
-        <label v-if="sourceKind"
-          >来源版本 ID<input v-model="sourceId" aria-label="筛选来源版本 ID" placeholder="版本 ID"
-        /></label>
-        <label
-          >创建起始<input
-            v-model="createdFrom"
-            type="datetime-local"
-            aria-label="创建起始" /></label
-        ><label
-          >创建截止<input v-model="createdTo" type="datetime-local" aria-label="创建截止"
-        /></label>
-        <el-button native-type="submit">查询</el-button>
+      <form class="run-filters evaluation-filter" @submit.prevent="loadList(1)">
+        <label>
+          <span>运行状态</span>
+          <el-select v-model="statusFilter" aria-label="运行状态" placeholder="全部状态">
+            <el-option label="全部状态" value="" />
+            <el-option v-for="status in RUN_STATUSES" :key="status" :value="status" :label="evaluationStatus('run', status).label" />
+          </el-select>
+        </label>
+        <label>
+          <span>来源范围</span>
+          <el-select v-model="sourceKind" aria-label="筛选来源类型" placeholder="全部来源">
+            <el-option label="全部来源" value="" />
+            <el-option label="数据集版本" value="datasetVersionId" />
+            <el-option label="测试用例版本" value="singleTestCaseVersionId" />
+          </el-select>
+        </label>
+        <div v-if="sourceKind" class="source-filter">
+          <label
+            >来源版本 ID<el-input
+              v-model="sourceId"
+              aria-label="筛选来源版本 ID"
+              placeholder="版本 ID"
+              @input="sourceLabel = ''"
+          /></label>
+          <el-button @click="sourcePicker = true">按名称选择来源版本</el-button>
+          <small v-if="sourceLabel">{{ sourceLabel }}</small>
+        </div>
+        <label class="evaluation-filter__date">
+          <span>创建日期</span>
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+        </label>
+        <div class="evaluation-filter__actions"><el-button type="primary" native-type="submit">查询</el-button></div>
       </form>
       <DataState
         :loading="loading"
         :error="error"
         :empty="!list.records.length"
-        empty-text="暂无符合条件的评估运行。可调整筛选或创建运行。"
+        :empty-text="
+          statusFilter || sourceKind || sourceId || dateRange
+            ? '当前筛选没有匹配的评估运行，请调整条件后查询。'
+            : '尚未创建评估运行，请选择已发布的用例或数据集版本。'
+        "
         @retry="loadList(list.pageNum)"
       >
         <div class="run-table-wrap">
-          <table class="run-table">
+          <table class="run-table evaluation-record-table">
             <thead>
               <tr>
                 <th>运行 / 来源</th>
@@ -77,37 +117,45 @@
             </thead>
             <tbody>
               <tr v-for="row in list.records" :key="String(row.id)">
-                <td>
-                  <RouterLink :to="`${basePath}/${row.id}`">运行 #{{ row.id }}</RouterLink>
-                  <p>
+                <td class="evaluation-record-table__primary" data-label="运行 / 来源">
+                  <RouterLink :to="`${basePath}/${row.id}`" :title="row.name || undefined">
+                    {{
+                      row.name ||
+                      (row.datasetVersionId
+                        ? `${row.datasetName || '数据集名称不可用'} · v${row.datasetVersionNo ?? '不可用'}`
+                        : `${row.testCaseName || '用例名称不可用'} · v${row.testCaseVersionNo ?? '不可用'}`)
+                    }}
+                  </RouterLink>
+                  <p v-if="row.name">
                     {{
                       row.datasetVersionId
                         ? `${row.datasetName || '数据集名称不可用'} · v${row.datasetVersionNo ?? '不可用'}`
                         : `${row.testCaseName || '用例名称不可用'} · v${row.testCaseVersionNo ?? '不可用'}`
                     }}
                   </p>
+                  <p>运行 #{{ row.id }}</p>
                   <small v-if="row.experimentVariantId"
-                    >Experiment Variant #{{ row.experimentVariantId }}</small
+                    >实验配置组 #{{ row.experimentVariantId }}</small
                   >
                 </td>
-                <td>
+                <td data-label="状态">
                   <EvaluationStatusTag domain="run" :status="row.status" />
                   <p v-if="row.pauseReason">{{ pauseExplanation(row.pauseReason) }}</p>
                   <small v-if="row.cancelRequested">已请求取消</small>
                 </td>
-                <td>
+                <td data-label="用例进度">
                   {{ row.completedCaseCount ?? '不可用' }} / {{ row.caseCount }} 已完成
                   <p>异常 {{ row.errorCaseCount ?? '不可用' }}</p>
                 </td>
-                <td>
-                  <p>创建 {{ row.createdAt || '不可用' }}</p>
-                  <p>开始 {{ row.startedAt || '尚未开始' }}</p>
+                <td data-label="时间">
+                  <p>创建 <BusinessTime :value="row.createdAt" empty-text="不可用" /></p>
+                  <p>开始 <BusinessTime :value="row.startedAt" empty-text="尚未开始" /></p>
                   <p>
                     结束
                     {{
                       activeRun(row.status) || row.status === 'PAUSED'
                         ? '尚未结束'
-                        : row.finishedAt || '未提供'
+                        : formatBusinessTime(row.finishedAt, '未提供')
                     }}
                   </p>
                 </td>
@@ -149,17 +197,28 @@
               }}
             </p>
             <p>
-              开始 {{ run.startedAt || '尚未开始' }}<br />结束
-              {{ terminal ? run.finishedAt || '未提供' : '尚未结束' }}
+              开始 <BusinessTime :value="run.startedAt" empty-text="尚未开始" /><br />结束
+              <BusinessTime v-if="terminal" :value="run.finishedAt" empty-text="未提供" /><template
+                v-else
+                >尚未结束</template
+              >
             </p>
           </article>
           <article v-if="run.status === 'PAUSED' || run.cancelRequested" class="run-warning">
-            <strong>{{ run.cancelRequested ? '取消请求已记录' : '运行已暂停' }}</strong>
+            <strong>{{
+              run.status === 'CANCELED'
+                ? '运行已取消'
+                : run.cancelRequested
+                  ? '取消请求已记录'
+                  : '运行已暂停'
+            }}</strong>
             <p>
               {{
                 run.status === 'PAUSED'
                   ? pauseExplanation(run.pauseReason)
-                  : '正在等待在途执行收敛；已完成的执行不会撤销。'
+                  : terminal
+                    ? '运行已结束；已完成的执行与历史记录保持不变。'
+                    : '正在等待在途执行收敛；已完成的执行不会撤销。'
               }}
             </p>
             <p v-if="run.reconciliationFailureCount !== null">
@@ -183,8 +242,12 @@
                 @click="chooseCase(item)"
               >
                 <span
-                  ><strong>用例版本 #{{ item.testCaseVersionId || '不可用' }}</strong
-                  ><small>CaseRun #{{ item.id }} · Attempt {{ item.attemptNo }}</small></span
+                  ><strong
+                    >{{ item.testCaseName || '用例名称不可用' }} · v{{
+                      item.testCaseVersionNo ?? '不可用'
+                    }}</strong
+                  ><small>用例版本 #{{ item.testCaseVersionId || '不可用' }}</small
+                  ><small>用例运行 #{{ item.id }} · 执行尝试 {{ item.attemptNo }}</small></span
                 ><EvaluationStatusTag domain="attempt" :status="item.status" />
               </button>
               <p v-if="!visibleCases.length">没有符合筛选的用例。</p>
@@ -201,6 +264,7 @@
           </section>
           <EvaluationCasePanel
             v-if="selectedCase"
+            id="evaluation-current-case"
             :key="`${spaceId}/${run.id}/${selectedCase.id}`"
             :space-id="spaceId"
             :run-id="String(run.id)"
@@ -212,11 +276,14 @@
             :busy="busy"
             :initial-attempt-id="queryId(route.query.attemptId)"
             :initial-result-id="queryId(route.query.resultId)"
+            :return-path="route.fullPath"
+            @selection="rememberSelection"
+            @settled="restoreScroll"
             @retry-replay="openAction('replay')"
             @retry-evaluation="openAction('evaluation', $event)"
             @feedback-saved="loadDetail(true)"
           />
-          <p v-else>请选择一个用例查看 Attempt 和评估结果。</p>
+          <p v-else>请选择一个用例查看执行尝试和评价结果。</p>
         </div>
       </template>
     </DataState>
@@ -224,13 +291,26 @@
       v-if="creating && canRun"
       :space-id="spaceId"
       :can-run="canRun"
-      @close="creating = false"
+      :initial-kind="
+        typeof route.query.sourceKind === 'string' ? route.query.sourceKind : undefined
+      "
+      :initial-version-id="queryId(route.query.sourceVersionId)"
+      @close="closeCreate"
       @created="created"
+    />
+    <PublishedVersionPicker
+      v-if="sourcePicker && sourceKind"
+      :open="true"
+      :space-id="spaceId"
+      :kind="sourceKind === 'datasetVersionId' ? 'datasets' : 'test-cases'"
+      :exclude-ids="[]"
+      @close="sourcePicker = false"
+      @select="selectFilterSource"
     />
     <el-dialog v-model="actionDialog" :title="actionTitle" width="560px">
       <p>{{ actionDescription }}</p>
       <label class="run-ttl"
-        >执行授权有效期（秒）<input
+        >执行授权有效期（秒）<el-input
           v-model.number="ttl"
           aria-label="重试或恢复授权有效期（秒）"
           type="number"
@@ -252,15 +332,21 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { formatBusinessTime } from '@/shared/utils/date-time'
+import BusinessTime from '@/shared/components/BusinessTime.vue'
+import { evaluationStatus } from '@/features/evaluation/status'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, RouterLink, useRoute, useRouter } from 'vue-router'
+import { ElButton, ElDatePicker, ElDialog, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
+import EvaluationSourceTitle from '@/features/evaluation/components/EvaluationSourceTitle.vue'
 import EvaluationRunCreate from '@/features/evaluation/components/EvaluationRunCreate.vue'
+import PublishedVersionPicker from '@/features/evaluation/components/PublishedVersionPicker.vue'
 import EvaluationCasePanel from '@/features/evaluation/components/EvaluationCasePanel.vue'
 import * as api from '@/features/evaluation/api/evaluation-api'
 import type {
@@ -269,6 +355,9 @@ import type {
   EvaluationCaseRun,
   EvaluationPage,
   EvaluationRunStatus,
+  DatasetVersion,
+  TestCaseVersion,
+  EvaluatorVersion,
 } from '@/features/evaluation/types'
 import {
   activeRun,
@@ -286,6 +375,31 @@ const props = defineProps<{ resourceId?: string }>()
 const route = useRoute(),
   router = useRouter(),
   workspace = useWorkspaceStore()
+const scrollKey = 'evaluation-run-return-scroll'
+onBeforeRouteLeave((to) => {
+  if (!props.resourceId || !to.path.startsWith(`/spaces/${spaceId.value}/tasks/`)) return
+  const content = document.querySelector<HTMLElement>('.workbench-layout__content')
+  if (!content) return
+  try {
+    window.sessionStorage.setItem(scrollKey, JSON.stringify({ path: route.fullPath, top: content.scrollTop }))
+  } catch {
+    // 存储不可用时保留已有用例定位。
+  }
+})
+async function restoreScroll() {
+  try {
+    const raw = window.sessionStorage.getItem(scrollKey)
+    if (!raw) return
+    const saved = JSON.parse(raw) as { path?: string; top?: number }
+    if (saved.path !== route.fullPath || !Number.isFinite(saved.top) || saved.top! < 0) return
+    await nextTick()
+    const content = document.querySelector<HTMLElement>('.workbench-layout__content')
+    if (content) content.scrollTop = saved.top!
+    window.sessionStorage.removeItem(scrollKey)
+  } catch {
+    // 存储不可用或内容无效时保留已有用例定位。
+  }
+}
 const PAGE_SIZE = 10
 const spaceId = computed(() => String(route.params.spaceId))
 const scoped = computed(() => String(workspace.currentSpaceId) === spaceId.value)
@@ -316,8 +430,46 @@ const busy = ref(false),
 const statusFilter = ref<EvaluationRunStatus | ''>(''),
   sourceKind = ref<'' | 'datasetVersionId' | 'singleTestCaseVersionId'>(''),
   sourceId = ref(''),
-  createdFrom = ref(''),
-  createdTo = ref('')
+  dateRange = ref<[string, string] | null>(null)
+const sourcePicker = ref(false),
+  sourceLabel = ref('')
+function rememberSelection(attemptId: string, resultId?: string) {
+  void router.replace({
+    query: { ...route.query, caseRunId: selectedCaseId.value, attemptId, resultId },
+  })
+}
+function closeCreate() {
+  creating.value = false
+  if (route.query.create === '1')
+    void router.replace({
+      query: {
+        ...route.query,
+        create: undefined,
+        sourceKind: undefined,
+        sourceVersionId: undefined,
+      },
+    })
+}
+function selectFilterSource(
+  value: DatasetVersion | TestCaseVersion | EvaluatorVersion,
+  name: string,
+) {
+  if (
+    String(value.spaceId) !== spaceId.value ||
+    value.status !== 'PUBLISHED' ||
+    'evaluatorId' in value ||
+    'datasetId' in value !== (sourceKind.value === 'datasetVersionId')
+  )
+    return
+  sourceId.value = String(value.id)
+  sourceLabel.value = `${name} · v${value.versionNo}`
+  sourcePicker.value = false
+}
+watch(sourceKind, () => {
+  sourceId.value = ''
+  sourceLabel.value = ''
+  sourcePicker.value = false
+})
 const selectedCaseId = ref(''),
   onlyErrors = ref(false),
   casePage = ref(1)
@@ -400,15 +552,13 @@ async function loadList(pageNum: number) {
   list.value.records = []
   try {
     if (sourceKind.value && !queryId(sourceId.value)) throw new Error('请输入有效来源版本 ID')
-    if (createdFrom.value && createdTo.value && createdFrom.value > createdTo.value)
-      throw new Error('创建起始不能晚于截止')
     const value = await api.searchEvaluationRuns(
       {
         spaceId: spaceId.value,
         status: statusFilter.value || undefined,
         ...(sourceKind.value ? { [sourceKind.value]: sourceId.value } : {}),
-        createdFrom: createdFrom.value || undefined,
-        createdTo: createdTo.value || undefined,
+        createdFrom: dateRange.value ? `${dateRange.value[0]}T00:00:00` : undefined,
+        createdTo: dateRange.value ? `${dateRange.value[1]}T23:59:59.999999` : undefined,
         pageNum,
         pageSize: PAGE_SIZE,
       },
@@ -448,6 +598,10 @@ async function loadDetail(quiet = false) {
       throw new Error('用例不属于当前运行')
     if (!value.cases.some((item) => String(item.id) === selectedCaseId.value))
       selectedCaseId.value = requested || String(value.cases[0]?.id || '')
+    if (!quiet && requested) {
+      const position = filteredCases.value.findIndex((item) => String(item.id) === requested)
+      if (position >= 0) casePage.value = Math.floor(position / PAGE_SIZE) + 1
+    }
   } catch (e) {
     if (!pending.signal.aborted) {
       const fault = normalizeApiError(e)
@@ -463,6 +617,11 @@ async function loadDetail(quiet = false) {
     if (!pending.signal.aborted) {
       loading.value = false
       schedule()
+      if (!quiet && run.value && queryId(route.query.caseRunId)) {
+        await nextTick()
+        if (!pending.signal.aborted)
+          document.getElementById('evaluation-current-case')?.scrollIntoView?.({ block: 'start' })
+      }
     }
   }
 }
@@ -603,18 +762,17 @@ watch(
     mutationRequest?.abort()
     run.value = null
     busy.value = false
-    creating.value = false
+    creating.value = !props.resourceId && canRun.value && route.query.create === '1'
     actionDialog.value = false
     actionError.value = ''
     pollError.value = ''
     selectedCaseId.value = ''
-    onlyErrors.value = false
+    onlyErrors.value = route.query.errors === '1'
     casePage.value = 1
     statusFilter.value = ''
     sourceKind.value = ''
     sourceId.value = ''
-    createdFrom.value = ''
-    createdTo.value = ''
+    dateRange.value = null
     failures = 0
     void (props.resourceId ? loadDetail() : loadList(1))
   },
@@ -631,6 +789,8 @@ watch(canRun, () => {
 })
 watch(onlyErrors, () => {
   casePage.value = 1
+  if (props.resourceId && canRead.value)
+    void router.replace({ query: { ...route.query, errors: onlyErrors.value ? '1' : undefined } })
 })
 watch(
   () => route.query.caseRunId,
@@ -652,6 +812,16 @@ onBeforeUnmount(() => {
   display: grid;
   gap: var(--adw-space-5);
 }
+.run-heading > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.run-page--detail .run-heading {
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+.run-page--detail .run-heading h2 { font-size: 20px; line-height: 1.4; }
 .run-heading,
 .run-actions,
 .run-cases header {
@@ -667,6 +837,7 @@ h3 {
 }
 h2 {
   font-size: var(--adw-font-size-subtitle);
+  overflow-wrap: anywhere;
 }
 p,
 small {
@@ -724,19 +895,23 @@ th {
 }
 .run-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--adw-space-4);
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 0;
+  border-block: 1px solid #e0e7f0;
 }
 .run-summary article {
-  padding: var(--adw-space-4);
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-md);
+  padding: 20px 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .run-progress {
-  border-left: 3px solid var(--adw-color-primary) !important;
   display: grid;
   gap: var(--adw-space-2);
 }
+.run-summary article + article { border-left: 1px solid #e0e7f0; }
+.run-progress :deep(.el-tag) { justify-self: start; }
+.run-progress > strong { font-size: 23px; line-height: 1.3; }
 progress {
   width: 100%;
   accent-color: var(--adw-color-primary);
@@ -746,25 +921,26 @@ progress {
 }
 .run-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
   gap: var(--adw-space-4);
   align-items: start;
 }
 .run-cases {
-  border: 1px solid var(--adw-border-color);
-  border-radius: var(--adw-radius-md);
+  border: 0;
+  border-radius: 0;
   min-width: 0;
+  background: transparent;
 }
 .run-cases header {
-  padding: var(--adw-space-4);
-  border-bottom: 1px solid var(--adw-border-color);
+  padding: 0 0 14px;
+  border-bottom: 1px solid #dfe7f1;
 }
 .run-cases label {
   display: block;
 }
 .run-case-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 .run-case {
   display: flex;
@@ -773,7 +949,7 @@ progress {
   gap: var(--adw-space-2);
   width: 100%;
   text-align: left;
-  padding: var(--adw-space-4);
+  padding: 16px 12px;
   border: 0;
   border-bottom: 1px solid var(--adw-border-color);
   background: transparent;
@@ -782,7 +958,7 @@ progress {
   overflow-wrap: anywhere;
 }
 .run-case[aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
+  background: #eaf1ff;
   border-left: 3px solid var(--adw-color-primary);
 }
 .run-case strong {
@@ -807,5 +983,10 @@ select:focus-visible {
   .run-case-list {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
+}
+@media (max-width: 640px) {
+  .run-summary { grid-template-columns: minmax(0, 1fr); }
+  .run-summary article { padding: 16px 0; }
+  .run-summary article + article { border-left: 0; border-top: 1px solid #e0e7f0; }
 }
 </style>

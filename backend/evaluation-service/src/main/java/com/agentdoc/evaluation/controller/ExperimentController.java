@@ -10,6 +10,7 @@ import com.agentdoc.evaluation.pojo.vo.ExperimentPreflightVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentReportRevisionVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentReportVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVO;
+import com.agentdoc.evaluation.pojo.vo.ExperimentSourceSummaryVO;
 import com.agentdoc.evaluation.pojo.vo.ExperimentVariantVO;
 import com.agentdoc.evaluation.service.ExperimentService;
 import com.agentdoc.evaluation.service.ExperimentReportService;
@@ -47,6 +48,12 @@ public class ExperimentController {
     @GetMapping("/{id}")
     public Result<ExperimentVO> detail(@PathVariable Long id) {
         return Result.ok(service.detail(id));
+    }
+
+    @Operation(summary = "读取校验过的冻结来源去重数量")
+    @GetMapping("/{id}/source-summary")
+    public Result<ExperimentSourceSummaryVO> sourceSummary(@PathVariable Long id) {
+        return Result.ok(service.sourceSummary(id));
     }
 
     @Operation(summary = "查询 Experiment Variant")

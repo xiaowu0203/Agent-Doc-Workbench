@@ -208,6 +208,73 @@ async function mountRun(id?: string, query = '') {
   await flushPromises()
   return { wrapper, router }
 }
+
+it('从任务返回时在用例加载后恢复滚动位置和筛选', async () => {
+  window.sessionStorage.clear()
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/spaces/:spaceId/evaluation/runs/:runId', component: EvaluationRunView,
+        props: (route) => ({ resourceId: route.params.runId }) },
+      { path: '/spaces/:spaceId/tasks/:taskId', component: { template: '<div>任务</div>' } },
+    ],
+  })
+  const returnPath = '/spaces/7/evaluation/runs/10?caseRunId=20&errors=1'
+  await router.push(returnPath)
+  const wrapper = mount({ template: '<main class="workbench-layout__content"><router-view /></main>' }, {
+    attachTo: document.body,
+    global: { plugins: [router], stubs: { EvaluationCasePanel: true, EvaluationRunCreate: true } },
+  })
+  wrappers.push(wrapper)
+  await flushPromises()
+  const content = wrapper.get('main').element as HTMLElement
+  content.scrollTop = 325
+  await router.push('/spaces/7/tasks/50')
+  content.scrollTop = 0
+  await router.push(returnPath)
+  await flushPromises()
+  wrapper.findComponent({ name: 'EvaluationCasePanel' }).vm.$emit('settled')
+  await flushPromises()
+  expect(content.scrollTop).toBe(325)
+  expect((wrapper.get('input[type="checkbox"]').element as HTMLInputElement).checked).toBe(true)
+  window.sessionStorage.clear()
+})
+
+it('已取消终态不再提示等待在途执行收敛', async () => {
+  vi.mocked(api.getEvaluationRun).mockResolvedValue({
+    ...run,
+    status: 'CANCELED',
+    cancelRequested: true,
+  })
+  const { wrapper } = await mountRun('10')
+  expect(wrapper.text()).toContain('运行已取消')
+  expect(wrapper.text()).not.toContain('正在等待在途执行收敛')
+})
+
+it('首评需要主动选择标签，并保留有效零分', async () => {
+  const wrapper = mount(EvaluationFeedbackPanel, {
+    props: {
+      spaceId: '7',
+      runId: '10',
+      caseRunId: '20',
+      taskId: '50',
+      records: [],
+      canWrite: true,
+    },
+  })
+  wrappers.push(wrapper)
+  await wrapper.get('form').trigger('submit')
+  expect(ElMessageBox.confirm).not.toHaveBeenCalled()
+  expect(wrapper.text()).toContain('请选择反馈标签')
+  await wrapper.get('[aria-label="反馈标签"]').setValue('ACCEPTED')
+  await wrapper.get('[aria-label="人工分数"]').setValue('0')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(api.createEvaluationFeedback).toHaveBeenCalledWith(
+    expect.objectContaining({ label: 'ACCEPTED', score: 0 }),
+    expect.any(AbortSignal),
+  )
+})
 function mountCase(extra = {}, realFeedback = false) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -261,23 +328,24 @@ describe('run list, permissions and lifecycle', () => {
     expect(wrapper.text()).not.toContain('2020-01-01')
     expect(api.getEvaluationRun).toHaveBeenCalledTimes(2)
   })
-  it('queries one summary page, applies filters and rejects reversed times locally', async () => {
+  it('queries one summary page and includes the selected end date', async () => {
     const { wrapper } = await mountRun()
     expect(api.getEvaluationRun).not.toHaveBeenCalled()
     expect(api.searchCaseAttempts).not.toHaveBeenCalled()
-    await wrapper.get('select[aria-label="运行状态"]').setValue('PAUSED')
-    await wrapper.get('input[aria-label="创建起始"]').setValue('2026-10-04T12:00')
-    await wrapper.get('input[aria-label="创建截止"]').setValue('2026-10-03T12:00')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(api.searchEvaluationRuns).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('创建起始不能晚于截止')
-    await wrapper.get('input[aria-label="创建截止"]').setValue('2026-10-05T12:00')
+    wrapper.findAllComponents({ name: 'ElSelect' })[0]!.vm.$emit('update:modelValue', 'PAUSED')
+    wrapper.findComponent({ name: 'ElDatePicker' }).vm.$emit('update:modelValue', ['2026-10-04', '2026-10-05'])
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(api.searchEvaluationRuns).toHaveBeenLastCalledWith(
-      expect.objectContaining({ spaceId: '7', status: 'PAUSED', pageSize: 10 }),
+      expect.objectContaining({ spaceId: '7', status: 'PAUSED', pageSize: 10,
+        createdFrom: '2026-10-04T00:00:00', createdTo: '2026-10-05T23:59:59.999999' }),
       expect.any(AbortSignal),
+    )
+    wrapper.findComponent({ name: 'ElDatePicker' }).vm.$emit('update:modelValue', null)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.searchEvaluationRuns).toHaveBeenLastCalledWith(
+      expect.objectContaining({ createdFrom: undefined, createdTo: undefined }), expect.any(AbortSignal),
     )
   })
   it('has no execute controls for a catalog manager without evaluation:run', async () => {
@@ -399,6 +467,21 @@ describe('run list, permissions and lifecycle', () => {
   })
 })
 describe('attempt and evaluation result histories', () => {
+  it('选择评价结果发出稳定定位，写回 URL 属性时不重复加载历史或清空反馈', async () => {
+    const wrapper = mountCase({}, true)
+    await flushPromises()
+    await wrapper.get('[aria-label="反馈说明"]').setValue('保留草稿')
+    await wrapper
+      .findAll('button')
+      .find((item) => item.text().includes('Result #80'))!
+      .trigger('click')
+    expect(wrapper.emitted('selection')?.at(-1)).toEqual(['40', '80'])
+    const reads = vi.mocked(api.searchCaseAttempts).mock.calls.length
+    await wrapper.setProps({ initialAttemptId: '40', initialResultId: '80' })
+    await flushPromises()
+    expect(api.searchCaseAttempts).toHaveBeenCalledTimes(reads)
+    expect(wrapper.get('[aria-label="反馈说明"]').element).toHaveProperty('value', '保留草稿')
+  })
   it('keeps typed feedback during a background history refresh', async () => {
     const wrapper = mountCase({}, true)
     await flushPromises()
@@ -423,7 +506,7 @@ describe('attempt and evaluation result histories', () => {
     expect(button(wrapper, '仅重试评估器')).toBeDefined()
     await wrapper
       .findAll('button')
-      .find((item) => item.text().includes('Attempt 1'))!
+      .find((item) => item.text().includes('执行尝试 1'))!
       .trigger('click')
     await flushPromises()
     expect(button(wrapper, '仅重试评估器')).toBeUndefined()
@@ -558,7 +641,7 @@ describe('result facts, evidence and feedback', () => {
     expect(wrapper.text()).toContain('便捷得分0')
     expect(wrapper.text()).not.toContain('PRIVATE_RESULT_BODY')
     expect(wrapper.text()).not.toContain('PRIVATE_LOCATOR')
-    expect(wrapper.get('a').attributes('href')).toContain('/tasks/50?tab=audit')
+    expect(wrapper.get('a').attributes('href')).toContain('/tasks/50?tab=trace')
   })
   it('rejects cross-space Result details before displaying evidence', async () => {
     vi.mocked(api.getEvaluationResult).mockResolvedValue({ ...detail, spaceId: '8' })
@@ -625,6 +708,19 @@ describe('result facts, evidence and feedback', () => {
   })
 })
 describe('creation from published resources', () => {
+  it('带入已发布版本只读取必要来源，核验后仍等待最终创建确认', async () => {
+    const wrapper = mount(EvaluationRunCreate, {
+      props: { spaceId: '7', canRun: true, initialKind: 'datasets', initialVersionId: '60' },
+      global: {
+        stubs: { PublishedVersionPicker: true, ElDialog: { template: '<div><slot /></div>' } },
+      },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    expect(wrapper.text()).toContain('计划 1 个用例')
+    expect(api.getDatasetVersion).toHaveBeenCalledTimes(1)
+    expect(api.createEvaluationRun).not.toHaveBeenCalled()
+  })
   async function mountCreate() {
     const wrapper = mount(EvaluationRunCreate, {
       props: { spaceId: '7', canRun: true },
@@ -646,6 +742,17 @@ describe('creation from published resources', () => {
     expect(api.getDatasetVersion).toHaveBeenCalledTimes(2)
     expect(api.createEvaluationRun).toHaveBeenCalledWith(
       { spaceId: '7', datasetVersionId: '60', workerCapabilityTtlSeconds: 3600 },
+      expect.any(AbortSignal),
+    )
+  })
+  it('submits a trimmed optional name without changing the source identity', async () => {
+    vi.mocked(api.createEvaluationRun).mockResolvedValue({ ...run, name: '回归运行' })
+    const wrapper = await mountCreate()
+    await wrapper.get('[aria-label="运行名称（可选）"]').setValue('  回归运行  ')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.createEvaluationRun).toHaveBeenCalledWith(
+      { spaceId: '7', datasetVersionId: '60', workerCapabilityTtlSeconds: 3600, name: '回归运行' },
       expect.any(AbortSignal),
     )
   })

@@ -38,6 +38,7 @@ export function searchTasks(
     keyword?: string
     status?: TaskStatus
     executionMode?: TaskExecutionMode
+    onlineParticipation?: boolean
     agentId?: EntityId
     modelId?: EntityId
     documentId?: EntityId
@@ -60,6 +61,13 @@ export function getTaskCreateOptions(
     data: { spaceId, documentId },
     signal,
   })
+}
+
+export function getTaskNames(
+  payload: { spaceId: string; taskIds: string[] },
+  signal?: AbortSignal,
+): Promise<{ id: string; spaceId: string; name: string | null }[]> {
+  return request({ method: 'POST', url: '/task/tasks/names-query', data: payload, signal })
 }
 
 export function getTask(taskId: EntityId, signal?: AbortSignal): Promise<TaskDetail> {

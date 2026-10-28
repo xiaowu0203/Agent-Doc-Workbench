@@ -12,7 +12,13 @@ import * as api from '../api/evaluation-api'
 import * as taskApi from '@/features/task/api/task-api'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
-import type { EvaluationTestCase, Evaluator, EvaluatorVersion } from '../types'
+import type {
+  DatasetVersion,
+  EvaluationTestCase,
+  Evaluator,
+  EvaluatorVersion,
+  TestCaseVersion,
+} from '../types'
 import type { TaskDetail, TaskListItem } from '@/features/task/types'
 import type { ReplayEligibility } from '@/features/task/engineering-types'
 
@@ -171,7 +177,29 @@ describe('catalog editing and frozen contracts', () => {
     },
   )
   it('queries one resource page without per-row version requests', async () => {
+    vi.mocked(api.searchEvaluators).mockResolvedValue(
+      page([
+        {
+          ...evaluator,
+          versionSummary: {
+            resourceId: '20',
+            versionCount: 5,
+            draftCount: 0,
+            latestPublishedVersionId: '9007199254740993',
+            latestPublishedVersionNo: 4,
+            publishedBindingCount: 0,
+          },
+        },
+      ]),
+    )
     const { wrapper } = await catalog(false)
+    expect(wrapper.text()).toContain('已发布 v4')
+    expect(wrapper.text()).toContain('0 个草稿 · 共 5 个版本')
+    expect(
+      wrapper
+        .findAll('a')
+        .some((link) => link.attributes('href')?.includes('versionId=9007199254740993')),
+    ).toBe(true)
     expect(api.searchEvaluators).toHaveBeenCalledWith(
       { spaceId: '7', archived: false, keyword: undefined, pageNum: 1, pageSize: 20 },
       expect.any(AbortSignal),
@@ -285,6 +313,191 @@ describe('catalog editing and frozen contracts', () => {
     await flushPromises()
     expect(wrapper.find('textarea').exists()).toBe(false)
   })
+})
+
+describe('dataset draft binding copy', () => {
+  async function datasetCatalog(
+    status: DatasetVersion['status'] = 'PUBLISHED',
+    pending?: Promise<DatasetVersion>,
+  ) {
+    const version = {
+      id: '31',
+      datasetId: '20',
+      spaceId: '7',
+      versionNo: 3,
+      status,
+      contentHash: 'frozen',
+      publishedAt: '2026-10-23T12:00:00',
+    } as DatasetVersion
+    vi.mocked(api.getDataset).mockResolvedValue({
+      id: '20',
+      spaceId: '7',
+      name: '回归数据集',
+      description: null,
+      archived: false,
+      createdBy: null,
+      createdAt: null,
+    })
+    vi.mocked(api.searchDatasetVersions).mockResolvedValue(page([version]))
+    vi.mocked(api.getDatasetVersion).mockReturnValue(pending || Promise.resolve(version))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/spaces/:spaceId/evaluation/datasets/:id', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/spaces/7/evaluation/datasets/20?versionId=31')
+    const wrapper = mount(EvaluationCatalogView, {
+      props: { section: 'datasets', resourceId: '20' },
+      global: {
+        plugins: [router],
+        stubs: {
+          CatalogBindings: true,
+          ElDialog: {
+            props: ['modelValue'],
+            template: '<div v-if="modelValue"><slot /><slot name="footer" /></div>',
+          },
+        },
+      },
+    })
+    wrappers.push(wrapper)
+    await flushPromises()
+    if (!pending) await button(wrapper, '新建草稿版本').trigger('click')
+    return wrapper
+  }
+  it('waits for the selected version before enabling the draft dialog', async () => {
+    let resolve!: (value: DatasetVersion) => void
+    const pending = new Promise<DatasetVersion>((done) => {
+      resolve = done
+    })
+    const wrapper = await datasetCatalog('PUBLISHED', pending)
+    expect(button(wrapper, '新建草稿版本').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('当前未选择已发布版本')
+    const versions = await vi.mocked(api.searchDatasetVersions).mock.results[0]!.value
+    resolve(versions.records[0]!)
+    await flushPromises()
+    expect(button(wrapper, '新建草稿版本').attributes('disabled')).toBeUndefined()
+    await button(wrapper, '新建草稿版本').trigger('click')
+    expect(wrapper.text()).toContain('复制已选发布版本 v3 的绑定')
+  })
+  it.each([false, true])(
+    'only explicitly selected copy=%s sends a source version',
+    async (copy) => {
+      const wrapper = await datasetCatalog()
+      const checkbox = wrapper.get('input[type="checkbox"]')
+      expect((checkbox.element as HTMLInputElement).checked).toBe(false)
+      if (copy) await checkbox.setValue(true)
+      vi.mocked(api.createDatasetVersion).mockRejectedValue(new Error('依赖已归档'))
+      await button(wrapper, '创建草稿版本').trigger('click')
+      await flushPromises()
+      expect(api.createDatasetVersion).toHaveBeenCalledWith(
+        { datasetId: '20', ...(copy ? { copyFromVersionId: '31' } : {}) },
+        expect.any(AbortSignal),
+      )
+      expect(wrapper.text()).toContain('依赖已归档')
+      expect(wrapper.text()).toContain('复制已选发布版本 v3 的绑定')
+      expect(api.replaceDatasetCases).not.toHaveBeenCalled()
+    },
+  )
+  it('does not offer copying an unfrozen draft', async () => {
+    const wrapper = await datasetCatalog('DRAFT')
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('当前未选择已发布版本')
+  })
+})
+
+describe('test case source reading order', () => {
+  it.each(['DRAFT', 'PUBLISHED', 'ARCHIVED'] as const)(
+    'keeps %s frozen source and expected data while prioritizing the validation goal',
+    async (status) => {
+      const version = {
+        id: '31',
+        testCaseId: '20',
+        spaceId: '7',
+        versionNo: 2,
+        status,
+        sourceTaskId: '100',
+        sourceExecutionId: '101',
+        sourceInputSchemaVersion: 1,
+        sourceInputHash: 'frozen-input',
+        sourceExecutionSchemaVersion: 3,
+        sourceExecutionHash: 'frozen-execution',
+        documentVersionSnapshot: 4,
+        documentContentSha256: 'frozen-document',
+        expectedSchemaVersion: 1,
+        expectedJson: '{"goal":"完整引用"}',
+        sourceType: 'LIVE',
+        sanitizationNote: '已裁剪个人信息',
+        contentHash: status === 'DRAFT' ? null : 'frozen-content',
+        publishedAt: null,
+        createdBy: null,
+      } satisfies TestCaseVersion
+      vi.mocked(api.getTestCase).mockResolvedValue({
+        id: '20',
+        spaceId: '7',
+        name: '引用完整性',
+        description: '检查引用是否覆盖结论',
+        archived: false,
+      } as EvaluationTestCase)
+      vi.mocked(api.searchTestCaseVersions).mockResolvedValue(page([version]))
+      vi.mocked(api.getTestCaseVersion).mockResolvedValue(version)
+      vi.mocked(api.getTestCaseSource).mockResolvedValue({
+        testCaseVersionId: '31',
+        spaceId: '7',
+        sourceTaskId: '100',
+        sourceInputHash: 'frozen-input',
+        documentId: '4',
+        documentTitle: '引用规范',
+      })
+      vi.mocked(taskApi.getTaskNames).mockResolvedValue([
+        { id: '100', spaceId: '7', name: '检查引用规范' },
+      ])
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          {
+            path: '/spaces/:spaceId/evaluation/test-cases/:id',
+            component: { template: '<div />' },
+          },
+        ],
+      })
+      await router.push('/spaces/7/evaluation/test-cases/20')
+      const before = JSON.stringify(version)
+      const wrapper = mount(EvaluationCatalogView, {
+        props: { section: 'test-cases', resourceId: '20' },
+        global: { plugins: [router], stubs: { ElDialog: true } },
+      })
+      wrappers.push(wrapper)
+      await flushPromises()
+      const sections = wrapper
+        .findAll('section[aria-label]')
+        .map((item) => item.attributes('aria-label'))
+      expect(sections).toEqual(
+        expect.arrayContaining(['验证目标', '冻结来源', '预期与规则', '版本绑定']),
+      )
+      expect(sections.indexOf('验证目标')).toBeLessThan(sections.indexOf('冻结来源'))
+      expect(sections.indexOf('冻结来源')).toBeLessThan(sections.indexOf('预期与规则'))
+      expect(sections.indexOf('预期与规则')).toBeLessThan(sections.indexOf('版本绑定'))
+      expect(wrapper.html().indexOf('评估器绑定与预期')).toBeLessThan(
+        wrapper.html().indexOf('技术身份与审计信息'),
+      )
+      expect(wrapper.get('section[aria-label="冻结来源"]').text()).toContain('检查引用规范')
+      expect(wrapper.get('section[aria-label="冻结来源"]').text()).toContain('引用规范')
+      expect(wrapper.get('section[aria-label="冻结来源"]').text()).toContain('v4')
+      expect(wrapper.get('.catalog-page__case-audit').text()).toContain('frozen-input')
+      expect(wrapper.get('.catalog-page__case-audit').text()).toContain('frozen-execution')
+      expect(
+        wrapper.get<HTMLTextAreaElement>('textarea[aria-label="expectedJson"]').element.value,
+      ).toBe('{"goal":"完整引用"}')
+      if (status !== 'DRAFT')
+        expect(
+          wrapper.get('textarea[aria-label="expectedJson"]').attributes('readonly'),
+        ).toBeDefined()
+      expect(JSON.stringify(version)).toBe(before)
+      expect(api.updateTestCaseVersion).not.toHaveBeenCalled()
+      expect(api.publishTestCaseVersion).not.toHaveBeenCalled()
+    },
+  )
 })
 
 describe('paged source and binding selectors', () => {

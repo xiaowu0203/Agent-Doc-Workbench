@@ -2,6 +2,7 @@ import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ElMessageBox } from 'element-plus'
 import OnlineOriginalReviewView from '@/views/OnlineOriginalReviewView.vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS as P } from '@/shared/constants/permissions'
@@ -43,27 +44,37 @@ async function create() {
     routes: [
       {
         path: '/spaces/:spaceId/evaluation/online-experiments/:experimentId/review',
-        component: { template: '<div />' },
+        component: OnlineOriginalReviewView,
+        props: { experimentId: '10' },
       },
     ],
   })
   await router.push('/spaces/7/evaluation/online-experiments/10/review')
-  const wrapper = mount(OnlineOriginalReviewView, {
-    props: { experimentId: '10' },
-    global: { plugins: [router] },
-  })
+  const wrapper = mount(
+    { template: '<router-view />' },
+    {
+      global: { plugins: [router] },
+    },
+  )
   wrappers.push(wrapper)
   await flushPromises()
   return wrapper
 }
-async function read(wrapper: VueWrapper, target = 'TEXT') {
+async function read(wrapper: VueWrapper, target = 'TEXT', chooseRating = true) {
   await wrapper.get('[aria-label="评审分配ID"]').setValue(original.assignmentId)
   await wrapper.get('[aria-label="原始评审目标"]').setValue(target)
   await wrapper.get('form').trigger('submit')
   await flushPromises()
+  if (chooseRating && wrapper.find('[aria-label="原始质量等级"]').exists()) {
+    await wrapper.get('[aria-label="原始质量等级"]').setValue('0')
+    await wrapper.get('[aria-label="质量标签"]').setValue('NEEDS_CHANGES')
+  }
 }
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue(
+    'confirm' as Awaited<ReturnType<typeof ElMessageBox.confirm>>,
+  )
   setActivePinia(createPinia())
   useWorkspaceStore().setCurrentSpace('7')
   permissions([P.SPACE_READ, P.EVALUATION_READ, P.EVALUATION_RUN, P.TASK_READ, P.DOCUMENT_READ])
@@ -74,9 +85,157 @@ beforeEach(() => {
     pageSize: 10,
   })
   vi.mocked(api.getOnlineReviewContext).mockResolvedValue(original)
+  vi.mocked(api.searchOnlineQualityHistory).mockImplementation(
+    async (_id, _assignment, target) => ({
+      schemaVersion: 2,
+      spaceId: '7',
+      experimentId: '10',
+      assignmentId: original.assignmentId,
+      taskId: '81',
+      executionId: '82',
+      originalEvidenceType: target === 'TEXT' ? 'ORIGINAL_TEXT' : 'ORIGINAL_CHANGE_SET',
+      originalEvidenceId: target === 'TEXT' ? '83' : original.assignmentId,
+      originalEvidenceHash: hash,
+      currentTailFeedbackId: null,
+      currentTailBlindness: null,
+      lastOwnFeedback: null,
+      history: { records: [], total: 0, pageNum: 1, pageSize: 10 },
+    }),
+  )
 })
 afterEach(() => wrappers.splice(0).forEach((value) => value.unmount()))
 describe('隐藏分组原始评价', () => {
+  it('保存成功后重新核对反馈链并更新本人记录状态，不保留首评空态', async () => {
+    const emptyHistory = vi.mocked(api.searchOnlineQualityHistory).getMockImplementation()!
+    const initial = await emptyHistory('10', original.assignmentId, 'TEXT', 1)
+    const own: OnlineQualityHistoryItem = {
+      id: '9007199254740993',
+      sourceHash: hash,
+      supersedesFeedbackId: null,
+      rubricScore: 0,
+      label: 'NEEDS_CHANGES',
+      blindness: 'NON_BLINDED',
+      declaredBlindness: 'BLINDED',
+      ownFeedback: true,
+      comment: '首评理由',
+      reasonCodes: [],
+      seriousSafetyEvent: false,
+      safetyReason: null,
+      createdAt: null,
+    }
+    vi.mocked(api.searchOnlineQualityHistory)
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue({
+        ...initial,
+        currentTailFeedbackId: own.id,
+        currentTailBlindness: 'NON_BLINDED',
+        lastOwnFeedback: own,
+        history: { records: [own], total: 1, pageNum: 1, pageSize: 10 },
+      })
+    vi.mocked(api.createOnlineQuality).mockImplementation(async (payload) => ({
+      id: own.id,
+      spaceId: '7',
+      taskId: '81',
+      executionId: '82',
+      onlineQuality: {
+        ...payload.onlineQuality,
+        blindness: 'NON_BLINDED',
+        declaredBlindness: 'BLINDED',
+      },
+    }))
+    const wrapper = await create()
+    await read(wrapper)
+    expect(wrapper.text()).toContain('首评模式')
+    await wrapper.get('[aria-label="评价原因"]').setValue('首评理由')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    await button(wrapper, '确认评价').trigger('click')
+    await flushPromises()
+    expect(api.searchOnlineQualityHistory).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).not.toContain('首评模式')
+    expect(wrapper.text()).toContain(`更正模式：当次链尾 #${own.id}`)
+    expect(wrapper.text()).toContain('本人有历史评审记录')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.text()).toContain('当前评分与原因已经保存')
+    expect(api.createOnlineQuality).toHaveBeenCalledTimes(1)
+  })
+  it('自动反馈链核对失败时不能准备评分，重试成功后可继续', async () => {
+    const empty = vi.mocked(api.searchOnlineQualityHistory).getMockImplementation()!
+    vi.mocked(api.searchOnlineQualityHistory)
+      .mockRejectedValueOnce(new Error('读取失败'))
+      .mockImplementation(empty)
+    const wrapper = await create()
+    await read(wrapper)
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.text()).toContain('反馈链尚未核验')
+    expect(wrapper.find('[aria-label="原始评价确认"]').exists()).toBe(false)
+    await button(wrapper, '核对反馈链').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.find('[aria-label="原始评价确认"]').exists()).toBe(true)
+    expect(api.createOnlineQuality).not.toHaveBeenCalled()
+  })
+  it('候选仅显示本人历史记录状态，缺字段保持未知且不提前读取原始产物', async () => {
+    vi.mocked(api.searchOnlineReviewAssignments).mockResolvedValue({
+      records: [
+        { assignmentId: '11', documentId: '4', documentTitle: '文档一', ownReviewRecorded: true },
+        { assignmentId: '12', documentId: '5', ownReviewRecorded: false },
+        { assignmentId: '13', documentId: '6' },
+      ],
+      total: 3,
+      pageNum: 1,
+      pageSize: 10,
+    })
+    const wrapper = await create()
+    expect(wrapper.text()).toContain('本人有历史评审记录')
+    expect(wrapper.text()).toContain('本人尚无评审记录')
+    expect(wrapper.text()).toContain('本人记录状态未知')
+    expect(api.getOnlineReviewContext).not.toHaveBeenCalled()
+    expect(api.createOnlineQuality).not.toHaveBeenCalled()
+  })
+  it('安全预览只渲染 Markdown，不加载远程图片或执行模型 HTML', async () => {
+    vi.mocked(api.getOnlineReviewContext).mockResolvedValue({
+      ...original,
+      originalContext: {
+        ...original.originalContext,
+        originalText:
+          '# 标题\n<script>alert(1)</script>\n![图](https://invalid.example/image.png)\n[链接](javascript:alert(1))',
+      },
+    })
+    const wrapper = await create()
+    await read(wrapper, 'TEXT', false)
+    await button(wrapper, '预览 Markdown').trigger('click')
+    expect(wrapper.get('.original-markdown h1').text()).toBe('标题')
+    expect(
+      wrapper
+        .find('.original-markdown script, .original-markdown img, .original-markdown a')
+        .exists(),
+    ).toBe(false)
+    expect(wrapper.get('.original-markdown').text()).toContain('<script>')
+  })
+  it('取消离开时保留评分、目标和输入，不发出新的证据请求', async () => {
+    const wrapper = await create()
+    await read(wrapper)
+    const before = vi.mocked(api.getOnlineReviewContext).mock.calls.length
+    vi.mocked(ElMessageBox.confirm).mockRejectedValueOnce('cancel')
+    await wrapper.get('[aria-label="原始评审目标"]').setValue('CHANGE_SET')
+    await flushPromises()
+    expect(wrapper.get('[aria-label="原始评审目标"]').element).toHaveProperty('value', 'TEXT')
+    expect(wrapper.get('[aria-label="原始质量等级"]').element).toHaveProperty('value', '0')
+    expect(api.getOnlineReviewContext).toHaveBeenCalledTimes(before)
+    expect(api.createOnlineQuality).not.toHaveBeenCalled()
+  })
+  it('首评不预选零分或质量标签，未选择时不能核对提交', async () => {
+    const wrapper = await create()
+    await read(wrapper, 'TEXT', false)
+    expect((wrapper.get('[aria-label="原始质量等级"]').element as HTMLSelectElement).value).toBe('')
+    expect(wrapper.get('[aria-label="原始质量等级"]').text()).toContain('0 / 4 · 完全未达成')
+    expect(wrapper.get('[aria-label="原始质量等级"]').text()).toContain('4 / 4 · 完整达成')
+    expect(wrapper.text()).toContain('历史评分不按此说明重新解释')
+    expect((wrapper.get('[aria-label="质量标签"]').element as HTMLSelectElement).value).toBe('')
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    expect(wrapper.find('[aria-label="原始评价确认"]').exists()).toBe(false)
+    expect(api.createOnlineQuality).not.toHaveBeenCalled()
+  })
   it('响应丢失先核对本人反馈；相同评分不重复提交，明确修改后才追加当前链尾', async () => {
     vi.mocked(api.createOnlineQuality).mockRejectedValue(new Error('响应丢失'))
     const wrapper = await create()
@@ -128,6 +287,7 @@ describe('隐藏分组原始评价', () => {
     await button(wrapper, '核对反馈链').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('已核对上次评分保存成功')
+    expect(wrapper.text()).toContain('本人有历史评审记录')
     await wrapper.findAll('form')[1]!.trigger('submit')
     expect(wrapper.text()).toContain('当前评分与原因已经保存')
     expect(api.createOnlineQuality).toHaveBeenCalledTimes(1)

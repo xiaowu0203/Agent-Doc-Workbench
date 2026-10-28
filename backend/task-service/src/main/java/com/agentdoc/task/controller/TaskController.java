@@ -16,9 +16,13 @@ import com.agentdoc.task.pojo.param.TaskActivitySearchParam;
 import com.agentdoc.task.pojo.param.TaskCreateOptionsParam;
 import com.agentdoc.task.pojo.param.TaskSearchParam;
 import com.agentdoc.task.pojo.param.TaskToolCallBatchQueryParam;
+import com.agentdoc.task.pojo.param.TaskToolCallSearchParam;
+import com.agentdoc.task.pojo.vo.TaskToolCallSearchVO;
 import com.agentdoc.task.pojo.vo.TaskActivityVO;
 import com.agentdoc.task.pojo.vo.TaskCreateOptionsVO;
 import com.agentdoc.task.pojo.vo.TaskListItemVO;
+import com.agentdoc.task.pojo.vo.TaskNameVO;
+import com.agentdoc.task.pojo.param.TaskNamesSearchParam;
 import com.agentdoc.task.pojo.vo.TaskStatsVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.vo.TaskExecutionDetailVO;
@@ -73,6 +77,12 @@ public class TaskController {
     @PostMapping("/search")
     public Result<PageVO<TaskListItemVO>> search(@Valid @RequestBody TaskSearchParam param) {
         return Result.ok(taskService.search(param));
+    }
+
+    @Operation(summary = "批量读取当前空间任务名称，记录线上知情事实")
+    @PostMapping("/names-query")
+    public Result<List<TaskNameVO>> names(@Valid @RequestBody TaskNamesSearchParam request) {
+        return Result.ok(taskService.readNames(request.spaceId(), request.taskIds()));
     }
 
     @Operation(summary = "导出空间执行记录")
@@ -163,6 +173,12 @@ public class TaskController {
     public Result<PageVO<TaskToolCallVO>> toolCalls(
             @Valid @RequestBody TaskToolCallBatchQueryParam param) {
         return Result.ok(taskExecutionQueryService.toolCalls(param));
+    }
+
+    @Operation(summary = "独立分页查询空间筛选范围的工具调用")
+    @PostMapping("/tool-calls/search")
+    public Result<PageVO<TaskToolCallSearchVO>> searchToolCalls(@RequestBody TaskToolCallSearchParam param) {
+        return Result.ok(taskExecutionQueryService.searchToolCalls(param));
     }
 
     @Operation(summary = "终止任务")

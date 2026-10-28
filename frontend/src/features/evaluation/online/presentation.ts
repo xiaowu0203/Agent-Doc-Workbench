@@ -30,6 +30,30 @@ export function onlineStatus(value: string): string {
     )[value] ?? `未知状态（${value}）`
   )
 }
+
+/** 分配各阶段独立解释，不能用单个子状态推断整条任务终态。 */
+export function assignmentStatus(
+  domain: 'variant' | 'confirmation' | 'dispatch' | 'slot' | 'cancel' | 'settlement' | 'execution',
+  value: string | null,
+): string {
+  const labels: Record<typeof domain, Record<string, string>> = {
+    variant: { BASELINE: '基线组', CANDIDATE: '候选组' },
+    confirmation: { PENDING: '待确认', CONFIRMED: '已确认', REJECTED: '已拒绝' },
+    dispatch: { PENDING: '待派发', STARTED: '已开始派发', UNKNOWN: '派发未知' },
+    slot: { WAITING: '等待执行槽', ACQUIRED: '已占用执行槽', RELEASED: '执行槽已释放' },
+    cancel: { NONE: '未请求取消', REQUESTED: '已请求取消', CONFIRMED: '已确认取消' },
+    settlement: { RESERVED: '预留中', SETTLED: '已结算', UNKNOWN: '结算未知' },
+    execution: {
+      COMPLETED: '执行已完成',
+      FAILED: '执行失败',
+      CANCELED: '执行已取消',
+      TIMED_OUT: '执行超时',
+      RUNNING: '执行中',
+      UNKNOWN: '执行事实未知',
+    },
+  }
+  return value == null || value === '' ? '未知' : (labels[domain][value] ?? `未知状态（${value}）`)
+}
 export function onlineActionLabel(value: OnlineAction): string {
   return {
     start: '启动实验',

@@ -1,25 +1,48 @@
 <template>
-  <el-dialog :model-value="true" title="创建评估运行" width="640px" @close="$emit('close')">
+  <el-dialog
+    :model-value="true"
+    title="创建评估运行"
+    width="min(640px, 94vw)"
+    top="5vh"
+    body-class="evaluation-create-body"
+    :close-on-click-modal="false"
+    @close="$emit('close')"
+  >
     <form class="run-create" @submit.prevent="create">
       <label
+        >运行名称（可选）
+        <el-input
+          v-model="name"
+          aria-label="运行名称（可选）"
+          :maxlength="MAX_DISPLAY_NAME_LENGTH"
+          :disabled="busy"
+          placeholder="留空时显示来源名称"
+        />
+      </label>
+      <label
         >评估来源
-        <select v-model="kind" aria-label="评估来源" :disabled="busy" @change="clearSource">
-          <option value="datasets">数据集版本</option>
-          <option value="test-cases">单个测试用例版本</option>
-        </select>
+        <el-select v-model="kind" aria-label="评估来源" :disabled="busy" @change="clearSource">
+          <el-option label="数据集版本" value="datasets" />
+          <el-option label="单个测试用例版本" value="test-cases" />
+        </el-select>
       </label>
       <el-button :disabled="busy" @click="pickerOpen = true">选择已发布版本</el-button>
+      <p v-if="loading && !selected" role="status">正在核验带入的来源版本……</p>
+      <p v-if="sourceError && !selected" role="alert">{{ sourceError }}。请重新选择来源版本。</p>
       <DataState v-if="selected" :loading="loading" :error="sourceError" @retry="checkSource">
         <div class="run-create__source">
           <strong>{{ sourceName }} · v{{ selected.versionNo }}</strong>
-          <p>版本 #{{ selected.id }}</p>
-          <p>内容 hash：{{ selected.contentHash }}</p>
           <p>计划 {{ caseCount }} 个用例；只对数据集中启用的用例执行。</p>
+          <details>
+            <summary>冻结版本身份</summary>
+            <p>版本 #{{ selected.id }}</p>
+            <p>内容 hash：{{ selected.contentHash }}</p>
+          </details>
         </div>
       </DataState>
       <label
         >执行授权有效期（秒）
-        <input
+        <el-input
           v-model.number="ttl"
           type="number"
           aria-label="执行授权有效期（秒）"
@@ -48,19 +71,26 @@
 </template>
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog, ElMessageBox } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
 import { normalizeApiError } from '@/api/errors'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import * as api from '../api/evaluation-api'
 import type { DatasetVersion, TestCaseVersion, EvaluatorVersion, EvaluationRun } from '../types'
 import { WORKER_TTL_DEFAULT, WORKER_TTL_MIN, WORKER_TTL_MAX, validWorkerTtl } from '../run'
-const props = defineProps<{ spaceId: string; canRun: boolean }>()
+import { MAX_DISPLAY_NAME_LENGTH } from '../display'
+const props = defineProps<{
+  spaceId: string
+  canRun: boolean
+  initialKind?: string
+  initialVersionId?: string
+}>()
 const emit = defineEmits<{ close: []; created: [run: EvaluationRun] }>()
 const kind = ref<'datasets' | 'test-cases'>('datasets'),
   pickerOpen = ref(false)
 const selected = ref<DatasetVersion | TestCaseVersion | null>(null),
   sourceName = ref('')
+const name = ref('')
 const ttl = ref(WORKER_TTL_DEFAULT),
   caseCount = ref<number | null>(null)
 const loading = ref(false),
@@ -95,13 +125,14 @@ function selectSource(value: DatasetVersion | TestCaseVersion | EvaluatorVersion
   sourceName.value = name
   void checkSource()
 }
-async function verifySource(signal: AbortSignal) {
+async function verifySource(signal: AbortSignal, loadedVersion?: DatasetVersion | TestCaseVersion) {
   const selection = selected.value
   if (!selection) throw new Error('请先选择已发布版本')
   const version =
-    'datasetId' in selection
+    loadedVersion ??
+    ('datasetId' in selection
       ? await api.getDatasetVersion(selection.id, signal)
-      : await api.getTestCaseVersion(selection.id, signal)
+      : await api.getTestCaseVersion(selection.id, signal))
   if (signal.aborted) return
   if (
     String(version.id) !== String(selection.id) ||
@@ -127,8 +158,42 @@ async function verifySource(signal: AbortSignal) {
       : 1
   if (signal.aborted) return
   if (!count) throw new Error('数据集没有启用的用例，请选择另一版本')
+  sourceName.value = parent.name
   caseCount.value = count
 }
+watch(
+  () => [props.initialVersionId, props.initialKind],
+  async () => {
+    if (
+      !props.canRun ||
+      !props.initialVersionId ||
+      !/^[1-9]\d{0,18}$/.test(props.initialVersionId) ||
+      !['datasets', 'test-cases'].includes(props.initialKind || '')
+    )
+      return
+    request?.abort()
+    const pending = new AbortController()
+    request = pending
+    kind.value = props.initialKind as 'datasets' | 'test-cases'
+    loading.value = true
+    sourceError.value = ''
+    try {
+      const version =
+        kind.value === 'datasets'
+          ? await api.getDatasetVersion(props.initialVersionId, pending.signal)
+          : await api.getTestCaseVersion(props.initialVersionId, pending.signal)
+      if (pending.signal.aborted) return
+      if (String(version.id) !== props.initialVersionId) throw new Error('带入的来源版本身份不一致')
+      selected.value = version
+      await verifySource(pending.signal, version)
+    } catch (failure) {
+      if (!pending.signal.aborted) sourceError.value = normalizeApiError(failure).message
+    } finally {
+      if (!pending.signal.aborted) loading.value = false
+    }
+  },
+  { immediate: true },
+)
 async function checkSource() {
   request?.abort()
   const pending = new AbortController()
@@ -146,7 +211,7 @@ async function checkSource() {
 }
 async function create() {
   if (!ready.value || !props.canRun || busy.value) return
-  const identity = `${props.spaceId}/${kind.value}/${selected.value!.id}/${ttl.value}`
+  const identity = `${props.spaceId}/${kind.value}/${selected.value!.id}/${ttl.value}/${name.value.trim()}`
   const count = caseCount.value
   try {
     await ElMessageBox.confirm(
@@ -160,7 +225,8 @@ async function create() {
   if (
     !props.canRun ||
     !ready.value ||
-    identity !== `${props.spaceId}/${kind.value}/${selected.value?.id}/${ttl.value}`
+    identity !==
+      `${props.spaceId}/${kind.value}/${selected.value?.id}/${ttl.value}/${name.value.trim()}`
   )
     return
   request?.abort()
@@ -179,6 +245,7 @@ async function create() {
           ? { datasetVersionId: selected.value!.id }
           : { singleTestCaseVersionId: selected.value!.id }),
         workerCapabilityTtlSeconds: ttl.value,
+        ...(name.value.trim() ? { name: name.value.trim() } : {}),
       },
       pending.signal,
     )
@@ -232,5 +299,11 @@ p {
 }
 [role='alert'] {
   color: var(--adw-color-danger);
+}
+</style>
+<style>
+.evaluation-create-body {
+  max-height: 72vh;
+  overflow-y: auto;
 }
 </style>

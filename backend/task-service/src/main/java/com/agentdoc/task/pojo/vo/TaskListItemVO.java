@@ -33,5 +33,7 @@ public record TaskListItemVO(
         @Schema(description = "创建人名称") String creatorName,
         @Schema(description = "开始时间") LocalDateTime startTime,
         @Schema(description = "结束时间") LocalDateTime endTime,
-        @Schema(description = "创建时间") LocalDateTime createdAt) {
+        @Schema(description = "创建时间") LocalDateTime createdAt,
+        @Schema(description = "线上实验ID；读取前已记录知情") Long onlineExperimentId,
+        @Schema(description = "线上实验分配ID") Long onlineAssignmentId) {
 }

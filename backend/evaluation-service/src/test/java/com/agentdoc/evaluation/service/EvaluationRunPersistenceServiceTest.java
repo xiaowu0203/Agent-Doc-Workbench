@@ -50,7 +50,8 @@ class EvaluationRunPersistenceServiceTest {
     void createsAllCaseRunsAndAttemptsInBatches() {
         var service = new EvaluationRunPersistenceService(runMapper, caseRunMapper, attemptMapper, segmentService);
 
-        var draft = service.create(9L, 10L, null, 501L, List.of(31L, 32L));
+        var draft = service.create(9L, 10L, null, 501L, List.of(31L, 32L), "回归运行");
+        assertThat(draft.run().getName()).isEqualTo("回归运行");
 
         ArgumentCaptor<List<EvaluationCaseRunEntity>> caseRunCaptor =
                 ArgumentCaptor.forClass(List.class);
@@ -72,7 +73,7 @@ class EvaluationRunPersistenceServiceTest {
     @Test
     void attachesDispatchByBatchUpdates() {
         var service = new EvaluationRunPersistenceService(runMapper, caseRunMapper, attemptMapper, segmentService);
-        var draft = service.create(9L, 10L, null, 501L, List.of(31L, 32L));
+        var draft = service.create(9L, 10L, null, 501L, List.of(31L, 32L), null);
         draft.run().setId(71L);
         var segment = new com.agentdoc.evaluation.pojo.entity.EvaluationWorkerCapabilitySegmentEntity();
         segment.setId(82L);
@@ -107,7 +108,7 @@ class EvaluationRunPersistenceServiceTest {
     @Test
     void attachesExperimentDispatchOnlyToGenericExecutionTask() {
         var service = new EvaluationRunPersistenceService(runMapper, caseRunMapper, attemptMapper, segmentService);
-        var draft = service.create(9L, 10L, null, 501L, List.of(31L));
+        var draft = service.create(9L, 10L, null, 501L, List.of(31L), null);
         draft.run().setId(71L);
         draft.run().setExperimentVariantId(72L);
         draft.run().setPauseReason("RECONCILIATION_BLOCKED");

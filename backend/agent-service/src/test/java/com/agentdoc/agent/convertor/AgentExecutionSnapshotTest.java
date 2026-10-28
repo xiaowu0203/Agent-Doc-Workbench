@@ -20,6 +20,7 @@ class AgentExecutionSnapshotTest {
         second.setStatus("FAILED");
         second.setInputTokens(100L);
         second.setOutputTokens(20L);
+        second.setExecutionMode("ISOLATED");
 
         assertThat(AgentExecutionConvertor.snapshotHash(second))
                 .isEqualTo(AgentExecutionConvertor.snapshotHash(first));

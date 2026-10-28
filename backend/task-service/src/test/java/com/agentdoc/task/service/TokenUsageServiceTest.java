@@ -1,7 +1,10 @@
 package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
+import org.mockito.ArgumentCaptor;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentToolSourceCountVO;
 import com.agentdoc.common.feign.vo.AgentToolUsageStatsVO;
@@ -28,9 +31,22 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
 
 @ExtendWith(MockitoExtension.class)
 class TokenUsageServiceTest {
+    @Test void modeAndFalseOnlineFilterReachBothPeriodsTrendAndToolSummary() {
+        when(agentFeign.getToolUsageStats(any())).thenReturn(Result.ok(new AgentToolUsageStatsVO(0, List.of())));
+        var param = new TokenUsageDashboardParam(1L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), null, null, null, TaskExecutionMode.ISOLATED, false);
+        service.dashboard(param);
+        verify(detailMapper, times(2)).summarize(eq(1L), any(), any(), isNull(), isNull(), isNull(), eq("ISOLATED"), eq(false));
+        verify(detailMapper).summarizeDaily(eq(1L), any(), any(), isNull(), isNull(), isNull(), eq("ISOLATED"), eq(false));
+        var query = ArgumentCaptor.forClass(AgentToolUsageQueryDTO.class);
+        verify(agentFeign, times(2)).getToolUsageStats(query.capture());
+        assertThat(query.getAllValues()).allSatisfy(value -> { assertThat(value.executionMode()).isEqualTo(TaskExecutionMode.ISOLATED); assertThat(value.onlineParticipation()).isFalse(); });
+    }
 
     @Mock private TokenUsageDetailMapper detailMapper;
     @Mock private TaskMapper taskMapper;
@@ -57,9 +73,9 @@ class TokenUsageServiceTest {
         TokenUsageStatisticsRow previous = new TokenUsageStatisticsRow(
                 1L, 50L, 50L, new BigDecimal("0.200000"), 1L,
                 0L, 0L, 0L, 0L, 0L);
-        when(detailMapper.summarize(anyLong(), any(), any(), isNull(), isNull(), isNull()))
+        when(detailMapper.summarize(anyLong(), any(), any(), isNull(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(current, previous);
-        when(detailMapper.summarizeDaily(anyLong(), any(), any(), isNull(), isNull(), isNull()))
+        when(detailMapper.summarizeDaily(anyLong(), any(), any(), isNull(), isNull(), isNull(), isNull(), isNull()))
                 .thenReturn(List.of(new TokenUsageDailyRow(
                         LocalDate.of(2026, 9, 2), 2L, 120L, 80L,
                         new BigDecimal("0.500000"), 0L, 0L, 0L, 1L, 0L)));
@@ -70,7 +86,7 @@ class TokenUsageServiceTest {
 
         TokenUsageDashboardVO result = service.dashboard(new TokenUsageDashboardParam(
                 1L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2),
-                null, null, null));
+                null, null, null, null, null));
 
         assertThat(result.summary().tokens()).isEqualTo(200L);
         assertThat(result.summary().toolCalls()).isEqualTo(3L);

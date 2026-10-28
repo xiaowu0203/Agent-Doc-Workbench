@@ -19,6 +19,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -59,6 +60,10 @@ class AgentTelemetryTest {
         verify(spanBuilder).setAttribute("agentdoc.model.call.sequence", 2L);
         verify(spanBuilder).setAttribute("agentdoc.model.stream", false);
         verify(spanBuilder).setAttribute("agentdoc.runtime.type", "CUSTOM");
+        verify(spanBuilder).setAttribute("agentdoc.code.class", AgentTelemetryTest.class.getName().replace('.', '/'));
+        verify(spanBuilder).setAttribute("agentdoc.code.method", "recordsApprovedModelAttributesAndActualUsage");
+        verify(spanBuilder).setAttribute("agentdoc.code.file", "AgentTelemetryTest.java");
+        verify(spanBuilder).setAttribute(eq("agentdoc.code.line"), anyLong());
         verify(spanBuilder).setAttribute("execution.id", 91L);
         verify(span).setAttribute("gen_ai.usage.input_tokens", 12L);
         verify(span).setAttribute("gen_ai.usage.output_tokens", 7L);

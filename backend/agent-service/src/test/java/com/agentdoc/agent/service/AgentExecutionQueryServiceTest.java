@@ -1,5 +1,15 @@
 package com.agentdoc.agent.service;
 import com.agentdoc.common.feign.OnlineEvaluationFeign;
+import com.agentdoc.common.api.Result;
+import com.agentdoc.common.enums.TaskExecutionMode;
+import com.agentdoc.common.feign.dto.AgentToolCallSearchDTO;
+import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
+import com.agentdoc.common.utils.AuthUtils;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.mapper.AgentExecutionModelCallMapper;
@@ -18,12 +28,14 @@ import java.util.List;
 import java.util.Map;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class AgentExecutionQueryServiceTest {
 
@@ -31,8 +43,46 @@ class AgentExecutionQueryServiceTest {
     private final AgentExecutionModelCallMapper modelCallMapper = mock(AgentExecutionModelCallMapper.class);
     private final AgentExecutionToolCallMapper toolCallMapper = mock(AgentExecutionToolCallMapper.class);
     private final SpaceAccessService spaceAccessService = mock(SpaceAccessService.class);
+    private final OnlineEvaluationFeign online = mock(OnlineEvaluationFeign.class);
     private final AgentExecutionQueryService service = new AgentExecutionQueryService(
-            executionMapper, modelCallMapper, toolCallMapper, spaceAccessService, mock(OnlineEvaluationFeign.class));
+            executionMapper, modelCallMapper, toolCallMapper, spaceAccessService, online);
+
+    @BeforeAll static void metadata() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "tool-query"), AgentExecutionEntity.class);
+    }
+
+    private AgentToolCallSearchDTO searchRequest(int size) {
+        return new AgentToolCallSearchDTO(new AgentToolUsageQueryDTO(7L, LocalDateTime.of(2026, 10, 1, 0, 0),
+                LocalDateTime.of(2026, 10, 2, 0, 0), null, null, null, TaskExecutionMode.ISOLATED, false), 2, size);
+    }
+
+    @Test void independentToolPageReadsOnlyReturnedExecutionIdentitiesAndRecordsExposureBeforeReturning() {
+        try (var auth = mockStatic(AuthUtils.class)) {
+            auth.when(AuthUtils::getUserId).thenReturn(502L);
+            var call = new AgentExecutionToolCallEntity(); call.setExecutionId(3L); call.setToolName("document_read");
+            var execution = execution(); execution.setOnlineExperimentId(91L);
+            when(toolCallMapper.search(any(Page.class), any())).thenReturn(new Page<AgentExecutionToolCallEntity>(2, 10).setRecords(List.of(call)).setTotal(31));
+            when(executionMapper.selectList(any())).thenReturn(List.of(execution));
+            when(online.recordReviewExposure(any())).thenReturn(Result.ok());
+            var result = service.searchToolCalls(searchRequest(10));
+            assertThat(result.total()).isEqualTo(31); assertThat(result.records().getFirst().workbenchTaskId()).isEqualTo(11L);
+            var order = inOrder(spaceAccessService, toolCallMapper, executionMapper, online);
+            order.verify(spaceAccessService).requirePermission(7L, USAGE_READ); order.verify(spaceAccessService).requirePermission(7L, TASK_READ);
+            order.verify(toolCallMapper).search(any(Page.class), eq(searchRequest(10).query()));
+            order.verify(executionMapper).selectList(any()); order.verify(online).recordReviewExposure(any());
+            verifyNoInteractions(modelCallMapper);
+            when(online.recordReviewExposure(any())).thenReturn(Result.fail(ErrorCode.CONFLICT, "知情失败"));
+            assertThatThrownBy(() -> service.searchToolCalls(searchRequest(10))).isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Test void invalidOrDeniedToolQueryCannotLoadRows() {
+        assertThatThrownBy(() -> service.searchToolCalls(searchRequest(101))).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(toolCallMapper, executionMapper);
+        doThrow(new BusinessException(403, "撤权")).when(spaceAccessService).requirePermission(7L, TASK_READ);
+        assertThatThrownBy(() -> service.searchToolCalls(searchRequest(10))).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(toolCallMapper, executionMapper);
+    }
 
     @Test
     void returnsNullBeforeAgentExecutionIsCreated() {

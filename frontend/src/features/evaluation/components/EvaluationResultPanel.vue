@@ -1,7 +1,10 @@
 <template>
   <section class="result-detail" aria-label="评估结果详情">
     <header>
-      <h4>Result #{{ summary.id }}</h4>
+      <h4>{{ summary.evaluatorName || '评估器名称不可用' }} · 评价结果</h4>
+      <p>
+        评价结果 #{{ summary.id }} <CopyButton :value="String(summary.id)" label="评价结果 ID" />
+      </p>
       <EvaluationStatusTag domain="result" :status="summary.status" />
       <p>
         评价尝试 {{ summary.evaluationAttemptNo }}
@@ -23,9 +26,12 @@
           <dt>便捷得分</dt>
           <dd>{{ detail.score ?? '未提供' }}（不替代标准 Metric）</dd>
           <dt>评估时间</dt>
-          <dd>{{ detail.startedAt || '不可用' }} ～ {{ detail.finishedAt || '不可用' }}</dd>
+          <dd>
+            <BusinessTime :value="detail.startedAt" empty-text="不可用" /> ～
+            <BusinessTime :value="detail.finishedAt" empty-text="不可用" />
+          </dd>
         </dl>
-        <h4>标准 Metric</h4>
+        <h4>标准指标</h4>
         <p v-if="!detail.metrics.length">
           缺失：此结果没有标准指标。异常、跳过和证据缺失不计为 0。
         </p>
@@ -34,7 +40,7 @@
             <thead>
               <tr>
                 <th>指标 / 身份</th>
-                <th>原值</th>
+                <th>数值（悬停查看原值）</th>
                 <th>来源 / 方向</th>
                 <th>证据引用</th>
               </tr>
@@ -42,8 +48,24 @@
             <tbody>
               <tr v-for="metric in detail.metrics" :key="String(metric.id)">
                 <td>
-                  {{ metric.metricKey
-                  }}<small>#{{ metric.id }} · 契约 {{ metric.contractVersion ?? '不可用' }}</small>
+                  {{ metricLabel(metric.metricKey) }}
+                  <details>
+                    <summary>指标身份与原值</summary>
+                    <small
+                      >{{ metric.metricKey }}
+                      <CopyButton :value="metric.metricKey" label="指标 key"
+                    /></small>
+                    <small
+                      >指标 #{{ metric.id }} <CopyButton :value="String(metric.id)" label="指标 ID"
+                    /></small>
+                    <small>契约 {{ metric.contractVersion ?? '不可用' }}</small>
+                    <small
+                      >原值：{{
+                        metric.numericValue ?? metric.booleanValue ?? metric.stringValue ?? '未提供'
+                      }}
+                      {{ metric.unit || '' }}</small
+                    >
+                  </details>
                 </td>
                 <td>
                   <EvaluationMetricValue
@@ -61,8 +83,12 @@
                   />
                 </td>
                 <td>
-                  {{ metric.source || '不可用'
-                  }}<small>{{ metric.direction || '未提供方向' }}</small>
+                  <span :title="metric.source || ''">{{
+                    metricSources[metric.source || ''] || metric.source || '不可用'
+                  }}</span>
+                  <small :title="metric.direction || ''">{{
+                    metricDirections[metric.direction || ''] || metric.direction || '未提供方向'
+                  }}</small>
                 </td>
                 <td>
                   <span v-if="!metric.evidence.length">缺失：没有证据引用</span
@@ -77,7 +103,7 @@
             </tbody>
           </table>
         </div>
-        <h4>Evidence（{{ detail.evidence.length }} 条引用）</h4>
+        <h4>证据（{{ detail.evidence.length }} 条引用）</h4>
         <p v-if="!detail.evidence.length">证据缺失，无法据此认定质量通过。</p>
         <article
           v-for="reference in detail.evidence"
@@ -122,14 +148,23 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
+import { metricLabel } from '../display'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { normalizeApiError } from '@/api/errors'
 import { getEvaluationResult } from '../api/evaluation-api'
 import type { EvaluationResultDetail, EvaluationResultSummary } from '../types'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
 import EvaluationMetricValue from './EvaluationMetricValue.vue'
+const metricSources: Record<string, string> = { EVALUATOR: '评估器', EXECUTION: '执行事实' }
+const metricDirections: Record<string, string> = {
+  HIGHER_IS_BETTER: '越高越好',
+  LOWER_IS_BETTER: '越低越好',
+  NEUTRAL: '中性指标',
+}
 const props = defineProps<{
   spaceId: string
   runId: string
@@ -139,13 +174,18 @@ const props = defineProps<{
   taskId: string | null
   canReadTask: boolean
   revision: number
+  returnPath?: string
 }>()
+const emit = defineEmits<{ settled: [] }>()
 const detail = ref<EvaluationResultDetail | null>(null),
   loading = ref(false),
   error = ref('')
 let request: AbortController | undefined
 function taskPath(type: string) {
-  return `/spaces/${props.spaceId}/tasks/${props.taskId}?tab=${type === 'TRACE' ? 'audit' : type === 'EXECUTION_ARTIFACT' ? 'artifacts' : 'evidence'}`
+  return {
+    path: `/spaces/${props.spaceId}/tasks/${props.taskId}`,
+    query: { tab: type === 'TRACE' ? 'trace' : 'evidence', evaluationReturn: props.returnPath },
+  }
 }
 async function load() {
   request?.abort()
@@ -192,7 +232,10 @@ async function load() {
   } catch (e) {
     if (!pending.signal.aborted) error.value = normalizeApiError(e).message
   } finally {
-    if (!pending.signal.aborted) loading.value = false
+    if (!pending.signal.aborted) {
+      loading.value = false
+      emit('settled')
+    }
   }
 }
 watch(

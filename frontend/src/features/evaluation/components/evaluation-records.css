@@ -1,0 +1,123 @@
+/* 列表以名称为主线，元数据分组展示；详情页不受这些样式影响。 */
+.evaluation-filter.evaluation-filter.evaluation-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px 18px;
+  padding: 16px 18px;
+  border: 1px solid #e6edf5;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.run-filters.evaluation-filter.evaluation-filter,
+.experiment > .evaluation-filter.evaluation-filter {
+  display: flex;
+  justify-content: flex-start;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.run-filters.evaluation-filter > label,
+.experiment > .evaluation-filter > label { flex: 0 1 130px; }
+.run-filters.evaluation-filter > .evaluation-filter__date,
+.experiment > .evaluation-filter > .evaluation-filter__date { flex: 0 1 250px; min-width: min(220px, 100%); }
+.run-filters.evaluation-filter > .source-filter,
+.experiment > .evaluation-filter > .source-filter { flex: 0 1 270px; }
+.evaluation-filter.evaluation-filter label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  margin: 0;
+  color: #66758b;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.evaluation-filter.evaluation-filter .el-date-editor { width: 100%; }
+.evaluation-filter.evaluation-filter .el-select { width: 100%; }
+.evaluation-filter__date { min-width: 0; }
+.evaluation-filter .source-filter { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; min-width: 0; }
+.evaluation-filter .source-filter > .el-button { justify-self: start; margin: 0; }
+.evaluation-filter .source-filter small { grid-column: 1 / -1; color: #66758b; overflow-wrap: anywhere; }
+.run-filters .source-filter { grid-column: 1 / -1; }
+.evaluation-filter__actions { display: flex; align-items: center; }
+.evaluation-filter--compact.evaluation-filter.evaluation-filter.evaluation-filter { grid-template-columns: minmax(160px, 220px) auto; justify-content: start; }
+.evaluation-record__title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.evaluation-record__title,
+.evaluation-record-table.evaluation-record-table .evaluation-record-table__primary > a {
+  color: #172d4c;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.5;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.evaluation-record__title { display: -webkit-box; min-width: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.evaluation-record__title:hover,
+.evaluation-record-table.evaluation-record-table .evaluation-record-table__primary > a:hover { color: #245bd6; }
+.evaluation-record-table p.evaluation-record__description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin: 6px 0 0;
+  color: #66758b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.evaluation-record-table p.evaluation-record__identity { margin: 8px 0 0; color: #8794a5; font-size: 12px; overflow-wrap: anywhere; }
+.evaluation-record__action { color: #245bd6; font-size: 13px; white-space: nowrap; text-decoration: none; }
+.evaluation-record__action span { margin-left: 4px; font-size: 18px; }
+.evaluation-record__status { display: inline-block; padding: 2px 8px; border-radius: 5px; color: #52647b; background: #eef2f6; font-size: 12px; font-weight: 600; }
+.evaluation-record__status[data-status='ACTIVE'] { color: #217653; background: #e7f6ed; }
+.evaluation-record__status[data-status='PAUSED'],
+.evaluation-record__status[data-status='STOPPING'] { color: #966000; background: #fff4d9; }
+
+/* Match the task list's table header, row dividers and hover treatment. */
+.evaluation-record-table-wrap { max-width: 100%; overflow-x: auto; }
+.evaluation-record-table.evaluation-record-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  text-align: left;
+  font-size: 14px;
+}
+.evaluation-record-table.evaluation-record-table th,
+.evaluation-record-table.evaluation-record-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--adw-border-color-light);
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.evaluation-record-table.evaluation-record-table th {
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-light);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.evaluation-record-table.evaluation-record-table tbody tr:hover {
+  background: var(--el-table-row-hover-bg-color, var(--el-fill-color-light));
+}
+.evaluation-record-table.evaluation-record-table td p,
+.evaluation-record-table.evaluation-record-table td small {
+  display: block;
+  margin: 5px 0 0;
+  color: var(--adw-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.evaluation-record-table.evaluation-record-table .evaluation-record-table__primary > a {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.evaluation-record-table.evaluation-record-table th:first-child { width: 32%; }
+.evaluation-record-table--online.evaluation-record-table { min-width: 760px; }
+@container (max-width: 520px) {
+  .evaluation-filter.evaluation-filter.evaluation-filter { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .evaluation-filter--compact.evaluation-filter.evaluation-filter.evaluation-filter { grid-template-columns: minmax(0, 1fr) auto; }
+}

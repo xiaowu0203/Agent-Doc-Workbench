@@ -159,6 +159,15 @@
         <if test="taskStatus != null">
             AND t.status = #{taskStatus}
         </if>
+        <if test="executionMode != null">
+            AND t.execution_mode = #{executionMode}
+        </if>
+        <if test="onlineParticipation != null">
+            <choose>
+                <when test="onlineParticipation">AND t.online_experiment_id IS NOT NULL</when>
+                <otherwise>AND t.online_experiment_id IS NULL</otherwise>
+            </choose>
+        </if>
     </sql>
 
     <select id="summarize" resultType="com.agentdoc.task.pojo.vo.TokenUsageStatisticsRow">
@@ -173,7 +182,7 @@
                COALESCE(SUM(CASE WHEN d.input_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedInputCount,
                COALESCE(SUM(CASE WHEN d.output_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedOutputCount
         FROM token_usage_detail d
-        JOIN task t ON t.id = d.task_id
+        JOIN task t ON t.id = d.task_id AND t.space_id = d.space_id
         WHERE <include refid="dashboardFilters" />
     </select>
 
@@ -189,7 +198,7 @@
                COALESCE(SUM(CASE WHEN d.input_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedInputCount,
                COALESCE(SUM(CASE WHEN d.output_tokens_estimated = 1 THEN 1 ELSE 0 END), 0) AS estimatedOutputCount
         FROM token_usage_detail d
-        JOIN task t ON t.id = d.task_id
+        JOIN task t ON t.id = d.task_id AND t.space_id = d.space_id
         WHERE <include refid="dashboardFilters" />
         GROUP BY DATE(d.call_time)
         ORDER BY DATE(d.call_time)

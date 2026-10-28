@@ -132,6 +132,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import {
   ElButton,
   ElDialog,
@@ -183,7 +184,7 @@ const markdownRenderer = new MarkdownIt({
 }).enable('table')
 
 function formatTime(value: string | null | undefined) {
-  return value ? new Date(value).toLocaleString('zh-CN') : '—'
+  return formatBusinessTime(value, '—')
 }
 
 function renderMarkdown(markdown: string): string {

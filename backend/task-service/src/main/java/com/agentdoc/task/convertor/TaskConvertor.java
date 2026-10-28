@@ -30,7 +30,8 @@ public final class TaskConvertor {
                 TaskStatus.fromCode(task.getStatus()), task.getAgentId(), agent == null ? null : agent.name(),
                 task.getDocumentId(), document == null ? null : document.title(),
                 DocType.fromCode(task.getDocumentType()), task.getTokenBudget(), task.getTokensUsed(),
-                task.getCreatedBy(), displayName(creator), task.getStartTime(), task.getEndTime(), task.getCreatedAt());
+                task.getCreatedBy(), displayName(creator), task.getStartTime(), task.getEndTime(), task.getCreatedAt(),
+                task.getOnlineExperimentId(), task.getOnlineAssignmentId());
     }
 
     private static String displayName(UserRefVO user) {

@@ -2,9 +2,101 @@
   <section aria-label="线上报告与结论" class="report-panel">
     <h3>线上报告 · 固定版本</h3>
     <p>{{ ONLINE_DESCRIPTIVE_NOTICE }}</p>
+    <section v-if="experiment.decision" aria-label="既有人工结论">
+      <p>
+        已记录人工结论：{{ evaluationStatus('decision', experiment.decision).label }}。 依据报告
+        {{
+          experiment.decisionReportRevision == null
+            ? '版本未知'
+            : `v${experiment.decisionReportRevision}`
+        }}；当前报告不改变既有结论及其依据。
+      </p>
+      <el-button
+        v-if="experiment.decisionReportRevision != null"
+        :disabled="busy || !readable"
+        @click="readDecisionReport"
+        >查看结论依据报告</el-button
+      >
+      <p
+        v-if="
+          report &&
+          experiment.decisionReportRevision != null &&
+          report.revision !== experiment.decisionReportRevision
+        "
+      >
+        当前查看 v{{ report.revision }}，与既有决定依据 v{{ experiment.decisionReportRevision }}
+        不同；当前版本不会替换决定依据。
+      </p>
+      <p
+        v-else-if="
+          report &&
+          experiment.decisionReportHash &&
+          report.reportHash !== experiment.decisionReportHash
+        "
+        role="alert"
+      >
+        当前报告摘要与决定依据不一致，请核对原始依据。
+      </p>
+      <details>
+        <summary>决定依据摘要</summary>
+        <p>{{ experiment.decisionReportHash || '历史决定未提供报告摘要，不能推测其身份。' }}</p>
+      </details>
+    </section>
+    <div class="revision-index" aria-label="报告版本记录">
+      <div class="row">
+        <label
+          >历史报告<select
+            aria-label="选择历史报告"
+            :value="revision"
+            :disabled="indexBusy || busy || !readable || !revisions.length"
+            @change="selectRevision"
+          >
+            <option v-if="!revisions.some((item) => item.revision === revision)" :value="revision">
+              {{
+                requestedRevision === undefined && !report
+                  ? '请选择已生成版本'
+                  : `指定版本 v${revision}（不在本页）`
+              }}
+            </option>
+            <option v-for="item in revisions" :key="item.revision" :value="item.revision">
+              v{{ item.revision }} · {{ formatBusinessTime(item.generatedAt, '生成时间未知')
+              }}{{ item.decisionReference ? ' · 已被人工结论引用' : '' }}
+            </option>
+          </select></label
+        >
+        <el-button :disabled="indexBusy || busy || !readable" @click="loadRevisions(1)"
+          >刷新版本记录</el-button
+        >
+      </div>
+      <p v-if="indexBusy" role="status">正在读取版本记录……</p>
+      <p v-else-if="indexError" role="alert">
+        版本记录读取失败：{{ indexError }}。可重试或按已知版本读取。
+      </p>
+      <p v-else-if="!revisionTotal">尚无已冻结报告。</p>
+      <p v-if="selectedMetadata" class="report-hint">
+        v{{ selectedMetadata.revision }} · 观察截止
+        <BusinessTime
+          :value="selectedMetadata.observationCutoffAt"
+          empty-text="未知"
+        />。版本记录只展示元数据，核验结果以读取报告后为准。
+      </p>
+      <div v-if="revisionTotal > 10" class="row">
+        <el-button
+          :disabled="indexBusy || revisionPage <= 1"
+          @click="loadRevisions(revisionPage - 1)"
+          >较新版本</el-button
+        >
+        <span>第 {{ revisionPage }} 页 / 共 {{ revisionTotal }} 个版本</span>
+        <el-button
+          :disabled="indexBusy || revisionPage * 10 >= revisionTotal"
+          @click="loadRevisions(revisionPage + 1)"
+          >较旧版本</el-button
+        >
+      </div>
+    </div>
     <form class="row" @submit.prevent="load(false)">
       <label
-        >报告 revision<input
+        >冻结报告版本<el-input
           v-model.number="revision"
           aria-label="线上报告版本"
           type="number"
@@ -17,15 +109,20 @@
       >
     </form>
     <p>概要读取核验报告正文；人工决定还需完整输入核验。新反馈不会改写已冻结的旧版本。</p>
+    <p class="report-hint">
+      首次打开时读取版本记录中的最新报告；链接已指定版本时保留该版本。当前运行状态与冻结报告的观察时间可能不同。
+    </p>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="busy" role="status">正在处理报告……</p>
     <p v-if="report && !payload" role="alert">
       报告不可用：{{ report.state }}。协议或身份不兼容，正文和决定入口关闭。
     </p>
     <template v-if="payload && report">
-      <p>
-        revision {{ report.revision }} · {{ report.state }} · 分配截止序号
-        {{ payload.assignmentCutoffSequence }} · 观察截止 {{ payload.observationCutoffAt }}
+      <p class="report-identity">
+        冻结报告 v{{ report.revision }} ·
+        {{ report.state === 'SUPPORTED' ? '完整核验通过' : '概要核验通过' }} · 分配截止序号
+        {{ payload.assignmentCutoffSequence }} · 观察截止
+        <BusinessTime :value="payload.observationCutoffAt" />
       </p>
       <p role="status">
         {{
@@ -36,9 +133,135 @@
       </p>
       <ul>
         <li v-for="code in payload.decisionEligibility.reasonCodes" :key="code">
-          {{ onlineIssue(code) }}
+          {{ reportIssue(code) }}
         </li>
       </ul>
+      <section aria-label="冻结报告门槛对照">
+        <h4>样本与覆盖门槛</h4>
+        <p>
+          当前值与门槛均来自此版冻结报告；未提供门槛时显示未知。达到样本门槛不改变工程验证模式。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>检查项</th>
+                <th>基线</th>
+                <th>候选</th>
+                <th>冻结门槛</th>
+                <th>报告说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="gate in coverageGates" :key="gate.key">
+                <th>{{ gate.label }}</th>
+                <td v-for="group in groups" :key="group">
+                  {{ formatMetricNumber(payload.groups[group][gate.key], gate.unit) }}
+                </td>
+                <td>{{ gate.requirement }}</td>
+                <td>{{ gate.reason }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="report-summary" aria-label="质量成本与耗时概览">
+        <h4>质量、成本与耗时</h4>
+        <p>以每文档首个接受任务为单位，缺失不填零；延迟差不能直接归因为 Prompt。</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>指标</th>
+                <th>基线</th>
+                <th>候选</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th>独立参与文档</th>
+                <td v-for="group in groups" :key="group">
+                  {{ formatMetricNumber(payload.groups[group].participatingDocumentCount) }}
+                </td>
+              </tr>
+              <tr>
+                <th>主规则通过 / 有效文档</th>
+                <td
+                  v-for="group in groups"
+                  :key="group"
+                  :title="onlineReportFact(payload.groups[group].primaryValidRatio)"
+                >
+                  {{ formatMetricNumber(payload.groups[group].primaryValidRatio, 'ratio') }}
+                </td>
+              </tr>
+              <tr>
+                <th>平均执行耗时</th>
+                <td
+                  v-for="group in groups"
+                  :key="group"
+                  :title="
+                    onlineReportFact(
+                      reportObject(payload.groups[group].firstAssignmentResource)
+                        .executionLatencyMeanMillis,
+                    )
+                  "
+                >
+                  {{
+                    formatMetricNumber(
+                      reportObject(payload.groups[group].firstAssignmentResource)
+                        .executionLatencyMeanMillis,
+                      'millisecond',
+                    )
+                  }}
+                  <small
+                    >覆盖
+                    {{
+                      formatMetricNumber(
+                        reportObject(payload.groups[group].firstAssignmentResource)
+                          .executionLatencyCoverage,
+                        'ratio',
+                      )
+                    }}</small
+                  >
+                </td>
+              </tr>
+              <tr>
+                <th>平均费用（分币种）</th>
+                <td v-for="group in groups" :key="group">
+                  <span
+                    v-for="(value, currency) in reportObject(
+                      reportObject(payload.groups[group].firstAssignmentResource)
+                        .meanCostByCurrency,
+                    )"
+                    :key="currency"
+                    :title="onlineReportFact(value)"
+                    >{{ formatMetricNumber(value, String(currency)) }}；</span
+                  ><span
+                    v-if="
+                      !Object.keys(
+                        reportObject(
+                          reportObject(payload.groups[group].firstAssignmentResource)
+                            .meanCostByCurrency,
+                        ),
+                      ).length
+                    "
+                    >未知</span
+                  >
+                  <small
+                    >账本覆盖
+                    {{
+                      formatMetricNumber(
+                        reportObject(payload.groups[group].firstAssignmentResource).ledgerCoverage,
+                        'ratio',
+                      )
+                    }}</small
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
       <div class="table-wrap">
         <table>
           <thead>
@@ -51,22 +274,28 @@
           <tbody>
             <tr v-for="row in primaryRows" :key="row[0]">
               <th>{{ row[1] }}</th>
-              <td v-for="group in groups" :key="group">
-                {{ onlineReportFact(payload.groups[group][row[0]]) }}
+              <td
+                v-for="group in groups"
+                :key="group"
+                :title="onlineReportFact(payload.groups[group][row[0]])"
+              >
+                {{ displayFact(payload.groups[group][row[0]], row[0]) }}
               </td>
             </tr>
             <tr>
               <th>有效比例区间 · 描述性不确定性</th>
               <td v-for="group in groups" :key="group">
                 {{
-                  onlineReportFact(
+                  formatMetricNumber(
                     reportObject(payload.groups[group].primaryConfidenceInterval).lower,
+                    'ratio',
                   )
                 }}
                 ～
                 {{
-                  onlineReportFact(
+                  formatMetricNumber(
                     reportObject(payload.groups[group].primaryConfidenceInterval).upper,
+                    'ratio',
                   )
                 }}
               </td>
@@ -76,127 +305,157 @@
       </div>
       <p>
         候选减基线有效比例：{{
-          onlineReportFact(payload.primaryDifference?.candidateMinusBaselineRatio)
+          formatMetricNumber(
+            payload.primaryDifference?.candidateMinusBaselineRatio,
+            'percentage-point',
+          )
         }}；预注册最小有价值差：{{
-          onlineReportFact(payload.primaryDifference?.mdeAbsoluteRatio)
+          formatMetricNumber(payload.primaryDifference?.mdeAbsoluteRatio, 'percentage-point')
         }}。{{ payload.analysisPlan?.mdeReason }}
       </p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>原始人工质量 · 与审批分开</th>
-              <th>基线</th>
-              <th>候选</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in qualityRows" :key="row[0]">
-              <th>{{ row[1] }}</th>
-              <td v-for="group in groups" :key="group">
-                {{ onlineReportFact(payload.groups[group][row[0]]) }}
-              </td>
-            </tr>
-            <tr v-for="stratum in blindnessGroups" :key="stratum">
-              <th>{{ stratum }} · 平均等级 / 有效文档数</th>
-              <td v-for="group in groups" :key="group">
-                {{ onlineReportFact(quality(group, stratum).meanRubricScore) }} /
-                {{ onlineReportFact(quality(group, stratum).documentCount) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>审批过程 · 最新已验证导入事实</th>
-              <th>基线</th>
-              <th>候选</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in approvalRows" :key="row[0]">
-              <th>{{ row[1] }}</th>
-              <td v-for="group in groups" :key="group">
-                {{ onlineReportFact(payload.approvalFeedback?.groups?.[group]?.[row[0]]) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p>尚未导入可能表示待审批或没有适用提案；不等于拒绝，也不覆盖原始质量评分。</p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>全部 Task 辅助分析 · 重复任务不增加独立样本</th>
-              <th>基线</th>
-              <th>候选</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in taskRows" :key="row[0]">
-              <th>{{ row[1] }}</th>
-              <td v-for="group in groups" :key="group">
-                {{ onlineReportFact(payload.groups[group][row[0]]) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>首 Task 资源 · 缺失不填零</th>
-              <th>基线</th>
-              <th>候选</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in resourceRows" :key="row[0]">
-              <th>{{ row[1] }}</th>
-              <td v-for="group in groups" :key="group">
-                {{
-                  onlineReportFact(
-                    reportObject(payload.groups[group].firstAssignmentResource)[row[0]],
-                  )
-                }}
-              </td>
-            </tr>
-            <tr>
-              <th>首 Task 平均费用 · 按币种分别展示</th>
-              <td v-for="group in groups" :key="group">
-                <span
-                  v-for="(value, currency) in reportObject(
-                    reportObject(payload.groups[group].firstAssignmentResource).meanCostByCurrency,
-                  )"
-                  :key="currency"
-                  >{{ currency }} {{ onlineReportFact(value) }}；</span
-                ><span
-                  v-if="
-                    !Object.keys(
-                      reportObject(
-                        reportObject(payload.groups[group].firstAssignmentResource)
-                          .meanCostByCurrency,
-                      ),
-                    ).length
-                  "
-                  >未知</span
+      <details class="report-details">
+        <summary>原始人工质量与盲态覆盖</summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>原始人工质量 · 与审批分开</th>
+                <th>基线</th>
+                <th>候选</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in qualityRows" :key="row[0]">
+                <th>{{ row[1] }}</th>
+                <td
+                  v-for="group in groups"
+                  :key="group"
+                  :title="onlineReportFact(payload.groups[group][row[0]])"
                 >
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p>
-        全部 Task 费用：<span v-for="(value, currency) in payload.budgetByCurrency" :key="currency"
-          >{{ currency }} {{ value }}；</span
-        ><span v-if="!Object.keys(payload.budgetByCurrency || {}).length">未知</span
-        >。不同币种不相加；延迟差不能归因为 Prompt。
-      </p>
+                  {{ displayFact(payload.groups[group][row[0]], row[0]) }}
+                </td>
+              </tr>
+              <tr v-for="stratum in blindnessGroups" :key="stratum">
+                <th>{{ stratum }} · 平均等级 / 有效文档数</th>
+                <td
+                  v-for="group in groups"
+                  :key="group"
+                  :title="onlineReportFact(quality(group, stratum).meanRubricScore)"
+                >
+                  {{ formatMetricNumber(quality(group, stratum).meanRubricScore) }} /
+                  {{ formatMetricNumber(quality(group, stratum).documentCount) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <details class="report-details">
+        <summary>审批过程与人工修改</summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>审批过程 · 最新已验证导入事实</th>
+                <th>基线</th>
+                <th>候选</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in approvalRows" :key="row[0]">
+                <th>{{ row[1] }}</th>
+                <td
+                  v-for="group in groups"
+                  :key="group"
+                  :title="onlineReportFact(payload.approvalFeedback?.groups?.[group]?.[row[0]])"
+                >
+                  {{ displayFact(payload.approvalFeedback?.groups?.[group]?.[row[0]], row[0]) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>尚未导入可能表示待审批或没有适用提案；不等于拒绝，也不覆盖原始质量评分。</p>
+      </details>
+      <details class="report-details">
+        <summary>全部任务与资源明细</summary>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>全部 Task 辅助分析 · 重复任务不增加独立样本</th>
+                <th>基线</th>
+                <th>候选</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in taskRows" :key="row[0]">
+                <th>{{ row[1] }}</th>
+                <td v-for="group in groups" :key="group">
+                  {{ onlineReportFact(payload.groups[group][row[0]]) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>首 Task 资源 · 缺失不填零</th>
+                <th>基线</th>
+                <th>候选</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in resourceRows" :key="row[0]">
+                <th>{{ row[1] }}</th>
+                <td v-for="group in groups" :key="group">
+                  {{
+                    displayFact(
+                      reportObject(payload.groups[group].firstAssignmentResource)[row[0]],
+                      row[0],
+                    )
+                  }}
+                </td>
+              </tr>
+              <tr>
+                <th>首 Task 平均费用 · 按币种分别展示</th>
+                <td v-for="group in groups" :key="group">
+                  <span
+                    v-for="(value, currency) in reportObject(
+                      reportObject(payload.groups[group].firstAssignmentResource)
+                        .meanCostByCurrency,
+                    )"
+                    :key="currency"
+                    :title="onlineReportFact(value)"
+                    >{{ formatMetricNumber(value, String(currency)) }}；</span
+                  ><span
+                    v-if="
+                      !Object.keys(
+                        reportObject(
+                          reportObject(payload.groups[group].firstAssignmentResource)
+                            .meanCostByCurrency,
+                        ),
+                      ).length
+                    "
+                    >未知</span
+                  >
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          全部 Task 费用：<span
+            v-for="(value, currency) in payload.budgetByCurrency"
+            :key="currency"
+            :title="String(value)"
+            >{{ formatMetricNumber(value, currency) }}；</span
+          ><span v-if="!Object.keys(payload.budgetByCurrency || {}).length">未知</span
+          >。不同币种不相加；延迟差不能归因为 Prompt。
+        </p>
+      </details>
       <p v-for="kind in ['range', 'runtime'] as const" :key="kind">
         {{ kind === 'range' ? '范围' : '参与文档' }} SRM：{{
           payload.srmDiagnostics?.[kind]?.status || '未知'
@@ -267,17 +526,17 @@
           </select></label
         >
         <label
-          >判断理由<textarea
+          >判断理由<el-input
             v-model="reason"
+            type="textarea"
             aria-label="线上结论理由"
             maxlength="2000"
-            rows="3"
+            :rows="3"
           /></label
         ><el-button native-type="submit" :disabled="busy || !decisionAllowed || !reason.trim()"
           >核对结论</el-button
         >
       </form>
-      <p v-if="experiment.decision">已记录人工结论：{{ experiment.decision }}。</p>
     </template>
     <form
       v-if="canRecalculate && experiment.manifestSchemaVersion === 2"
@@ -288,13 +547,23 @@
         填写已接受序号及观察截止；不能用 Task 数替代序号。相同输入返回同一报告，新输入追加
         revision。
       </p>
+      <el-button :disabled="busy" @click="useSuggestedRange">填入当前接受范围</el-button>
+      <p v-if="suggestedZone">
+        建议来自服务端时区 {{ suggestedZone }}，分配序号可能继续增长；填入表单不会自动生成报告。
+      </p>
+      <el-button v-if="payload" :disabled="busy" @click="useFrozenRange"
+        >沿用当前冻结报告范围</el-button
+      >
+      <p v-if="payload">
+        此操作仅复制当前报告的原始序号与截止时间，不代表当前最新范围；仍需核对后确认冻结。
+      </p>
       <label
-        >分配截止序号<input
+        >分配截止序号<el-input
           v-model="sequence"
           aria-label="报告分配截止序号"
           inputmode="numeric" /></label
       ><label
-        >观察截止（部署服务本地时间，精确到毫秒）<input
+        >观察截止（部署服务本地时间，精确到毫秒）<el-input
           v-model="cutoff"
           aria-label="报告观察截止"
           placeholder="2026-10-12T16:00:00.000" /></label
@@ -324,10 +593,20 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
+import BusinessTime from '@/shared/components/BusinessTime.vue'
+import { formatMetricNumber } from '../display'
+import { evaluationStatus } from '../status'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElButton, ElDialog } from 'element-plus'
+import { ElButton, ElDialog, ElInput } from 'element-plus'
 import { normalizeApiError } from '@/api/errors'
-import { decideOnlineExperiment, getOnlineReport, recalculateOnlineReport } from './api'
+import {
+  decideOnlineExperiment,
+  getOnlineReport,
+  getOnlineReportRevisions,
+  getOnlineReportRangeSuggestion,
+  recalculateOnlineReport,
+} from './api'
 import {
   ONLINE_DESCRIPTIVE_NOTICE,
   onlineIdentity,
@@ -340,16 +619,66 @@ import type {
   OnlineExperiment,
   OnlineRecalculateRequest,
   OnlineReport,
+  OnlineReportRevision,
 } from './types'
 const props = defineProps<{
   experiment: OnlineExperiment
   readable: boolean
   manageable: boolean
   canRecalculate: boolean
+  requestedRevision?: number
 }>()
-const emit = defineEmits<{ decided: [] }>()
+const emit = defineEmits<{ decided: []; loaded: [revision: number] }>()
 const groups = ['BASELINE', 'CANDIDATE'] as const,
   blindnessGroups = ['BLINDED', 'NON_BLINDED', 'UNKNOWN']
+function coverageRequirement(value: unknown) {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10000
+    ? `每组至少 ${formatMetricNumber(value / 10000, 'ratio')}`
+    : '未知'
+}
+function reportIssue(code: string) {
+  const reasons: Record<string, string> = {
+    DOCUMENT_SAMPLE_INSUFFICIENT: '至少一组独立参与文档数未达到冻结门槛',
+    PRIMARY_COVERAGE_INSUFFICIENT: '至少一组主规则有效覆盖未达到冻结门槛',
+    BLINDED_QUALITY_COVERAGE_INSUFFICIENT: '至少一组有效盲态原始质量覆盖未达到冻结门槛',
+  }
+  return reasons[code] || onlineIssue(code)
+}
+const coverageGates = computed(() => {
+  const plan = payload.value?.analysisPlan
+  const reasons = payload.value?.decisionEligibility.reasonCodes || []
+  const reason = (code: string) =>
+    reasons.includes(code) ? reportIssue(code) : '本报告未列为此项阻塞；仍需核对整体结论。'
+  return [
+    {
+      key: 'participatingDocumentCount',
+      label: '独立参与文档',
+      unit: 'count',
+      requirement:
+        Number.isSafeInteger(plan?.minDocumentsPerGroup) && plan!.minDocumentsPerGroup! > 0
+          ? `每组至少 ${plan!.minDocumentsPerGroup} 个`
+          : '未知',
+      reason: reason('DOCUMENT_SAMPLE_INSUFFICIENT'),
+    },
+    {
+      key: 'primaryValidCoverage',
+      label: '主规则有效覆盖',
+      unit: 'ratio',
+      requirement: coverageRequirement(plan?.minCoverageBps),
+      reason: reason('PRIMARY_COVERAGE_INSUFFICIENT'),
+    },
+    {
+      key: 'blindedQualityCoverage',
+      label: '有效盲态原始质量覆盖',
+      unit: 'ratio',
+      requirement:
+        plan?.humanQualityRequired === false
+          ? '本计划未要求'
+          : coverageRequirement(plan?.minBlindedCoverageBps),
+      reason: reason('BLINDED_QUALITY_COVERAGE_INSUFFICIENT'),
+    },
+  ]
+})
 const primaryRows = [
   ['rangeDocumentCount', '范围文档数'],
   ['participatingDocumentCount', '独立参与文档'],
@@ -402,15 +731,15 @@ const resourceRows = [
   ['ledgerTokens', 'Token'],
   ['ledgerCoverage', '账本覆盖'],
   ['currencyCoverage', '币种覆盖'],
-  ['queueLatencyMeanMillis', '平均排队毫秒'],
+  ['queueLatencyMeanMillis', '平均排队耗时'],
   ['queueLatencyCoverage', '排队覆盖'],
-  ['executionLatencyMeanMillis', '平均执行毫秒'],
+  ['executionLatencyMeanMillis', '平均执行耗时'],
   ['executionLatencyCoverage', '执行覆盖'],
-  ['endToEndLatencyMeanMillis', '平均端到端毫秒'],
+  ['endToEndLatencyMeanMillis', '平均端到端耗时'],
   ['endToEndLatencyCoverage', '端到端覆盖'],
 ] as const
 const report = ref<OnlineReport | null>(null),
-  revision = ref(1),
+  revision = ref(props.requestedRevision ?? 1),
   busy = ref(false),
   error = ref(''),
   sequence = ref(''),
@@ -420,6 +749,17 @@ const decision = ref<OnlineDecisionRequest['decision']>('INSUFFICIENT_EVIDENCE')
   safetyId = ref('')
 const confirmation = ref<'recalculate' | 'decision' | null>(null),
   captured = ref('')
+const revisions = ref<OnlineReportRevision[]>([]),
+  revisionTotal = ref(0),
+  revisionPage = ref(1),
+  indexBusy = ref(false),
+  indexError = ref('')
+const suggestedZone = ref('')
+let indexPending: AbortController | undefined
+let suggestionPending: AbortController | undefined
+const selectedMetadata = computed(() =>
+  revisions.value.find((item) => item.revision === revision.value),
+)
 let pending: AbortController | undefined, retry: { fingerprint: string; key: string } | undefined
 const payload = computed(() => onlineReportPayload(report.value, props.experiment))
 const validRevision = computed(
@@ -466,6 +806,18 @@ watch(identity, () => {
 watch(revision, (value) => {
   if (report.value && report.value.revision !== value) report.value = null
 })
+watch(
+  () => props.requestedRevision,
+  (value) => {
+    if (value !== undefined && value !== revision.value) {
+      pending?.abort()
+      busy.value = false
+      revision.value = value
+      report.value = null
+      void load(false)
+    }
+  },
+)
 watch(decision, (value) => {
   if (value !== 'REJECTED') safetyId.value = ''
 })
@@ -478,6 +830,11 @@ watch(
   ],
   () => {
     pending?.abort()
+    indexPending?.abort()
+    revisions.value = []
+    revisionTotal.value = 0
+    indexBusy.value = false
+    indexError.value = ''
     busy.value = false
     report.value = null
     error.value = ''
@@ -486,8 +843,15 @@ watch(
     safetyId.value = ''
     sequence.value = ''
     cutoff.value = ''
+    suggestedZone.value = ''
     confirmation.value = null
+    revision.value = props.requestedRevision ?? 1
+    if (props.readable) {
+      if (props.requestedRevision !== undefined) void load(false)
+      void loadRevisions(1, true)
+    }
   },
+  { immediate: true },
 )
 watch([() => props.manageable, () => props.canRecalculate], () => {
   pending?.abort()
@@ -495,8 +859,48 @@ watch([() => props.manageable, () => props.canRecalculate], () => {
   confirmation.value = null
   retry = undefined
 })
+watch(
+  () => [props.experiment.id, props.experiment.spaceId, props.experiment.manifestSchemaVersion, props.readable, props.canRecalculate],
+  async () => {
+    suggestionPending?.abort()
+    if (!props.readable || !props.canRecalculate || props.experiment.manifestSchemaVersion !== 2) return
+    const controller = new AbortController()
+    suggestionPending = controller
+    const id = props.experiment.id
+    try {
+      const value = await getOnlineReportRangeSuggestion(id, controller.signal)
+      if (controller.signal.aborted || sequence.value || cutoff.value || value.experimentId !== id ||
+          !validOnlineId(value.assignmentCutoffSequence, true)) return
+      sequence.value = value.assignmentCutoffSequence
+      cutoff.value = value.observationCutoffAt
+      suggestedZone.value = value.timeZone
+    } catch {
+      // 手动填入仍可重试，自动建议失败不妨碍查看报告。
+    }
+  },
+  { immediate: true },
+)
 function quality(group: (typeof groups)[number], stratum: string) {
   return reportObject(reportObject(payload.value?.groups[group].qualityByBlindness)[stratum])
+}
+function displayFact(value: unknown, key: string) {
+  const ratio = [
+    'primaryValidRatio',
+    'primaryValidCoverage',
+    'provenCoverage',
+    'blindedQualityCoverage',
+    'blindedQualityRecordedOriginalCoverage',
+    'meanHumanModificationRatio',
+    'ledgerCoverage',
+    'currencyCoverage',
+    'queueLatencyCoverage',
+    'executionLatencyCoverage',
+    'endToEndLatencyCoverage',
+  ].includes(key)
+  return formatMetricNumber(
+    value,
+    ratio ? 'ratio' : key.endsWith('Millis') ? 'millisecond' : undefined,
+  )
 }
 function store(value: OnlineReport, expectedRevision?: number) {
   if (
@@ -506,6 +910,83 @@ function store(value: OnlineReport, expectedRevision?: number) {
     throw new Error('报告身份或版本不一致')
   report.value = value
   revision.value = value.revision
+  emit('loaded', value.revision)
+}
+function useFrozenRange() {
+  if (!payload.value || busy.value || !props.canRecalculate) return
+  sequence.value = String(payload.value.assignmentCutoffSequence)
+  cutoff.value = payload.value.observationCutoffAt
+  confirmation.value = null
+  suggestedZone.value = ''
+}
+async function useSuggestedRange() {
+  if (busy.value || !props.readable || !props.canRecalculate) return
+  pending?.abort()
+  const controller = new AbortController(),
+    id = props.experiment.id,
+    before = identity.value
+  pending = controller
+  busy.value = true
+  error.value = ''
+  try {
+    const value = await getOnlineReportRangeSuggestion(id, controller.signal)
+    if (controller.signal.aborted || !props.canRecalculate || before !== identity.value) return
+    if (value.experimentId !== id || !validOnlineId(value.assignmentCutoffSequence, true))
+      throw new Error('报告范围身份或序号无效')
+    sequence.value = value.assignmentCutoffSequence
+    cutoff.value = value.observationCutoffAt
+    suggestedZone.value = value.timeZone
+  } catch (e) {
+    if (!controller.signal.aborted) error.value = normalizeApiError(e).message
+  } finally {
+    if (!controller.signal.aborted) busy.value = false
+  }
+}
+async function loadRevisions(page: number, chooseLatest = false) {
+  if (!props.readable) return
+  indexPending?.abort()
+  const controller = new AbortController(),
+    id = props.experiment.id,
+    priorRevision = revision.value
+  indexPending = controller
+  indexBusy.value = true
+  indexError.value = ''
+  try {
+    const value = await getOnlineReportRevisions(id, page, controller.signal)
+    if (controller.signal.aborted || !props.readable) return
+    if (value.records.some((item) => item.experimentId !== id))
+      throw new Error('报告版本身份不一致')
+    revisions.value = value.records
+    revisionTotal.value = value.total
+    revisionPage.value = value.pageNum
+    const latest = value.records[0]
+    if (
+      chooseLatest &&
+      props.requestedRevision === undefined &&
+      latest &&
+      revision.value === priorRevision &&
+      !busy.value &&
+      !report.value
+    ) {
+      revision.value = latest.revision
+      await load(false)
+    }
+  } catch (e) {
+    if (!controller.signal.aborted) indexError.value = normalizeApiError(e).message
+  } finally {
+    if (!controller.signal.aborted) indexBusy.value = false
+  }
+}
+function readDecisionReport() {
+  if (props.experiment.decisionReportRevision == null) return
+  revision.value = props.experiment.decisionReportRevision
+  void load(false)
+}
+function selectRevision(event: Event) {
+  pending?.abort()
+  busy.value = false
+  revision.value = Number((event.target as HTMLSelectElement).value)
+  void load(false)
 }
 async function load(full: boolean) {
   if (!props.readable || !validRevision.value || busy.value) return
@@ -576,6 +1057,7 @@ async function submit() {
       )
       if (controller.signal.aborted || !props.canRecalculate || snapshot !== identity.value) return
       store(value)
+      void loadRevisions(1)
     } else {
       await decideOnlineExperiment(
         id,
@@ -593,12 +1075,21 @@ async function submit() {
     if (!controller.signal.aborted) busy.value = false
   }
 }
-onBeforeUnmount(() => pending?.abort())
+onBeforeUnmount(() => {
+  pending?.abort()
+  indexPending?.abort()
+  suggestionPending?.abort()
+})
 </script>
 <style scoped>
 .report-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  min-width: 0;
+}
+.report-panel > * {
+  min-width: 0;
 }
 .row {
   display: flex;
@@ -621,15 +1112,19 @@ textarea {
   border-radius: var(--adw-radius-sm);
 }
 .table-wrap {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   text-align: left;
 }
 th,
 td {
+  overflow-wrap: anywhere;
   padding: 10px;
   border-bottom: 1px solid var(--adw-border-color-light);
 }
@@ -638,11 +1133,49 @@ thead {
 }
 p,
 li {
+  overflow-wrap: anywhere;
   color: var(--adw-text-secondary);
   line-height: 1.6;
 }
 details {
   overflow-wrap: anywhere;
+}
+.report-summary,
+.report-details,
+.revision-index {
+  min-width: 0;
+  border: 1px solid #dfe7f1;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafd;
+}
+.report-panel > h3, .report-panel > header h3 { margin: 0; font-size: 17px; }
+thead th { color: #52647b; font-size: 13px; }
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.report-summary h4 {
+  margin: 0;
+}
+.report-summary small {
+  display: block;
+  margin-top: 4px;
+  color: var(--adw-text-secondary);
+}
+.report-identity {
+  padding: var(--adw-space-3);
+  background: var(--adw-color-primary-soft);
+}
+.report-hint {
+  font-size: var(--adw-font-size-caption);
+}
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 [role='alert'] {
   color: var(--adw-color-danger);

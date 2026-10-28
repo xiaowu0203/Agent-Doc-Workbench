@@ -203,6 +203,7 @@ export interface DatasetCaseBindingsRequest {
 
 export interface DatasetVersionCreateRequest {
   datasetId: EntityId
+  copyFromVersionId?: EntityId
 }
 
 export interface EvaluationDatasetCreateRequest {
@@ -227,6 +228,7 @@ export interface EvaluationRetryRequest {
 }
 
 export interface EvaluationRunCreateRequest {
+  name?: string | null
   spaceId: EntityId
   datasetVersionId?: EntityId | null
   singleTestCaseVersionId?: EntityId | null
@@ -264,6 +266,7 @@ export type TestCaseVersionUpdateRequest = Omit<
 >
 
 export interface ExperimentCreateRequest {
+  name?: string | null
   spaceId: EntityId
   clientRequestKey: string
   datasetVersionId: EntityId
@@ -320,6 +323,20 @@ export interface DatasetCaseBinding {
   enabled: boolean
 }
 
+export interface DatasetExperimentSource {
+  spaceId: EntityId
+  datasetVersionId: EntityId
+  enabledCaseCount: number
+  sourceConsistent: boolean
+  issues: string[]
+  sourceTaskId: EntityId | null
+  sourceExecutionId: EntityId | null
+  agentId: EntityId | null
+  tokenBudget: number | string | null
+  executionSnapshotSchemaVersion: number | null
+  executionSnapshotHash: string | null
+}
+
 export interface DatasetVersion {
   id: EntityId
   datasetId: EntityId | null
@@ -348,6 +365,8 @@ export interface EvaluationCaseAttemptHistory {
 }
 
 export interface EvaluationCaseRun {
+  testCaseName?: string | null
+  testCaseVersionNo?: number | null
   id: EntityId
   testCaseVersionId: EntityId | null
   status: EvaluationAttemptStatus
@@ -355,6 +374,22 @@ export interface EvaluationCaseRun {
   executionTaskId: EntityId | null
   attemptNo: number
   feedback: EvaluationFeedback[]
+}
+
+export interface CatalogVersionSummary {
+  resourceId: EntityId
+  versionCount: number
+  draftCount: number
+  latestPublishedVersionId: EntityId | null
+  latestPublishedVersionNo: number | null
+  publishedBindingCount: number | null
+}
+export interface CaseVersionName {
+  spaceId: EntityId
+  versionId: EntityId
+  testCaseId: EntityId
+  name: string
+  versionNo: number
 }
 
 export interface EvaluationDataset {
@@ -365,6 +400,7 @@ export interface EvaluationDataset {
   archived: boolean
   createdBy: EntityId | null
   createdAt: string | null
+  versionSummary?: CatalogVersionSummary | null
 }
 
 export interface EvaluationFeedback {
@@ -424,6 +460,7 @@ export interface EvaluationResultSummary {
 }
 
 export interface EvaluationRunSummary {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -447,6 +484,7 @@ export interface EvaluationRunSummary {
 }
 
 export interface EvaluationRun {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -468,6 +506,7 @@ export interface EvaluationTestCase {
   description: string | null
   archived: boolean
   createdBy: EntityId | null
+  versionSummary?: CatalogVersionSummary | null
 }
 
 export interface EvaluatorVersion {
@@ -494,6 +533,7 @@ export interface Evaluator {
   description: string | null
   archived: boolean
   createdBy: EntityId | null
+  versionSummary?: CatalogVersionSummary | null
 }
 
 export interface ExperimentPreflightIssue {
@@ -639,7 +679,17 @@ export interface ExperimentReport {
   compatibilityCode: ExperimentReportCompatibility
 }
 
+export interface ExperimentSourceSummary {
+  experimentId: EntityId
+  spaceId: EntityId
+  manifestHash: string
+  caseCount: number
+  distinctSourceTaskCount: number
+  missingSourceCaseCount: number
+}
+
 export interface ExperimentSummary {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -676,6 +726,7 @@ export interface ExperimentVariant {
 }
 
 export interface Experiment {
+  name?: string | null
   id: EntityId
   spaceId: EntityId
   datasetVersionId: EntityId | null
@@ -711,6 +762,15 @@ export interface TestCaseEvaluatorBinding {
   evaluatorKey: string | null
   sortOrder: number
   expectedJson: string | null
+}
+
+export interface TestCaseSource {
+  testCaseVersionId: EntityId
+  spaceId: EntityId
+  sourceTaskId: EntityId
+  sourceInputHash: string
+  documentId: EntityId
+  documentTitle: string | null
 }
 
 export interface TestCaseVersion {

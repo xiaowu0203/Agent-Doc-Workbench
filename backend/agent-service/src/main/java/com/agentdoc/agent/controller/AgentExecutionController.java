@@ -4,6 +4,7 @@ import com.agentdoc.agent.service.AgentExecutionQueryService;
 import com.agentdoc.common.annotation.RequireLogin;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolCallSearchDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentToolCallVO;
@@ -28,6 +29,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class AgentExecutionController {
 
     private final AgentExecutionQueryService queryService;
+
+    @Operation(summary = "独立分页查询空间筛选范围内的全部工具调用")
+    @PostMapping("/tool-calls/search")
+    public Result<PageVO<AgentToolCallVO>> searchToolCalls(@RequestBody AgentToolCallSearchDTO request) {
+        return Result.ok(queryService.searchToolCalls(request));
+    }
 
     @Operation(summary = "按工作台任务查询脱敏执行审计")
     @GetMapping("/by-task/{taskId}")

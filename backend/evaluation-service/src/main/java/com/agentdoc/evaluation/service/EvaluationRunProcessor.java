@@ -135,11 +135,12 @@ public class EvaluationRunProcessor {
         Map<Long, EvaluationCaseRunEntity> caseByAttempt = caseRuns.stream()
                 .collect(Collectors.toMap(EvaluationCaseRunEntity::getCurrentAttemptId, Function.identity()));
 
-        // 加载所有Attempt，过滤已绑定分片与回放任务的记录，按能力分片分组
+        // 只对账当前 Attempt，历史重试的能力分片可能已经过期。
         List<EvaluationCaseAttemptEntity> allAttempts = attemptMapper.selectList(
                 new LambdaQueryWrapper<EvaluationCaseAttemptEntity>()
                         .eq(EvaluationCaseAttemptEntity::getRunId, runId));
         Map<Long, List<EvaluationCaseAttemptEntity>> bySegment = allAttempts.stream()
+                .filter(attempt -> caseByAttempt.containsKey(attempt.getId()))
                 .filter(attempt -> attempt.getCapabilitySegmentId() != null && attempt.getExecutionTaskId() != null)
                 .collect(Collectors.groupingBy(EvaluationCaseAttemptEntity::getCapabilitySegmentId));
 

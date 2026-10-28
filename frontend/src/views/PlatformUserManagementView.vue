@@ -220,6 +220,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
   ElAlert,
@@ -550,9 +551,7 @@ async function submitPasswordReset(): Promise<void> {
 }
 
 function formatDate(value: string | null): string {
-  if (!value) return '从未登录'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+  return formatBusinessTime(value, '从未登录')
 }
 </script>
 

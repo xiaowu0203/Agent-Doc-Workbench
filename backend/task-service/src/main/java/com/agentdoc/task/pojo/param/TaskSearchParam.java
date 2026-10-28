@@ -31,6 +31,9 @@ public class TaskSearchParam extends PageParam {
     @Schema(description = "执行模式；来源任务选择器使用 LIVE")
     private TaskExecutionMode executionMode;
 
+    @Schema(description = "是否参与线上实验，null 表示全部")
+    private Boolean onlineParticipation;
+
     @Schema(description = "Agent ID")
     private Long agentId;
 

@@ -77,14 +77,18 @@ public interface TokenUsageDetailMapper extends BaseMapper<TokenUsageDetailEntit
                                       @Param("end") LocalDateTime end,
                                       @Param("agentId") Long agentId,
                                       @Param("modelId") Long modelId,
-                                      @Param("taskStatus") Integer taskStatus);
+                                      @Param("taskStatus") Integer taskStatus,
+                                      @Param("executionMode") String executionMode,
+                                      @Param("onlineParticipation") Boolean onlineParticipation);
 
     List<TokenUsageDailyRow> summarizeDaily(@Param("spaceId") Long spaceId,
                                             @Param("start") LocalDateTime start,
                                             @Param("end") LocalDateTime end,
                                             @Param("agentId") Long agentId,
                                             @Param("modelId") Long modelId,
-                                            @Param("taskStatus") Integer taskStatus);
+                                            @Param("taskStatus") Integer taskStatus,
+                                            @Param("executionMode") String executionMode,
+                                            @Param("onlineParticipation") Boolean onlineParticipation);
 
     List<Long> listTaskIdsByModelAndDate(@Param("spaceId") Long spaceId,
                                          @Param("modelId") Long modelId,

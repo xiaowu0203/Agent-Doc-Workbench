@@ -3,6 +3,7 @@ package com.agentdoc.task.pojo.param;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.task.enums.TaskStatus;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 
@@ -21,7 +22,9 @@ public record TokenUsageDashboardParam(
         @NotNull @Schema(description = "结束日期（含）") LocalDate endDate,
         @Schema(description = "Agent ID") Long agentId,
         @Schema(description = "模型 ID") Long modelId,
-        @Schema(description = "任务状态") TaskStatus status) {
+        @Schema(description = "任务状态") TaskStatus status,
+        @Schema(description = "执行模式") TaskExecutionMode executionMode,
+        @Schema(description = "是否参与线上实验，null 表示全部") Boolean onlineParticipation) {
 
     public void validate() {
         if (startDate == null || endDate == null || endDate.isBefore(startDate)) {

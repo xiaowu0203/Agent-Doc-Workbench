@@ -8,6 +8,8 @@ import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.dto.AgentBatchQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolCallSearchDTO;
+import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentToolCallVO;
 import com.agentdoc.common.pojo.vo.PageVO;
@@ -21,13 +23,19 @@ import com.agentdoc.task.pojo.vo.TaskOutputVO;
 import com.agentdoc.task.pojo.vo.TaskVO;
 import com.agentdoc.task.pojo.param.TaskToolCallBatchQueryParam;
 import com.agentdoc.task.pojo.vo.TaskToolCallVO;
+import com.agentdoc.task.pojo.vo.TaskToolCallSearchVO;
+import com.agentdoc.task.pojo.vo.TaskListItemVO;
+import com.agentdoc.task.pojo.param.TaskToolCallSearchParam;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static com.agentdoc.common.constant.SpacePermissionConstant.TASK_READ;
+import static com.agentdoc.common.constant.SpacePermissionConstant.USAGE_READ;
 
 /**
  * 聚合任务基础信息、Agent 执行审计和业务产物的只读查询服务。
@@ -42,6 +50,27 @@ public class TaskExecutionQueryService {
     private final AgentFeign agentFeign;
     private final DocumentFeign documentFeign;
     private final ChangeRequestMapper changeRequestMapper;
+
+    public PageVO<TaskToolCallSearchVO> searchToolCalls(TaskToolCallSearchParam param) {
+        param.validate();
+        requirePermission(param.getSpaceId(), TASK_READ);
+        requirePermission(param.getSpaceId(), USAGE_READ);
+        var response = agentFeign.searchToolCalls(new AgentToolCallSearchDTO(new AgentToolUsageQueryDTO(
+                param.getSpaceId(), param.getStartAt(), param.getEndAt(), param.getAgentId(), param.getModelId(),
+                TokenUsageService.executionStatus(param.getStatus()), param.getExecutionMode(), param.getOnlineParticipation()),
+                param.getPageNum(), param.getPageSize()));
+        if (response == null || response.code() != ErrorCode.SUCCESS.getCode() || response.data() == null
+                || response.data().records() == null) {
+            throw new BusinessException(response == null || response.code() == ErrorCode.SUCCESS.getCode() ? ErrorCode.INTERNAL_ERROR.getCode() : response.code(),
+                    response == null ? "工具明细查询失败" : response.message());
+        }
+        var page = response.data();
+        if (page.records().isEmpty()) return PageVO.of(List.of(), page.total(), param);
+        var tasks = taskService.readListItems(param.getSpaceId(), page.records().stream().map(AgentToolCallVO::workbenchTaskId).distinct().toList())
+                .stream().collect(Collectors.toMap(TaskListItemVO::id, Function.identity()));
+        return PageVO.of(page.records().stream().map(row -> new TaskToolCallSearchVO(row.workbenchTaskId(),
+                tasks.get(row.workbenchTaskId()), row.toolCall())).toList(), page.total(), param);
+    }
 
     /**
      * 查询前端任务执行详情。任务读取权限由 {@link TaskService#detail(Long)} 统一校验。
@@ -120,7 +149,11 @@ public class TaskExecutionQueryService {
     }
 
     private void requirePermission(Long spaceId) {
-        Result<Void> result = documentFeign.checkSpacePermission(spaceId, TASK_READ);
+        requirePermission(spaceId, TASK_READ);
+    }
+
+    private void requirePermission(Long spaceId, String permission) {
+        Result<Void> result = documentFeign.checkSpacePermission(spaceId, permission);
         if (result == null || result.code() != ErrorCode.SUCCESS.getCode()) {
             throw new BusinessException(result == null ? ErrorCode.INTERNAL_ERROR.getCode() : result.code(),
                     result == null ? "文档服务权限校验失败" : result.message());

@@ -28,11 +28,26 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import static com.agentdoc.common.constant.SpacePermissionConstant.DOCUMENT_READ;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class OnlineExperimentServiceTest {
+    @Test void assignmentTitlesAreOneScopedReferenceBatchAndOmittedWithoutDocumentRead() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        var row = new OnlineAssignmentEntity(); row.setId(51L); row.setDocumentId(301L);
+        when(assignments.selectPage(any(Page.class), any())).thenReturn(new Page<OnlineAssignmentEntity>(1, 10).setRecords(List.of(row)).setTotal(1));
+        when(documents.checkSpacePermission(101L, DOCUMENT_READ)).thenReturn(Result.ok());
+        when(documents.getDocumentRefs(List.of(301L))).thenReturn(Result.ok(List.of(new DocumentRefVO(301L, 101L, "当前标题"))));
+        var param = new OnlineAssignmentSearchParam();
+        assertThat(service.assignments(created.summary().id(), param).records().getFirst().documentTitle()).isEqualTo("当前标题");
+        clearInvocations(documents);
+        when(documents.checkSpacePermission(101L, DOCUMENT_READ)).thenReturn(Result.fail(ErrorCode.FORBIDDEN));
+        assertThat(service.assignments(created.summary().id(), param).records().getFirst().documentTitle()).isNull();
+        verify(documents, never()).getDocumentRefs(anyList());
+    }
     private final OnlineExperimentMapper mapper = mock(OnlineExperimentMapper.class);
     private final OnlineAssignmentMapper assignments = mock(OnlineAssignmentMapper.class);
     private final OnlineExperimentCreateIntentMapper intents = mock(OnlineExperimentCreateIntentMapper.class);
@@ -97,6 +112,16 @@ class OnlineExperimentServiceTest {
         assertThat(projection.has("summary")).isFalse();
         verify(agents, times(1)).prepareOnlineConfigs(any());
         verify(persistence, times(1)).complete(any());
+    }
+
+    @Test void detailPreservesOriginalDecisionReportIdentity() {
+        var created = service.create(OnlineExperimentRequestValidatorTest.request());
+        var entity = stored.get();
+        entity.setDecision("INSUFFICIENT_EVIDENCE"); entity.setDecisionReportRevision(4); entity.setDecisionReportHash("e".repeat(64));
+        var result = service.detail(created.summary().id());
+        assertThat(result.decisionReportRevision()).isEqualTo(4);
+        assertThat(result.decisionReportHash()).isEqualTo("e".repeat(64));
+        assertThat(stored.get().getManifestHash()).isEqualTo(created.summary().manifestHash());
     }
 
     @Test

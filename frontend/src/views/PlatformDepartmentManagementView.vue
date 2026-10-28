@@ -211,6 +211,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import { Delete, EditPen, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
   ElAlert,
@@ -499,8 +500,7 @@ function departmentPath(department: Department): string {
   return names.join(' / ')
 }
 function formatDate(value: string): string {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
+  return formatBusinessTime(value, '—')
 }
 function goToUsers(): void {
   void router.push({

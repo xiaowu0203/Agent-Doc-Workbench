@@ -1,9 +1,9 @@
 <template>
-  <section class="catalog-page" :aria-label="label">
+  <section class="catalog-page" :class="{ 'catalog-page--detail': resourceId }" :aria-label="label">
     <div class="catalog-page__heading">
       <div>
         <h2>{{ resource?.name || label }}{{ resourceId ? ' · 版本管理' : '' }}</h2>
-        <p>
+        <p v-if="!resourceId || section !== 'test-cases'">
           {{
             resourceId
               ? resource?.description || `资源 #${resourceId}`
@@ -19,6 +19,7 @@
         <el-button
           v-if="canManage && resource && !resource.archived"
           type="primary"
+          :disabled="loading || versionLoading || busy"
           @click="openVersionDialog"
           >新建草稿版本</el-button
         >
@@ -62,47 +63,72 @@
     </form>
     <DataState :loading="loading" :error="error" @retry="reload">
       <template v-if="!resourceId">
-        <el-table :data="page.records" class="catalog-page__table">
-          <el-table-column :label="label" min-width="230"
-            ><template #default="{ row }"
-              ><div class="catalog-page__name">
-                <span class="catalog-page__initial">{{ row.name.slice(0, 1) }}</span>
-                <div>
-                  <RouterLink :to="resourcePath(row.id)">{{ row.name }}</RouterLink>
-                  <p>{{ row.description || '暂无说明' }}</p>
-                </div>
-              </div></template
-            ></el-table-column
-          >
-          <el-table-column label="资源状态" width="110"
-            ><template #default="{ row }"
-              ><el-tag :type="row.archived ? 'info' : 'success'">{{
-                row.archived ? '已归档' : '未归档'
-              }}</el-tag></template
-            ></el-table-column
-          >
-          <el-table-column
-            v-if="section === 'evaluators'"
-            prop="evaluatorKey"
-            label="Evaluator key"
-            min-width="180"
-          />
-          <el-table-column label="资源 ID" min-width="185"
-            ><template #default="{ row }">{{ row.id }}</template></el-table-column
-          >
-          <el-table-column label="版本与绑定" width="120"
-            ><template #default="{ row }"
-              ><RouterLink :to="resourcePath(row.id)">查看版本</RouterLink></template
-            ></el-table-column
-          >
-        </el-table>
-        <p v-if="!page.records.length" class="catalog-page__empty">
-          没有匹配的{{ label }}。{{
-            canManage
-              ? `可以新建${label}，再创建草稿版本。`
-              : '请调整查询条件，或联系空间管理者添加资源。'
-          }}
-        </p>
+        <div v-if="!page.records.length" class="catalog-page__empty">
+            <p>
+              {{
+                keyword.trim() || archiveFilter !== 'active'
+                  ? `没有匹配的${label}，请调整查询条件。`
+                  : `当前没有未归档的${label}。`
+              }}{{
+                canManage
+                  ? `可以新建${label}，再创建草稿版本。`
+                  : '请调整查询条件，或联系空间管理者添加资源。'
+              }}
+            </p>
+        </div>
+        <div v-else class="evaluation-record-table-wrap">
+          <table class="evaluation-record-table" :aria-label="`${label}列表`">
+            <thead>
+              <tr>
+                <th>{{ label }} / 说明</th>
+                <th>版本</th>
+                <th>{{ section === 'datasets' ? '已发布启用用例' : section === 'test-cases' ? '已发布绑定评估器' : '发布版本引用数' }}</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+          <tr v-for="row in page.records" :key="String(row.id)">
+            <td class="evaluation-record-table__primary">
+              <div class="evaluation-record__title-row">
+                <RouterLink class="evaluation-record__title" :to="resourcePath(row.id)" :title="row.name">{{ row.name }}</RouterLink>
+                <el-tag :type="row.archived ? 'info' : 'success'" size="small">{{ row.archived ? '已归档' : '未归档' }}</el-tag>
+              </div>
+              <p class="evaluation-record__description" :title="row.description || undefined">{{ row.description || '暂无说明' }}</p>
+              <p class="evaluation-record__identity">资源 #{{ row.id }}<template v-if="'evaluatorKey' in row"> · {{ row.evaluatorKey }}</template></p>
+            </td>
+              <td>
+              <template v-if="row.versionSummary">
+                <RouterLink
+                  v-if="row.versionSummary.latestPublishedVersionId"
+                  :to="{
+                    path: resourcePath(row.id),
+                    query: { versionId: String(row.versionSummary.latestPublishedVersionId) },
+                  }"
+                  >已发布 v{{ row.versionSummary.latestPublishedVersionNo }}</RouterLink
+                >
+                <span v-else>尚未发布</span>
+                <small>
+                  {{ row.versionSummary.draftCount }} 个草稿 · 共
+                  {{ row.versionSummary.versionCount }} 个版本
+                </small>
+              </template>
+              <span v-else>版本信息暂不可用</span>
+              </td>
+              <td>
+              <span
+                :title="
+                  section === 'evaluators'
+                    ? '引用该最新发布版本的不同用例版本数，含历史版本'
+                    : '最新已发布版本的绑定数量'
+                "
+                >{{ row.versionSummary?.publishedBindingCount ?? '—' }}</span
+              >
+              </td>
+            <td><RouterLink class="evaluation-record__action" :to="resourcePath(row.id)">{{ canManage ? '管理版本与绑定' : '查看版本与绑定' }}<span aria-hidden="true"> ›</span></RouterLink></td>
+          </tr>
+            </tbody>
+          </table>
+        </div>
         <div class="catalog-page__pagination">
           <span>共 {{ page.total }} 条</span
           ><el-pagination
@@ -116,7 +142,8 @@
       </template>
       <div v-else-if="resource" class="catalog-page__detail">
         <aside class="catalog-page__timeline" aria-label="版本时间线">
-          <h3>版本时间线</h3>
+          <div class="catalog-page__timeline-heading"><h3>版本</h3><p>选择版本查看对应配置与绑定</p></div>
+          <div class="catalog-page__timeline-list">
           <button
             v-for="version in versions.records"
             :key="String(version.id)"
@@ -128,10 +155,12 @@
               <strong>v{{ version.versionNo }}</strong
               ><EvaluationStatusTag domain="version" :status="version.status" />
             </div>
-            <span>{{ version.publishedAt ? `发布于 ${version.publishedAt}` : '尚未发布' }}</span
-            ><span>#{{ version.id }}</span>
+            <span v-if="version.publishedAt"
+              >发布于 <BusinessTime :value="version.publishedAt" /></span
+            ><span v-else>尚未发布</span><span>#{{ version.id }}</span>
           </button>
           <p v-if="!versions.records.length">尚未创建版本。</p>
+          </div>
           <el-pagination
             v-if="versions.total > 10"
             small
@@ -151,6 +180,21 @@
                   <EvaluationStatusTag domain="version" :status="selectedVersion.status" />
                 </h3>
                 <div class="catalog-page__actions">
+                  <template
+                    v-if="
+                      selectedVersion.status === 'PUBLISHED' &&
+                      !resource?.archived &&
+                      canRun &&
+                      section !== 'evaluators'
+                    "
+                  >
+                    <el-button @click="createFromVersion('runs')">创建评估运行</el-button>
+                    <el-button
+                      v-if="section === 'datasets' && canManage"
+                      @click="createFromVersion('experiments')"
+                      >创建离线实验</el-button
+                    >
+                  </template>
                   <el-button
                     v-if="editable"
                     :loading="busy"
@@ -174,12 +218,24 @@
                     : '此版本只读，配置与绑定保持历史取值。'
                 }}
               </p>
-              <dl class="catalog-page__facts">
-                <dt>内容 hash</dt>
-                <dd>{{ selectedVersion.contentHash || '发布时生成' }}</dd>
-                <dt>发布时间</dt>
-                <dd>{{ selectedVersion.publishedAt || '尚未发布' }}</dd>
-              </dl>
+              <p v-if="editable" role="status" class="catalog-page__hint">
+                {{
+                  configDirty() || bindingDirty
+                    ? `尚未保存：${[configDirty() ? '草稿配置' : '', bindingDirty ? '版本绑定' : ''].filter(Boolean).join('、')}。请先保存对应内容，再核对发布。`
+                    : '当前配置与绑定已保存；发布后将冻结此版本。'
+                }}
+              </p>
+              <details v-if="!testCaseVersion">
+                <summary>版本冻结身份</summary>
+                <dl class="catalog-page__facts">
+                  <dt>内容 hash</dt>
+                  <dd>{{ selectedVersion.contentHash || '发布时生成' }}</dd>
+                  <dt>发布时间</dt>
+                  <dd>
+                    <BusinessTime :value="selectedVersion.publishedAt" empty-text="尚未发布" />
+                  </dd>
+                </dl>
+              </details>
               <template v-if="evaluatorVersion">
                 <dl class="catalog-page__facts">
                   <dt>Evaluator key</dt>
@@ -192,8 +248,10 @@
                     {{ evaluatorVersion.resultSchemaVersion }}
                   </dd>
                 </dl>
-                <JsonConfigEditor
+                <EvaluatorConfigEditor
                   v-model="configForm.configJson"
+                  :evaluator-key="evaluatorVersion.evaluatorKey"
+                  :schema-version="evaluatorVersion.configSchemaVersion"
                   label="configJson"
                   :readonly="!editable"
                 />
@@ -211,57 +269,54 @@
                 >
               </template>
               <template v-if="testCaseVersion">
-                <dl class="catalog-page__facts">
-                  <dt>来源 Task / Execution</dt>
-                  <dd>
-                    <RouterLink
-                      v-if="canReadTask && testCaseVersion.sourceTaskId"
-                      :to="`/spaces/${spaceId}/tasks/${testCaseVersion.sourceTaskId}?tab=evidence`"
-                      >#{{ testCaseVersion.sourceTaskId }}</RouterLink
-                    ><span v-else>{{ testCaseVersion.sourceTaskId || '未提供' }}</span> /
-                    {{ testCaseVersion.sourceExecutionId || '未提供' }}
-                  </dd>
-                  <dt>冻结文档版本</dt>
-                  <dd>{{ testCaseVersion.documentVersionSnapshot ?? '未提供' }}</dd>
-                  <dt>文档内容 hash</dt>
-                  <dd>{{ testCaseVersion.documentContentSha256 || '未提供' }}</dd>
-                  <dt>输入 snapshot schema / hash</dt>
-                  <dd>
-                    {{ testCaseVersion.sourceInputSchemaVersion }} /
-                    {{ testCaseVersion.sourceInputHash }}
-                  </dd>
-                  <dt>执行 snapshot schema / hash</dt>
-                  <dd>
-                    {{ testCaseVersion.sourceExecutionSchemaVersion }} /
-                    {{ testCaseVersion.sourceExecutionHash }}
-                  </dd>
-                  <dt>expected schema</dt>
-                  <dd>{{ testCaseVersion.expectedSchemaVersion }}</dd>
-                </dl>
-                <JsonConfigEditor
-                  v-model="configForm.expectedJson"
-                  label="expectedJson"
-                  :readonly="!editable"
-                />
-                <el-form label-position="top"
-                  ><el-form-item label="来源类型"
-                    ><el-select
-                      v-model="configForm.sourceType"
-                      :disabled="!editable"
-                      aria-label="来源类型"
-                      ><el-option value="LIVE" label="LIVE" /></el-select></el-form-item
-                  ><el-form-item label="脱敏与裁剪说明"
-                    ><el-input
-                      v-model="configForm.sanitizationNote"
-                      type="textarea"
-                      :readonly="!editable"
-                      maxlength="1000"
-                      show-word-limit
-                      aria-label="脱敏与裁剪说明" /></el-form-item
-                ></el-form>
-                <el-button v-if="editable" :loading="busy" type="primary" @click="saveConfig"
-                  >保存草稿配置</el-button
-                >
+                <section class="catalog-page__case-section" aria-label="验证目标">
+                  <h3>验证目标</h3>
+                  <p>
+                    {{ resource.description || '尚未填写用例说明，请结合预期规则核对验证目标。' }}
+                  </p>
+                  <p class="catalog-page__hint">
+                    以上为当前用例名称和说明；历史版本的预期与冻结依据见下方。
+                  </p>
+                </section>
+                <section class="catalog-page__case-section" aria-label="冻结来源">
+                  <h3>冻结来源</h3>
+                  <TestCaseSourceSummary
+                    :version="testCaseVersion"
+                    :space-id="spaceId"
+                    :can-read-task="canRead && canReadTask"
+                    :can-read-document="canRead && canReadDocument"
+                  />
+                  <el-form label-position="top"
+                    ><el-form-item label="来源类型"
+                      ><el-select
+                        v-model="configForm.sourceType"
+                        :disabled="!editable"
+                        aria-label="来源类型"
+                        ><el-option
+                          value="LIVE"
+                          label="真实执行（LIVE）" /></el-select></el-form-item
+                    ><el-form-item label="脱敏与裁剪说明"
+                      ><el-input
+                        v-model="configForm.sanitizationNote"
+                        type="textarea"
+                        :readonly="!editable"
+                        maxlength="1000"
+                        show-word-limit
+                        aria-label="脱敏与裁剪说明" /></el-form-item
+                  ></el-form>
+                </section>
+                <section class="catalog-page__case-section" aria-label="预期与规则">
+                  <h3>预期与规则</h3>
+                  <p>用例预期作为默认基准；评估器绑定可单独设置预期，具体规则见下方绑定。</p>
+                  <JsonConfigEditor
+                    v-model="configForm.expectedJson"
+                    label="expectedJson"
+                    :readonly="!editable"
+                  />
+                  <el-button v-if="editable" :loading="busy" type="primary" @click="saveConfig"
+                    >保存草稿配置</el-button
+                  >
+                </section>
               </template>
               <CatalogBindings
                 v-if="section !== 'evaluators'"
@@ -272,6 +327,41 @@
                 :editable="editable"
                 @dirty="bindingDirty = $event"
               />
+              <details v-if="testCaseVersion" class="catalog-page__case-audit">
+                <summary>技术身份与审计信息</summary>
+                <p>发布前请核对冻结来源、快照与已保存绑定；名称变化不改变以下历史依据。</p>
+                <dl class="catalog-page__facts">
+                  <dt>用例 / 版本 ID</dt>
+                  <dd>{{ testCaseVersion.testCaseId }} / {{ testCaseVersion.id }}</dd>
+                  <dt>来源任务 / 执行 ID</dt>
+                  <dd>
+                    {{ testCaseVersion.sourceTaskId || '未提供' }} /
+                    {{ testCaseVersion.sourceExecutionId || '未提供' }}
+                  </dd>
+                  <dt>冻结文档版本</dt>
+                  <dd>{{ testCaseVersion.documentVersionSnapshot ?? '未提供' }}</dd>
+                  <dt>文档内容 hash</dt>
+                  <dd>{{ testCaseVersion.documentContentSha256 || '未提供' }}</dd>
+                  <dt>输入快照 schema / hash</dt>
+                  <dd>
+                    {{ testCaseVersion.sourceInputSchemaVersion ?? '未提供' }} /
+                    {{ testCaseVersion.sourceInputHash || '未提供' }}
+                  </dd>
+                  <dt>执行快照 schema / hash</dt>
+                  <dd>
+                    {{ testCaseVersion.sourceExecutionSchemaVersion ?? '未提供' }} /
+                    {{ testCaseVersion.sourceExecutionHash || '未提供' }}
+                  </dd>
+                  <dt>预期 schema</dt>
+                  <dd>{{ testCaseVersion.expectedSchemaVersion ?? '未提供' }}</dd>
+                  <dt>版本内容 hash</dt>
+                  <dd>{{ testCaseVersion.contentHash || '发布时生成' }}</dd>
+                  <dt>发布时间</dt>
+                  <dd>
+                    <BusinessTime :value="testCaseVersion.publishedAt" empty-text="尚未发布" />
+                  </dd>
+                </dl>
+              </details>
             </template>
             <p v-else>选择版本查看配置与冻结依据。</p>
           </DataState>
@@ -339,7 +429,11 @@
             'evaluatorKey' in (resource || {}) ? (resource as Evaluator).evaluatorKey : ''
           }}
         </p>
-        <JsonConfigEditor v-model="newVersionForm.configJson" label="configJson" />
+        <EvaluatorConfigEditor
+          v-model="newVersionForm.configJson"
+          :evaluator-key="resource && 'evaluatorKey' in resource ? resource.evaluatorKey : null"
+          label="configJson"
+        />
         <details v-if="currentGuide">
           <summary>查看最小配置示例</summary>
           <pre>{{ formatJson(currentGuide.example) }}</pre>
@@ -348,7 +442,16 @@
           >
         </details></template
       >
-      <p v-else>创建空草稿版本后，从已发布测试用例版本中添加绑定并排序。</p>
+      <template v-else>
+        <p>默认创建空草稿。也可显式复制当前选中的已发布版本绑定，再在新草稿中调整。</p>
+        <el-checkbox v-if="copySourceVersion" v-model="copyBindings">
+          复制已选发布版本 v{{ copySourceVersion.versionNo }} 的绑定
+        </el-checkbox>
+        <p v-else>当前未选择已发布版本；如需复制，请先关闭窗口并选择一个已发布版本。</p>
+        <p v-if="copyBindings">
+          复制全部用例引用、顺序和启用状态（含停用项）。失效或归档依赖会使整次创建失败；旧版本保持不变，新草稿需另行核对和发布。
+        </p>
+      </template>
       <p v-if="dialogError" role="alert">{{ dialogError }}</p>
       <template #footer
         ><el-button @click="versionDialog = false">取消</el-button
@@ -364,11 +467,13 @@
   </section>
 </template>
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
   ElButton,
+  ElCheckbox,
   ElDialog,
   ElForm,
   ElFormItem,
@@ -378,8 +483,6 @@ import {
   ElOption,
   ElPagination,
   ElSelect,
-  ElTable,
-  ElTableColumn,
   ElTag,
 } from 'element-plus'
 import DataState from '@/shared/components/DataState.vue'
@@ -406,7 +509,9 @@ import {
 import CatalogBindings from '@/features/evaluation/components/CatalogBindings.vue'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
 import JsonConfigEditor from '@/features/evaluation/components/JsonConfigEditor.vue'
+import EvaluatorConfigEditor from '@/features/evaluation/components/EvaluatorConfigEditor.vue'
 import TaskSourcePicker from '@/features/evaluation/components/TaskSourcePicker.vue'
+import TestCaseSourceSummary from '@/features/evaluation/components/TestCaseSourceSummary.vue'
 type CatalogResource = EvaluationDataset | EvaluationTestCase | Evaluator
 type CatalogVersion = DatasetVersion | TestCaseVersion | EvaluatorVersion
 const props = defineProps<{ section: CatalogSection; resourceId?: string }>()
@@ -424,8 +529,31 @@ const canRead = computed(
 const canManage = computed(
   () => canRead.value && workspace.hasPermission(SPACE_PERMISSIONS.EVALUATION_MANAGE),
 )
+const canRun = computed(
+  () => canRead.value && workspace.hasPermission(SPACE_PERMISSIONS.EVALUATION_RUN),
+)
+function createFromVersion(target: 'runs' | 'experiments') {
+  if (
+    !canRun.value ||
+    !selectedVersion.value ||
+    selectedVersion.value.status !== 'PUBLISHED' ||
+    resource.value?.archived
+  )
+    return
+  void router.push({
+    path: `/spaces/${spaceId.value}/evaluation/${target}`,
+    query: {
+      create: '1',
+      sourceKind: props.section,
+      sourceVersionId: String(selectedVersion.value.id),
+    },
+  })
+}
 const canReadTask = computed(
   () => inSpace.value && workspace.hasPermission(SPACE_PERMISSIONS.TASK_READ),
+)
+const canReadDocument = computed(
+  () => inSpace.value && workspace.hasPermission(SPACE_PERMISSIONS.DOCUMENT_READ),
 )
 const sourceTaskId = computed(() =>
   props.section === 'test-cases' &&
@@ -490,6 +618,8 @@ const resourceDialog = ref(false),
   versionDialog = ref(false),
   dialogError = ref(''),
   selectedSourceTask = ref<string | null>(null)
+const copyBindings = ref(false)
+const copySourceVersion = ref<DatasetVersion | null>(null)
 let mainRequest: AbortController | undefined,
   versionRequest: AbortController | undefined,
   versionsRequest: AbortController | undefined,
@@ -686,6 +816,11 @@ function openResourceDialog() {
   resourceDialog.value = true
 }
 function openVersionDialog() {
+  copyBindings.value = false
+  copySourceVersion.value =
+    props.section === 'datasets' && selectedVersion.value?.status === 'PUBLISHED'
+      ? (selectedVersion.value as DatasetVersion)
+      : null
   Object.assign(newVersionForm, {
     configJson: '{}',
     expectedJson: '{}',
@@ -775,7 +910,15 @@ async function createVersion() {
         request.signal,
       )
     } else if (props.section === 'datasets')
-      value = await api.createDatasetVersion({ datasetId: parentId }, request.signal)
+      value = await api.createDatasetVersion(
+        {
+          datasetId: parentId,
+          ...(copyBindings.value && copySourceVersion.value
+            ? { copyFromVersionId: copySourceVersion.value.id }
+            : {}),
+        },
+        request.signal,
+      )
     else
       value = await api.createEvaluatorVersion(
         {
@@ -988,11 +1131,22 @@ onBeforeUnmount(() => {
 </script>
 <style scoped>
 .catalog-page {
+  min-width: 0;
   display: grid;
   gap: var(--adw-space-5);
 }
+.catalog-page__case-section {
+  display: grid;
+  gap: var(--adw-space-3);
+  padding-block: var(--adw-space-4);
+  border-top: 1px solid var(--adw-border-color-light);
+}
+.catalog-page__case-audit {
+  margin-top: var(--adw-space-4);
+}
 .catalog-page__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--adw-space-4);
@@ -1019,32 +1173,15 @@ p {
 }
 .catalog-page__filters {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--adw-space-3);
 }
 .catalog-page__filters .el-input {
+  flex: 1 1 200px;
   max-width: 330px;
 }
 .catalog-page__filters .el-select {
   width: 150px;
-}
-.catalog-page__name {
-  display: flex;
-  align-items: center;
-  gap: var(--adw-space-3);
-}
-.catalog-page__name p {
-  font-size: var(--adw-font-size-caption);
-}
-.catalog-page__initial {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  border-radius: var(--adw-radius-sm);
-  background: var(--adw-color-primary-soft);
-  color: var(--adw-color-primary);
-  font-weight: 600;
 }
 a {
   color: var(--adw-color-primary);
@@ -1063,29 +1200,42 @@ button:focus-visible {
 }
 .catalog-page__detail {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: var(--adw-space-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
 }
 .catalog-page__timeline {
-  border-right: 1px solid var(--adw-border-color);
-  padding-right: var(--adw-space-4);
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+  padding: 18px 0;
+  border-top: 1px solid #e1e8f1;
+  border-bottom: 1px solid #e1e8f1;
 }
+.catalog-page__timeline-heading h3 { font-size: 15px; }
+.catalog-page__timeline-heading p { font-size: 12px; }
+.catalog-page__timeline-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .catalog-page__timeline button {
   display: grid;
-  gap: 6px;
-  width: 100%;
-  margin-top: var(--adw-space-3);
-  padding: var(--adw-space-3);
+  flex: 0 0 190px;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
   border: 1px solid var(--adw-border-color-light);
-  border-radius: var(--adw-radius-sm);
+  border-radius: 6px;
   text-align: left;
   color: var(--adw-text-primary);
-  background: transparent;
+  background: #fff;
   cursor: pointer;
 }
+.catalog-page__timeline {
+  min-width: 0;
+}
 .catalog-page__timeline button[aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
-  border-color: var(--adw-color-primary);
+  background: #edf3ff;
+  border-color: #8baded;
+  box-shadow: inset 3px 0 #3266d8;
 }
 .catalog-page__timeline button div {
   display: flex;
@@ -1099,7 +1249,17 @@ button:focus-visible {
 }
 .catalog-page__version {
   min-width: 0;
+  padding: 0;
 }
+.catalog-page--detail > .catalog-page__heading {
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+.catalog-page--detail > .catalog-page__heading h2 { font-size: 20px; line-height: 1.4; overflow-wrap: anywhere; }
+.catalog-page__version > :deep(.data-state) { min-width: 0; }
+.catalog-page__version .catalog-page__heading { align-items: center; }
+.catalog-page__version .catalog-page__heading h3 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 20px; }
 .catalog-page__facts {
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
@@ -1117,7 +1277,11 @@ dd {
   overflow-wrap: anywhere;
 }
 .catalog-page__rule {
-  margin-bottom: var(--adw-space-4);
+  margin: 14px 0 20px;
+  padding: 9px 12px;
+  border-left: 3px solid #7ea3e8;
+  background: #f4f7fc;
+  font-size: 13px;
 }
 .catalog-page__hint,
 .catalog-page__source {
@@ -1144,18 +1308,9 @@ p[role='alert'] {
   color: var(--adw-color-danger);
 }
 @media (max-width: 1100px) {
-  .catalog-page__detail {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .catalog-page__timeline {
-    border-right: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--adw-space-2);
-  }
-  .catalog-page__timeline button {
-    width: auto;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 }
 @media (max-width: 600px) {

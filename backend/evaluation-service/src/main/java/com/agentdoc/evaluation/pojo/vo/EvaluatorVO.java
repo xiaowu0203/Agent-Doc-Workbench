@@ -23,7 +23,10 @@ public record EvaluatorVO(
         Boolean archived,
 
         @Schema(description = "创建人ID")
-        Long createdBy
+        Long createdBy,
+
+        @Schema(description = "版本与最新发布版本绑定概要；非搜索响应可为空")
+        CatalogVersionSummaryVO versionSummary
 ) {
     /**
      * 数据库实体转换为视图对象
@@ -31,7 +34,11 @@ public record EvaluatorVO(
      * @return 对外VO
      */
     public static EvaluatorVO from(EvaluatorEntity value) {
+        return from(value, null);
+    }
+
+    public static EvaluatorVO from(EvaluatorEntity value, CatalogVersionSummaryVO summary) {
         return new EvaluatorVO(value.getId(), value.getSpaceId(), value.getName(), value.getEvaluatorKey(),
-                value.getDescription(), value.getArchived(), value.getCreatedBy());
+                value.getDescription(), value.getArchived(), value.getCreatedBy(), summary);
     }
 }

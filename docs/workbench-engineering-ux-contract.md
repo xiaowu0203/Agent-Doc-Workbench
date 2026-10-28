@@ -60,6 +60,18 @@ Dataset/TestCase 主资源归档后，既有 PUBLISHED 版本不能用于**新�
 
 所有列表沿用 `PageParam`：`pageNum=1`、`pageSize=10`、上限 100，返回 `PageVO(records,total,pageNum,pageSize)`。Service 同步接收 SearchParam，默认按创建时间、ID 倒序，不在列表展开完整报告或证据。
 
+Catalog 三类主资源搜索在每条记录中附带 `versionSummary`：版本总数（含归档）、草稿数、按版本号选取的最新 PUBLISHED 版本 ID/号及其绑定数。Dataset 绑定数只计该发布版本启用的用例；TestCase 计该发布版本绑定的评估器；Evaluator 计当前空间中引用该发布版本的不同用例版本（含历史版本，不等于当前运行数）。无已发布版本时发布身份与绑定数均为 null，零草稿/版本保持 0。仅对当前页资源进行一次批量元数据查询，不拉取配置 JSON、来源快照或逐行请求版本。概要仅供导航，创建/执行仍重新检查既有准入条件。
+
+用量查询与执行记录搜索/导出增加 `executionMode`（LIVE/ISOLATED）和 `onlineParticipation`（true 仅线上实验、false 非线上实验、null 全部）。Token 汇总、环比与趋势仍查询权威账本，按同空间 Task 的不可变模式/线上身份筛选；月度预算仍是整个空间的预算，审计记录仍按审计事件自身日期查询。工具汇总与独立分页查询使用相同筛选，按工具调用时间范围统计，执行记录仍按任务开始时间筛选，两者时间口径在页面明示。
+
+`POST /api/task/tasks/tool-calls/search` 接收空间、startAt（含）、endAt（不含）、Agent/模型/任务状态、上述模式/参与过滤及 PageParam；要求 usage:read + task:read。Task 服务通过 common-core Feign 调用 Agent 域的同名查询，Agent 服务也执行这两项权限检查，按调用时间/ID 倒序分页，并在返回明细前记录线上知情。仅对本页任务批量补齐名称，保留长 ID，不依赖执行记录当前页、不扫描全部 Task、不从其他服务直读表。
+
+Agent 执行新增只用于查询的 `execution_mode` 投影，取自已验证的 Task 输入；V43 一次性按同空间 Task 回填历史记录，缺失来源保留 null，不能把未知填成 LIVE。该投影不加入既有执行快照和哈希，不替代 Task/账本。Task 列表增加线上实验 ID/分配 ID，读取继续经过既有知情记录。
+
+Run 详情按同空间用例版本/主资源关系批量补齐 `testCaseName/testCaseVersionNo`，名称表示当前目录名称，不写回冻结报告或历史快照。盲评候选仅增加 `documentTitle`，通过 Document 域最小引用投影批量查询，验证同空间，仍不读取普通 Task/Experiment 详情、分组、Prompt、状态或成本；读取此候选列表不签发评审资格，资格仍由完整原始证据及冻结目标决定。
+
+`POST /api/evaluation/test-case-versions/names-query` 接收 `spaceId/versionIds`（去重、1～100 个），要求 evaluation:read，仅返回同空间版本及其主资源的 ID、当前目录名称和版本号，不返回配置/快照。冻结报告页面只对当前显示的用例批量补名称，身份仍以报告内 ID 为准，名称不可用时保留 ID，不修改或重新计算历史报告。
+
 | 接口 | 查询条件/返回 | 权限 |
 | --- | --- | --- |
 | `POST /api/evaluation/runs/search` | 必填 `spaceId`；可选 status、datasetVersionId、singleTestCaseVersionId、experimentVariantId、createdFrom/To、startedFrom/To | `evaluation:read` |
@@ -160,3 +172,51 @@ OTel 保留 14 天。超过窗口仍可查看业务审计、快照 hash、权威
 活动详情轮询采用单请求、3～5 秒间隔、隐藏暂停/回前台刷新、失败 5/10/20/30 秒退避、终态及卸载停止；不新增全局缓存框架或 WebSocket/SSE。
 
 后续实现需验证权限与跨 Space、版本冻结、批量查询、Trace 白名单/降级、历史报告 shape/hash、恢复 ADR 的安全/幂等和真实端到端流程。本文不承担上线验收记录；功能、测试与真实数据验收完成前不标记已发布。
+
+### 6.1 详情识别与普通任务名称投影
+
+Run 和离线实验详情可通过现有目录读取接口查询单个来源版本及其主资源，展示当前目录名称和固定版本号；读取必须核对空间、版本 ID 与父资源 ID。名称仅用于识别，不写回快照或报告，失败时保留 Run/Experiment 的稳定 ID；切换空间或离开页面取消读取。当前用例标题使用 CaseRun 的名称/版本投影，技术身份保留在次级区域。
+
+`POST /api/task/tasks/names-query` 接收 `{spaceId, taskIds}`，任务 ID 为 1～100 个正整数，返回 `{id, spaceId, name}` 数组。仅查询当前空间和给定 ID 的名称/身份元数据，校验当前用户 task:read，返回前继续记录线上任务知情事实；失败则不披露名称。此查询不加载指令、冻结输入、文档正文、Agent 或用户资料，不替代任务详情读取；未落库或已不可访问的任务可不返回，前端保留 ID。普通线上分配页每页至多一次批量调用，撤销 task:read 立即清除名称并中止读取；专用盲评页面不调用本接口。
+
+用量页成本解释以执行权威账本和冻结价格快照为准，当前计价协议为 CNY，不做汇率换算；显示 Token 估算标记与已知部分/缺失边界，小额非零成本不显示成零。执行和审计列表使用一份中文空态。
+
+### 6.2 冻结来源摘要与报告分组
+
+`GET /api/evaluation/experiments/{id}/source-summary` 在 evaluation:read 校验后，仅从已核验 schema/manifestHash 的冻结清单返回 experimentId、spaceId、manifestHash、caseCount、distinctSourceTaskCount、missingSourceCaseCount。已知来源任务按 ID 去重，缺失身份单独计数；不加载当前目录、Task 或报告正文，不修改 reportJson、hash 或 revision。来源去重不是统计独立性证明。前端仅在实验/空间/manifestHash 和冻结用例数匹配时展示，失败保留已核验报告并说明来源摘要未知。
+
+报告按质量规则、执行状态、成本与用量、耗时、其他指标分组，分组同步作用于概要、展开汇总、配对比较和矩阵；全局冻结数量及分母不随筛选变化。差值直接使用报告的 meanCandidateMinusBaseline / meanCandidateMinusBaselineByCurrency，不用两侧均值另算；保留配对/期望分母、不可比币种数、缺失与零差值，比例差按百分点显示。多单位无法确认共同单位时保留原值并提示单位未确认，不把未知当作数值零。
+
+### 6.3 用例来源定位与阅读顺序
+
+测试用例详情按验证目标、冻结来源、预期与规则、评估器绑定、技术身份与审计信息阅读。用例名称/说明与来源任务/文档名称均标为当前取值，不能作为历史快照；冻结文档版本常显，输入/执行/文档与版本哈希保留在审计区。草稿保存和发布核对规则不变，已发布及归档版本只读。
+
+`GET /api/evaluation/test-case-versions/{id}/source` 校验 evaluation:read、task:read、document:read，再通过既有 Task Replay 来源契约核验准入及空间、Task/Execution、输入/执行 schema 与哈希、文档版本/哈希均与用例保存值一致；不一致时拒绝投影。返回 testCaseVersionId、spaceId、sourceTaskId、sourceInputHash、documentId、documentTitle，文档名称通过单次批量引用查询取得，仅接受匹配文档和空间的标题。不返回输入/执行快照正文、文档正文、Prompt 或凭证，不更新用例、历史哈希或绑定；归档版本仍可定位。当前来源已不可核验或名称不可访问时，前端保留原冻结依据并提示名称未知，不影响历史版本阅读。
+
+来源任务名称复用单次 names-query；前端校验空间、用例版本、来源任务和冻结输入哈希，切换版本/空间、撤销相关读取权限或卸载时取消请求并清除旧名称。来源读取属于普通工程详情，沿用既有 Task 知情记录，不用于专用盲评页面。
+
+### 6.4 创建前来源核对与反馈读取
+
+`GET /api/evaluation/dataset-versions/{id}/experiment-source` 校验 evaluation:read、task:read，要求数据集已发布且主资源未归档。启用绑定、用例版本与主资源分别批量读取，核对空间、发布/归档状态及共同执行快照 schema/hash；仅核验一次代表来源的 Task/Execution、输入与执行 schema/hash、文档版本/hash。返回空间/版本、启用数、sourceConsistent、问题码和通过核对的代表 Task/Execution、Agent、原任务预算与快照身份，失败时不投影代表身份。不创建候选或执行、不修改冻结内容；快照一致不代表所有来源当前都可回放，创建/启动继续执行完整动态预检。
+
+创建页可通过现有执行审计接口读取一次代表执行，严格匹配空间、Task、Agent、Execution 和执行快照身份后，展示冻结模型、迭代/超时、Prompt hash、工具白名单、Skill 和 MCP 版本；不读取当前 Agent 配置替代历史信息，不显示凭证。审计详情不可读时明确提示，与来源一致性结论区分。原任务预算不等于整个实验授权。
+
+线上报告门槛对照使用当前冻结报告 analysisPlan 中的 minDocumentsPerGroup、minCoverageBps、minBlindedCoverageBps 与 humanQualityRequired，当前数值取同一报告的组别统计；字段缺失保持未知。按 reasonCodes 解释整体阻塞，不由前端重新裁决比较资格，工程模式不因样本增加自动变成质量比较。
+
+独立评审加载原始上下文后自动读取当前目标反馈链，核验失败或在途时不允许核对评分；仍保留手动重试和显式选择当前链尾追加更正。保存成功后重新读取权威链尾，并更新本人记录标记，不保留旧的首评空态。自动读取不预选评分、不提交反馈、不授予盲态资格。切换目标或身份取消旧请求，响应未知的提交继续优先要求核对，禁止重复写入。
+
+线上分配读取中的状态与已核验空结果分开显示；读取失败时提示数量未知，不能显示“暂无已接受分配”而误导用户。重试成功后才按实际返回显示记录或空态。
+
+用量执行抽屉在当前任务/评估读取权限下提供关联实验入口：线上身份来自同空间任务详情，离线身份通过现有 task-links 单次查询并核对 Task/空间。关闭抽屉、切换空间、撤销权限时取消关联读取，不能把迟到结果挂到其他执行。
+
+### 6.5 数据集绑定复制
+
+创建数据集草稿版本可显式提供 `copyFromVersionId`，省略时仍创建空草稿。来源必须为同数据集、同空间的已发布版本；仅复制用例版本引用、顺序和启用状态，包括停用条目，不复制发布状态、版本号、hash、执行或评估结果。依赖版本必须仍已发布、同空间且主资源未归档；任一失效时整次拒绝，不跳过条目。新版本和绑定在一个事务内写入，失败不得留下半成品。原发布版本及其 hash 不变，新版本发布时重新核验依赖并生成自身 hash。
+
+### 6.6 运行与离线实验的可选名称
+
+普通评估运行和离线实验创建请求支持可选 `name`（最多 200 字符，去除首尾空白，空白保存为 null）。列表和详情返回该字段，优先展示名称，同时保留来源名称/版本及稳定 ID；旧记录为空时继续以来源命名。不新增线上实验别名或改名入口。名称不进入执行快照、manifest 或报告 hash。离线实验创建幂等性仍绑定名称：无名称请求沿用既有 schema 1 的请求 hash；有名称时以 schema 2 对既有创建内容 hash 和规范化名称求 hash，同一幂等键更换名称返回冲突，不重新创建候选。
+
+### 6.7 时间展示约定
+
+当前历史无偏移业务时间约定来自 Asia/Shanghai 部署（UTC+08:00），部署与历史数据须保证这一前提；已有其他时区历史数据不得直接套用。前端统一显示为 `YYYY-MM-DD HH:mm:ss +08:00`：带 Z 或显式偏移的时间按其原偏移转换，无偏移时间按上述约定解析，不依赖浏览器所在时区。评估和证据区的时间组件保留原字符串提示；无效/未知格式保留原文，空值保留原有缺失说明。统一格式化时间展示及时间线排序/显示耗时的解析，不转换提交表单、过滤边界或持久化值，不修改报告观察截止、请求哈希和历史快照。

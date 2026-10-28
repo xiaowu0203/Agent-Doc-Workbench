@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 @Schema(description = "离线实验")
 public class ExperimentEntity extends BaseEntity {
     @Schema(description = "所属空间 ID") private Long spaceId;
+    @Schema(description = "创建时填写的可选离线实验名称") private String name;
     @Schema(description = "冻结的数据集版本 ID") private Long datasetVersionId;
     @Schema(description = "Experiment 状态") private String status;
     @Schema(description = "客户端创建幂等键") private String clientRequestKey;

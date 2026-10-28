@@ -35,5 +35,6 @@ public record OnlineAssignmentVO(
         @Schema(description = "结算时间") LocalDateTime settledAt,
         @Schema(description = "更新时间") LocalDateTime updatedAt,
         @Schema(description = "创建时间") LocalDateTime createdAt,
-        @Schema(description = "权威 Task/Execution 读取状态，P6-02 接入") String factStatus
+        @Schema(description = "权威 Task/Execution 读取状态，P6-02 接入") String factStatus,
+        @Schema(description = "有 document:read 时提供当前文档标题，缺失时为空，不代表冻结时标题") String documentTitle
 ) { }

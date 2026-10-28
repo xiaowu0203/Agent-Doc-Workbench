@@ -3,7 +3,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
-import static com.agentdoc.evaluation.constant.EvaluationConstant.MAX_DATASET_CASE_COUNT;
+import static com.agentdoc.evaluation.constant.EvaluationConstant.MAX_DATASET_BINDING_COUNT;
 
 /**
  * 数据集版本用例批量绑定DTO
@@ -15,8 +15,6 @@ import static com.agentdoc.evaluation.constant.EvaluationConstant.MAX_DATASET_CA
  */
 public record DatasetCaseBindingsDTO(
         @NotEmpty(message = "绑定用例列表不能为空")
-        @Size(max = MAX_DATASET_CASE_COUNT, message = "绑定用例数量超出上限")
+        @Size(max = MAX_DATASET_BINDING_COUNT, message = "绑定用例数量超出上限")
         List<@Valid DatasetCaseBindingDTO> cases
-) {
-        public static final int MAX_DATASET_CASE_COUNT = 1000;
-}
+) { }

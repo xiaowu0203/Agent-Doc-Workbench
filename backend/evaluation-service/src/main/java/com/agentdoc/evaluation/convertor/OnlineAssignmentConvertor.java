@@ -8,6 +8,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class OnlineAssignmentConvertor {
     public OnlineAssignmentVO toVO(OnlineAssignmentEntity value) {
+        return toVO(value, null);
+    }
+    public OnlineAssignmentVO toVO(OnlineAssignmentEntity value, String documentTitle) {
         return new OnlineAssignmentVO(text(value.getId()),
                 text(value.getExperimentId()),
                 text(value.getSpaceId()),
@@ -38,7 +41,7 @@ public class OnlineAssignmentConvertor {
                 value.getTaskConfirmedAt(),
                 value.getSettledAt(),
                 value.getUpdatedAt(),
-                value.getCreatedAt(), value.getExecutionStatus() == null ? "UNKNOWN" : value.getExecutionStatus());
+                value.getCreatedAt(), value.getExecutionStatus() == null ? "UNKNOWN" : value.getExecutionStatus(), documentTitle);
     }
     private static String text(Number value) { return value == null ? null : value.toString(); }
 }

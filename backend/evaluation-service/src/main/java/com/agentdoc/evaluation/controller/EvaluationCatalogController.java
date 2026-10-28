@@ -26,7 +26,9 @@ import com.agentdoc.evaluation.pojo.vo.EvaluatorVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluatorVersionVO;
 import com.agentdoc.evaluation.pojo.vo.EvaluationTestCaseVO;
 import com.agentdoc.evaluation.pojo.vo.TestCaseVersionVO;
+import com.agentdoc.evaluation.pojo.vo.TestCaseSourceVO;
 import com.agentdoc.evaluation.service.EvaluationCatalogService;
+import com.agentdoc.evaluation.pojo.vo.DatasetExperimentSourceVO;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -131,6 +133,12 @@ public class EvaluationCatalogController {
         return Result.ok(catalogService.getDatasetVersion(id));
     }
 
+    @Operation(summary = "核对离线实验的冻结来源配置", description = "仅核对发布来源一致性，不代替创建和启动时动态预检")
+    @GetMapping("/dataset-versions/{id}/experiment-source")
+    public Result<DatasetExperimentSourceVO> experimentSource(@PathVariable Long id) {
+        return Result.ok(catalogService.getDatasetExperimentSource(id));
+    }
+
     @Operation(summary = "归档数据集版本", description = "软归档指定数据集版本，已归档版本不能再被选为评估运行基线")
     @PutMapping("/dataset-versions/{id}/archive")
     public Result<DatasetVersionVO> archiveDatasetVersion(
@@ -157,6 +165,12 @@ public class EvaluationCatalogController {
     public Result<TestCaseVersionVO> getTestCaseVersion(
             @Parameter(description = "测试用例版本ID") @PathVariable Long id) {
         return Result.ok(catalogService.getTestCaseVersion(id));
+    }
+
+    @Operation(summary = "读取匹配用例冻结依据的来源文档定位信息")
+    @GetMapping("/test-case-versions/{id}/source")
+    public Result<TestCaseSourceVO> getTestCaseSource(@PathVariable Long id) {
+        return Result.ok(catalogService.getTestCaseSource(id));
     }
 
     @Operation(summary = "归档测试用例版本", description = "软归档指定用例版本，该版本不再允许新建评估运行")

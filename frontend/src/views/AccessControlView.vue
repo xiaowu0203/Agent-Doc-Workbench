@@ -413,6 +413,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
 import {
   ArrowDown,
   ArrowRight,
@@ -676,8 +677,7 @@ function formatChangeDetail(detail: string | null): string {
 }
 
 function formatChangeDate(value: string): string {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value.replace('T', ' ') : date.toLocaleString('zh-CN')
+  return formatBusinessTime(value)
 }
 
 function togglePermissionGroup(items: PermissionItem[], checked: boolean): void {
@@ -934,7 +934,7 @@ const MemberTable = defineComponent({
                       ),
                     )
                   : h('span', { class: 'member-table__role' }, member.role.displayName),
-                h('time', new Date(member.createdAt).toLocaleDateString('zh-CN')),
+                h('time', { title: member.createdAt }, formatBusinessTime(member.createdAt)),
                 props.canManage
                   ? h(
                       ElButton,

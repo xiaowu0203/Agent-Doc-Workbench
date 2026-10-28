@@ -2,6 +2,14 @@
 
 页面和数据安全边界见 [Engineering Workbench 契约](workbench-engineering-ux-contract.md)。这些接口只读取既有执行/评估数据，不增加新的执行或报告存储。
 
+## 读模型升级与验证
+
+执行模式查询投影由 `V43__execution_mode_read_projection.sql` 增加，须先由 Auth/Flyway 完成 V43，再启动使用新代码的 Agent、Task、Evaluation。该迁移仅为同空间 Task 回填 Agent 执行模式；来源缺失保留 null，不修改执行快照、哈希、Token 账本或冻结报告。不要先运行新 Agent 代码再等待列创建。
+
+线上报告版本索引、截止建议和目录名称接口均为显式读取。报告索引及截止建议继续记录知情；它们不生成报告或自动作出结论。新增用量维度应用于汇总、环比、趋势及明细；空间月度预算保持全空间口径。工具页独立分页，并只为当前页补任务/Agent 名称，不因文档标题而额外要求 document:read。
+
+真实 MySQL 回归由 `ExecutionModeReadProjectionMigrationTest`、`CatalogVersionSummaryMySqlTest`、`ToolUsageSearchMySqlTest`、`TokenUsageFilterMySqlTest` 覆盖。显式提供 `ENGINEERING_UX_MYSQL_ADMIN_URL`（仅 localhost/127.0.0.1 的无数据库 JDBC URL）、`ENGINEERING_UX_MYSQL_USER` 与 `ENGINEERING_UX_MYSQL_PASSWORD` 后运行对应定向测试；它们各自创建随机命名的隔离库并在 finally 清理，不对应用数据库执行迁移或插入样本。未设置环境变量时跳过，不算真实数据库验收通过。
+
 ## Trace 配置
 
 Task 的 `JAEGER_QUERY_URL` 为 Jaeger 内部查询根地址，默认空（返回 `NOT_CONFIGURED`）。本机示例为 `http://127.0.0.1:16686`。地址不含凭证、query 或 fragment，不能来自用户请求；内部端口仍需部署侧访问控制。适配器不转发用户 Authorization，不跟随重定向，不返回原始 Jaeger JSON。

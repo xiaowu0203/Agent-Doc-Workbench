@@ -1,5 +1,7 @@
 package com.agentdoc.common.feign.dto;
 
+import com.agentdoc.common.enums.TaskExecutionMode;
+
 import java.time.LocalDateTime;
 
 /**
@@ -11,6 +13,8 @@ import java.time.LocalDateTime;
  * @param agentId Agent ID，可选
  * @param modelId 模型 ID，可选
  * @param executionStatus Agent 执行状态，可选
+ * @param executionMode 执行模式，可选；历史未知记录不匹配指定模式
+ * @param onlineParticipation 是否参与线上实验，null 表示全部
  */
 public record AgentToolUsageQueryDTO(
         Long spaceId,
@@ -18,5 +22,7 @@ public record AgentToolUsageQueryDTO(
         LocalDateTime endAt,
         Long agentId,
         Long modelId,
-        String executionStatus) {
+        String executionStatus,
+        TaskExecutionMode executionMode,
+        Boolean onlineParticipation) {
 }

@@ -20,6 +20,8 @@ public class AgentExecutionEntity extends BaseEntity {
     private String a2aContextId;
     @Schema(description = "工作台任务 ID")
     private Long workbenchTaskId;
+    @Schema(description = "已验证 Task 输入的执行模式只读投影；不加入配置快照哈希，历史来源缺失时为空")
+    private String executionMode;
     @Schema(description = "执行主 Span 的 OpenTelemetry Trace ID")
     private String traceId;
     @Schema(description = "执行主 Span 的 OpenTelemetry Span ID")

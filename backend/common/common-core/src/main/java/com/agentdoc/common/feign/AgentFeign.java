@@ -8,6 +8,7 @@ import com.agentdoc.common.feign.dto.AgentEvaluationEvidenceQueryDTO;
 import com.agentdoc.common.feign.dto.AgentTaskOptionQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolUsageQueryDTO;
 import com.agentdoc.common.feign.dto.AgentToolCallPageQueryDTO;
+import com.agentdoc.common.feign.dto.AgentToolCallSearchDTO;
 import com.agentdoc.common.feign.dto.WorkbenchSearchQueryDTO;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
 import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
@@ -34,6 +35,10 @@ import java.util.List;
 
 @FeignClient(name = "agent-service", url = "${agent-doc.feign.gateway-url:http://localhost:9090}")
 public interface AgentFeign {
+
+    /** 独立分页查询空间筛选范围内的全部脱敏工具调用。 */
+    @PostMapping("/api/agent/executions/tool-calls/search")
+    Result<PageVO<AgentToolCallVO>> searchToolCalls(@RequestBody AgentToolCallSearchDTO request);
 
     /** 当前人类 Task/文档授权下读取原始最终文本，不接受执行能力代替读取权限。 */
     @GetMapping("/api/agent/executions/tasks/{taskId}/online-original-text")

@@ -7,6 +7,7 @@ import {
   searchOnlineExperiments,
   searchOnlineReviewAssignments,
   getOnlineReport,
+  getOnlineReportRevisions,
   recalculateOnlineReport,
   decideOnlineExperiment,
   getOnlinePromptComparison,
@@ -41,6 +42,14 @@ describe('线上协议适配', () => {
     })
   })
   it('线上报告与离线报告分离，完整核验和概要路径明确', async () => {
+    const signal = new AbortController().signal
+    await getOnlineReportRevisions('9007199254740993', 2, signal)
+    expect(request).toHaveBeenLastCalledWith({
+      method: 'GET',
+      url: '/evaluation/online-experiments/9007199254740993/reports',
+      params: { pageNum: 2, pageSize: 10 },
+      signal,
+    })
     await getOnlineReport('10', 2)
     expect(request).toHaveBeenLastCalledWith({
       method: 'GET',

@@ -32,9 +32,10 @@
         >
         <span v-else>版本 #{{ row.versionId }}</span>
         <p v-if="row.evaluatorKey">{{ row.evaluatorKey }}</p>
-        <JsonConfigEditor
+        <EvaluatorConfigEditor
           v-if="kind === 'test-cases'"
           v-model="row.expectedJson"
+          :evaluator-key="row.evaluatorKey"
           label="绑定级 expectedJson（留空使用用例预期）"
           :readonly="!editable"
           :rows="3"
@@ -84,7 +85,7 @@ import {
 } from '../api/evaluation-api'
 import type { DatasetVersion, EvaluatorVersion, TestCaseVersion } from '../types'
 import EvaluationStatusTag from './EvaluationStatusTag.vue'
-import JsonConfigEditor from './JsonConfigEditor.vue'
+import EvaluatorConfigEditor from './EvaluatorConfigEditor.vue'
 import PublishedVersionPicker from './PublishedVersionPicker.vue'
 import { formatJson } from '../catalog'
 const props = defineProps<{
@@ -245,6 +246,8 @@ onBeforeUnmount(() => {
   display: grid;
   gap: var(--adw-space-3);
   margin-top: var(--adw-space-6);
+  padding-top: 20px;
+  border-top: 1px solid #e5ebf3;
 }
 .catalog-bindings__heading,
 .catalog-bindings__title {
@@ -264,10 +267,15 @@ p {
 .catalog-bindings__row {
   display: grid;
   gap: var(--adw-space-2);
-  padding: var(--adw-space-4) 0;
-  border-bottom: 1px solid var(--adw-border-color-light);
+  margin-top: 10px;
+  padding: 16px;
+  border: 1px solid #e1e8f1;
+  border-radius: 8px;
+  background: #f8fafd;
   overflow-wrap: anywhere;
 }
+.catalog-bindings__heading, .catalog-bindings__title { flex-wrap: wrap; }
+.catalog-bindings__actions .el-button { margin-left: 0; }
 .catalog-bindings__actions {
   display: flex;
   flex-wrap: wrap;

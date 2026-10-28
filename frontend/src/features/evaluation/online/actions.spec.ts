@@ -103,7 +103,7 @@ describe('线上动作确认', () => {
   it('STOPPING 显示逐项未决并允许独立熔断入口', () => {
     const wrapper = create('STOPPING')
     expect(wrapper.text()).toContain('取消、执行槽及预算须分别等待权威确认')
-    expect(button(wrapper, '结束实验').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '结束实验')).toBeUndefined()
     expect(button(wrapper, '紧急熔断').attributes('disabled')).toBeUndefined()
   })
 })

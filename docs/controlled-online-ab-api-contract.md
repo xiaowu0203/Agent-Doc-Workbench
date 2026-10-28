@@ -235,6 +235,8 @@ OnlineQualityFeedbackDTO：assignmentId、originalEvidenceType（ORIGINAL_TEXT/C
 
 既有 score 必须等于 rubricScore/4（0、0.25、0.5、0.75、1），服务端生成/校验，历史 0～1 值不改。label 继续现有 ACCEPTED/REJECTED/NEEDS_CHANGES/NOT_APPLICABLE，不把 rubric 直接写 4 到 score。
 
+新评分界面使用通用交付等级说明 v1：0 完全未达成、1 大量错误、2 部分达成、3 基本达成且需小改、4 完整达成。评分以冻结业务目标和完整原始证据为准；证据不可校验时禁止评分，不能以 0 代替缺证据。等级说明不自动决定质量标签、安全事件或正式审批结果，不反向为历史评分赋予新的等级含义，亦不重写旧反馈或冻结报告。说明的后续语义变更应另起版本评审。
+
 默认首份有效记录按 createdAt + id 选定；明确更正只能指向同一 Task/原产物及合法前序，理由必需、无环、并发更正只允许一个被选后继；报告选择规则固定。已知分组的评审不能声明 BLINDED，无法确认按 UNKNOWN；首评非盲态不能通过另造首评替换。
 
 当前人工入口每个 assignment 只允许一份首评，更正必须指向当前链尾，comment 或 reasonCodes 至少一项非空。服务端复查已完成 LIVE 冻结输入、实际 assignment 和不可变原始证据；多产物必须使用 ORIGINAL_CHANGE_SET 对整个任务原始变更集合评分，旧单产物类型在多产物场景继续拒绝，避免选择其中最好的一份。证据缺失、未完成或身份损坏不落零分；证据可校验时 rubric=0 是有效反馈。RPC 与求证在事务外，落库时以 assignment 行锁再次核验身份，首评和更正均只追加。
@@ -392,6 +394,14 @@ V40 的资格证明只能由这条完整隐藏读取链路创建；证明绑定�
 带服务器证明的新反馈使用 online.quality-feedback-with-review-proof 域，在既有载荷追加 reviewReceiptId/reviewReceiptHash；同时有知情事实时也纳入 exposureId/exposureHash。历史两种域及 sourceHash 不重算。报告以原始字段重建 sourceHash，拒绝损坏链或没有证明的历史 BLINDED，0分有效，首评与更正不重复计主体。
 
 线上报告接口为 `POST /api/evaluation/online-experiments/{id}/reports/recalculate`、`GET /api/evaluation/online-experiments/{id}/reports/{revision}`、`POST /api/evaluation/online-experiments/{id}/decision`。重算请求是 clientRequestKey、十进制文本 assignmentCutoffSequence（允许0）、ISO毫秒 observationCutoffAt；截止不能超过已接受顺序或当前时间。操作者必须是当前OWNER并具备evaluation:manage，跨服务事实另行复核task:read/evaluation:read/usage:read。每批至多100个绑定，各领域只读本领域表，不扩大CONTROL/Worker权限。
+
+`GET /api/evaluation/online-experiments/{id}/reports?pageNum=1&pageSize=10` 提供按 revision 降序分页的报告索引，分页上限100。要求当前 space:read 和 evaluation:read，并在返回前记录 REPORT 知情事实。仅查询实验/空间内的版本、schema、摘要、生成时间和观察截止等元数据，不加载 input_json/report_json、分块或跨服务事实。索引不代表正文或完整输入已核验；决定引用仅在版本和 reportHash 都与既有决定一致时标记，不改写决定。前端无指定 revision 时选取第一页最新记录并读取概要；历史深链保持指定版本并自动读取其概要，即使该版本不在当前索引页；刷新链接或路由切换同样恢复指定概要，完整核验仍由用户显式触发。索引失败不能回退为“最新v1”，也不通过重算或逐个探测版本号发现版本。
+
+`GET /api/evaluation/online-experiments/{id}/reports/range-suggestion` 为 OWNER + evaluation:manage 且具备上述读取权限的用户提供当前 `acceptedSequence`（十进制文本）、服务端本地 `observationCutoffAt`（毫秒）及实际 JVM `timeZone`。读取前同样记录 REPORT 知情；不从 Task 数或浏览器时钟推算，不生成报告。建议是读取时观察到的范围，提交前序号仍可能增长；前端只填入表单，继续保留显式核对和确认。已有历史截止不做时区猜测或重新解释。
+
+普通实验详情追加只读 `decisionReportRevision`、`decisionReportHash`，直接来自既有人工决定记录，不从最新报告或当前索引推断。报告区明确标示当前查看版本与决定依据是否不同，并提供读取原依据报告的入口；概要读取仍不能代替完整核验或重新作出决定。STOPPED 页面在 DOM 和导航中优先展示报告，运行期优先展示运行事实。当前事实读取时间是浏览器最近成功接收详情的 UTC 时间，不冒充服务端观察时点，不与冻结报告截止混用；刷新失败保留上次成功时间。分配的确认、派发、槽、取消、结算与执行各阶段分别译名，未知码保留原码，不合成为推测的任务终态。
+
+隐藏分组评审候选追加 `ownReviewRecorded`：仅表示当前用户在当前空间、本页分配中曾提交 MANUAL 且带原始 rubric 的历史反馈，不返回他人参与情况、评分/标签/自由文本、知情状态或任务终态。当前页一次批量查询，0 分同样属于已有记录，不读取 factsJson 或为此签发资格。它不证明反馈摘要有效、当前目标已评、当前链尾已确认或具备盲态资格；文本与完整变更集合仍需打开冻结目标并核验原始证据和反馈链。没有该字段的旧服务响应在前端显示“记录状态未知”，不默认当作未评。
 
 返回包装字段为 id/experimentId/revision/reportType/schemaVersion/reportHash/inputHash/state/report；report 是 online.report schema2规范信封，payload 是 ONLINE_V1 schema2正文，包含第9节的窗口、分母、覆盖、诊断和门禁。未知schema或摘要损坏返回安全降级状态、空正文，不能作决定。小数和时间以规范文本进入哈希；原始正文、Prompt、诊断正文和Trace不进入报告冻结输入，相应私有字段只保留摘要。每个冻结ruleKey按截止内最大attemptNo取最近一次尝试，失败/缺失不得回退挑选更好的旧尝试；全部参与事实身份仍冻结。报告是当前读取的事实快照，不能声称从可变状态重建任意历史时刻。
 

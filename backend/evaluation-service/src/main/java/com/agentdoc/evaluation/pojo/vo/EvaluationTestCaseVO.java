@@ -21,7 +21,10 @@ public record EvaluationTestCaseVO(
         Boolean archived,
 
         @Schema(description = "创建人ID")
-        Long createdBy
+        Long createdBy,
+
+        @Schema(description = "版本与最新发布版本绑定概要；非搜索响应可为空")
+        CatalogVersionSummaryVO versionSummary
 ) {
     /**
      * 数据库实体转换为视图对象
@@ -29,7 +32,11 @@ public record EvaluationTestCaseVO(
      * @return 对外VO
      */
     public static EvaluationTestCaseVO from(EvaluationTestCaseEntity value) {
+        return from(value, null);
+    }
+
+    public static EvaluationTestCaseVO from(EvaluationTestCaseEntity value, CatalogVersionSummaryVO summary) {
         return new EvaluationTestCaseVO(value.getId(), value.getSpaceId(), value.getName(), value.getDescription(),
-                value.getArchived(), value.getCreatedBy());
+                value.getArchived(), value.getCreatedBy(), summary);
     }
 }

@@ -141,6 +141,10 @@ export function jaegerTraceUrl(
 }
 
 export const TRACE_ATTRIBUTE_KEYS = new Set([
+  'agentdoc.code.class',
+  'agentdoc.code.method',
+  'agentdoc.code.file',
+  'agentdoc.code.line',
   'run.id',
   'execution.id',
   'agentdoc.retry.count',

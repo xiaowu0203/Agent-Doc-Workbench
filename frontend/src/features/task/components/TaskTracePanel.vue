@@ -13,24 +13,22 @@
       </div>
     </div>
 
-    <div class="trace-layout">
-      <div class="trace-main">
-        <DataState :loading="loading && !trace" :error="error" @retry="loadTrace">
-          <template v-if="trace">
+    <DataState :loading="loading && !trace" :error="error" @retry="loadTrace">
+      <template v-if="trace">
             <article class="surface-card trace-summary">
               <div>
                 <span>Trace 可用性</span
-                ><strong>{{ trace.availabilityCode === 'AVAILABLE' ? '已关联' : '不可用' }}</strong
+                ><strong :class="trace.availabilityCode === 'AVAILABLE' ? 'trace-available' : ''">{{ trace.availabilityCode === 'AVAILABLE' ? '已关联' : '不可用' }}</strong
                 ><code>{{ trace.traceId || '未关联 Trace' }}</code>
               </div>
-              <div>
+              <div v-if="trace.availabilityCode === 'AVAILABLE'">
                 <span>端到端遥测耗时</span
                 ><strong>{{ formatTraceDuration(trace.durationMicros) }}</strong>
               </div>
-              <div>
+              <div v-if="trace.availabilityCode === 'AVAILABLE'">
                 <span>可见 Span 总数</span><strong>{{ trace.spanCount ?? '不可用' }}</strong>
               </div>
-              <div>
+              <div v-if="trace.availabilityCode === 'AVAILABLE'">
                 <span>错误 / 取消 / 重试</span
                 ><strong
                   >{{ trace.errorCount ?? '不可用' }} / {{ trace.canceledCount ?? '不可用' }} /
@@ -62,8 +60,12 @@
               title="Task 与 Execution 的 Trace 身份不同，请结合业务身份排查上下文断链"
             />
 
+      </template>
+    </DataState>
+    <div class="trace-layout" :class="{ 'trace-layout--unavailable': trace?.availabilityCode !== 'AVAILABLE' }">
+      <div v-if="trace?.availabilityCode === 'AVAILABLE'" class="trace-main">
             <article
-              v-if="trace.availabilityCode === 'AVAILABLE'"
+              v-if="trace && trace.availabilityCode === 'AVAILABLE'"
               class="surface-card waterfall-card"
             >
               <div class="trace-heading">
@@ -108,21 +110,22 @@
                   }"
                   :aria-pressed="selectedSpan?.spanId === row.span.spanId"
                   :aria-label="`${row.span.service} · ${row.span.name} · ${row.span.status}`"
+                  :title="spanTooltip(row.span)"
                   @click="selectedId = row.span.spanId"
                 >
                   <span
                     class="span-name"
                     :style="{ paddingLeft: `${Math.min(row.depth, 6) * 12}px` }"
-                    ><strong :title="row.span.name">{{ row.span.name }}</strong
+                    ><strong>{{ spanLabel(row.span) }}</strong
                     ><small
                       >{{ row.span.service
                       }}<template v-if="row.missingParent"> · 父关联缺失</template
                       ><template v-if="row.span.status !== 'OK'"> · {{ row.span.status }}</template
                       ><template v-if="spanHasRetry(row.span)"> · 重试</template></small
-                    ></span
+                    ><small v-if="sqlTemplate(row.span)" class="span-sql-summary">{{ sqlTemplate(row.span) }}</small></span
                   >
                   <span class="span-track"
-                    ><span class="span-bar" :style="barStyle(row.span)"></span
+                    ><span class="span-bar" :class="`span-bar--${row.span.category.toLowerCase()}`" :style="barStyle(row.span)"></span
                   ></span>
                   <span class="span-duration">{{
                     formatTraceDuration(row.span.durationMicros)
@@ -147,8 +150,6 @@
                 </ul>
               </div>
             </article>
-          </template>
-        </DataState>
       </div>
       <aside class="trace-side">
         <article class="surface-card span-detail">
@@ -164,7 +165,7 @@
               "
               >{{ selectedSpan.status }}</el-tag
             >
-            <strong>{{ selectedSpan.name }}</strong>
+            <strong>{{ spanLabel(selectedSpan) }}</strong>
             <dl>
               <dt>Span ID</dt>
               <dd>{{ selectedSpan.spanId }}</dd>
@@ -176,11 +177,30 @@
               <dd>{{ selectedSpan.kind }}</dd>
               <dt>耗时</dt>
               <dd>{{ formatTraceDuration(selectedSpan.durationMicros) }}</dd>
+              <dt>调用类</dt>
+              <dd>{{ codeLocation(selectedSpan, 'agentdoc.code.class') || '未采集' }}</dd>
+              <dt>调用方法</dt>
+              <dd>{{ codeLocation(selectedSpan, 'agentdoc.code.method') || '未采集' }}</dd>
+              <dt>源码文件 / 行</dt>
+              <dd>{{ codeFileLocation(selectedSpan) }}</dd>
               <template v-for="attribute in selectedAttributes" :key="attribute.key"
-                ><dt>{{ attribute.key }}</dt>
+                ><dt>{{ attributeLabels[attribute.key] || attribute.key }}</dt>
                 <dd>{{ attribute.value }}</dd></template
               >
             </dl>
+            <div v-if="selectedSpan.category === 'DATABASE'" class="trace-sql">
+              <div class="trace-sql-heading">
+                <strong>SQL 模板</strong>
+                <CopyButton v-if="selectedSql" :value="selectedSql" label="SQL 模板" />
+              </div>
+              <p v-if="selectedSql && !sqlTemplate(selectedSpan)">来自直接父级 SQL 调用。</p>
+              <pre v-if="selectedSql">{{ selectedSql }}</pre>
+              <p v-else-if="selectedSpan.name === 'db.commit' || selectedSpan.name === 'db.rollback'">事务操作不包含 SQL 语句。</p>
+              <p v-else-if="selectedSpan.name === 'db.prepare'">准备语句节点没有采集 SQL；可查看关联的执行 SQL 节点。</p>
+              <p v-else>此节点无可展示的 SQL 模板；历史 Trace 或不支持的操作可能未采集。</p>
+              <small>参数值不展示；包含注释或无法安全处理的语句会被丢弃。</small>
+            </div>
+            <p class="trace-note">位置表示本服务内创建 Span 的调用点；外部服务的内部实现不能由此推断。</p>
           </template>
           <p v-else>暂无可选节点，业务事实仍可查看。</p>
         </article>
@@ -243,6 +263,7 @@ import {
   traceRows,
 } from '@/features/task/trace-view'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { useWorkspaceStore } from '@/stores/workspace'
 
@@ -260,6 +281,8 @@ const filters = [
   { key: 'ERROR', label: '错误与取消' },
   { key: 'RETRY', label: '重试' },
   { key: 'CRITICAL', label: '关键路径' },
+  { key: 'DATABASE', label: '数据库 / Redis' },
+  { key: 'SQL', label: '仅 SQL' },
 ]
 const rows = computed(() => traceRows(trace.value?.spans ?? [])),
   critical = computed(() => criticalTracePath(rows.value))
@@ -276,15 +299,39 @@ const visibleRows = computed(() =>
     if (filter.value === 'ERROR') return span.status === 'ERROR' || span.status === 'CANCELED'
     if (filter.value === 'RETRY') return spanHasRetry(span)
     if (filter.value === 'CRITICAL') return critical.value.has(span.spanId)
+    if (filter.value === 'DATABASE') return span.category === 'DATABASE' || span.category === 'REDIS'
+    if (filter.value === 'SQL') return span.category === 'DATABASE' && Boolean(sqlTemplate(span))
     return showTechnical.value || important(span)
   }),
 )
 const selectedSpan = computed(
   () => trace.value?.spans.find((span) => span.spanId === selectedId.value) ?? null,
 )
+const selectedSql = computed(() => {
+  const span = selectedSpan.value
+  if (!span || span.category !== 'DATABASE') return ''
+  const own = sqlTemplate(span)
+  if (own) return own
+  const parent = trace.value?.spans.find((item) => item.spanId === span.parentSpanId)
+  return parent?.category === 'DATABASE' && parent.service === span.service ? sqlTemplate(parent) : ''
+})
 const selectedAttributes = computed(
-  () => selectedSpan.value?.attributes.filter((item) => TRACE_ATTRIBUTE_KEYS.has(item.key)) ?? [],
+  () => selectedSpan.value?.attributes.filter((item) => TRACE_ATTRIBUTE_KEYS.has(item.key) && !item.key.startsWith('agentdoc.code.')) ?? [],
 )
+const attributeLabels: Record<string, string> = {
+  'agentdoc.tool.technical_name': '工具标识',
+  'agentdoc.skill.technical_name': 'Skill 标识',
+  'gen_ai.request.model': '请求模型',
+  'gen_ai.response.model': '响应模型',
+  'gen_ai.usage.input_tokens': '输入 Token',
+  'gen_ai.usage.output_tokens': '输出 Token',
+  'agentdoc.model.call.sequence': '模型调用序号',
+  'agentdoc.model.stream': '流式调用',
+  'agentdoc.operation.status': '操作状态',
+  'agentdoc.runtime.type': '运行时',
+  'gen_ai.operation.name': '模型操作',
+  'gen_ai.provider.name': '模型提供方',
+}
 const origin = computed(
   () =>
     micros(trace.value?.startTimeMicros ?? null) ??
@@ -336,6 +383,43 @@ const availabilityMessage = computed(() =>
     ? (availabilityMessages[trace.value.availabilityCode] ?? trace.value.availabilityCode)
     : '',
 )
+function codeLocation(span: TraceSpan, key: string) {
+  const value = span.attributes.find((attribute) => attribute.key === key && TRACE_ATTRIBUTE_KEYS.has(key))?.value || ''
+  return key === 'agentdoc.code.class' ? value.replaceAll('/', '.') : value
+}
+function codeFileLocation(span: TraceSpan) {
+  const file = codeLocation(span, 'agentdoc.code.file')
+  const line = codeLocation(span, 'agentdoc.code.line')
+  return file ? `${file}${line ? `:${line}` : ''}` : '未采集'
+}
+function sqlTemplate(span: TraceSpan) {
+  return span.attributes.find((attribute) => attribute.key === 'agentdoc.db.sql_template')?.value || ''
+}
+const spanLabels: Record<string, string> = {
+  'db.prepare': '准备数据库语句',
+  'db.execute': '执行数据库语句',
+  'db.commit': '提交数据库事务',
+  'db.rollback': '回滚数据库事务',
+  'db.client.operation': '数据库操作',
+  'redis.operation': 'Redis 操作',
+}
+function spanLabel(span: TraceSpan) {
+  if (span.category === 'DATABASE' && sqlTemplate(span)) return '执行 SQL'
+  return spanLabels[span.name] || span.name
+}
+function spanTooltip(span: TraceSpan) {
+  const tool = span.attributes.find((attribute) => attribute.key === 'agentdoc.tool.technical_name')
+  return [
+    `调用：${spanLabel(span)}`,
+    `服务：${span.service}`,
+    `状态：${span.status}`,
+    `耗时：${formatTraceDuration(span.durationMicros)}`,
+    ...(tool ? [`工具标识：${tool.value}`] : []),
+    `调用类：${codeLocation(span, 'agentdoc.code.class') || '未采集'}`,
+    `调用方法：${codeLocation(span, 'agentdoc.code.method') || '未采集'}`,
+    `源码文件 / 行：${codeFileLocation(span)}`,
+  ].join('\n')
+}
 function barStyle(span: TraceSpan) {
   const left = Math.min(
     100,
@@ -396,7 +480,13 @@ onBeforeUnmount(() => controller?.abort())
 .trace-main,
 .trace-side {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-4);
+  min-width: 0;
+}
+.trace-panel > *,
+.trace-main > *,
+.trace-side > * {
   min-width: 0;
 }
 .trace-heading {
@@ -433,13 +523,17 @@ h3 {
   gap: var(--adw-space-4);
   align-items: start;
 }
+.trace-layout--unavailable { grid-template-columns: minmax(0, 1fr); }
+.trace-layout--unavailable .trace-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .trace-summary {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr 1.2fr;
-  padding: var(--adw-space-5);
+  padding: 16px 20px;
   gap: var(--adw-space-4);
   border-left: 3px solid var(--adw-color-primary);
 }
+.trace-summary > div + div { border-left: 1px solid var(--adw-border-color-light); padding-left: 20px; }
+.trace-summary .trace-available { color: var(--adw-color-success); }
 .trace-summary span {
   color: var(--adw-text-secondary);
   font-size: 12px;
@@ -476,24 +570,29 @@ h3 {
   font: inherit;
 }
 .trace-filters [aria-pressed='true'] {
-  background: var(--adw-color-primary-soft);
-  color: var(--adw-color-primary);
+  background: var(--adw-color-primary);
+  color: white;
 }
 .waterfall-scroll {
-  overflow-x: auto;
+  max-height: 480px;
+  overflow: auto;
 }
 .waterfall-axis,
 .span-row {
   display: grid;
-  grid-template-columns: 220px minmax(180px, 1fr) 80px;
+  grid-template-columns: minmax(130px, 35%) minmax(100px, 1fr) 70px;
   gap: 12px;
-  min-width: 520px;
+  min-width: 324px;
   align-items: center;
 }
 .waterfall-axis {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 12px 0;
   font-size: 11px;
   color: var(--adw-text-tertiary);
+  background: var(--adw-surface);
 }
 .waterfall-axis div {
   display: flex;
@@ -512,6 +611,8 @@ h3 {
 .span-row--selected {
   background: var(--adw-color-primary-soft);
 }
+.span-row:hover { background: var(--adw-surface-muted); }
+.span-row--selected:hover { background: var(--adw-color-primary-soft); }
 .span-name {
   min-width: 0;
 }
@@ -520,15 +621,16 @@ h3 {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 13px;
 }
 .span-name small {
   display: block;
   margin-top: 4px;
   color: var(--adw-text-secondary);
-  font-size: 10px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
+.span-name .span-sql-summary { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .span-track {
   position: relative;
   height: 16px;
@@ -545,6 +647,8 @@ h3 {
   border-radius: 3px;
   background: var(--adw-color-primary);
 }
+.span-bar--gen_ai { background: #9273e8; }
+.span-bar--tool, .span-bar--mcp, .span-bar--skill { background: #39b5a8; }
 .span-row--error .span-bar {
   background: var(--adw-color-danger);
 }
@@ -553,7 +657,7 @@ h3 {
   outline-offset: 2px;
 }
 .span-duration {
-  font-size: 11px;
+  font-size: 12px;
   text-align: right;
 }
 .span-detail > strong {
@@ -579,6 +683,10 @@ dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
+.trace-sql { margin-top: var(--adw-space-4); font-size: 12px; }
+.trace-sql-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trace-sql pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 10px; background: var(--adw-surface-muted); border-radius: var(--adw-radius-sm); }
+.trace-sql p, .trace-sql small { color: var(--adw-text-secondary); line-height: 1.6; }
 .service-summary {
   margin-top: var(--adw-space-5);
   padding-top: var(--adw-space-4);
@@ -619,11 +727,13 @@ button:focus-visible {
 }
 @media (max-width: 720px) {
   .trace-summary,
-  .trace-side {
+  .trace-side,
+  .trace-layout--unavailable .trace-side {
     grid-template-columns: minmax(0, 1fr);
   }
   .trace-heading {
     flex-direction: column;
   }
+  .trace-summary > div + div { border-left: 0; border-top: 1px solid var(--adw-border-color-light); padding: 12px 0 0; }
 }
 </style>

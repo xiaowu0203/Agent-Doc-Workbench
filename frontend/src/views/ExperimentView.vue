@@ -1,8 +1,33 @@
 <template>
-  <section class="experiment" aria-label="离线实验">
+  <section class="experiment" :class="{ 'experiment--detail': resourceId }" aria-label="离线实验">
     <header class="experiment-header">
       <div>
-        <h2>{{ resourceId ? `离线实验 #${resourceId}` : '离线实验列表' }}</h2>
+        <h2>
+          <template v-if="resourceId && experiment && canRead">
+            <span v-if="experiment.name">{{ experiment.name }}</span>
+            <EvaluationSourceTitle
+              v-else
+              :space-id="spaceId"
+              kind="datasets"
+              :version-id="String(experiment.datasetVersionId || '')"
+              :fallback="`离线实验 #${resourceId}`"
+            />
+            · 离线实验
+          </template>
+          <template v-else>{{ resourceId ? `离线实验 #${resourceId}` : '离线实验列表' }}</template>
+        </h2>
+        <p v-if="resourceId && experiment?.name && canRead">
+          来源：
+          <EvaluationSourceTitle
+            :space-id="spaceId"
+            kind="datasets"
+            :version-id="String(experiment.datasetVersionId || '')"
+            fallback="数据集名称不可用"
+          />
+        </p>
+        <p v-if="resourceId">
+          实验 #{{ resourceId }} <CopyButton :value="resourceId" label="实验 ID" />
+        </p>
         <p>在冻结数据集上比较 Baseline 与 Prompt 候选；不修改生产 Agent，不分配线上流量。</p>
       </div>
       <div class="actions">
@@ -18,62 +43,85 @@
       刷新失败：{{ pollError }}。页面保留上次结果，正在退避重试。
     </p>
     <template v-if="!resourceId">
-      <form class="filters" @submit.prevent="loadList(1)">
-        <label
-          >状态<select v-model="statusFilter" aria-label="实验状态">
-            <option value="">全部状态</option>
-            <option v-for="status in EXPERIMENT_STATUSES" :key="status">{{ status }}</option>
-          </select></label
-        ><label
-          >数据集版本 ID<input
-            v-model="datasetFilter"
-            aria-label="筛选数据集版本 ID"
-            inputmode="numeric" /></label
-        ><label
-          >创建起始<input
-            v-model="createdFrom"
-            aria-label="实验创建起始"
-            type="datetime-local" /></label
-        ><label
-          >创建截止<input
-            v-model="createdTo"
-            aria-label="实验创建截止"
-            type="datetime-local" /></label
-        ><el-button native-type="submit">查询</el-button>
+      <form class="filters evaluation-filter" @submit.prevent="loadList(1)">
+        <label>
+          <span>状态</span>
+          <el-select v-model="statusFilter" aria-label="实验状态" placeholder="全部状态">
+            <el-option label="全部状态" value="" />
+            <el-option v-for="status in EXPERIMENT_STATUSES" :key="status" :value="status" :label="evaluationStatus('experiment', status).label" />
+          </el-select>
+        </label>
+        <div class="source-filter">
+          <label
+            >数据集版本 ID<el-input
+              v-model="datasetFilter"
+              aria-label="筛选数据集版本 ID"
+              inputmode="numeric"
+              @input="sourceLabel = ''"
+          /></label>
+          <el-button aria-label="按名称选择数据集版本" @click="sourcePicker = true">按名称选择</el-button>
+          <small v-if="sourceLabel">{{ sourceLabel }}</small>
+        </div>
+        <label class="evaluation-filter__date">
+          <span>创建日期</span>
+          <el-date-picker
+            v-model="dateRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+        </label>
+        <div class="evaluation-filter__actions"><el-button type="primary" native-type="submit">查询</el-button></div>
       </form>
       <DataState
         :loading="loading"
         :error="error"
         :empty="!list.records.length"
-        empty-text="尚无离线实验。选择已发布数据集，创建 Prompt 候选后预检。"
+        :empty-text="
+          statusFilter || datasetFilter || dateRange
+            ? '当前筛选没有匹配的离线实验，请调整条件后查询。'
+            : '尚无离线实验。选择已发布数据集，创建 Prompt 候选后预检。'
+        "
         @retry="refresh"
         ><div class="table-wrap">
-          <table>
+          <table class="evaluation-record-table">
             <thead>
               <tr>
                 <th>实验 / 冻结来源</th>
-                <th>状态 / Variant</th>
+                <th>状态 / 配置组</th>
                 <th>授权 Token / 结论</th>
                 <th>时间</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in list.records" :key="String(item.id)">
-                <td>
-                  <RouterLink :to="`${basePath}/${item.id}`">实验 #{{ item.id }}</RouterLink>
-                  <p>
+                <td class="evaluation-record-table__primary" data-label="实验 / 冻结来源">
+                  <RouterLink :to="`${basePath}/${item.id}`" :title="item.name || undefined">
+                    <template v-if="item.name">{{ item.name }}</template>
+                    <template v-else
+                      >{{ item.datasetName || '数据集名称不可用' }} · v{{
+                        item.datasetVersionNo ?? '未提供'
+                      }}</template
+                    >
+                  </RouterLink>
+                  <p v-if="item.name">
                     {{ item.datasetName || '数据集名称不可用' }} · v{{
                       item.datasetVersionNo ?? '未提供'
                     }}
                   </p>
+                  <p>实验 #{{ item.id }}</p>
                   <small>版本 #{{ item.datasetVersionId || '未提供' }}</small>
                 </td>
-                <td>
+                <td data-label="状态 / 配置组">
                   <EvaluationStatusTag domain="experiment" :status="item.status" />
-                  <p>{{ item.linkedRunCount ?? '未提供' }} Run / {{ item.variantCount }} Variant</p>
+                  <p>
+                    {{ item.linkedRunCount ?? '未提供' }} 个运行 / {{ item.variantCount }} 个配置组
+                  </p>
                   <p v-if="item.failureCode">{{ item.failureCode }}</p>
                 </td>
-                <td>
+                <td data-label="授权 Token / 结论">
                   {{ fact(item.authorizedTokenBudget) }}
                   <p>
                     {{ item.decision || '尚无结论'
@@ -82,15 +130,15 @@
                     >
                   </p>
                 </td>
-                <td>
-                  创建 {{ item.createdAt || '未提供' }}
-                  <p>开始 {{ item.startedAt || '未开始' }}</p>
+                <td data-label="时间">
+                  创建 <BusinessTime :value="item.createdAt" empty-text="未提供" />
+                  <p>开始 <BusinessTime :value="item.startedAt" empty-text="未开始" /></p>
                   <p>
                     结束
                     {{
                       activeExperiment(item.status) || ['CREATED', 'PAUSED'].includes(item.status)
                         ? '尚未结束'
-                        : item.finishedAt || '未提供'
+                        : formatBusinessTime(item.finishedAt, '未提供')
                     }}
                   </p>
                 </td>
@@ -108,18 +156,23 @@
     </template>
     <DataState v-else :loading="loading && !experiment" :error="error" @retry="refresh">
       <template v-if="experiment">
-        <div class="summary-grid">
+        <nav class="experiment-detail-nav" aria-label="离线实验详情分区">
+          <a href="#experiment-overview">运行概览</a>
+          <a href="#experiment-variants">配置组与运行</a>
+          <a href="#experiment-report">报告与结论</a>
+        </nav>
+        <div id="experiment-overview" class="summary-grid">
           <article>
             <EvaluationStatusTag domain="experiment" :status="experiment.status" />
             <p v-if="experiment.failureCode">失败码：{{ experiment.failureCode }}</p>
-            <p>开始 {{ experiment.startedAt || '未开始' }}</p>
+            <p>开始 <BusinessTime :value="experiment.startedAt" empty-text="未开始" /></p>
             <p>
               结束
               {{
                 activeExperiment(experiment.status) ||
                 ['CREATED', 'PAUSED'].includes(experiment.status)
                   ? '尚未结束'
-                  : experiment.finishedAt || '未提供'
+                  : formatBusinessTime(experiment.finishedAt, '未提供')
               }}
             </p>
           </article>
@@ -162,8 +215,8 @@
             </li>
           </ul>
         </section>
-        <section aria-label="冻结 Variant" class="variants">
-          <h3>冻结 Variant 与关联运行</h3>
+        <section id="experiment-variants" aria-label="冻结 Variant" class="variants">
+          <h3>冻结配置组与关联运行</h3>
           <p>
             首版仅改变 Prompt。选中一项查看其 Run 进度；历史 Run 的恢复与重试通过 Run
             页面正式入口操作。
@@ -223,7 +276,7 @@
             <p v-if="selectedRun.pauseReason">暂停原因：{{ selectedRun.pauseReason }}</p>
           </article>
         </section>
-        <section aria-label="报告版本与结论" class="reports">
+        <section id="experiment-report" aria-label="报告版本与结论" class="reports">
           <header class="experiment-header">
             <h3>报告版本与人工结论</h3>
             <div class="actions">
@@ -248,7 +301,7 @@
               @change="chooseRevision"
             >
               <option v-for="item in revisions" :key="item.revision" :value="item.revision">
-                Revision {{ item.revision }} · {{ item.generatedAt || '未提供' }}
+                Revision {{ item.revision }} · {{ formatBusinessTime(item.generatedAt, '未提供') }}
               </option>
             </select></label
           >
@@ -260,7 +313,8 @@
             >
             <p>{{ experiment.decisionReason }}</p>
             <p>
-              由 #{{ experiment.decidedBy }} 于 {{ experiment.decidedAt }} 记录。结论不修改生产
+              由 #{{ experiment.decidedBy }} 于
+              <BusinessTime :value="experiment.decidedAt" /> 记录。结论不修改生产
               Agent、不分配线上流量。
             </p>
           </article>
@@ -277,8 +331,22 @@
       v-if="creating && canCreate"
       :space-id="spaceId"
       :allowed="canCreate"
-      @close="creating = false"
+      :initial-version-id="
+        typeof route.query.sourceVersionId === 'string' && route.query.sourceKind === 'datasets'
+          ? route.query.sourceVersionId
+          : undefined
+      "
+      @close="closeCreate"
       @created="created"
+    />
+    <PublishedVersionPicker
+      v-if="sourcePicker"
+      :open="true"
+      :space-id="spaceId"
+      kind="datasets"
+      :exclude-ids="[]"
+      @close="sourcePicker = false"
+      @select="selectFilterSource"
     />
     <el-dialog
       v-model="startDialog"
@@ -292,14 +360,14 @@
         恢复必须使用原授权值 {{ experiment.authorizedTokenBudget }}，请重新输入并确认。
       </p>
       <label
-        >授权 Token 预算<input
+        >授权 Token 预算<el-input
           v-model.number="authorizedBudget"
           type="number"
           min="1"
           step="1"
           aria-label="授权 Token 预算" /></label
       ><label
-        >Worker 授权有效期（秒）<input
+        >Worker 授权有效期（秒）<el-input
           v-model.number="ttl"
           type="number"
           :min="WORKER_TTL_MIN"
@@ -335,10 +403,11 @@
           <option value="REJECTED">拒绝候选</option>
         </select></label
       ><label
-        >判断依据<textarea
+        >判断依据<el-input
           v-model="decisionReason"
+          type="textarea"
           aria-label="实验结论依据"
-          rows="4"
+          :rows="4"
           maxlength="1000"
         /></label
       ><template #footer
@@ -351,15 +420,21 @@
   </section>
 </template>
 <script setup lang="ts">
+import { formatBusinessTime } from '@/shared/utils/date-time'
+import BusinessTime from '@/shared/components/BusinessTime.vue'
+import { evaluationStatus } from '@/features/evaluation/status'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { ElButton, ElDialog, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElDatePicker, ElDialog, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { SPACE_PERMISSIONS } from '@/shared/constants/permissions'
 import { normalizeApiError } from '@/api/errors'
 import DataState from '@/shared/components/DataState.vue'
+import CopyButton from '@/shared/components/CopyButton.vue'
 import EvaluationStatusTag from '@/features/evaluation/components/EvaluationStatusTag.vue'
+import EvaluationSourceTitle from '@/features/evaluation/components/EvaluationSourceTitle.vue'
 import ExperimentCreate from '@/features/evaluation/components/ExperimentCreate.vue'
+import PublishedVersionPicker from '@/features/evaluation/components/PublishedVersionPicker.vue'
 import ExperimentReportPanel from '@/features/evaluation/components/ExperimentReportPanel.vue'
 import * as api from '@/features/evaluation/api/evaluation-api'
 import {
@@ -387,6 +462,7 @@ import type {
   ExperimentDecision,
   EvaluationPage,
   EvaluationRun,
+  DatasetVersion,
 } from '@/features/evaluation/types'
 const props = defineProps<{ resourceId?: string }>()
 const route = useRoute(),
@@ -426,8 +502,34 @@ const experiment = ref<Experiment | null>(null),
   creating = ref(false)
 const statusFilter = ref<ExperimentStatus | ''>(''),
   datasetFilter = ref(''),
-  createdFrom = ref(''),
-  createdTo = ref('')
+  dateRange = ref<[string, string] | null>(null)
+const sourcePicker = ref(false),
+  sourceLabel = ref('')
+function closeCreate() {
+  creating.value = false
+  if (route.query.create === '1')
+    void router.replace({
+      query: {
+        ...route.query,
+        create: undefined,
+        sourceKind: undefined,
+        sourceVersionId: undefined,
+      },
+    })
+}
+function selectFilterSource(value: unknown, name: string) {
+  const version = value as DatasetVersion
+  if (
+    !version ||
+    !('datasetId' in version) ||
+    String(version.spaceId) !== spaceId.value ||
+    version.status !== 'PUBLISHED'
+  )
+    return
+  datasetFilter.value = String(version.id)
+  sourceLabel.value = `${name} · v${version.versionNo}`
+  sourcePicker.value = false
+}
 const preflight = ref<ExperimentPreflight>(),
   startDialog = ref(false),
   authorizedBudget = ref<number>(),
@@ -523,15 +625,13 @@ async function loadList(pageNum: number) {
   try {
     if (datasetFilter.value && !/^[1-9]\d{0,18}$/.test(datasetFilter.value))
       throw new Error('请输入有效数据集版本 ID')
-    if (createdFrom.value && createdTo.value && createdFrom.value > createdTo.value)
-      throw new Error('创建起始不能晚于截止')
     const value = await api.searchExperiments(
       {
         spaceId: spaceId.value,
         status: statusFilter.value || undefined,
         datasetVersionId: datasetFilter.value || undefined,
-        createdFrom: createdFrom.value || undefined,
-        createdTo: createdTo.value || undefined,
+        createdFrom: dateRange.value ? `${dateRange.value[0]}T00:00:00` : undefined,
+        createdTo: dateRange.value ? `${dateRange.value[1]}T23:59:59.999999` : undefined,
         pageNum,
         pageSize: PAGE_SIZE,
       },
@@ -920,7 +1020,7 @@ watch(
     preflight.value = undefined
     startDialog.value = false
     decisionDialog.value = false
-    creating.value = false
+    creating.value = !props.resourceId && canCreate.value && route.query.create === '1'
     authorizedBudget.value = undefined
     budgetConfirmed.value = false
     decisionReason.value = ''
@@ -932,8 +1032,9 @@ watch(
     reportKey = window.crypto.randomUUID()
     statusFilter.value = ''
     datasetFilter.value = ''
-    createdFrom.value = ''
-    createdTo.value = ''
+    sourcePicker.value = false
+    sourceLabel.value = ''
+    dateRange.value = null
     void (props.resourceId ? loadDetail() : loadList(1))
   },
   { immediate: true },
@@ -968,7 +1069,11 @@ onBeforeUnmount(() => {
 <style scoped>
 .experiment {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-4);
+}
+.experiment > * {
+  min-width: 0;
 }
 .experiment-header {
   display: flex;
@@ -977,6 +1082,24 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   flex-wrap: wrap;
 }
+.experiment-header > div {
+  min-width: 0;
+  max-width: 100%;
+}
+.experiment-header h2 {
+  overflow-wrap: anywhere;
+}
+.experiment--detail > .experiment-header {
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+.experiment--detail > .experiment-header h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+.experiment--detail > .experiment-header p { margin: 7px 0 0; color: var(--adw-text-secondary); line-height: 1.6; }
+.experiment-detail-nav { display: flex; gap: 24px; overflow-x: auto; border-bottom: 1px solid #dfe7f1; margin-bottom: 20px; }
+.experiment-detail-nav a { flex-shrink: 0; padding: 10px 0; color: #45617f; text-decoration: none; font-size: 14px; font-weight: 600; }
+.experiment-detail-nav a:hover, .experiment-detail-nav a:focus-visible { color: #245bd6; }
+#experiment-overview, #experiment-variants, #experiment-report { scroll-margin-top: 80px; }
 .actions {
   display: flex;
   gap: var(--adw-space-2);
@@ -1012,8 +1135,14 @@ textarea {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--adw-space-4);
+  gap: 0;
+  border-block: 1px solid #dfe7f1;
+  background: transparent;
 }
+.summary-grid article { margin: 0; border: 0; border-radius: 0; padding: 18px 20px; }
+.summary-grid article + article { border-left: 1px solid #e1e8f1; }
+.summary-grid p { margin: 8px 0 0; color: var(--adw-text-secondary); line-height: 1.6; }
+.summary-grid strong { color: #253c5a; }
 article,
 .variants,
 .reports,
@@ -1028,6 +1157,11 @@ article,
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--adw-space-3);
 }
+.variants > h3, .reports h3, .preflight > h3 { margin: 0; font-size: 16px; }
+.variants > p, .reports > p, .preflight > p { color: var(--adw-text-secondary); line-height: 1.65; }
+.variant-list article { margin: 0; background: #f8fafd; border-color: #e1e8f1; }
+.variant-list article > strong { color: #253c5a; }
+.variants, .reports, .preflight { margin: 24px 0 0; padding: 24px 0 0; border: 0; border-top: 1px solid #dfe7f1; border-radius: 0; }
 .variant-list a {
   display: block;
   margin-top: var(--adw-space-2);
@@ -1070,5 +1204,9 @@ textarea:focus-visible,
 a:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--adw-color-primary);
+}
+@media (max-width: 760px) {
+  .summary-grid { grid-template-columns: minmax(0, 1fr); }
+  .summary-grid article + article { border-left: 0; border-top: 1px solid #e1e8f1; }
 }
 </style>

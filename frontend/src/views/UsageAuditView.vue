@@ -62,9 +62,37 @@
           :clearable="false"
         />
       </label>
-      <el-button type="primary" :loading="loading" @click="applyFilters">查询</el-button>
-      <el-button :disabled="loading" @click="resetFilters">重置</el-button>
+      <label
+        ><span>执行模式</span
+        ><el-select
+          v-model="filters.executionMode"
+          aria-label="用量执行模式"
+          clearable
+          placeholder="全部模式"
+          ><el-option label="生产执行（LIVE）" value="LIVE" /><el-option
+            label="隔离执行（ISOLATED）"
+            value="ISOLATED" /></el-select
+      ></label>
+      <label
+        ><span>线上实验参与</span
+        ><el-select
+          v-model="filters.onlineParticipation"
+          aria-label="用量线上实验参与"
+          clearable
+          placeholder="全部任务"
+          ><el-option label="参与线上实验" :value="true" /><el-option
+            label="非线上实验"
+            :value="false" /></el-select
+      ></label>
+      <div class="filter-bar__actions">
+        <el-button type="primary" :loading="loading" @click="applyFilters">查询</el-button>
+        <el-button :disabled="loading" @click="resetFilters">重置</el-button>
+      </div>
     </div>
+    <p class="usage-scope-hint">
+      Token
+      按账本记账时间、工具按调用时间、执行记录按任务开始时间统计。月度预算始终覆盖整个空间；审计事件只按日期查询。
+    </p>
 
     <DataState :loading="loading && !dashboard" :error="errorMessage" @retry="loadUsage">
       <template v-if="dashboard">
@@ -88,7 +116,7 @@
             <Money />
           </UsageMetricCard>
           <UsageMetricCard
-            title="执行任务"
+            title="有执行记录的任务"
             :value="formatInteger(dashboard.summary.executedTasks)"
             :change="
               changeLabel(dashboard.summary.executedTasks, dashboard.previousSummary.executedTasks)
@@ -165,10 +193,31 @@
           </article>
         </div>
 
+        <details class="usage-scope-hint">
+          <summary>预估成本与数据口径</summary>
+          <p>
+            成本来自执行权威账本，按每次执行冻结的价格快照计价，不使用当前模型价格重算历史。当前计价协议使用人民币（CNY），此处不做汇率换算；预估成本不代表供应商最终账单。
+          </p>
+          <p>
+            Token 估算标记：输入{{
+              dashboard.summary.inputTokensEstimated ? '包含估算' : '未标记估算'
+            }}，输出{{ dashboard.summary.outputTokensEstimated ? '包含估算' : '未标记估算' }}。{{
+              dashboard.summary.hasIncompleteData
+                ? '存在缺失明细，合计只覆盖已知部分；缺失不等于零。'
+                : '当前范围未标记 Token 或成本缺失。'
+            }}
+          </p>
+          <p>
+            汇总时区 {{ dashboard.timeZone }}；统计生成于
+            <BusinessTime :value="dashboard.calculatedAt" />。
+          </p>
+        </details>
+
         <article class="records-card surface-card">
           <el-tabs v-model="activeTab">
             <el-tab-pane label="执行记录" name="executions">
               <el-table :data="taskPage.records" stripe @row-click="openExecution">
+                <template #empty>当前筛选范围没有执行记录</template>
                 <el-table-column prop="name" label="任务" min-width="190">
                   <template #default="{ row }">
                     <div class="task-cell">
@@ -208,9 +257,6 @@
                   </template>
                 </el-table-column>
               </el-table>
-              <div v-if="!taskPage.records.length" class="panel-empty">
-                当前筛选范围没有执行记录
-              </div>
               <el-pagination
                 v-if="taskPage.total"
                 class="records-pagination"
@@ -227,18 +273,18 @@
             <el-tab-pane label="工具调用" name="tools">
               <div v-if="dashboard.summary.toolCalls" class="tool-usage-panel">
                 <div class="tool-usage-panel__summary">
-                  <span>当前周期共</span>
+                  <span>全部筛选范围共</span>
                   <strong>{{ formatInteger(dashboard.summary.toolCalls) }}</strong>
                   <span>次工具调用</span>
                 </div>
                 <p class="tool-usage-panel__hint">
-                  下方展示当前执行记录页对应的脱敏工具调用明细，可点击“查看审计”查看完整执行上下文。
+                  下方按当前已查询条件独立分页，覆盖全部工具调用，不受执行记录页影响。点击“查看审计”查看对应执行上下文。
                 </p>
                 <DataState
                   :loading="toolCallsLoading"
                   :error="toolCallsError"
                   :empty="!toolCallsLoading && !toolCallRows.length"
-                  empty-text="当前执行记录页没有工具调用明细"
+                  empty-text="当前筛选范围没有工具调用明细"
                   @retry="loadToolCalls"
                 >
                   <el-table :data="pagedToolCallRows" stripe>
@@ -292,21 +338,31 @@
               <div v-else class="panel-empty">当前筛选范围没有工具调用</div>
             </el-tab-pane>
             <el-tab-pane v-if="canReadAudit" label="审计事件" name="audit">
-              <el-table :data="auditPage.records" stripe>
+              <el-table :data="auditRows" stripe>
+                <template #empty>当前筛选范围没有审计事件</template>
                 <el-table-column prop="actorName" label="主体" min-width="130" />
                 <el-table-column prop="actionName" label="操作" min-width="190" />
                 <el-table-column prop="targetTypeName" label="目标类型" min-width="150" />
-                <el-table-column prop="targetId" label="目标 ID" min-width="130" />
+                <el-table-column prop="targetId" label="目标 ID" min-width="150">
+                  <template #default="{ row }"
+                    ><RouterLink v-if="row.targetPath" :to="row.targetPath">{{
+                      row.targetId
+                    }}</RouterLink
+                    ><span v-else>{{ row.targetId ?? '未提供' }}</span></template
+                  >
+                </el-table-column>
                 <el-table-column prop="traceId" label="Trace ID" min-width="180">
-                  <template #default="{ row }">{{ row.traceId || '—' }}</template>
+                  <template #default="{ row }"
+                    >{{ row.traceId || '—'
+                    }}<el-button v-if="row.traceId" link @click="copyTrace(row.traceId)"
+                      >复制</el-button
+                    ></template
+                  >
                 </el-table-column>
                 <el-table-column prop="createdAt" label="时间" min-width="170">
                   <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
                 </el-table-column>
               </el-table>
-              <div v-if="!auditPage.records.length" class="panel-empty">
-                当前筛选范围没有审计事件
-              </div>
               <el-pagination
                 v-if="auditPage.total"
                 class="records-pagination"
@@ -356,6 +412,34 @@
               <dd>{{ executionDetail.execution?.externalMcps.length || 0 }}</dd>
             </div>
           </dl>
+          <section v-if="canReadExperiments" aria-label="执行关联实验">
+            <h3>关联实验</h3>
+            <p v-if="experimentLinkLoading" role="status">正在核对离线实验关联……</p>
+            <p v-else-if="experimentLinkError" role="alert">
+              {{ experimentLinkError }}
+              <el-button link @click="openExecution({ id: selectedTaskId })"
+                >重试关联读取</el-button
+              >
+            </p>
+            <RouterLink v-if="onlineExperimentPath" :to="onlineExperimentPath"
+              >查看关联线上实验</RouterLink
+            >
+            <RouterLink
+              v-if="evaluationLink?.experimentId"
+              :to="`/spaces/${evaluationLink.spaceId}/evaluation/experiments/${evaluationLink.experimentId}`"
+              >查看关联离线实验</RouterLink
+            >
+            <p
+              v-if="
+                !experimentLinkLoading &&
+                !experimentLinkError &&
+                !onlineExperimentPath &&
+                !evaluationLink?.experimentId
+              "
+            >
+              此执行没有已确认的实验关联。
+            </p>
+          </section>
           <section>
             <h3>工具调用（{{ executionDetail.execution?.toolCalls.length || 0 }}）</h3>
             <div
@@ -394,6 +478,8 @@
 </template>
 
 <script setup lang="ts">
+import BusinessTime from '@/shared/components/BusinessTime.vue'
+import { businessTimeMillis, formatBusinessTime } from '@/shared/utils/date-time'
 import { Checked, Coin, Download, Money, Tools } from '@element-plus/icons-vue'
 import {
   ElButton,
@@ -412,19 +498,28 @@ import {
   ElTag,
 } from 'element-plus'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 
 import { normalizeApiError } from '@/api/errors'
 import { listAgents, listModels, type AgentOption } from '@/features/agent/api/agent-api'
 import type { ModelOption } from '@/features/agent/types'
-import { getTaskExecutionDetail, getTaskToolCalls, searchTasks } from '@/features/task/api/task-api'
+import { getTaskExecutionDetail, searchTasks } from '@/features/task/api/task-api'
+import { getEvaluationTaskLink } from '@/features/evaluation/api/evaluation-api'
+import type { EvaluationTaskLink } from '@/features/task/engineering-types'
 import type { TaskExecutionDetail, TaskListItem, TaskPage, TaskStatus } from '@/features/task/types'
 import {
   exportUsageRecords,
   queryAuditLogs,
   queryUsageDashboard,
+  searchUsageToolCalls,
 } from '@/features/usage/api/usage-api'
-import type { AuditLogPage, ToolSource, UsageDashboard } from '@/features/usage/types'
+import type {
+  AuditLogItem,
+  AuditLogPage,
+  ToolSource,
+  UsageDashboard,
+  UsageDashboardQuery,
+} from '@/features/usage/types'
 import EChartCanvas from '@/features/usage/components/EChartCanvas.vue'
 import UsageMetricCard, { type MetricChange } from '@/features/usage/components/UsageMetricCard.vue'
 import { buildUsageChartData } from '@/features/usage/usage-chart'
@@ -436,7 +531,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 type ToolCallItem = NonNullable<TaskExecutionDetail['execution']>['toolCalls'][number]
 
 interface UsageToolCallRow extends ToolCallItem {
-  task: TaskListItem
+  task: Pick<TaskListItem, 'id'>
   taskName: string
   taskNo: string
   agentName: string
@@ -445,6 +540,50 @@ interface UsageToolCallRow extends ToolCallItem {
 
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
+const canReadExperiments = computed(() =>
+  [SPACE_PERMISSIONS.TASK_READ, SPACE_PERMISSIONS.EVALUATION_READ].every((permission) =>
+    workspaceStore.hasPermission(permission),
+  ),
+)
+const evaluationLink = ref<EvaluationTaskLink | null>(null)
+const experimentLinkLoading = ref(false),
+  experimentLinkError = ref('')
+let detailController: AbortController | undefined
+const onlineExperimentPath = computed(() => {
+  const task = executionDetail.value?.task
+  return canReadExperiments.value &&
+    task &&
+    String(task.spaceId) === String(workspaceStore.currentSpaceId) &&
+    /^[1-9]\d{0,18}$/.test(String(task.onlineExperimentId || ''))
+    ? `/spaces/${task.spaceId}/evaluation/online-experiments/${task.onlineExperimentId}`
+    : null
+})
+function auditTarget(row: AuditLogItem) {
+  if (
+    String(row.spaceId) !== String(workspaceStore.currentSpaceId) ||
+    !/^[1-9]\d{0,18}$/.test(String(row.targetId))
+  )
+    return null
+  const base = `/spaces/${row.spaceId}`
+  if (row.targetType === 'task' && workspaceStore.hasPermission(SPACE_PERMISSIONS.TASK_READ))
+    return `${base}/tasks/${row.targetId}`
+  if (row.targetType === 'agent' && workspaceStore.hasPermission(SPACE_PERMISSIONS.AGENT_READ))
+    return `${base}/agents?agentId=${row.targetId}`
+  if (
+    row.targetType === 'change_request' &&
+    workspaceStore.hasPermission(SPACE_PERMISSIONS.CHANGE_REQUEST_READ)
+  )
+    return `${base}/approvals?changeRequestId=${row.targetId}`
+  return null
+}
+async function copyTrace(value: string) {
+  try {
+    await window.navigator.clipboard.writeText(value)
+    ElMessage.success('Trace ID 已复制')
+  } catch {
+    ElMessage.info('无法自动复制，请选中 Trace ID 复制。')
+  }
+}
 const dashboard = ref<UsageDashboard | null>(null)
 const loading = ref(false)
 const exporting = ref(false)
@@ -457,9 +596,15 @@ const filters = reactive<{
   agentId?: string | number
   modelId?: string | number
   status?: TaskStatus
+  executionMode?: TaskListItem['executionMode']
+  onlineParticipation?: boolean
 }>({})
+const appliedQuery = ref<UsageDashboardQuery | null>(null)
 const taskPage = ref<TaskPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
 const auditPage = ref<AuditLogPage>({ records: [], total: 0, pageNum: 1, pageSize: 10 })
+const auditRows = computed(() =>
+  auditPage.value.records.map((row) => ({ ...row, targetPath: auditTarget(row) })),
+)
 const toolPage = reactive({ total: 0, pageNum: 1, pageSize: 10 })
 const activeTab = ref('executions')
 const drawerVisible = ref(false)
@@ -474,6 +619,7 @@ const toolCallsLoadedKey = ref<string | null>(null)
 let requestController: AbortController | null = null
 let loadSequence = 0
 let toolCallLoadSequence = 0
+let toolController: AbortController | undefined
 
 const canReadAudit = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.AUDIT_READ))
 const canExport = computed(() => workspaceStore.hasPermission(SPACE_PERMISSIONS.USAGE_EXPORT))
@@ -661,6 +807,16 @@ onMounted(async () => {
 watch(
   () => workspaceStore.currentSpaceId,
   async () => {
+    requestController?.abort()
+    toolController?.abort()
+    ++loadSequence
+    ++toolCallLoadSequence
+    dashboard.value = null
+    appliedQuery.value = null
+    toolCallRows.value = []
+    toolCallsLoadedKey.value = null
+    executionDetail.value = null
+    drawerVisible.value = false
     await loadOptions()
     await loadUsage()
   },
@@ -670,7 +826,11 @@ watch(activeTab, (tab) => {
   if (tab === 'tools') void loadToolCalls()
 })
 
-onBeforeUnmount(() => requestController?.abort())
+onBeforeUnmount(() => {
+  requestController?.abort()
+  toolController?.abort()
+  ++toolCallLoadSequence
+})
 
 async function loadOptions() {
   const spaceId = workspaceStore.currentSpaceId
@@ -691,22 +851,28 @@ async function loadUsage() {
   requestController = controller
   const sequence = ++loadSequence
   loading.value = true
+  toolController?.abort()
+  ++toolCallLoadSequence
+  toolCallsLoadedKey.value = null
+  toolCallRows.value = []
+  toolPage.total = 0
   errorMessage.value = ''
   const [startDate, endDate] = dateRange.value
+  const scope: UsageDashboardQuery = {
+    spaceId,
+    startDate,
+    endDate,
+    agentId: filters.agentId,
+    modelId: filters.modelId,
+    status: filters.status,
+    executionMode: filters.executionMode || undefined,
+    onlineParticipation:
+      typeof filters.onlineParticipation === 'boolean' ? filters.onlineParticipation : undefined,
+  }
   try {
     const [usage, tasks, audits] = await Promise.all([
-      queryUsageDashboard(
-        {
-          spaceId,
-          startDate,
-          endDate,
-          agentId: filters.agentId,
-          modelId: filters.modelId,
-          status: filters.status,
-        },
-        controller.signal,
-      ),
-      loadTasks(spaceId, taskPage.value.pageNum, taskPage.value.pageSize, controller.signal),
+      queryUsageDashboard(scope, controller.signal),
+      loadTasks(spaceId, taskPage.value.pageNum, taskPage.value.pageSize, controller.signal, scope),
       canReadAudit.value
         ? queryAuditLogs(
             {
@@ -722,6 +888,7 @@ async function loadUsage() {
     ])
     if (sequence !== loadSequence) return
     dashboard.value = usage
+    appliedQuery.value = scope
     taskPage.value = tasks
     toolPage.pageNum = 1
     auditPage.value = audits
@@ -739,16 +906,19 @@ function loadTasks(
   pageNum: number,
   pageSize: number,
   signal?: AbortSignal,
+  scope = appliedQuery.value,
 ) {
-  const [startDate, endDate] = dateRange.value
+  const [startDate, endDate] = scope ? [scope.startDate, scope.endDate] : dateRange.value
   return searchTasks(
     {
       spaceId,
       pageNum,
       pageSize,
-      agentId: filters.agentId,
-      modelId: filters.modelId,
-      status: filters.status,
+      agentId: scope?.agentId,
+      modelId: scope?.modelId,
+      status: scope?.status,
+      executionMode: scope?.executionMode,
+      onlineParticipation: scope?.onlineParticipation,
       startedFrom: `${startDate}T00:00:00`,
       startedTo: `${addDays(endDate, 1)}T00:00:00`,
     },
@@ -773,6 +943,8 @@ function resetFilters() {
   filters.agentId = undefined
   filters.modelId = undefined
   filters.status = undefined
+  filters.executionMode = undefined
+  filters.onlineParticipation = undefined
   presetDays.value = 7
   dateRange.value = presetRange(7)
   applyFilters()
@@ -811,8 +983,6 @@ async function loadTaskPage() {
     )
     if (sequence !== loadSequence) return
     taskPage.value = tasks
-    toolPage.pageNum = 1
-    if (activeTab.value === 'tools') void loadToolCalls()
   } catch (error) {
     if (!controller.signal.aborted) errorMessage.value = normalizeApiError(error).message
   } finally {
@@ -862,38 +1032,54 @@ function changeToolPageSize(size: number) {
 
 async function loadToolCalls() {
   const spaceId = workspaceStore.currentSpaceId
-  const records = taskPage.value.records
-  const recordsKey = `${spaceId ?? 'none'}:${records.map((task) => String(task.id)).join(',')}:${toolPage.pageNum}:${toolPage.pageSize}`
+  const scope = appliedQuery.value
+  const recordsKey = JSON.stringify([scope, toolPage.pageNum, toolPage.pageSize])
   if (recordsKey === toolCallsLoadedKey.value && !toolCallsError.value) return
   const sequence = ++toolCallLoadSequence
+  toolController?.abort()
+  const controller = new AbortController()
+  toolController = controller
   toolCallsLoading.value = true
   toolCallsError.value = ''
   toolCallRows.value = []
   toolPage.total = 0
-  if (spaceId === null || !records.length) {
+  if (spaceId === null || !scope || String(scope.spaceId) !== String(spaceId)) {
     toolCallsLoading.value = false
     return
   }
   try {
-    const result = await getTaskToolCalls(
-      spaceId,
-      records.map((task) => task.id),
-      toolPage.pageNum,
-      toolPage.pageSize,
+    const { startDate, endDate, ...filters } = scope
+    const result = await searchUsageToolCalls(
+      {
+        ...filters,
+        startAt: `${startDate}T00:00:00`,
+        endAt: `${addDays(endDate, 1)}T00:00:00`,
+        pageNum: toolPage.pageNum,
+        pageSize: toolPage.pageSize,
+      },
+      controller.signal,
     )
-    if (sequence !== toolCallLoadSequence) return
-    const taskById = new Map(records.map((task) => [String(task.id), task]))
+    if (
+      controller.signal.aborted ||
+      sequence !== toolCallLoadSequence ||
+      String(workspaceStore.currentSpaceId) !== String(spaceId)
+    )
+      return
     const rows: UsageToolCallRow[] = []
     result.records.forEach((item) => {
-      const task = taskById.get(String(item.taskId))
-      if (!task) return
+      const task = item.task
+      if (
+        task &&
+        (String(task.spaceId) !== String(spaceId) || String(task.id) !== String(item.taskId))
+      )
+        throw new Error('工具调用任务身份不一致')
       const call = item.toolCall
       rows.push({
         ...call,
-        task,
-        taskName: task.name,
-        taskNo: task.taskNo,
-        agentName: task.agentName || `#${task.agentId}`,
+        task: task ?? { id: item.taskId },
+        taskName: task?.name || `任务 #${item.taskId}`,
+        taskNo: task?.taskNo || '任务名称暂不可用',
+        agentName: task?.agentName || (task?.agentId ? `#${task.agentId}` : '不可用'),
         sourceLabel: toolSourceLabel(call.toolSourceKey, call.toolSource),
       })
     })
@@ -901,7 +1087,7 @@ async function loadToolCalls() {
     toolPage.total = result.total
     toolCallsLoadedKey.value = recordsKey
   } catch (error) {
-    if (sequence === toolCallLoadSequence) {
+    if (!controller.signal.aborted && sequence === toolCallLoadSequence) {
       toolCallsError.value = normalizeApiError(error).message
     }
   } finally {
@@ -910,20 +1096,71 @@ async function loadToolCalls() {
 }
 
 async function openExecution(row: unknown) {
-  const task = row as TaskListItem
+  const task = row as Pick<TaskListItem, 'id'>
+  detailController?.abort()
+  const current = new AbortController()
+  detailController = current
+  const spaceId = String(workspaceStore.currentSpaceId)
   selectedTaskId.value = task.id
   drawerVisible.value = true
   detailLoading.value = true
   detailError.value = ''
   executionDetail.value = null
+  evaluationLink.value = null
+  experimentLinkError.value = ''
+  experimentLinkLoading.value = false
   try {
-    executionDetail.value = await getTaskExecutionDetail(task.id)
+    const detail = await getTaskExecutionDetail(task.id, current.signal)
+    if (current.signal.aborted) return
+    if (String(detail.task.id) !== String(task.id) || String(detail.task.spaceId) !== spaceId)
+      throw new Error('执行详情不属于当前任务或空间')
+    executionDetail.value = detail
+    if (canReadExperiments.value && detail.task.executionMode === 'ISOLATED') {
+      experimentLinkLoading.value = true
+      try {
+        const link = await getEvaluationTaskLink(spaceId, task.id, current.signal)
+        if (current.signal.aborted) return
+        if (
+          link &&
+          (String(link.taskId) !== String(task.id) ||
+            String(link.spaceId) !== spaceId ||
+            (link.experimentId != null && !/^[1-9]\d{0,18}$/.test(String(link.experimentId))))
+        )
+          throw new Error('实验关联不属于当前执行')
+        evaluationLink.value = link
+      } catch (error) {
+        if (!current.signal.aborted) experimentLinkError.value = normalizeApiError(error).message
+      } finally {
+        if (!current.signal.aborted) experimentLinkLoading.value = false
+      }
+    }
   } catch (error) {
-    detailError.value = normalizeApiError(error).message
+    if (!current.signal.aborted) detailError.value = normalizeApiError(error).message
   } finally {
-    detailLoading.value = false
+    if (!current.signal.aborted) detailLoading.value = false
   }
 }
+
+watch(
+  () => [workspaceStore.currentSpaceId, canReadExperiments.value],
+  () => {
+    detailController?.abort()
+    evaluationLink.value = null
+    experimentLinkLoading.value = false
+    experimentLinkError.value = ''
+    detailLoading.value = false
+    if (String(executionDetail.value?.task.spaceId) !== String(workspaceStore.currentSpaceId))
+      executionDetail.value = null
+  },
+)
+watch(drawerVisible, (visible) => {
+  if (!visible) {
+    detailController?.abort()
+    executionDetail.value = null
+    evaluationLink.value = null
+  }
+})
+onBeforeUnmount(() => detailController?.abort())
 
 function goToTaskDetail() {
   if (selectedTaskId.value === null || workspaceStore.currentSpaceId === null) return
@@ -932,21 +1169,25 @@ function goToTaskDetail() {
 
 async function exportRecords() {
   const spaceId = workspaceStore.currentSpaceId
-  if (spaceId === null || !canExport.value) return
+  const scope = appliedQuery.value
+  if (spaceId === null || !scope || String(scope.spaceId) !== String(spaceId) || !canExport.value)
+    return
   exporting.value = true
   try {
     const csv = await exportUsageRecords({
       spaceId,
-      agentId: filters.agentId,
-      modelId: filters.modelId,
-      status: filters.status,
-      startedFrom: `${dateRange.value[0]}T00:00:00`,
-      startedTo: `${addDays(dateRange.value[1], 1)}T00:00:00`,
+      agentId: scope.agentId,
+      modelId: scope.modelId,
+      status: scope.status,
+      executionMode: scope.executionMode,
+      onlineParticipation: scope.onlineParticipation,
+      startedFrom: `${scope.startDate}T00:00:00`,
+      startedTo: `${addDays(scope.endDate, 1)}T00:00:00`,
     })
     const url = URL.createObjectURL(csv)
     const link = document.createElement('a')
     link.href = url
-    link.download = `usage-executions-${dateRange.value[0]}-${dateRange.value[1]}.csv`
+    link.download = `usage-executions-${scope.startDate}-${scope.endDate}.csv`
     link.click()
     URL.revokeObjectURL(url)
   } catch (error) {
@@ -995,15 +1236,13 @@ function compactNumber(value: number) {
 }
 
 function formatCost(value: number | null) {
-  return value === null ? '—' : `¥ ${value.toFixed(2)}`
+  if (value === null) return '—'
+  if (value > 0 && value < 0.000001) return '¥ <0.000001'
+  return `¥ ${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
 }
 
 function formatDateTime(value: string | null | undefined) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime())
-    ? value.replace('T', ' ')
-    : date.toLocaleString('zh-CN', { hour12: false })
+  return formatBusinessTime(value, '—')
 }
 
 function changeLabel(current: number | null, previous: number | null): MetricChange {
@@ -1029,8 +1268,9 @@ function durationLabel(start: string | null, end: string | null) {
   if (!start) return '—'
   const duration = Math.max(
     0,
-    ((end ? new Date(end) : new Date()).getTime() - new Date(start).getTime()) / 1000,
+    ((end ? businessTimeMillis(end) : Date.now()) - businessTimeMillis(start)) / 1000,
   )
+  if (!Number.isFinite(duration)) return '—'
   if (duration >= 60) return `${Math.floor(duration / 60)}m${Math.round(duration % 60)}s`
   return `${Math.round(duration)}s`
 }
@@ -1074,7 +1314,11 @@ function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 
 <style scoped>
 .usage-page {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--adw-space-5);
+}
+.usage-page > * {
+  min-width: 0;
 }
 .usage-breadcrumb {
   color: var(--adw-text-tertiary);
@@ -1085,16 +1329,31 @@ function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 
 }
 .filter-bar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(280px, 1.6fr) auto auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: end;
   gap: var(--adw-space-4);
   padding: var(--adw-space-4);
 }
 .filter-bar label {
+  min-width: 0;
   display: grid;
   gap: 7px;
   color: var(--adw-text-secondary);
   font-size: 13px;
+}
+.filter-bar__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+}
+.filter-bar__actions .el-button + .el-button {
+  margin-left: 0;
+}
+.usage-scope-hint {
+  margin: 0;
+  color: var(--adw-text-secondary);
+  font-size: var(--adw-font-size-caption);
+  line-height: 1.6;
 }
 .filter-bar__date :deep(.el-date-editor) {
   width: 100%;
@@ -1302,6 +1561,11 @@ function toolCallStatusType(status: string): 'success' | 'warning' | 'danger' | 
   }
   .insight-grid {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 900px) {
+  .metric-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 720px) {
