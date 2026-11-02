@@ -89,6 +89,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
                 || recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
                 || recoveryPath.startsWith("/api/auth/internal/task-draft-finalization-capabilities")
                 || recoveryPath.startsWith("/api/agent/internal/a2a/")
+                || recoveryPath.startsWith("/api/agent/internal/experiment-report/")
                 || recoveryPath.startsWith("/api/document/internal/task-drafts/")) {
             return unauthorized(exchange.getResponse(), "恢复内部入口不通过公共网关开放");
         }

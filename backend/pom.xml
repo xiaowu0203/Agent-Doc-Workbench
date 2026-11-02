@@ -13,7 +13,7 @@
 
     <groupId>com.agentdoc</groupId>
     <artifactId>agent-doc-workbench</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <packaging>pom</packaging>
     <name>agent-doc-workbench</name>
     <description>Agent-Doc-Workbench 后端多模块工程</description>

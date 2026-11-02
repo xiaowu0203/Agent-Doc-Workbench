@@ -2,6 +2,7 @@ package com.agentdoc.task.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.DocType;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
 import com.agentdoc.common.feign.vo.AgentExecutionAuditVO;
@@ -90,9 +91,35 @@ class TaskExecutionQueryServiceTest {
         assertThat(result.output().status()).isEqualTo("PENDING");
     }
 
+    @Test
+    void isolatedDraftDoesNotExposeLiveDraftOutput() {
+        TaskVO task = task(DocType.DRAFT, TaskStatus.COMPLETED, "完成", TaskExecutionMode.ISOLATED);
+        when(taskService.detail(11L)).thenReturn(task);
+        when(agentFeign.getExecutionAudit(11L, 7L)).thenReturn(Result.ok(null));
+        when(agentFeign.queryAgentRefs(any())).thenReturn(Result.ok(List.of()));
+        when(changeRequestMapper.selectOne(any())).thenReturn(null);
+
+        assertThat(service.detail(11L).output()).isNull();
+    }
+
+    @Test
+    void liveDraftRetainsDraftOutput() {
+        TaskVO task = task(DocType.DRAFT, TaskStatus.COMPLETED, "完成", TaskExecutionMode.LIVE);
+        when(taskService.detail(11L)).thenReturn(task);
+        when(agentFeign.getExecutionAudit(11L, 7L)).thenReturn(Result.ok(null));
+        when(agentFeign.queryAgentRefs(any())).thenReturn(Result.ok(List.of()));
+        when(changeRequestMapper.selectOne(any())).thenReturn(null);
+
+        assertThat(service.detail(11L).output().type()).isEqualTo(TaskOutputType.DRAFT_DOCUMENT);
+    }
+
     private TaskVO task(DocType type, TaskStatus status, String resultSummary) {
+        return task(type, status, resultSummary, TaskExecutionMode.LIVE);
+    }
+
+    private TaskVO task(DocType type, TaskStatus status, String resultSummary, TaskExecutionMode mode) {
         return new TaskVO(null, 11L, com.agentdoc.task.enums.TaskLineageType.ORIGINAL,
-                com.agentdoc.common.enums.TaskExecutionMode.LIVE,
+                mode,
                 11L, "T-11", 7L, 9L, 13L, type, "审计任务", "检查文档", status,
                 5000L, TaskReadScope.FULL, List.of(), 120L, true,
                 LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now(),

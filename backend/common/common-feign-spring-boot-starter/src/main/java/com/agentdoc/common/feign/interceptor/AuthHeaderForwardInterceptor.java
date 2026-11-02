@@ -5,6 +5,7 @@ import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.feign.context.AuthorizationContext;
+import com.agentdoc.common.utils.ReportProofSignature;
 import feign.RequestInterceptor;
 import feign.RequestTemplate;
 import org.springframework.http.HttpHeaders;
@@ -50,6 +51,7 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
         // 专用恢复调用不透传用户、Agent 或已过期能力凭证，避免混合身份和凭证泄漏。
         if (template.headers().keySet().stream().anyMatch(key -> TaskRecoveryConstant.MACHINE_KEY_HEADER.equalsIgnoreCase(key)
                 || OnlineCapabilityConstant.HEADER.equalsIgnoreCase(key)
+                || ReportProofSignature.HEADER.equalsIgnoreCase(key)
                 || TaskRecoveryConstant.CAPABILITY_HEADER.equalsIgnoreCase(key))) {
             template.removeHeader(HttpHeaders.AUTHORIZATION);
             template.removeHeader(HeaderConstants.X_TASK_CAPABILITY);

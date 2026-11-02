@@ -5,7 +5,7 @@
 |     项目     |    版本    |
 | :----------: | :--------: |
 |     JDK      |     21     |
-| Spring Boot  |   3.5.0    |
+| Spring Boot  |   3.5.8    |
 | Spring Cloud |  2025.0.0  |
 |   构建工具   |   Maven    |
 |    许可证    | Apache-2.0 |
@@ -22,7 +22,6 @@
 | Web  |              Spring Web              |            REST API            |
 | 校验 |          Spring Validation           |            参数校验            |
 | 安全 |          Spring Security 6           |            安全基础            |
-| 安全 |     Spring Authorization Server      |       OAuth2 授权服务器        |
 | 安全 |    Spring OAuth2 Resource Server     |  Gateway 与业务服务 JWT 校验   |
 | 安全 |           JWT（RSA RS256）           |         非对称签名令牌         |
 | 数据 |         MyBatis‑Plus 3.5.10          |           数据访问层           |
@@ -67,7 +66,7 @@
 ```plaintext
 backend/
 ├── gateway‑service       # Gateway、鉴权入口、路由、限流
-├── auth‑service          # 用户、OAuth2、JWT、客户端管理、平台角色管理
+├── auth‑service          # 登录、JWT、用户与平台角色管理
 ├── document‑service      # 空间、成员、空间角色、目录、文档、版本、Diff
 ├── task‑service          # 任务编排、A2A Client、Workbench MCP Server、审批、Token、RabbitMQ消费
 ├── agent‑service         # Agent/Model配置、A2A Server、Spring AI Runtime、MCP Client

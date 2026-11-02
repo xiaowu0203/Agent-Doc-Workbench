@@ -46,7 +46,7 @@ spring:
     mcp:
       server:
         name: agent-doc-workbench
-        version: 0.1.0
+        version: 0.2.0
         protocol: STREAMABLE
 
 # 自定义openapi配置

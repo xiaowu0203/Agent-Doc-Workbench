@@ -2,6 +2,29 @@
 
 本文件记录 Agent-Doc-Workbench 的用户可见变更。版本号遵循 [Semantic Versioning](https://semver.org/)，内容组织参考 [Keep a Changelog](https://keepachangelog.com/)。
 
+## [Unreleased]
+
+### Added
+
+- Run 兼容的任务执行身份、血缘与冻结输入，及基于冻结快照的隔离 Replay。
+- OpenTelemetry 执行链路观测，以及 Dataset、Evaluator 和离线 Experiment 的评估与比较能力。
+- 受控线上 A/B 实验及工程工作台中的执行、评估和报告体验。
+- [v0.1.0 升级至 v0.2.0 的数据库指南草案](docs/operations/v0.2-upgrade.md)，包含迁移预检和恢复边界。
+
+### Fixed
+
+- 隔离执行不再返回正式草稿文档引用；Replay 重试时清除旧的完成时间。
+- Evaluation 服务默认读取共享数据库、Redis 和 Auth JWKS 环境配置。
+- 修复离线实验后台首次报告无法校验候选配置的问题，使用短期签名验证专用内部请求。
+
+### Known Limitations
+
+- v0.2.0 仍在发布验证中；升级、服务部署和完整发布门禁尚未全部完成。
+- 超过六小时仍运行后取消的异常场景尚未完整部署演练；离线运行和实验的暂停恢复仅验证了特定派发故障，不能代表全部恢复场景。
+- 查询规模测试覆盖特定合成数据和接口，不代表完整页面、并发场景或生产容量。
+- 实验结果取决于样本和评价证据，系统不会自动推广候选配置；证据不足时不表示候选质量得到改善。
+- 长期 Memory、Skill 脚本沙箱、OAuth2/OIDC、Workflow 和新的 Extension SPI 不属于当前已承诺范围。
+
 ## [0.1.0] - 2026-09-14
 
 首个开源发布版本，提供围绕文档操作、Agent 执行和人工审批构建的完整 Web 工作台。

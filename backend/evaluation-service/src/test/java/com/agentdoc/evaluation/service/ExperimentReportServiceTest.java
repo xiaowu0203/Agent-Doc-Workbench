@@ -2,9 +2,12 @@ package com.agentdoc.evaluation.service;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.ExperimentReportAgentFeign;
 import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
+import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
+import com.agentdoc.common.utils.ReportProofSignature;
 import com.agentdoc.evaluation.mapper.ExperimentMapper;
 import com.agentdoc.evaluation.mapper.ExperimentReportMapper;
 import com.agentdoc.evaluation.mapper.ExperimentVariantMapper;
@@ -20,12 +23,17 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import java.util.Base64;
+import java.time.Instant;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -44,6 +52,7 @@ class ExperimentReportServiceTest {
     @Mock private ExperimentReportPersistenceService persistenceService;
     @Mock private SpaceAccessService spaceAccessService;
     @Mock private AgentFeign agentFeign;
+    @Mock private ExperimentReportAgentFeign reportAgentFeign;
     @InjectMocks private ExperimentReportService service;
 
     @Test
@@ -53,9 +62,10 @@ class ExperimentReportServiceTest {
         when(experimentMapper.selectById(1L)).thenReturn(experiment);
         when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(List.of(testCaseVersion()));
         when(variantMapper.selectList(any())).thenReturn(List.of(baseline(), candidate()));
-        when(agentFeign.getCandidateConfigIdentity(60L, 2L, "candidate-hash"))
+        ReflectionTestUtils.setField(service, "reportProofKey", Base64.getEncoder().encodeToString(new byte[32]));
+        when(reportAgentFeign.identity(eq(60L), eq(2L), eq("d".repeat(64)), any()))
                 .thenReturn(Result.ok(new AgentCandidateConfigVO(60L, 2L, 70L, 80L, 90L,
-                        3, "source-hash", 3, "candidate-hash", "common-hash",
+                        3, "source-hash", 3, "d".repeat(64), "common-hash",
                         List.of("snapshot.systemPrompt"))));
         when(snapshotService.load(eq(experiment), eq(manifest), any())).thenReturn(snapshot());
         when(evidenceService.load(eq(2L), any(), any())).thenReturn(
@@ -67,6 +77,12 @@ class ExperimentReportServiceTest {
 
         service.ensureAutomatic(1L);
 
+        ArgumentCaptor<String> proof = ArgumentCaptor.forClass(String.class);
+        verify(reportAgentFeign).identity(eq(60L), eq(2L), eq("d".repeat(64)), proof.capture());
+        assertTrue(ReportProofSignature.verify(
+                Base64.getEncoder().encodeToString(new byte[32]), 60L, 2L, "d".repeat(64),
+                proof.getValue(), Instant.now()));
+        verifyNoInteractions(agentFeign);
         ArgumentCaptor<ExperimentReportPersistenceService.Prepared> saved =
                 ArgumentCaptor.forClass(ExperimentReportPersistenceService.Prepared.class);
         verify(persistenceService).save(eq(1L), saved.capture(), eq(null), eq(null), eq(9L));
@@ -79,6 +95,22 @@ class ExperimentReportServiceTest {
         assertEquals(1, report.get("feedbackCoverage").get(0).get("coveredCaseCount").intValue());
         assertEquals(2, JsonUtils.parse(saved.getValue().selectedRecordIdsJson(), JsonNode.class)
                 .get("metricIds").size());
+    }
+
+    @Test
+    void automaticReportRejectsCandidateProofWithWrongSpace() {
+        ExperimentManifest manifest = manifest();
+        ExperimentEntity experiment = experiment(manifest);
+        ReflectionTestUtils.setField(service, "reportProofKey", Base64.getEncoder().encodeToString(new byte[32]));
+        when(experimentMapper.selectById(1L)).thenReturn(experiment);
+        when(testCaseVersionMapper.selectBatchIds(any())).thenReturn(List.of(testCaseVersion()));
+        when(variantMapper.selectList(any())).thenReturn(List.of(baseline(), candidate()));
+        when(reportAgentFeign.identity(eq(60L), eq(2L), eq("d".repeat(64)), any()))
+                .thenReturn(Result.ok(new AgentCandidateConfigVO(60L, 99L, 70L, 80L, 90L,
+                        3, "source-hash", 3, "d".repeat(64), "common-hash",
+                        List.of("snapshot.systemPrompt"))));
+        assertThrows(BusinessException.class, () -> service.ensureAutomatic(1L));
+        verifyNoInteractions(snapshotService, persistenceService);
     }
 
     @Test
@@ -137,7 +169,7 @@ class ExperimentReportServiceTest {
         entity.setCandidateConfigId(60L);
         entity.setSourceSnapshotSchemaVersion(3);
         entity.setSourceSnapshotHash("source-hash");
-        entity.setCandidateSnapshotHash("candidate-hash");
+        entity.setCandidateSnapshotHash("d".repeat(64));
         entity.setCandidateSnapshotSchemaVersion(3);
         entity.setSnapshotWithoutPromptHash("common-hash");
         entity.setPromptDiffFieldPaths("[\"snapshot.systemPrompt\"]");

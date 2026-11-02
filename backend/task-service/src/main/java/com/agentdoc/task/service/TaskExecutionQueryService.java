@@ -3,6 +3,7 @@ package com.agentdoc.task.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.DocType;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
 import com.agentdoc.common.feign.DocumentFeign;
@@ -178,7 +179,7 @@ public class TaskExecutionQueryService {
      * 解析任务的业务输出产物
      * <p>优先级：
      * 1. 存在该任务生成的变更请求 → 返回变更请求产物
-     * 2. 文档类型为草稿，且存在结果摘要 或者 执行调用过草稿写入工具且成功 → 返回草稿文档产物
+     * 2. 非隔离任务的文档类型为草稿，且存在结果摘要 或者 执行调用过草稿写入工具且成功 → 返回草稿文档产物
      * 3. 无产出返回null</p>
      * @param task 任务VO
      * @param execution Agent执行审计信息
@@ -203,8 +204,9 @@ public class TaskExecutionQueryService {
                 .anyMatch(call -> "workbench_apply_draft_changes".equals(call.toolName())
                         && "SUCCEEDED".equals(call.status()));
 
-        // 情况2：文档为草稿类型，并且有结果摘要 或者 草稿写入工具执行成功，输出草稿文档产物
-        if (task.documentType() == DocType.DRAFT && (task.resultSummary() != null || draftWriteSucceeded)) {
+        // 情况2：非隔离任务的草稿有结果摘要或草稿写入成功，输出草稿文档产物
+        if (task.executionMode() != TaskExecutionMode.ISOLATED && task.documentType() == DocType.DRAFT
+                && (task.resultSummary() != null || draftWriteSucceeded)) {
             return new TaskOutputVO(TaskOutputType.DRAFT_DOCUMENT, task.documentId(), null,
                     task.documentId());
         }

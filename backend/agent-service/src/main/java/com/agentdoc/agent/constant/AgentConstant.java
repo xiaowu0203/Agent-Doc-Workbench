@@ -70,7 +70,7 @@ public final class AgentConstant {
     /**
      * MCP客户端版本号，握手阶段上报
      */
-    public static final String MCP_CLIENT_VERSION = "0.1.0";
+    public static final String MCP_CLIENT_VERSION = "0.2.0";
 
     private AgentConstant() {
     }

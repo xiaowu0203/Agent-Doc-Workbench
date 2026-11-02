@@ -21,7 +21,7 @@ public record OpenApiProperties(
             description = "Agent 活文档协作平台服务接口";
         }
         if (StringUtils.isBlank(version)) {
-            version = "v0.1.0";
+            version = "v0.2.0";
         }
     }
 }

@@ -18,6 +18,8 @@ ChangeRequest，由人决定接受、部分接受、拒绝或退回。
 
 ## 一眼看懂
 
+本文中的页面图片为设计示意，实际界面以运行版本为准。
+
 ![空间总览](docs/ui-mockups/01-space-overview.png)
 
 很多 Agent Demo 关注的是：
@@ -89,6 +91,26 @@ Agent 配置之后发生变化，也不会改变已经运行中的任务。
 
 执行详情会记录 Skill 路由、指令读取、工具调用、Token
 使用、状态和关键执行轨迹，方便定位成本、失败点和实际能力来源。
+
+## 从执行到评估：v0.2 工程闭环
+
+v0.2.0 正在发布收口。它在文档工作台之上增加执行、观测与评估能力，让一次改动可以沿着证据反复检查：
+
+```text
+任务执行 → Run / Trace / 执行快照 → 测试用例与数据集
+                                     ↓
+人工决定 ← 对比报告 ← 离线 Experiment ← 隔离 Replay 与评估
+```
+
+- **Run 与可观测性**：Task 是公开的 Run 身份，执行配置和业务输入分别冻结；Trace 用于排查技术链路，不能代替业务快照、审计或 Token 账本。
+- **Dataset 与 Evaluator**：将已有任务沉淀为版本化测试用例和数据集，通过确定性评估器记录指标和证据引用。
+- **隔离 Replay**：复用冻结输入和执行配置重新运行；候选产物只供检查，不直接写入正式文档或创建正式变更。
+- **离线 Experiment**：在同一冻结数据集上比较 baseline 与 Prompt 候选，报告展示质量、成本、延迟、分母与缺失证据；结果由人判断，不自动推广候选。
+- **受控线上 A/B**：在授权、预算、路由、停止和回退边界内比较真实任务；上线需满足部署和安全门禁，候选不会自动晋升。
+
+![离线实验报告设计示意](docs/ui-mockups/v0.2.0/05-offline-experiment-report.png)
+
+上图为设计示意，不是实际运行截图；更多设计示意见 [v0.2.0 页面图集](docs/ui-mockups/v0.2.0/README.md)。功能和发布状态以当前代码、下方状态说明及正式契约为准。
 
 ## 核心能力
 
@@ -231,32 +253,31 @@ Skill Router 只能缩小当前任务需要的 Skill 范围，不能扩大权限
 ``` text
 Frontend (Vue 3 + TypeScript)
           │
-          │ OAuth2 / JWT
+          │ Bearer JWT
           ▼
 ┌─────────────────────────────┐
 │ Spring Cloud Gateway :9090  │
 └──────────────┬──────────────┘
                │
-     ┌─────────┼───────────┬─────────────┐
-     ▼         ▼           ▼             ▼
- auth-service  document    task-service  agent-service
-    :8081      service        :8083         :8084
-               :8082           │              ▲
-                 │             │ A2A          │
-                 │             └──────────────┘
-                 │                            │
-                 └──── Workbench Domain ─────┤ MCP
-                                              ▼
-                                      External MCPs
+     ┌─────────┼───────────┬─────────────┬─────────────┐
+     ▼         ▼           ▼             ▼             ▼
+   Auth     Document      Task          Agent       Evaluation
+  :8081      :8082        :8083         :8084          :8085
+                            │              ▲              │
+                            └──── A2A ─────┘              │
+                            ◄──── Replay / 评估编排 ──────┘
 ```
+
+Task 提供 Workbench MCP，Agent 可按配置调用内置和外部 MCP；OpenTelemetry 采集跨服务技术链路。
 
 主要服务：
 | 服务 | 职责 |
 | --- | --- |
-| `auth-service` | 用户、OAuth2、JWT、平台身份 |
+| `auth-service` | 登录、JWT 和平台身份 |
 | `document-service` | Space、目录、文档、版本、ChangeRequest / Diff |
 | `task-service` | Agent Task、A2A Client、Workbench MCP Server、Token Ledger、Audit |
 | `agent-service` | Agent / Model / Skill / MCP 配置、A2A Server、Spring AI Runtime |
+| `evaluation-service` | 测试资产、评估、Replay 与实验 |
 | `gateway-service` | API Gateway、统一入口 |
 
 ## 技术栈
@@ -267,10 +288,10 @@ Frontend (Vue 3 + TypeScript)
 | Database | MySQL 5.7 |
 | Messaging / Cache | RabbitMQ · Redis 7 |
 | Object Storage | MinIO |
-| Registry / Config | Nacos 3.2.2（随 Compose 提供，v0.1 服务使用静态路由，暂不接入注册中心） |
+| Registry / Config | Nacos 3.2.2（随 Compose 提供；当前服务使用静态路由，暂不接入注册中心） |
 | Agent | Spring AI · Official A2A Java SDK · MCP Java SDK |
 | Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
-| Auth | Spring Authorization Server · OAuth2 · JWT RS256 |
+| Auth | Spring Security Resource Server · JWT RS256 |
 技术选型与约束见 [docs/tech/README.md](docs/tech/README.md)。
 
 ## 快速开始
@@ -311,21 +332,29 @@ docker compose up -d rabbitmq minio nacos
 
 ### 2. 启动后端
 
-后端为 Maven 多模块工程。进入 `backend` 后启动所需服务：
+后端为 Maven 多模块工程。先在 `backend` 安装本地模块依赖，再在**各自的终端**按顺序启动服务。Auth 负责数据库迁移，确认它启动成功后再启动其他服务。
 
 Linux / macOS：
 
 ```bash
 cd backend
 
-./mvnw spring-boot:run -pl auth-service -am
-./mvnw spring-boot:run -pl gateway-service -am
-./mvnw spring-boot:run -pl document-service -am
-./mvnw spring-boot:run -pl task-service -am
-./mvnw spring-boot:run -pl agent-service -am
+./mvnw -DskipTests install
+
+# 以下每行分别在一个终端执行
+./mvnw -pl auth-service spring-boot:run
+./mvnw -pl gateway-service spring-boot:run
+./mvnw -pl document-service spring-boot:run
+./mvnw -pl agent-service spring-boot:run
+./mvnw -pl task-service spring-boot:run
+./mvnw -pl evaluation-service spring-boot:run
 ```
 
 Windows PowerShell 或 Command Prompt 将 `./mvnw` 替换为 `.\mvnw.cmd`。
+
+启动前在各应用的进程环境中配置数据库、Redis、RabbitMQ、MinIO 和所需密钥。`AGENT_CONFIG_KEY`、`TASK_CAPABILITY_KEY` 和 `EVALUATION_CAPABILITY_KEY` 是各自独立的 Base64 编码 AES 密钥；Evaluation 多实例须使用一致的 WorkerCapability 加密密钥。Evaluation 默认使用共享的 `MYSQL_*`、`REDIS_*` 和 `AUTH_JWKS_URL`，也可用 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 单独指定数据库。根目录 `.env` 用于 Compose 变量替换，不会自动注入宿主机启动的 Java 进程；具体变量和长度要求见 [`.env.example`](.env.example)。
+
+离线实验自动首次报告需要在 Agent 和 Evaluation 进程中配置相同的独立 `EXPERIMENT_REPORT_PROOF_KEY`（Base64 编码至少 32 随机字节）。Evaluation 通过 `AGENT_INTERNAL_URL` 直连 Agent；跨主机应使用受信任的加密网络并保持时钟同步。缺少密钥时自动报告不会生成。
 
 默认端口：
 
@@ -336,6 +365,7 @@ Windows PowerShell 或 Command Prompt 将 `./mvnw` 替换为 `.\mvnw.cmd`。
 | Document | `8082` |
 | Task | `8083` |
 | Agent | `8084` |
+| Evaluation | `8085` |
 
 ### 3. 启动前端
 
@@ -399,13 +429,12 @@ v0.1 当前采用：
 
 ### v0.2 开发进度
 
-v0.2.0 已完成 Phase 1–3，涵盖 Run-compatible Execution、OpenTelemetry、Evaluation 与 Safe Replay 基础能力。接下来将推进离线 Experiment 与 Engineering UX；Memory、Skill Sandbox、OAuth2 / OIDC、Workflow 等能力仍需按独立设计和真实需求评估，不因长期路线图自动进入版本范围。
+v0.2.0 的 Run-compatible Execution、OpenTelemetry、Evaluation / Safe Replay、离线 Experiment、Engineering UX 与受控线上 A/B 已进入发布收口；正式发布仍需通过安装升级、安全回归和发布验收。Memory、Skill Sandbox、标准 OAuth2 / OIDC、Workflow 等能力仍需按独立设计和真实需求评估，不因长期路线图自动进入版本范围。
 
 后续方向包括：
 
 ``` text
-Experiment / A-B
-Engineering UX
+发布验证与文档收口
 ```
 
 更长期再探索 Multi-Agent Orchestration。
@@ -418,6 +447,7 @@ Engineering UX
 | --- | --- |
 | [完整开发规划](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | 产品功能、MVP 与迭代背景 |
 | [技术栈](docs/tech/README.md) | Backend / Frontend / Auth 技术选型 |
+| [v0.2.0 升级指南（草案）](docs/operations/v0.2-upgrade.md) | 数据库升级预检、备份和回退限制 |
 | [Common Modules](docs/common-modules.md) | Common 模块与基础设施 |
 | [Database Design](docs/database-design.md) | 数据库设计与迁移约束 |
 | [架构决策记录](docs/adr/README.md) | v0.2.0 起的重要架构决策与取舍 |
