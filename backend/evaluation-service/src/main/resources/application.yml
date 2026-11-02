@@ -7,16 +7,31 @@ spring:
   application:
     # Spring应用名称：评估服务
     name: evaluation-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          experiment-report-agent:
+            loggerLevel: none
   datasource:
-    # MySQL连接地址，默认本地库 agent_doc_workbench
-    url: ${DB_URL:jdbc:mysql://localhost:3306/agent_doc_workbench?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
-    # 数据库账号
-    username: ${DB_USERNAME:root}
-    # 数据库密码
-    password: ${DB_PASSWORD:root}
+    # 允许 Evaluation 单独指定连接；未指定时沿用各服务的 MYSQL_* 变量。
+    url: ${DB_URL:jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${DB_USERNAME:${MYSQL_USERNAME:root}}
+    password: ${DB_PASSWORD:${MYSQL_PASSWORD:root}}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
 agent-doc:
+  experiment-report:
+    # Evaluation 与 Agent 使用相同的独立 Base64 密钥（至少 32 字节）。
+    proof-key: ${EXPERIMENT_REPORT_PROOF_KEY:}
+  security:
+    # 与其他业务服务共享 Auth 的 JWT 公钥地址。
+    jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
   online:
     # 线上模板直连 Agent；默认本机8084，按部署拓扑设置，不经公共网关。
     agent-url: ${AGENT_INTERNAL_URL:http://localhost:8084}

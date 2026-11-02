@@ -6,6 +6,7 @@ import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.feign.context.AuthorizationContext;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
+import com.agentdoc.common.utils.ReportProofSignature;
 import feign.RequestTemplate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -40,7 +41,7 @@ class AuthHeaderForwardInterceptorTest {
         AuthorizationContext.set("Bearer user-token");
         TaskCapabilityContext.set("expired-proof");
         for (String header : new String[]{TaskRecoveryConstant.MACHINE_KEY_HEADER, TaskRecoveryConstant.CAPABILITY_HEADER.toLowerCase(),
-                OnlineCapabilityConstant.HEADER.toLowerCase()}) {
+                OnlineCapabilityConstant.HEADER.toLowerCase(), ReportProofSignature.HEADER.toLowerCase()}) {
             RequestTemplate template = new RequestTemplate();
             template.header(header, "dedicated-credential");
             template.header("Authorization", "Bearer existing");

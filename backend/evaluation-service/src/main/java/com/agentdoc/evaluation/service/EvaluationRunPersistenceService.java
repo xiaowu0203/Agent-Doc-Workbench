@@ -339,6 +339,7 @@ public class EvaluationRunPersistenceService {
         runMapper.updateById(run);
         runMapper.update(null, new LambdaUpdateWrapper<EvaluationRunEntity>()
                 .eq(EvaluationRunEntity::getId, run.getId())
+                .set(EvaluationRunEntity::getFinishedAt, null)
                 .set(EvaluationRunEntity::getPauseReason, null));
 
         return new RunCaseDraft(caseRun, attempt);

@@ -38,6 +38,8 @@ class JwtAuthenticationFilterTest {
                 "/internal;param=1/online-configs/prepare",
                 "/internal//online-configs/prepare",
                 "/api/agent/internal/a2a/tasks/remote/recovery",
+                "/api/agent/internal/experiment-report/candidate-configs/1",
+                "/api/%61gent/internal/experiment-report/candidate-configs/1",
                 "/api/document/internal/task-drafts/1/finalize",
                 "/api/auth/internal/online-capabilities", "/api/document/internal/online-authorizations/11/permission",
                 "/api/auth/internal/online-control-authorizations",

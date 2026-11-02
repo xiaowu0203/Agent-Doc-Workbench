@@ -4,10 +4,12 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.ExperimentReportAgentFeign;
 import com.agentdoc.common.feign.vo.AgentCandidateConfigVO;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.utils.JsonUtils;
 import com.agentdoc.common.utils.StableSnapshotUtils;
+import com.agentdoc.common.utils.ReportProofSignature;
 import com.agentdoc.evaluation.enums.ExperimentStatus;
 import com.agentdoc.evaluation.convertor.ExperimentReportConvertor;
 import com.agentdoc.evaluation.mapper.ExperimentMapper;
@@ -26,6 +28,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import java.time.Instant;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,7 +58,11 @@ public class ExperimentReportService {
     private final ExperimentReportPersistenceService persistenceService;
     private final SpaceAccessService spaceAccessService;
     private final AgentFeign agentFeign;
+    private final ExperimentReportAgentFeign reportAgentFeign;
     private final ExperimentReportConvertor reportConvertor;
+
+    @Value("${agent-doc.experiment-report.proof-key:}")
+    private String reportProofKey;
 
     public List<ExperimentReportRevisionVO> list(Long experimentId) {
         ExperimentEntity experiment = requireExperiment(experimentId);
@@ -91,14 +99,18 @@ public class ExperimentReportService {
         if (prior != null) {
             return toVO(prior);
         }
-        ensureAutomatic(experimentId);
-        PreparedReport prepared = prepare(experiment);
+        ensureAutomatic(experimentId, false);
+        PreparedReport prepared = prepare(experiment, false);
         return toVO(persistenceService.save(experimentId, prepared.persistence(),
                 request.clientRequestKey(), requestHash, AuthUtils.getUserIdOrException()));
     }
 
     /** 终态首次自动报告；重复扫描只返回已有 revision，不生成新版本。 */
     public void ensureAutomatic(Long experimentId) {
+        ensureAutomatic(experimentId, true);
+    }
+
+    private void ensureAutomatic(Long experimentId, boolean background) {
         ExperimentEntity experiment = requireExperiment(experimentId);
         ExperimentStatus status = ExperimentStatus.valueOf(experiment.getStatus());
         if (status != ExperimentStatus.COMPLETED && status != ExperimentStatus.COMPLETED_WITH_ERRORS) {
@@ -110,7 +122,7 @@ public class ExperimentReportService {
         if (existing != null) {
             return;
         }
-        PreparedReport prepared = prepare(experiment);
+        PreparedReport prepared = prepare(experiment, background);
         persistenceService.save(experimentId, prepared.persistence(), null, null, experiment.getStartedBy());
     }
 
@@ -125,7 +137,7 @@ public class ExperimentReportService {
                 request.reason().trim(), AuthUtils.getUserIdOrException());
     }
 
-    private PreparedReport prepare(ExperimentEntity experiment) {
+    private PreparedReport prepare(ExperimentEntity experiment, boolean background) {
         if (experiment.getManifestSchemaVersion() == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "MANIFEST_MISMATCH");
         }
@@ -139,7 +151,7 @@ public class ExperimentReportService {
                 new LambdaQueryWrapper<ExperimentVariantEntity>()
                         .eq(ExperimentVariantEntity::getExperimentId, experiment.getId())
                         .orderByAsc(ExperimentVariantEntity::getId));
-        verifyCandidateProofs(experiment, manifest, variants);
+        verifyCandidateProofs(experiment, manifest, variants, background);
         ExperimentReportSnapshotService.Snapshot snapshot = snapshotService.load(experiment, manifest, variants);
         List<ExperimentReportMatrix.Cell> cells = ExperimentReportMatrix.align(manifest, snapshot.variants());
         List<Long> selectedMetricIds = cells.stream().map(ExperimentReportMatrix.Cell::metricId)
@@ -173,7 +185,7 @@ public class ExperimentReportService {
     }
 
     private void verifyCandidateProofs(ExperimentEntity experiment, ExperimentManifest manifest,
-                                       List<ExperimentVariantEntity> variants) {
+                                       List<ExperimentVariantEntity> variants, boolean background) {
         if (variants.size() < 2 || variants.stream().filter(item -> "BASELINE".equals(item.getRole())).count() != 1) {
             throw new BusinessException(ErrorCode.CONFLICT, "REPORT_INPUT_INCOMPLETE");
         }
@@ -197,8 +209,12 @@ public class ExperimentReportService {
             if (!"CANDIDATE".equals(variant.getRole()) || variant.getCandidateConfigId() == null) {
                 throw new BusinessException(ErrorCode.CONFLICT, "CANDIDATE_CONFIG_TAMPERED");
             }
-            Result<AgentCandidateConfigVO> response = agentFeign.getCandidateConfigIdentity(
-                    variant.getCandidateConfigId(), experiment.getSpaceId(), variant.getCandidateSnapshotHash());
+            Result<AgentCandidateConfigVO> response = background
+                    ? reportAgentFeign.identity(variant.getCandidateConfigId(), experiment.getSpaceId(),
+                    variant.getCandidateSnapshotHash(), ReportProofSignature.sign(reportProofKey,
+                    variant.getCandidateConfigId(), experiment.getSpaceId(), variant.getCandidateSnapshotHash(), Instant.now()))
+                    : agentFeign.getCandidateConfigIdentity(variant.getCandidateConfigId(), experiment.getSpaceId(),
+                    variant.getCandidateSnapshotHash());
             AgentCandidateConfigVO identity = response == null || response.code() != ErrorCode.SUCCESS.getCode()
                     ? null : response.data();
             List<String> diffPaths = JsonUtils.parse(variant.getPromptDiffFieldPaths(),

@@ -5,6 +5,8 @@ import com.agentdoc.common.feign.vo.ReplayBatchItemVO;
 import com.agentdoc.common.feign.vo.ExperimentBatchCreateVO;
 import com.agentdoc.common.feign.vo.ExperimentBatchItemVO;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.agentdoc.evaluation.enums.EvaluationAttemptStatus;
 import com.agentdoc.evaluation.mapper.EvaluationCaseAttemptMapper;
@@ -24,12 +26,14 @@ import org.mockito.quality.Strictness;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.isNull;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -132,5 +136,26 @@ class EvaluationRunPersistenceServiceTest {
         assertThat(draft.run().getPauseReason()).isNull();
         verify(runMapper).update(org.mockito.ArgumentMatchers.isNull(),
                 org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void replayRetryClearsPreviousFinishTimeInDatabaseUpdate() {
+        var service = new EvaluationRunPersistenceService(runMapper, caseRunMapper, attemptMapper, segmentService);
+        var run = new EvaluationRunEntity();
+        run.setId(71L);
+        run.setSpaceId(9L);
+        run.setFinishedAt(LocalDateTime.of(2026, 10, 1, 12, 0));
+        var caseRun = new EvaluationCaseRunEntity();
+        caseRun.setId(81L);
+        var previous = new EvaluationCaseAttemptEntity();
+        previous.setAttemptNo(1);
+
+        service.createReplayRetry(run, caseRun, previous);
+
+        ArgumentCaptor<Wrapper<EvaluationRunEntity>> update = ArgumentCaptor.forClass(Wrapper.class);
+        verify(runMapper).update(isNull(), update.capture());
+        var wrapper = (LambdaUpdateWrapper<EvaluationRunEntity>) update.getValue();
+        assertThat(wrapper.getSqlSet()).contains("finished_at=#{ew.paramNameValuePairs.MPGENVAL1}");
+        assertThat(wrapper.getParamNameValuePairs()).containsEntry("MPGENVAL1", null);
     }
 }

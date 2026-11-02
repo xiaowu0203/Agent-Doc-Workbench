@@ -25,6 +25,9 @@ spring:
     time-zone: Asia/Shanghai
 
 agent-doc:
+  experiment-report:
+    # 仅用于后台报告候选证明的短期签名验证。
+    proof-key: ${EXPERIMENT_REPORT_PROOF_KEY:}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:}

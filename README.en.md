@@ -22,6 +22,8 @@ Controlled cost · Traceable runs**
 
 ## At a Glance
 
+Page images in this README are design illustrations; the running UI may differ.
+
 ![Space Overview](docs/ui-mockups/01-space-overview.png)
 
 Many Agent demos ask one question:
@@ -78,7 +80,7 @@ historical snapshots.
 
 ![Task Execution](docs/ui-mockups/07-task-execution.png)
 
-In v0.1, users explicitly choose one Agent for each task. When execution
+For an ordinary task, users explicitly choose one Agent; derived executions such as Replay follow their respective frozen-input rules. When execution
 starts, the system freezes the runtime configuration used by that run,
 including:
 
@@ -96,6 +98,26 @@ Later configuration changes do not mutate an already-running execution.
 The execution view records Skill routing, instruction loading, tool
 calls, token usage, status, and key execution events so failures, cost,
 and capability sources can be investigated.
+
+## From Execution to Evaluation: the v0.2 Loop
+
+v0.2.0 is in release preparation. It adds execution, observability, and evaluation capabilities to the document workbench:
+
+```text
+Task → Run / Trace / frozen snapshots → Test cases and datasets
+                                                ↓
+Human decision ← comparison report ← offline Experiment ← isolated Replay and evaluation
+```
+
+- **Runs and observability:** Task is the public Run identity; business inputs and execution configuration are frozen separately. Traces support diagnosis and do not replace snapshots, audit, or the Token ledger.
+- **Datasets and evaluators:** turn existing tasks into versioned test cases and datasets, and record metrics with evidence references.
+- **Isolated Replay:** rerun frozen inputs and configuration; candidate artifacts are captured for inspection rather than written to formal documents or submitted as formal changes.
+- **Offline Experiment:** compare a baseline with a Prompt candidate on the same frozen dataset. Reports show quality, cost, latency, denominators, and missing evidence; promotion remains a human decision.
+- **Controlled online A/B:** compare real tasks within explicit authorization, budget, routing, stop, and rollback boundaries. Deployment and safety gates apply; candidates are not promoted automatically.
+
+![Offline experiment report design illustration](docs/ui-mockups/v0.2.0/05-offline-experiment-report.png)
+
+This image is a design illustration, not a screenshot of a running instance. See the [v0.2.0 design gallery](docs/ui-mockups/v0.2.0/README.md) for more; current code and formal contracts define actual behavior.
 
 ## Core Capabilities
 
@@ -120,9 +142,7 @@ and capability sources can be investigated.
     Capability are separate authorization boundaries.
 - **Layered tool restrictions** --- Skills, Agent configuration, MCP
     bindings, and Task Capability constrain effective tools.
-- **Token Budget Circuit Breaker** --- a task stops automatically once its
-    budget is exhausted; the effective budget is the minimum of the task,
-    Agent, and space budgets resolved at creation time.
+- **Token Budget Circuit Breaker** --- the effective task budget is the minimum of the task, Agent, and space budgets resolved at creation time. In-flight model calls can exceed the authorized amount, so the budget is not a strict cost cap.
 - **External MCP security** --- tool namespaces, allowlists, encrypted
     credentials, HTTPS and network-address validation.
 
@@ -250,30 +270,29 @@ expand authorization.
 ``` text
 Frontend (Vue 3 + TypeScript)
           │
-          │ OAuth2 / JWT
+          │ Bearer JWT
           ▼
 ┌─────────────────────────────┐
 │ Spring Cloud Gateway :9090  │
 └──────────────┬──────────────┘
                │
-     ┌─────────┼───────────┬─────────────┐
-     ▼         ▼           ▼             ▼
- auth-service  document    task-service  agent-service
-    :8081      service        :8083         :8084
-               :8082           │              ▲
-                 │             │ A2A          │
-                 │             └──────────────┘
-                 │                            │
-                 └──── Workbench Domain ─────┤ MCP
-                                              ▼
-                                      External MCPs
+     ┌─────────┼───────────┬─────────────┬─────────────┐
+     ▼         ▼           ▼             ▼             ▼
+   Auth     Document      Task          Agent       Evaluation
+  :8081      :8082        :8083         :8084          :8085
+                            │              ▲              │
+                            └──── A2A ─────┘              │
+                            ◄──── Replay / evaluation ────┘
 ```
+
+Task provides the Workbench MCP; Agent can use built-in and configured external MCPs. OpenTelemetry captures the technical trace across services.
 | Service | Responsibility |
 | --- | --- |
-| `auth-service` | Users, OAuth2, JWT, platform identity |
+| `auth-service` | Login, JWT, and platform identity |
 | `document-service` | Spaces, directories, documents, versions, ChangeRequest / Diff |
 | `task-service` | Agent tasks, A2A Client, Workbench MCP Server, Token Ledger, Audit |
 | `agent-service` | Agent / Model / Skill / MCP configuration, A2A Server, Spring AI Runtime |
+| `evaluation-service` | Test assets, evaluation, replay, and experiments |
 | `gateway-service` | API gateway and unified entry point |
 
 ## Tech Stack
@@ -284,10 +303,10 @@ Frontend (Vue 3 + TypeScript)
 | Database | MySQL 5.7 |
 | Messaging / Cache | RabbitMQ · Redis |
 | Object Storage | MinIO |
-| Registry / Config | Nacos 3.2.2 (shipped via Compose; v0.1 services use static routes and do not register with it) |
+| Registry / Config | Nacos 3.2.2 (shipped via Compose; current services use static routes and do not register with it) |
 | Agent | Spring AI · Official A2A Java SDK · MCP Java SDK |
 | Frontend | Vue 3 · TypeScript · Vite · Pinia · Element Plus · Markdown |
-| Auth | Spring Authorization Server · OAuth2 · JWT RS256 |
+| Auth | Spring Security Resource Server · JWT RS256 |
 See [docs/tech/README.md](docs/tech/README.md) for technical choices and
 constraints.
 
@@ -309,6 +328,8 @@ Recommended local environment:
 docker compose up -d
 ```
 
+Run this command from the repository root. You can first copy [`.env.example`](.env.example) to `.env` there and adjust the values; Compose uses it for variable substitution. Existing volumes retain previously initialized data and credentials, so changing `.env` does not reset MySQL or other persistent services.
+
 The Compose file provides example Nacos identity settings for local development. Before production deployment, replace `NACOS_AUTH_TOKEN`, `NACOS_AUTH_IDENTITY_KEY`, and `NACOS_AUTH_IDENTITY_VALUE` through environment variables.
 
 The default infrastructure includes:
@@ -329,22 +350,37 @@ docker compose up -d rabbitmq minio nacos
 
 ### 2. Start Backend Services
 
-The backend is a Maven multi-module project:
+The backend is a Maven multi-module project. Install local module dependencies first, then run each service in its **own terminal**; enter the repository's `backend` directory in every terminal. Auth owns database migrations; wait for it to start successfully before starting the other services.
 
 Linux / macOS:
 
 ```bash
 cd backend
 
-./mvnw spring-boot:run -pl auth-service -am
-./mvnw spring-boot:run -pl gateway-service -am
-./mvnw spring-boot:run -pl document-service -am
-./mvnw spring-boot:run -pl task-service -am
-./mvnw spring-boot:run -pl agent-service -am
+./mvnw -DskipTests install
+
+# Run each line in a separate terminal
+./mvnw -pl auth-service spring-boot:run
+./mvnw -pl gateway-service spring-boot:run
+./mvnw -pl document-service spring-boot:run
+./mvnw -pl agent-service spring-boot:run
+./mvnw -pl task-service spring-boot:run
+./mvnw -pl evaluation-service spring-boot:run
 ```
 
 On Windows PowerShell or Command Prompt, replace `./mvnw` with
 `.\mvnw.cmd`.
+
+Before starting, configure the database, Redis, RabbitMQ, MinIO, and required keys in each application process. The root `.env` is not automatically injected into Java processes started on the host; set the relevant environment variables in each terminal:
+
+- `MYSQL_PASSWORD` must match the actual MySQL password. Without a Compose `.env`, the initial Compose password defaults to `change-me`, while Java services default to `root`.
+- Document and Agent need `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` matching the actual MinIO credentials. The services do not automatically receive the Compose credentials and fail to start without them.
+- Use separate Base64-encoded AES keys for `AGENT_CONFIG_KEY`, `TASK_CAPABILITY_KEY`, and `EVALUATION_CAPABILITY_KEY` (16, 24, or 32 decoded bytes). Store them safely and keep them consistent across instances that need to read existing encrypted data. Evaluation instances must share the WorkerCapability encryption key.
+- Evaluation uses the shared `MYSQL_*`, `REDIS_*`, and `AUTH_JWKS_URL` settings by default; `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` can explicitly override its database. See [`.env.example`](.env.example) for variable names.
+
+When JWT RSA keys are absent, Auth generates temporary keys for local use, so old tokens may become invalid after a restart. Production environments should provide persistent `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` values.
+
+Automatic initial offline experiment reports require the same independent `EXPERIMENT_REPORT_PROOF_KEY` in the Agent and Evaluation process environments (at least 32 random bytes, Base64 encoded). Evaluation connects directly to Agent using `AGENT_INTERNAL_URL`; use a trusted encrypted network across hosts and synchronize clocks. Without the key, automatic report generation fails closed.
 
 Default ports:
 
@@ -355,14 +391,19 @@ Default ports:
 | Document | `8082` |
 | Task | `8083` |
 | Agent | `8084` |
+| Evaluation | `8085` |
 
 ### 3. Start Frontend
+
+In a new terminal, run the following from the repository root:
 
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+Open `http://localhost:5173` by default (or use the address printed by Vite if the port is occupied), then register and sign in to create a Space. Configure a working model and Agent in the workbench before running model tasks.
 
 Frontend variables are documented in
 [`frontend/.env.example`](frontend/.env.example). Infrastructure and
@@ -420,13 +461,12 @@ demo value.
 
 ### v0.2 Development Status
 
-v0.2.0 has completed Phases 1–3, covering Run-compatible Execution, OpenTelemetry, Evaluation, and the Safe Replay foundation. Offline Experiments and Engineering UX are next. Memory, Skill Sandbox, OAuth2 / OIDC, and Workflow remain conditional candidates that require independent design and demonstrated need; their appearance on the long-term roadmap does not automatically put them in scope.
+The v0.2.0 Run-compatible Execution, OpenTelemetry, Evaluation / Safe Replay, Offline Experiment, Engineering UX, and controlled online A/B capabilities are in release preparation. A formal release still requires installation, upgrade, security, regression, and release validation. Memory, Skill Sandbox, standard OAuth2 / OIDC, and Workflow remain conditional candidates requiring independent design and demonstrated need.
 
 Next areas include:
 
 ``` text
-Experiment / A-B
-Engineering UX
+Release validation and documentation
 ```
 
 Multi-Agent orchestration is a later step, after the execution and
@@ -441,6 +481,7 @@ direction.
 | --- | --- |
 | [Full Development Plan](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | Product scope, MVP, and iteration background (Chinese) |
 | [Tech Stack](docs/tech/README.md) | Backend / frontend / auth choices |
+| [v0.2.0 upgrade guide (draft)](docs/operations/v0.2-upgrade.md) | Database preflight, backup, and rollback limitations (Chinese) |
 | [Common Modules](docs/common-modules.md) | Common modules and infrastructure |
 | [Database Design](docs/database-design.md) | Database design and migration constraints |
 | [A2A / MCP Design](docs/agent-server-a2a-mcp-design.md) | Agent Server, A2A, and MCP architecture |
@@ -450,7 +491,7 @@ direction.
 | [UI Gallery](docs/ui-mockups/README.md) | Complete UI mockups and interaction constraints |
 | [Security Policy](SECURITY.md) | Vulnerability reporting, security boundaries, and production guidance (Chinese) |
 | [Contributing](CONTRIBUTING.md) | Development environment, tests, and pull-request workflow (Chinese) |
-| [Changelog](CHANGELOG.md) | v0.1.0 capabilities, fixes, and known limitations (Chinese) |
+| [Changelog](CHANGELOG.md) | Version changes, fixes, and known limitations (Chinese) |
 
 ## Open Source Direction
 

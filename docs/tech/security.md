@@ -15,16 +15,9 @@
 
 OAuth2 / Authorization Code + PKCE 登录能力尚未实现；前端保留 OAuth2、第三方登录和找回密码入口作为产品界面占位，点击后明确提示“即将支持”，不会发起伪认证请求。
 
-## 外部 Agent 接入流程（Client Credentials）
+## Agent 执行授权
 
-```
-外部 Agent / MCP Client
-  → OAuth2 Client Credentials
-  → 获取 Agent 专属 Access Token
-  → 携带 Agent Token 调用 Gateway API
-  → Gateway 校验 JWT → 鉴权（scope + 角色 + 空间成员关系）
-  → 业务服务再次校验
-```
+当前未实现 OAuth2 Client Credentials 授权流程。任务执行使用由 Auth Service 签发的任务 Capability，绑定任务、空间、Agent、文档范围和动作等约束；业务服务验证该能力并继续执行对应授权检查。用户空间 RBAC 和任务 Capability 是不同的授权边界。
 
 ## Token 配置
 
@@ -32,8 +25,8 @@ OAuth2 / Authorization Code + PKCE 登录能力尚未实现；前端保留 OAuth
 | ---- | --- |
 | 签名算法 | RSA（建议 RS256） |
 | 密钥管理 | JWK Set 分发公钥，Gateway 与业务服务通过 JWK Set 获取 |
-| Access Token 有效期 | 30 分钟 |
-| Refresh Token 有效期 | 7 天 |
+| Access Token 有效期 | 默认 7 天，以 `auth.jwt.access-ttl` 配置为准 |
+| Refresh Token 有效期 | 默认 7 天，以 `auth.jwt.refresh-ttl` 配置为准 |
 | Access Token 存储 | 仅浏览器内存，不放 localStorage |
 | Refresh Token 存储 | HttpOnly + SameSite=Strict Cookie；生产环境开启 Secure |
 
@@ -77,7 +70,5 @@ SPRING_PROFILES_ACTIVE=prod
 
 ## 有关 Agent 的权限约束
 
-- Agent 通过 OAuth2 Client Credentials 获取专属 Access Token
-- Agent 不继承用户权限，区别于用户登录流程
-- 每个 Agent 必须绑定：可操作的空间、可读写的文档范围、可调用的工具白名单
-- Agent 权限变更需要空间所有者审批
+- Agent 不直接继承用户的全部权限；执行权限由任务 Capability 和 Agent、Skill、MCP 工具约束共同限制。
+- 正式文档变更仍通过 ChangeRequest 和人工审批，不能由 Agent 直接绕过审批。

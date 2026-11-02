@@ -24,7 +24,7 @@ import java.util.Map;
 public class AgentCardService {
 
     /** Agent服务版本号 */
-    private static final String AGENT_VERSION = "0.1.0";
+    private static final String AGENT_VERSION = "0.2.0";
     /** Skill唯一标识：文档协作能力 */
     private static final String SKILL_ID = "document-collaboration";
     /** 文本输入输出模式 */

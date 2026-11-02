@@ -198,7 +198,7 @@
       <footer class="login-footer">
         <button @click="showComingSoon">隐私说明</button>
         <button @click="showComingSoon">使用文档</button>
-        <span>v0.1</span>
+        <span>v0.2</span>
       </footer>
     </section>
   </main>
