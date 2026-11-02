@@ -75,8 +75,7 @@ New Document Version
 
 ![任务执行详情](docs/ui-mockups/07-task-execution.png)
 
-每个任务由用户明确选择一个
-Agent。执行开始后，系统冻结本次运行所使用的配置，包括：
+创建普通任务时由用户明确选择一个 Agent；Replay 等派生执行使用对应的冻结规则。执行开始后，系统冻结本次运行所使用的配置，包括：
 
 - Agent 配置版本
 - System Prompt
@@ -133,9 +132,7 @@ v0.2.0 正在发布收口。它在文档工作台之上增加执行、观测与�
     是两套不同的授权边界。
 - **多层工具约束**：Skill、Agent、MCP Binding 与 Task Capability
     共同限制最终可调用能力。
-- **Token Budget Circuit
-    Breaker**：任务级预算超限自动终止；任务创建时按任务 / Agent / 空间预算取最小值收敛，
-    空间月度预算用于创建期约束与用量报表。
+- **Token Budget Circuit Breaker**：任务级预算用于限制执行，任务创建时按任务 / Agent / 空间预算取最小值收敛；空间月度预算用于创建期约束与用量报表。在途模型调用可能使实际用量超过授权值，预算不是严格的费用封顶。
 - **外部 MCP 安全约束**：工具命名空间、白名单、认证信息加密、HTTPS /
     网络地址检查。
 
@@ -312,6 +309,8 @@ Task 提供 Workbench MCP，Agent 可按配置调用内置和外部 MCP；OpenTe
 docker compose up -d
 ```
 
+以上命令应在仓库根目录执行。可先将 [`.env.example`](.env.example) 复制为根目录的 `.env` 并按需配置；Compose 会读取该文件进行变量替换。已有数据卷保留先前初始化的数据和凭证，修改 `.env` 不会自动重置 MySQL 或其他持久化服务。
+
 Compose 已为本地开发提供 Nacos 启动所需的示例身份参数；生产部署前必须通过环境变量替换 `NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY` 和 `NACOS_AUTH_IDENTITY_VALUE`。
 
 默认会使用：
@@ -332,7 +331,7 @@ docker compose up -d rabbitmq minio nacos
 
 ### 2. 启动后端
 
-后端为 Maven 多模块工程。先在 `backend` 安装本地模块依赖，再在**各自的终端**按顺序启动服务。Auth 负责数据库迁移，确认它启动成功后再启动其他服务。
+后端为 Maven 多模块工程。先在 `backend` 安装本地模块依赖，再在**各自的终端**按顺序启动服务；每个终端都需先进入仓库的 `backend` 目录。Auth 负责数据库迁移，确认它启动成功后再启动其他服务。
 
 Linux / macOS：
 
@@ -352,7 +351,14 @@ cd backend
 
 Windows PowerShell 或 Command Prompt 将 `./mvnw` 替换为 `.\mvnw.cmd`。
 
-启动前在各应用的进程环境中配置数据库、Redis、RabbitMQ、MinIO 和所需密钥。`AGENT_CONFIG_KEY`、`TASK_CAPABILITY_KEY` 和 `EVALUATION_CAPABILITY_KEY` 是各自独立的 Base64 编码 AES 密钥；Evaluation 多实例须使用一致的 WorkerCapability 加密密钥。Evaluation 默认使用共享的 `MYSQL_*`、`REDIS_*` 和 `AUTH_JWKS_URL`，也可用 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 单独指定数据库。根目录 `.env` 用于 Compose 变量替换，不会自动注入宿主机启动的 Java 进程；具体变量和长度要求见 [`.env.example`](.env.example)。
+启动前在各应用的进程环境中配置数据库、Redis、RabbitMQ、MinIO 和所需密钥。根目录 `.env` 不会自动注入宿主机启动的 Java 进程，每个启动终端都需要自行设置相应环境变量：
+
+- `MYSQL_PASSWORD` 必须与实际 MySQL 密码一致。未提供 Compose `.env` 时，Compose 的初始密码默认为 `change-me`，而 Java 服务的默认密码为 `root`。
+- Document 和 Agent 的 `MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 必须与实际 MinIO 凭证一致，服务端不会自动获取 Compose 凭证；未提供凭证会导致服务启动失败。
+- `AGENT_CONFIG_KEY`、`TASK_CAPABILITY_KEY` 和 `EVALUATION_CAPABILITY_KEY` 分别使用独立的 Base64 编码 AES 密钥（解码后 16、24 或 32 字节），应安全保存并在需要读取既有加密数据的实例间保持一致。Evaluation 多实例须使用相同的 WorkerCapability 加密密钥。
+- Evaluation 默认使用共享的 `MYSQL_*`、`REDIS_*` 和 `AUTH_JWKS_URL`，也可用 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 单独指定数据库；具体变量见 [`.env.example`](.env.example)。
+
+本地未配置 JWT RSA 密钥时 Auth 会生成临时密钥，重启后旧令牌可能失效；生产环境应提供持久的 `JWT_PRIVATE_KEY` 和 `JWT_PUBLIC_KEY`。
 
 离线实验自动首次报告需要在 Agent 和 Evaluation 进程中配置相同的独立 `EXPERIMENT_REPORT_PROOF_KEY`（Base64 编码至少 32 随机字节）。Evaluation 通过 `AGENT_INTERNAL_URL` 直连 Agent；跨主机应使用受信任的加密网络并保持时钟同步。缺少密钥时自动报告不会生成。
 
@@ -369,11 +375,15 @@ Windows PowerShell 或 Command Prompt 将 `./mvnw` 替换为 `.\mvnw.cmd`。
 
 ### 3. 启动前端
 
+在新的终端从仓库根目录执行：
+
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+默认访问 `http://localhost:5173`（端口被占用时以 Vite 输出为准），注册并登录后即可创建 Space。运行模型任务前，还需要在工作台中配置可用的模型及 Agent。
 
 前端环境变量模板见
 [`frontend/.env.example`](frontend/.env.example)，基础设施与敏感配置模板见
@@ -458,7 +468,7 @@ v0.2.0 的 Run-compatible Execution、OpenTelemetry、Evaluation / Safe Replay�
 | [UI Gallery](docs/ui-mockups/README.md) | 完整 UI 效果图与交互约束 |
 | [安全策略](SECURITY.md) | 漏洞报告方式、运行边界与生产部署建议 |
 | [贡献指南](CONTRIBUTING.md) | 开发环境、工程约束、测试和 PR 流程 |
-| [变更日志](CHANGELOG.md) | v0.1.0 能力、修复与已知限制 |
+| [变更日志](CHANGELOG.md) | 各版本能力、修复与已知限制 |
 
 ## 开源与设计方向
 

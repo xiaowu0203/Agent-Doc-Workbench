@@ -80,7 +80,7 @@ historical snapshots.
 
 ![Task Execution](docs/ui-mockups/07-task-execution.png)
 
-In v0.1, users explicitly choose one Agent for each task. When execution
+For an ordinary task, users explicitly choose one Agent; derived executions such as Replay follow their respective frozen-input rules. When execution
 starts, the system freezes the runtime configuration used by that run,
 including:
 
@@ -142,9 +142,7 @@ This image is a design illustration, not a screenshot of a running instance. See
     Capability are separate authorization boundaries.
 - **Layered tool restrictions** --- Skills, Agent configuration, MCP
     bindings, and Task Capability constrain effective tools.
-- **Token Budget Circuit Breaker** --- a task stops automatically once its
-    budget is exhausted; the effective budget is the minimum of the task,
-    Agent, and space budgets resolved at creation time.
+- **Token Budget Circuit Breaker** --- the effective task budget is the minimum of the task, Agent, and space budgets resolved at creation time. In-flight model calls can exceed the authorized amount, so the budget is not a strict cost cap.
 - **External MCP security** --- tool namespaces, allowlists, encrypted
     credentials, HTTPS and network-address validation.
 
@@ -330,6 +328,8 @@ Recommended local environment:
 docker compose up -d
 ```
 
+Run this command from the repository root. You can first copy [`.env.example`](.env.example) to `.env` there and adjust the values; Compose uses it for variable substitution. Existing volumes retain previously initialized data and credentials, so changing `.env` does not reset MySQL or other persistent services.
+
 The Compose file provides example Nacos identity settings for local development. Before production deployment, replace `NACOS_AUTH_TOKEN`, `NACOS_AUTH_IDENTITY_KEY`, and `NACOS_AUTH_IDENTITY_VALUE` through environment variables.
 
 The default infrastructure includes:
@@ -350,7 +350,7 @@ docker compose up -d rabbitmq minio nacos
 
 ### 2. Start Backend Services
 
-The backend is a Maven multi-module project. Install local module dependencies first, then run each service in its **own terminal**. Auth owns database migrations; wait for it to start successfully before starting the other services.
+The backend is a Maven multi-module project. Install local module dependencies first, then run each service in its **own terminal**; enter the repository's `backend` directory in every terminal. Auth owns database migrations; wait for it to start successfully before starting the other services.
 
 Linux / macOS:
 
@@ -371,7 +371,14 @@ cd backend
 On Windows PowerShell or Command Prompt, replace `./mvnw` with
 `.\mvnw.cmd`.
 
-Before starting, configure the database, Redis, RabbitMQ, MinIO, and required keys in each application process. `AGENT_CONFIG_KEY`, `TASK_CAPABILITY_KEY`, and `EVALUATION_CAPABILITY_KEY` are separate Base64-encoded AES keys; Evaluation instances must use the same WorkerCapability encryption key. Evaluation uses the shared `MYSQL_*`, `REDIS_*`, and `AUTH_JWKS_URL` settings by default; `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` can explicitly override its database. The root `.env` supplies Compose variable substitution; it is not automatically injected into Java processes started on the host. See [`.env.example`](.env.example) for variable names and key lengths.
+Before starting, configure the database, Redis, RabbitMQ, MinIO, and required keys in each application process. The root `.env` is not automatically injected into Java processes started on the host; set the relevant environment variables in each terminal:
+
+- `MYSQL_PASSWORD` must match the actual MySQL password. Without a Compose `.env`, the initial Compose password defaults to `change-me`, while Java services default to `root`.
+- Document and Agent need `MINIO_ACCESS_KEY` and `MINIO_SECRET_KEY` matching the actual MinIO credentials. The services do not automatically receive the Compose credentials and fail to start without them.
+- Use separate Base64-encoded AES keys for `AGENT_CONFIG_KEY`, `TASK_CAPABILITY_KEY`, and `EVALUATION_CAPABILITY_KEY` (16, 24, or 32 decoded bytes). Store them safely and keep them consistent across instances that need to read existing encrypted data. Evaluation instances must share the WorkerCapability encryption key.
+- Evaluation uses the shared `MYSQL_*`, `REDIS_*`, and `AUTH_JWKS_URL` settings by default; `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` can explicitly override its database. See [`.env.example`](.env.example) for variable names.
+
+When JWT RSA keys are absent, Auth generates temporary keys for local use, so old tokens may become invalid after a restart. Production environments should provide persistent `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` values.
 
 Automatic initial offline experiment reports require the same independent `EXPERIMENT_REPORT_PROOF_KEY` in the Agent and Evaluation process environments (at least 32 random bytes, Base64 encoded). Evaluation connects directly to Agent using `AGENT_INTERNAL_URL`; use a trusted encrypted network across hosts and synchronize clocks. Without the key, automatic report generation fails closed.
 
@@ -388,11 +395,15 @@ Default ports:
 
 ### 3. Start Frontend
 
+In a new terminal, run the following from the repository root:
+
 ```bash
 cd frontend
 pnpm install --frozen-lockfile
 pnpm dev
 ```
+
+Open `http://localhost:5173` by default (or use the address printed by Vite if the port is occupied), then register and sign in to create a Space. Configure a working model and Agent in the workbench before running model tasks.
 
 Frontend variables are documented in
 [`frontend/.env.example`](frontend/.env.example). Infrastructure and
@@ -480,7 +491,7 @@ direction.
 | [UI Gallery](docs/ui-mockups/README.md) | Complete UI mockups and interaction constraints |
 | [Security Policy](SECURITY.md) | Vulnerability reporting, security boundaries, and production guidance (Chinese) |
 | [Contributing](CONTRIBUTING.md) | Development environment, tests, and pull-request workflow (Chinese) |
-| [Changelog](CHANGELOG.md) | v0.1.0 capabilities, fixes, and known limitations (Chinese) |
+| [Changelog](CHANGELOG.md) | Version changes, fixes, and known limitations (Chinese) |
 
 ## Open Source Direction
 
