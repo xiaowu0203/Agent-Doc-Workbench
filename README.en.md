@@ -101,7 +101,7 @@ and capability sources can be investigated.
 
 ## From Execution to Evaluation: the v0.2 Loop
 
-v0.2.0 is in release preparation. It adds execution, observability, and evaluation capabilities to the document workbench:
+v0.2.0 adds execution, observability, and evaluation capabilities to the document workbench:
 
 ```text
 Task → Run / Trace / frozen snapshots → Test cases and datasets
@@ -459,14 +459,14 @@ v0.1 intentionally uses:
 The project does not add free-form Multi-Agent orchestration merely for
 demo value.
 
-### v0.2 Development Status
+### v0.2 Capabilities and Scope
 
-The v0.2.0 Run-compatible Execution, OpenTelemetry, Evaluation / Safe Replay, Offline Experiment, Engineering UX, and controlled online A/B capabilities are in release preparation. A formal release still requires installation, upgrade, security, regression, and release validation. Memory, Skill Sandbox, standard OAuth2 / OIDC, and Workflow remain conditional candidates requiring independent design and demonstrated need.
+v0.2.0 provides Run-compatible Execution, OpenTelemetry, Evaluation / Safe Replay, Offline Experiment, Engineering UX, and controlled online A/B. Memory, Skill Sandbox, standard OAuth2 / OIDC, and Workflow remain conditional candidates requiring independent design and demonstrated need. See the [CHANGELOG](CHANGELOG.md) for validation scope and known limitations.
 
 Next areas include:
 
 ``` text
-Release validation and documentation
+Continued improvements to execution, evaluation, and operations
 ```
 
 Multi-Agent orchestration is a later step, after the execution and
@@ -481,7 +481,7 @@ direction.
 | --- | --- |
 | [Full Development Plan](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | Product scope, MVP, and iteration background (Chinese) |
 | [Tech Stack](docs/tech/README.md) | Backend / frontend / auth choices |
-| [v0.2.0 upgrade guide (draft)](docs/operations/v0.2-upgrade.md) | Database preflight, backup, and rollback limitations (Chinese) |
+| [v0.2.0 upgrade guide](docs/operations/v0.2-upgrade.md) | Database preflight, backup, and rollback limitations (Chinese) |
 | [Common Modules](docs/common-modules.md) | Common modules and infrastructure |
 | [Database Design](docs/database-design.md) | Database design and migration constraints |
 | [A2A / MCP Design](docs/agent-server-a2a-mcp-design.md) | Agent Server, A2A, and MCP architecture |

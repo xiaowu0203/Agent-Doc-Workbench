@@ -93,7 +93,7 @@ Agent 配置之后发生变化，也不会改变已经运行中的任务。
 
 ## 从执行到评估：v0.2 工程闭环
 
-v0.2.0 正在发布收口。它在文档工作台之上增加执行、观测与评估能力，让一次改动可以沿着证据反复检查：
+v0.2.0 在文档工作台之上增加执行、观测与评估能力，让一次改动可以沿着证据反复检查：
 
 ```text
 任务执行 → Run / Trace / 执行快照 → 测试用例与数据集
@@ -437,14 +437,14 @@ v0.1 当前采用：
 
 项目不会为了展示效果提前加入自由 Multi-Agent 编排。
 
-### v0.2 开发进度
+### v0.2 能力与范围
 
-v0.2.0 的 Run-compatible Execution、OpenTelemetry、Evaluation / Safe Replay、离线 Experiment、Engineering UX 与受控线上 A/B 已进入发布收口；正式发布仍需通过安装升级、安全回归和发布验收。Memory、Skill Sandbox、标准 OAuth2 / OIDC、Workflow 等能力仍需按独立设计和真实需求评估，不因长期路线图自动进入版本范围。
+v0.2.0 提供 Run-compatible Execution、OpenTelemetry、Evaluation / Safe Replay、离线 Experiment、Engineering UX 与受控线上 A/B。Memory、Skill Sandbox、标准 OAuth2 / OIDC、Workflow 等能力仍需按独立设计和真实需求评估，不因长期路线图自动进入版本范围。验证范围与已知限制见 [CHANGELOG](CHANGELOG.md)。
 
 后续方向包括：
 
 ``` text
-发布验证与文档收口
+持续改进执行、评估与运维体验
 ```
 
 更长期再探索 Multi-Agent Orchestration。
@@ -457,7 +457,7 @@ v0.2.0 的 Run-compatible Execution、OpenTelemetry、Evaluation / Safe Replay�
 | --- | --- |
 | [完整开发规划](docs/Agent-Doc-Workbench%20项目完整开发规划文档.md) | 产品功能、MVP 与迭代背景 |
 | [技术栈](docs/tech/README.md) | Backend / Frontend / Auth 技术选型 |
-| [v0.2.0 升级指南（草案）](docs/operations/v0.2-upgrade.md) | 数据库升级预检、备份和回退限制 |
+| [v0.2.0 升级指南](docs/operations/v0.2-upgrade.md) | 数据库升级预检、备份和回退限制 |
 | [Common Modules](docs/common-modules.md) | Common 模块与基础设施 |
 | [Database Design](docs/database-design.md) | 数据库设计与迁移约束 |
 | [架构决策记录](docs/adr/README.md) | v0.2.0 起的重要架构决策与取舍 |
