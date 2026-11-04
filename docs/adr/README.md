@@ -20,3 +20,4 @@
 | [ADR-0005](0005-offline-experiment-contract.md) | 已采纳 | Offline Experiment 使用冻结 manifest 与 Prompt 候选配置完成隔离的 baseline/candidate 对比 |
 | [ADR-0006](0006-task-terminal-recovery.md) | 已采纳 | 通过单 Task 短期恢复凭证自动收敛终态，LIVE 草稿受控收尾，异常保留受审计人工兜底 |
 | [ADR-0007](0007-controlled-online-ab.md) | 已采纳 | 文档级受控线上 A/B 使用冻结配置、原子预算/执行槽、盲态原始评价和不可变描述性报告，停止不撤销既有副作用 |
+| [ADR-0008](0008-standard-identity-and-business-authorization.md) | 提议 | Keycloak + Gateway BFF 标准身份认证，与本地 RBAC、Task/Worker/线上及恢复业务授权分域 |
