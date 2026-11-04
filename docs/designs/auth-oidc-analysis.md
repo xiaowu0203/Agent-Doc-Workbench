@@ -5,6 +5,8 @@
 > 状态：讨论稿，不是已经批准的架构决策或 v0.3.0 承诺清单。
 > 范围：源码、配置、迁移、测试代码和官方协议/产品资料的静态分析；未执行动态安全验证。
 
+> 后续设计：维护者已于 2026-11-02 确认 Keycloak + Gateway BFF。以下保留分析阶段的方案比较与待定背景；目标方案见 [v0.3.0 详细技术设计](v0.3.0-identity-security-design.md) 和 [ADR-0008](../adr/0008-standard-identity-and-business-authorization.md)，不把本分析中的候选值自动视为已批准配置。
+
 ## 1. 结论与建议
 
 当前系统是“自定义账号登录和令牌签发 + Spring Security Resource Server + Space RBAC + 多种业务 Capability”。已经具备 JWT 验签基础，但没有实现完整的标准 OAuth2 Authorization Server / OIDC Provider，也没有真正的 OIDC 登录客户端。
