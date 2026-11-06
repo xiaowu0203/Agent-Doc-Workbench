@@ -34,6 +34,7 @@ Agent 不能直接覆盖正式文档。修改必须形成 ChangeRequest，经人
 - 用户 JWT、平台角色、空间 RBAC 和 Task Capability 分别承担身份、平台管理、空间授权和任务执行授权，不能互相冒充。
 - Task Capability 必须限制 Task、Agent、Space、Document 和 action，并在任务终止、失败或预算耗尽后拒绝继续调用。
 - 前端权限只控制界面展示，服务端权限校验才是最终授权边界。
+- 身份提供方和网关的认证不代替租户/空间、Capability、Skill或资源ACL裁决；内部机器凭据也不能作为任意资源授权证明。Task内部调用凭据须独立保管，不能复用用户、JWT签名、恢复或模型密钥。
 
 ### Skill 包
 

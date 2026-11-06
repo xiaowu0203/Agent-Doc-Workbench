@@ -356,7 +356,10 @@ Windows PowerShell 或 Command Prompt 将 `./mvnw` 替换为 `.\mvnw.cmd`。
 - `MYSQL_PASSWORD` 必须与实际 MySQL 密码一致。未提供 Compose `.env` 时，Compose 的初始密码默认为 `change-me`，而 Java 服务的默认密码为 `root`。
 - Document 和 Agent 的 `MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY` 必须与实际 MinIO 凭证一致，服务端不会自动获取 Compose 凭证；未提供凭证会导致服务启动失败。
 - `AGENT_CONFIG_KEY`、`TASK_CAPABILITY_KEY` 和 `EVALUATION_CAPABILITY_KEY` 分别使用独立的 Base64 编码 AES 密钥（解码后 16、24 或 32 字节），应安全保存并在需要读取既有加密数据的实例间保持一致。Evaluation 多实例须使用相同的 WorkerCapability 加密密钥。
+- Task、Auth、Agent 三服务的进程环境需设置一致的独立 `TASK_INTERNAL_AUTH_SECRET`（随机文本，至少32个UTF-8字节），用于内部签发/执行档案认证；为空或过短时相关入口失败关闭。默认直连本机8081/8084；跨主机使用HTTPS或经显式确认的加密网络，配置及过渡边界见[v0.3.0设计7.1](docs/designs/v0.3.0-identity-security-design.md#71-p0过渡止损与目标契约的区别)。
 - Evaluation 默认使用共享的 `MYSQL_*`、`REDIS_*` 和 `AUTH_JWKS_URL`，也可用 `DB_URL`、`DB_USERNAME`、`DB_PASSWORD` 单独指定数据库；具体变量见 [`.env.example`](.env.example)。
+
+v0.3.0 P0的独立Keycloak/PostgreSQL验证环境见[部署说明](deploy/identity/README.md)。该环境由维护者自行启动，不会自动切换当前Workbench登录方式。
 
 本地未配置 JWT RSA 密钥时 Auth 会生成临时密钥，重启后旧令牌可能失效；生产环境应提供持久的 `JWT_PRIVATE_KEY` 和 `JWT_PUBLIC_KEY`。
 

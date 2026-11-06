@@ -11,6 +11,12 @@ spring:
     openfeign:
       client:
         config:
+          auth-identity-self:
+            connectTimeout: 2000
+            readTimeout: 5000
+            followRedirects: false
+            loggerLevel: none
+            errorDecoder: com.agentdoc.common.feign.config.IdentitySelfFeignErrorDecoder
           experiment-report-agent:
             loggerLevel: none
   datasource:

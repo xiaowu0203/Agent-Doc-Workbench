@@ -10,6 +10,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.core.env.Environment;
 
 /**
  * Agent任务能力令牌自动装配配置
@@ -52,8 +54,8 @@ public class TaskCapabilitySecurityAutoConfiguration {
     @ConditionalOnBean(JwtDecoder.class)
     @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
     @ConditionalOnMissingBean
-    public TaskCapabilityVerifier taskCapabilityVerifier(JwtDecoder decoder) {
-        return new TaskCapabilityVerifier(decoder);
+    public TaskCapabilityVerifier taskCapabilityVerifier(JwtDecoder decoder, SecurityVerifyProperties properties, Environment environment) {
+        return new TaskCapabilityVerifier(capabilityDecoder(decoder, properties, environment));
     }
 
     /** 构建 Evaluation 后台窄权限令牌验签器。 */
@@ -61,8 +63,15 @@ public class TaskCapabilitySecurityAutoConfiguration {
     @ConditionalOnBean(JwtDecoder.class)
     @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
     @ConditionalOnMissingBean
-    public EvaluationWorkerCapabilityVerifier evaluationWorkerCapabilityVerifier(JwtDecoder decoder) {
-        return new EvaluationWorkerCapabilityVerifier(decoder);
+    public EvaluationWorkerCapabilityVerifier evaluationWorkerCapabilityVerifier(JwtDecoder decoder, SecurityVerifyProperties properties, Environment environment) {
+        return new EvaluationWorkerCapabilityVerifier(capabilityDecoder(decoder, properties, environment));
+    }
+
+    private JwtDecoder capabilityDecoder(JwtDecoder humanDecoder, SecurityVerifyProperties properties, Environment environment) {
+        if ("oidc".equalsIgnoreCase(environment.getProperty("workbench.auth.mode", "local"))) {
+            return NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
+        }
+        return humanDecoder;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.agentdoc.gateway.security;
 
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
+import com.agentdoc.common.constant.TaskInternalAuthConstant;
 import com.agentdoc.common.logging.LogSanitizer;
 import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
 import com.agentdoc.common.utils.OnlineCapabilityUtils;
@@ -85,6 +86,9 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             return unauthorized(exchange.getResponse(), "非法请求路径");
         }
         if (OnlineCapabilityUtils.internalPath(recoveryPath)
+                || TaskInternalAuthConstant.SIGNING_PATHS.stream().anyMatch(internal ->
+                recoveryPath.equals(internal) || recoveryPath.startsWith(internal + "/"))
+                || pathMatcher.match(TaskInternalAuthConstant.EXECUTION_PROFILE_PATH, recoveryPath)
                 || recoveryPath.equals("/internal") || recoveryPath.startsWith("/internal/")
                 || recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
                 || recoveryPath.startsWith("/api/auth/internal/task-draft-finalization-capabilities")

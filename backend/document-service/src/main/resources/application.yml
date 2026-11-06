@@ -5,6 +5,16 @@ server:
   port: ${DOCUMENT_SERVICE_PORT:8082}
 
 spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          auth-identity-self:
+            connectTimeout: 2000
+            readTimeout: 5000
+            followRedirects: false
+            loggerLevel: none
+            errorDecoder: com.agentdoc.common.feign.config.IdentitySelfFeignErrorDecoder
   application:
     # 服务名称，用于注册中心、日志、Ping探活接口
     name: document-service

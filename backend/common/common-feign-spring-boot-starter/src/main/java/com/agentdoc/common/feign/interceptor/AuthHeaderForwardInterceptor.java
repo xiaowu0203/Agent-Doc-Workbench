@@ -3,21 +3,32 @@ package com.agentdoc.common.feign.interceptor;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
+import com.agentdoc.common.constant.TaskInternalAuthConstant;
+import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.AgentFeign;
+import com.agentdoc.common.feign.AuthIdentityFeign;
+import com.agentdoc.common.feign.config.TaskInternalCallProperties;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.feign.context.AuthorizationContext;
 import com.agentdoc.common.utils.ReportProofSignature;
 import feign.RequestInterceptor;
 import feign.RequestTemplate;
 import org.springframework.http.HttpHeaders;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 /**
  * Feign 请求拦截器：透传下游调用 Authorization 请求头
  *
  * <p>头优先级逻辑：
  * <ol>
+ * <li>登记的Task内部契约使用独立机器凭据直连，排除用户与任务凭据；</li>
  * <li>优先从 Web Servlet 请求上下文透传原始 Authorization（用户登录JWT）；</li>
  * <li>若Web上下文无Authorization，尝试从 {@link AuthorizationContext} 获取手动设置的授权Token；</li>
  * <li>追加任务短时能力令牌 {@link HeaderConstants#X_TASK_CAPABILITY}，用于MQ异步任务线程身份鉴权。</li>
@@ -39,6 +50,24 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  */
 public class AuthHeaderForwardInterceptor implements RequestInterceptor {
 
+    private static final Set<String> LOOPBACK_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]");
+    private final TaskInternalCallProperties internalProperties;
+    private final boolean identityTrustedEncryptedNetwork;
+    private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+    public AuthHeaderForwardInterceptor() {
+        this(new TaskInternalCallProperties());
+    }
+
+    public AuthHeaderForwardInterceptor(TaskInternalCallProperties internalProperties) {
+        this(internalProperties, false);
+    }
+
+    public AuthHeaderForwardInterceptor(TaskInternalCallProperties internalProperties, boolean identityTrustedEncryptedNetwork) {
+        this.internalProperties = internalProperties;
+        this.identityTrustedEncryptedNetwork = identityTrustedEncryptedNetwork;
+    }
+
     /**
      * Feign请求执行前回调，填充鉴权相关请求头
      * <p>执行顺序：先取Servlet Web上下文Authorization
@@ -48,6 +77,12 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
      */
     @Override
     public void apply(RequestTemplate template) {
+        if (applyIdentitySelfProtection(template)) {
+            return;
+        }
+        if (applyTaskInternalAuthentication(template)) {
+            return;
+        }
         // 专用恢复调用不透传用户、Agent 或已过期能力凭证，避免混合身份和凭证泄漏。
         if (template.headers().keySet().stream().anyMatch(key -> TaskRecoveryConstant.MACHINE_KEY_HEADER.equalsIgnoreCase(key)
                 || OnlineCapabilityConstant.HEADER.equalsIgnoreCase(key)
@@ -84,5 +119,68 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
         if (capability != null && !capability.isBlank()) {
             template.header(HeaderConstants.X_TASK_CAPABILITY, capability);
         }
+    }
+
+    /** 身份查询仅携带显式用户Bearer，禁止向未受信地址发送。 */
+    private boolean applyIdentitySelfProtection(RequestTemplate template) {
+        if (template.feignTarget() == null || template.feignTarget().type() != AuthIdentityFeign.class) {
+            return false;
+        }
+        URI target = URI.create(template.feignTarget().url());
+        if (target.getHost() == null || target.getUserInfo() != null || target.getQuery() != null || target.getFragment() != null
+                || !("https".equalsIgnoreCase(target.getScheme()) || ("http".equalsIgnoreCase(target.getScheme())
+                && (LOOPBACK_HOSTS.contains(target.getHost()) || identityTrustedEncryptedNetwork)))) {
+            throw new IllegalStateException("身份查询必须使用HTTPS、本机回环或明确受信加密网络");
+        }
+        var authorization = template.headers().get(HttpHeaders.AUTHORIZATION);
+        if (authorization == null || authorization.size() != 1
+                || !authorization.iterator().next().startsWith("Bearer ")) {
+            throw new IllegalStateException("身份查询必须显式提供唯一用户Bearer");
+        }
+        template.removeHeader(HeaderConstants.X_TASK_CAPABILITY);
+        template.removeHeader(TaskRecoveryConstant.MACHINE_KEY_HEADER);
+        template.removeHeader(TaskRecoveryConstant.CAPABILITY_HEADER);
+        template.removeHeader(OnlineCapabilityConstant.HEADER);
+        template.removeHeader(ReportProofSignature.HEADER);
+        return true;
+    }
+
+    /** 只给登记契约的三个内部入口附加机器身份，不从当前用户上下文取凭据。 */
+    private boolean applyTaskInternalAuthentication(RequestTemplate template) {
+        if (template.feignTarget() == null) {
+            return false;
+        }
+        Class<?> type = template.feignTarget().type();
+        String url;
+        if (type == AuthFeign.class && "POST".equals(template.method())
+                && TaskInternalAuthConstant.SIGNING_PATHS.contains(template.path())) {
+            url = internalProperties.getAuthUrl();
+        } else if (type == AgentFeign.class && "GET".equals(template.method())
+                && pathMatcher.match(TaskInternalAuthConstant.EXECUTION_PROFILE_PATH, template.path())) {
+            url = internalProperties.getAgentUrl();
+        } else {
+            return false;
+        }
+        if (internalProperties.getSecret().getBytes(StandardCharsets.UTF_8).length
+                < TaskInternalAuthConstant.MIN_SECRET_BYTES) {
+            throw new IllegalStateException("Task内部调用缺少独立机器凭据");
+        }
+        URI target = URI.create(url);
+        if (target.getHost() == null || target.getUserInfo() != null || target.getQuery() != null
+                || target.getFragment() != null || !("https".equalsIgnoreCase(target.getScheme())
+                || ("http".equalsIgnoreCase(target.getScheme())
+                && (LOOPBACK_HOSTS.contains(target.getHost()) || internalProperties.isTrustedEncryptedNetwork())))) {
+            throw new IllegalStateException("Task内部调用必须使用HTTPS、本机回环或明确受信加密网络");
+        }
+        template.target(url);
+        template.removeHeader(HttpHeaders.AUTHORIZATION);
+        template.removeHeader(HeaderConstants.X_TASK_CAPABILITY);
+        template.removeHeader(TaskRecoveryConstant.MACHINE_KEY_HEADER);
+        template.removeHeader(TaskRecoveryConstant.CAPABILITY_HEADER);
+        template.removeHeader(OnlineCapabilityConstant.HEADER);
+        template.removeHeader(ReportProofSignature.HEADER);
+        template.header(HttpHeaders.AUTHORIZATION, "Basic " + HttpHeaders.encodeBasicAuth(
+                TaskInternalAuthConstant.CLIENT_ID, internalProperties.getSecret(), StandardCharsets.UTF_8));
+        return true;
     }
 }

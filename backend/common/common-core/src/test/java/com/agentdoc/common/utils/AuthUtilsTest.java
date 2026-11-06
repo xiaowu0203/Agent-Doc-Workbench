@@ -2,6 +2,7 @@ package com.agentdoc.common.utils;
 
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -31,6 +32,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AuthUtilsTest {
 
     private static final long USER_ID_FOR_PLATFORM_ROLE = 1004L;
+
+    @Test
+    void resolvedIdentityKeepsOriginalSubjectAndUsesLocalProjection() {
+        Jwt jwt = Jwt.withTokenValue("fixture").header("alg", "RS256")
+                .subject("550e8400-e29b-41d4-a716-446655440000")
+                .claim(CLAIM_SCOPE, "workbench:access").claim(CLAIM_PLATFORM_ROLES, List.of("FORGED_ROLE")).build();
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, 42L, List.of("LOCAL_ROLE")));
+        assertEquals(42L, AuthUtils.getUserId());
+        assertEquals("550e8400-e29b-41d4-a716-446655440000", AuthUtils.currentJwt().getSubject());
+        assertTrue(AuthUtils.hasPlatformRole("LOCAL_ROLE"));
+        assertFalse(AuthUtils.hasPlatformRole("FORGED_ROLE"));
+    }
+
+    @Test
+    void unboundUuidAndAgentCannotBecomeMappedHuman() {
+        Jwt uuid = Jwt.withTokenValue("fixture").header("alg", "RS256").subject("not-a-number")
+                .claim(CLAIM_SCOPE, SCOPE_USER).build();
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(uuid, null, List.of()));
+        assertNull(AuthUtils.getUserId());
+        Jwt agent = Jwt.withTokenValue("fixture").header("alg", "RS256").subject("42")
+                .claim(CLAIM_ACTOR_TYPE, ACTOR_AGENT).build();
+        assertThrows(IllegalArgumentException.class, () -> new ResolvedHumanAuthentication(agent, 42L, List.of()));
+    }
 
     @AfterEach
     void tearDown() {

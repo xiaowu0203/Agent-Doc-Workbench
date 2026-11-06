@@ -3,6 +3,8 @@ package com.agentdoc.document.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
+import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.feign.AuthFeign;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.mapper.PermissionMapper;
@@ -94,6 +96,21 @@ class SpacePermissionServiceTest {
 
         assertTrue(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
         permissionService.requirePermission(SPACE_ID, SKILL_MANAGE);
+    }
+
+    @Test
+    void localAndResolvedOidcIdentityUseSameSpaceAuthorization() {
+        when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(member());
+        when(rolePermissionMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 0L, 1L, 0L);
+        login(List.of());
+        assertTrue(permissionService.hasPermission(SPACE_ID, SKILL_READ));
+        assertFalse(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
+        Jwt oidc = Jwt.withTokenValue("oidc-fixture").header("alg", "RS256")
+                .subject("550e8400-e29b-41d4-a716-446655440000").claim(CLAIM_SCOPE, "workbench:access").build();
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(oidc, USER_ID, List.of()));
+        assertTrue(permissionService.hasPermission(SPACE_ID, SKILL_READ));
+        assertFalse(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
+        assertEquals("550e8400-e29b-41d4-a716-446655440000", AuthUtils.currentJwt().getSubject());
     }
 
     @Test

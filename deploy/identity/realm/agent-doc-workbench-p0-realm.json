@@ -1,0 +1,141 @@
+{
+  "realm": "agent-doc-workbench-p0",
+  "displayName": "AgentDoc P0 验证",
+  "enabled": true,
+  "attributes": { "adw.p0.fixture": "v1" },
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": true,
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0,
+  "bruteForceProtected": true,
+  "passwordPolicy": "length(12)",
+  "accessTokenLifespan": 604800,
+  "ssoSessionIdleTimeout": 604800,
+  "ssoSessionMaxLifespan": 604800,
+  "ssoSessionIdleTimeoutRememberMe": 604800,
+  "ssoSessionMaxLifespanRememberMe": 604800,
+  "clientScopes": [
+    {
+      "name": "basic",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": { "access.token.claim": "true", "introspection.token.claim": "true" }
+        },
+        {
+          "name": "auth_time",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usersessionmodel-note-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.session.note": "AUTH_TIME", "claim.name": "auth_time", "jsonType.label": "long",
+            "id.token.claim": "true", "access.token.claim": "true", "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "name": "workbench:access",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    },
+    {
+      "name": "capability:task:issue",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true", "display.on.consent.screen": "false" }
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "workbench-web",
+      "name": "AgentDoc P0 BFF",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "fullScopeAllowed": false,
+      "secret": "${KEYCLOAK_POC_WEB_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "redirectUris": ["${KEYCLOAK_POC_BFF_URL}/login/oauth2/code/workbench"],
+      "webOrigins": ["${KEYCLOAK_POC_BFF_URL}"],
+      "defaultClientScopes": ["basic", "workbench:access"],
+      "optionalClientScopes": [],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "${KEYCLOAK_POC_BFF_URL}/logged-out"
+      },
+      "protocolMappers": [
+        {
+          "name": "workbench-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "workbench-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "workbench-task",
+      "name": "AgentDoc P0 Task service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "fullScopeAllowed": false,
+      "secret": "${KEYCLOAK_POC_TASK_CLIENT_SECRET}",
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": false,
+      "defaultClientScopes": ["basic", "capability:task:issue"],
+      "optionalClientScopes": [],
+      "attributes": { "access.token.lifespan": "300" },
+      "protocolMappers": [
+        {
+          "name": "auth-internal-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "workbench-auth-internal",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "f2dc9db0-b624-4cc9-a234-26d0e3e018a7",
+      "username": "p0-user",
+      "enabled": true,
+      "firstName": "P0",
+      "lastName": "Validation",
+      "email": "p0-user@example.invalid",
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        { "type": "password", "value": "${KEYCLOAK_POC_USER_PASSWORD}", "temporary": false }
+      ]
+    }
+  ]
+}
