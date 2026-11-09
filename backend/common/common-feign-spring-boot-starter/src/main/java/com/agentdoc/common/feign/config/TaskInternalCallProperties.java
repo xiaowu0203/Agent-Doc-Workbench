@@ -4,7 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Task内部调用配置；只作用于明确的签发/执行档案契约。 */
+/**
+ * Task内部调用配置；只作用于明确的签发/执行档案契约。
+ */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "agent-doc.task-internal-auth")
