@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### Security
+
+- 内部任务/Worker签发及Agent执行档案改用独立Task机器认证和直连，公共网关拒绝转发；用户身份不能代替机器身份，业务资源授权仍由领域服务负责。
+- 部署该变更需为Task/Auth/Agent配置一致且独立的`TASK_INTERNAL_AUTH_SECRET`（随机文本至少32字节）；缺失时失败关闭，相关环境模板与启动说明已更新。
+
 ## [0.2.0]
 
 ### Added

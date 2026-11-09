@@ -5,6 +5,8 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.env.Environment;
 
 /**
  * common-feign 自动装配：扫描 common-core 的 feign 契约包并注册 Feign 客户端。
@@ -12,6 +14,7 @@ import org.springframework.context.annotation.Bean;
  */
 @AutoConfiguration
 @EnableFeignClients(basePackages = "com.agentdoc.common.feign")
+@EnableConfigurationProperties(TaskInternalCallProperties.class)
 public class FeignAutoConfiguration {
 
     /**
@@ -20,7 +23,8 @@ public class FeignAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean(AuthHeaderForwardInterceptor.class)
-    public AuthHeaderForwardInterceptor authHeaderForwardInterceptor() {
-        return new AuthHeaderForwardInterceptor();
+    public AuthHeaderForwardInterceptor authHeaderForwardInterceptor(TaskInternalCallProperties properties, Environment environment) {
+        return new AuthHeaderForwardInterceptor(properties,
+                environment.getProperty("agent-doc.feign.identity-trusted-encrypted-network", Boolean.class, false));
     }
 }

@@ -33,6 +33,23 @@ spring:
     openfeign:
       client:
         config:
+          auth-identity-self:
+            connectTimeout: 2000
+            readTimeout: 5000
+            followRedirects: false
+            loggerLevel: none
+            errorDecoder: com.agentdoc.common.feign.config.IdentitySelfFeignErrorDecoder
+          # P0内部凭据只能发往原始目标，不跟随重定向，不记录认证头。
+          auth-service:
+            connectTimeout: 2000
+            readTimeout: 5000
+            followRedirects: false
+            loggerLevel: none
+          agent-service:
+            connectTimeout: 2000
+            readTimeout: 5000
+            followRedirects: false
+            loggerLevel: none
           # 专用直连客户端不打印凭证/证明，超时受整轮 45 秒预算约束。
           task-recovery-auth:
             connectTimeout: 2000
@@ -51,6 +68,11 @@ spring:
 
 # 自定义openapi配置
 agent-doc:
+  task-internal-auth:
+    secret: ${TASK_INTERNAL_AUTH_SECRET:}
+    auth-url: ${TASK_INTERNAL_AUTH_URL:http://localhost:8081}
+    agent-url: ${TASK_INTERNAL_AGENT_URL:http://localhost:8084}
+    trusted-encrypted-network: ${TASK_INTERNAL_TRUSTED_ENCRYPTED_NETWORK:false}
   task-trace:
     # Jaeger 内部只读查询根地址；空值禁用，不能配置凭证或用户输入 URL
     query-url: ${JAEGER_QUERY_URL:}
@@ -80,7 +102,7 @@ agent-doc:
     title: Task Service API
     description: 任务服务：Agent 任务、变更审批、Token 用量与审计
   feign:
-    # 服务间调用统一经网关（复用 JWT 门禁并透传原始 Authorization，身份可追溯）
+    # 普通用户契约仍经网关；Task签发/执行档案由专用拦截分支改为受限直连。
     gateway-url: ${GATEWAY_URL:http://localhost:9090}
   a2a:
     agent-service-url: ${AGENT_SERVICE_URL:http://localhost:8084}

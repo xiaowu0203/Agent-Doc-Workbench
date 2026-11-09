@@ -51,6 +51,10 @@ auth:
 
 # 自定义openapi配置
 agent-doc:
+  task-internal-auth:
+    # P0签发入口仅接受独立Task服务凭据；为空/过短时拒绝签发，不回退用户Token。
+    secret: ${TASK_INTERNAL_AUTH_SECRET:}
+    trusted-encrypted-network: ${TASK_INTERNAL_TRUSTED_ENCRYPTED_NETWORK:false}
   security:
     # TLS 在可信加密内部网络外终止时须显式确认；不是来源 IP 授权。
     task-recovery-trusted-encrypted-network: ${TASK_RECOVERY_TRUSTED_ENCRYPTED_NETWORK:false}

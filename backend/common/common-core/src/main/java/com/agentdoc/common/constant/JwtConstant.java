@@ -56,6 +56,13 @@ public final class JwtConstant {
     public static final String CLAIM_AGENT_ACTIONS = "agentActions";
     /** 声明键：主体类型；区分 HUMAN / AGENT / SERVICE */
     public static final String CLAIM_ACTOR_TYPE = "actorType";
+    /** actorType: 人类用户。 */
+    public static final String ACTOR_HUMAN = "HUMAN";
+    /** OIDC人类Access目标资源、发行客户端和请求用途。 */
+    public static final String OIDC_HUMAN_AUDIENCE = "workbench-api";
+    public static final String OIDC_HUMAN_CLIENT = "workbench-web";
+    public static final String OIDC_HUMAN_SCOPE = "workbench:access";
+    public static final long OIDC_CLOCK_SKEW_SECONDS = 30;
     /** actorType: 主体类型‑Agent任务 */
     public static final String ACTOR_AGENT = "AGENT";
 

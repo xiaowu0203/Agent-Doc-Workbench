@@ -3,6 +3,7 @@ package com.agentdoc.common.utils;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,16 +42,24 @@ public final class AuthUtils {
     }
 
     /**
-     * 获取当前人类用户 ID，取自用户 JWT 的 sub 字段。
+     * 获取当前人类用户 ID；可信映射身份使用本地userId，旧本地JWT使用数字sub。
      * <p>Agent 任务 Token 的 sub 是 taskId，不会被当作用户 ID 返回。</p>
      * @return 人类用户 ID；未登录、匿名或 Agent 任务 Token 返回null
      */
     public static Long getUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof ResolvedHumanAuthentication resolved && resolved.isAuthenticated()) {
+            return resolved.getUserId();
+        }
         Jwt jwt = currentJwt();
         if (!isHumanToken(jwt)) {
             return null;
         }
-        return Long.valueOf(jwt.getSubject());
+        try {
+            return Long.valueOf(jwt.getSubject());
+        } catch (NumberFormatException error) {
+            return null;
+        }
     }
 
     /**
@@ -135,6 +144,10 @@ public final class AuthUtils {
      * @return true 当前用户 JWT 声明该平台角色
      */
     public static boolean hasPlatformRole(String roleKey) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof ResolvedHumanAuthentication resolved && resolved.isAuthenticated()) {
+            return resolved.hasPlatformRole(roleKey);
+        }
         Jwt jwt = currentJwt();
         if (jwt == null || getUserId() == null) {
             return false;

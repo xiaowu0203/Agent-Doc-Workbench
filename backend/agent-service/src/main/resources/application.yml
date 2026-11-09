@@ -3,6 +3,16 @@ server:
   port: ${AGENT_SERVICE_PORT:8084}
 
 spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          auth-identity-self:
+            connectTimeout: 2000
+            readTimeout: 5000
+            followRedirects: false
+            loggerLevel: none
+            errorDecoder: com.agentdoc.common.feign.config.IdentitySelfFeignErrorDecoder
   application:
     # Spring应用名称，注册到Nacos等注册中心时使用
     name: agent-service
@@ -25,6 +35,10 @@ spring:
     time-zone: Asia/Shanghai
 
 agent-doc:
+  task-internal-auth:
+    # 与Task/Auth一致的独立内部调用凭据，不复用恢复或模型密钥。
+    secret: ${TASK_INTERNAL_AUTH_SECRET:}
+    trusted-encrypted-network: ${TASK_INTERNAL_TRUSTED_ENCRYPTED_NETWORK:false}
   experiment-report:
     # 仅用于后台报告候选证明的短期签名验证。
     proof-key: ${EXPERIMENT_REPORT_PROOF_KEY:}
