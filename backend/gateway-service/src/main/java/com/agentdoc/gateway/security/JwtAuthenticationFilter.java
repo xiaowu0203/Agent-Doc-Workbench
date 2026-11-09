@@ -85,6 +85,35 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
         } catch (IllegalArgumentException exception) {
             return unauthorized(exchange.getResponse(), "非法请求路径");
         }
+
+        /**
+         * 路径拦截判断逻辑：拦截一批【内部恢复/内部服务调用专用接口】
+         * 核心规则：这类接口是服务间内部通路，禁止经由公共网关转发访问
+         * 只允许服务内网直连、内部调用链路访问，不对外暴露在公共网关流量里
+         * 触发任意一条条件，就返回 401 拒绝访问，提示：恢复内部入口不通过公共网关开放
+         * 匹配分支逐条说明：
+         * 1. OnlineCapabilityUtils.internalPath(recoveryPath)
+         *    工具方法判断：该路径属于在线能力模块定义的内部路径集合
+         * 2. TaskInternalAuthConstant.SIGNING_PATHS.stream().anyMatch(internal ->
+         *        recoveryPath.equals(internal) || recoveryPath.startsWith(internal + "/"))
+         *    匹配内部签名鉴权路径集合：精确相等 或者 以该前缀开头（子路径全部拦截）
+         *    也就是我们前面聊的、需要走 TaskInternalAuth 内部密钥验签的那一组接口
+         * 3. pathMatcher.match(TaskInternalAuthConstant.EXECUTION_PROFILE_PATH, recoveryPath)
+         *    专门匹配 Task执行档案接口（P0试点的那个内部鉴权接口）
+         *    这就是前面 InternalAgentSecurityConfig 保护的执行档案入口
+         * 4. recoveryPath.equals("/internal") || recoveryPath.startsWith("/internal/")
+         *    拦截 /internal 根路径以及 /internal/ 下全部子资源，通用内部根前缀
+         * 5. recoveryPath.startsWith("/api/auth/internal/task-recovery-capabilities")
+         *    Auth模块：任务恢复能力查询内部接口前缀
+         * 6. recoveryPath.startsWith("/api/auth/internal/task-draft-finalization-capabilities")
+         *    Auth模块：任务草稿定稿能力内部接口前缀
+         * 7. recoveryPath.startsWith("/api/agent/internal/a2a/")
+         *    Agent模块：A2A协议内部互通接口前缀（Agent之间通信）
+         * 8. recoveryPath.startsWith("/api/agent/internal/experiment-report/")
+         *    Agent模块：实验报表内部拉取接口前缀（评估实验A/B报告，服务内部消费）
+         * 9. recoveryPath.startsWith("/api/document/internal/task-drafts/")
+         *    Document文档模块：任务草稿内部操作接口前缀
+         */
         if (OnlineCapabilityUtils.internalPath(recoveryPath)
                 || TaskInternalAuthConstant.SIGNING_PATHS.stream().anyMatch(internal ->
                 recoveryPath.equals(internal) || recoveryPath.startsWith(internal + "/"))

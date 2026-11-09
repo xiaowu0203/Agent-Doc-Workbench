@@ -10,15 +10,17 @@ import org.springframework.core.env.Environment;
 
 /**
  * common-feign 自动装配：扫描 common-core 的 feign 契约包并注册 Feign 客户端。
- * </p>
  */
 @AutoConfiguration
+// 扫描指定包下 @FeignClient，自动注册feign客户端
 @EnableFeignClients(basePackages = "com.agentdoc.common.feign")
+// 绑定内部调用配置属性
 @EnableConfigurationProperties(TaskInternalCallProperties.class)
 public class FeignAutoConfiguration {
 
     /**
      * 用户令牌透传拦截器（默认装配，可覆盖）。
+     * 没有自定义Bean时才创建，用于feign调用时透传鉴权头
      * @return 拦截器实例
      */
     @Bean

@@ -11,11 +11,20 @@ spring:
     openfeign:
       client:
         config:
+          # 针对feign客户端名称为 auth-identity-self 的单独配置（按服务名粒度）
           auth-identity-self:
+            # 建立连接的超时时间，单位毫秒：2000ms（2s）
             connectTimeout: 2000
+            # 读取响应数据超时时间，单位毫秒：5000ms（5s）
+            # 注意：这不是接口总超时，是连接成功后，等待服务返回数据流的超时
             readTimeout: 5000
+            # 是否允许HTTP重定向（301/302自动跳转），false=禁止自动跟随重定向
             followRedirects: false
+            # Feign日志打印级别：none=不输出任何feign请求日志
+            # 可选值：NONE（无）、BASIC（请求方法+URL+响应码+耗时）、HEADERS（BASIC+请求头响应头）、FULL（全部：头+体+元数据）
             loggerLevel: none
+            # 自定义异常解码器，指定全限定类名
+            # Feign调用非2xx响应码时，不再抛出默认FeignException，交由这个自定义类解析返回体，转换成业务
             errorDecoder: com.agentdoc.common.feign.config.IdentitySelfFeignErrorDecoder
           experiment-report-agent:
             loggerLevel: none

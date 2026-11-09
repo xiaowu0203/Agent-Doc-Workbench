@@ -7,11 +7,20 @@ spring:
     openfeign:
       client:
         config:
+          # 针对feign客户端名称为 auth-identity-self 的单独配置（按服务名粒度）
           auth-identity-self:
+            # 建立连接的超时时间，单位毫秒：2000ms（2s）
             connectTimeout: 2000
+            # 读取响应数据超时时间，单位毫秒：5000ms（5s）
+            # 注意：这不是接口总超时，是连接成功后，等待服务返回数据流的超时
             readTimeout: 5000
+            # 是否允许HTTP重定向（301/302自动跳转），false=禁止自动跟随重定向
             followRedirects: false
+            # Feign日志打印级别：none=不输出任何feign请求日志
+            # 可选值：NONE（无）、BASIC（请求方法+URL+响应码+耗时）、HEADERS（BASIC+请求头响应头）、FULL（全部：头+体+元数据）
             loggerLevel: none
+            # 自定义异常解码器，指定全限定类名
+            # Feign调用非2xx响应码时，不再抛出默认FeignException，交由这个自定义类解析返回体，转换成业务异常
             errorDecoder: com.agentdoc.common.feign.config.IdentitySelfFeignErrorDecoder
   application:
     # Spring应用名称，注册到Nacos等注册中心时使用
@@ -35,9 +44,18 @@ spring:
     time-zone: Asia/Shanghai
 
 agent-doc:
+  # 服务内部调用鉴权配置
   task-internal-auth:
-    # 与Task/Auth一致的独立内部调用凭据，不复用恢复或模型密钥。
+    # 独立内部调用凭据的密钥（不与环境恢复密钥、模型密钥共用）
+    # - 从环境变量 TASK_INTERNAL_AUTH_SECRET 注入，未配置时为空字符串
+    # - 实际部署必须在环境变量/密钥管理系统中设置，禁止硬编码进代码库
+    # - 建议：足够长度（≥32字节）的随机串，定期轮换，各环境独立取值
+    # - 留空时可能导致内部签名/校验失效或启动校验失败（看代码是否有 fail-fast 校验）
     secret: ${TASK_INTERNAL_AUTH_SECRET:}
+    # 是否信任"已加密网络"这一前提（布尔开关，默认 false）
+    # - true：部署方确认跨主机流量受加密内网/VPN保护后，允许使用HTTP直连
+    # - false：仅允许HTTPS或本机回环HTTP
+    # - 两种设置均完整校验调用方身份和secret；此开关不会跳过凭据校验
     trusted-encrypted-network: ${TASK_INTERNAL_TRUSTED_ENCRYPTED_NETWORK:false}
   experiment-report:
     # 仅用于后台报告候选证明的短期签名验证。

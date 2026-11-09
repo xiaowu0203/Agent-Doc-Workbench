@@ -45,7 +45,7 @@ public class TaskCapabilitySecurityAutoConfiguration {
      * <li>配置了agent‑doc.security.jwks‑url公钥地址；</li>
      * <li>容器不存在同名Bean，允许业务自定义覆盖。</li>
      * </ul>
-     * 复用全局JwtDecoder完成JWT签名、过期校验；额外校验agent专属claim（actor_type、scope）业务语义。
+     * 复用解码器完成JWT签名、过期校验；额外校验agent专属claim（actor_type、scope）业务语义。
      * </p>
      * @param decoder JWT解码器，从JWKS拉取公钥
      * @return TaskCapabilityVerifier Agent令牌验签实例
@@ -58,7 +58,10 @@ public class TaskCapabilitySecurityAutoConfiguration {
         return new TaskCapabilityVerifier(capabilityDecoder(decoder, properties, environment));
     }
 
-    /** 构建 Evaluation 后台窄权限令牌验签器。 */
+    /**
+     * 构建Evaluation Worker窄权限令牌验签器。
+     * 用于评估节点专用能力令牌校验，隔离Worker权限与普通任务能力权限。
+     */
     @Bean
     @ConditionalOnBean(JwtDecoder.class)
     @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
@@ -67,6 +70,10 @@ public class TaskCapabilitySecurityAutoConfiguration {
         return new EvaluationWorkerCapabilityVerifier(capabilityDecoder(decoder, properties, environment));
     }
 
+    /**
+     * 能力令牌解码器选择逻辑：
+     * OIDC模式强制新建一个基于jwks-url的解码器，不复用OIDC issuer解码器；local模式直接复用人令牌decoder。
+     */
     private JwtDecoder capabilityDecoder(JwtDecoder humanDecoder, SecurityVerifyProperties properties, Environment environment) {
         if ("oidc".equalsIgnoreCase(environment.getProperty("workbench.auth.mode", "local"))) {
             return NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();

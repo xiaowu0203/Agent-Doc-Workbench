@@ -66,6 +66,11 @@ import java.util.List;
  * Spring Security 安全配置类
  * 基于OAuth2 ResourceServer + JWT无状态认证，不使用session会话
  * 统一鉴权规则、跨域、JWT解析、401未授权JSON返回、密码加密
+ * <p>
+ * 同时支持两种认证模式：
+ * local：自研授权体系，auth-service签发JWT，本地公钥验签
+ * oidc：对接外部标准OIDC IdP，依赖issuer发现、令牌内省，外部身份映射平台userId
+ * </p>
  */
 @Configuration
 @EnableWebSecurity
@@ -92,9 +97,9 @@ public class SecurityConfig {
     }
 
     /**
-     * JWT解码器
-     * 使用非对称公钥解析JWT令牌，校验token签名合法性
-     * 公钥由JwtService提供
+     * local模式JWT解码器
+     * 使用auth-service非对称公钥解析JWT令牌，校验token签名合法性
+     * 在校验通过后追加业务拦截：拒绝通用访问类窄令牌
      */
     @Bean
     @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "local", matchIfMissing = true)
@@ -103,7 +108,11 @@ public class SecurityConfig {
         return token -> OnlineCapabilityUtils.rejectGeneralAccess(TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token)));
     }
 
-    /** OIDC模式必须显式配置可信issuer，启动时读取发现文档并严格验证issuer。 */
+    /**
+     * OIDC模式JWT解码器
+     * 必须显式配置可信issuer，启动时拉取OIDC发现文档，强制校验issuer与时间偏移；
+     * 验签完成后额外调用令牌内省接口，在线确认令牌是否已被IdP吊销。
+     */
     @Bean
     @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "oidc")
     public JwtDecoder oidcJwtDecoder(IdentityBindingProperties properties, OpaqueTokenIntrospector introspector) {
@@ -127,7 +136,11 @@ public class SecurityConfig {
         };
     }
 
-    /** 每次人类请求在线确认IdP状态；网络异常不可降级为离线放行。 */
+    /**
+     * OIDC令牌内省器
+     * 每次人类OIDC请求在线向IdP确认令牌状态；网络异常不可降级为离线放行。
+     * 使用form表单方式调用introspection端点，携带客户端Basic凭据；设置短超时防止阻塞业务链路。
+     */
     @Bean
     @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "oidc")
     public OpaqueTokenIntrospector oidcTokenIntrospector(IdentityBindingProperties properties) {
@@ -152,12 +165,18 @@ public class SecurityConfig {
         return introspector;
     }
 
-    /** 防止HTTP客户端在调试级别格式化表单时输出Bearer。 */
+    /**
+     * 自定义表单Map，重写toString，防止HTTP客户端在调试日志打印时输出明文Bearer令牌。
+     */
     private static final class RedactedTokenForm extends LinkedMultiValueMap<String, String> {
-        @Override public String toString() { return "[REDACTED]"; }
+        @Override
+        public String toString() { return "[REDACTED]"; }
     }
 
-    /** 专用线上凭证使用本机公钥，不通过禁止窄令牌的普通解码器。 */
+    /**
+     * 在线能力令牌验签器
+     * 专用线上签发凭证，复用auth-service本机公钥；不经过普通JwtDecoder的窄令牌拦截逻辑。
+     */
     @Bean
     public OnlineCapabilityVerifier onlineCapabilityVerifier(SecurityVerifyProperties properties) {
         return new OnlineCapabilityVerifier(NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build(), properties);
@@ -165,7 +184,10 @@ public class SecurityConfig {
 
     /**
      * Spring Security核心安全过滤链
-     * 配置：关闭CSRF、跨域、无状态会话、接口放行规则、oauth2资源服务、异常鉴权入口
+     * 配置：关闭CSRF、跨域、无状态会话、接口放行规则、oauth2资源服务、鉴权异常入口
+     * <p>
+     * 相关过滤器顺序：BearerTokenAuthenticationFilter → TaskInternalAuthenticationFilter → AnonymousAuthenticationFilter。
+     * 内部机器过滤器挂在匿名过滤器之前，按配置路径处理Basic凭据；Bearer解析在它之前执行。
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
@@ -185,31 +207,32 @@ public class SecurityConfig {
                 // 请求鉴权规则配置
                 .authorizeHttpRequests(auth -> {
                     if (oidc) {
+                        // OIDC模式下登录/注册/刷新/登出由外部IdP接管，禁用内部登录接口
                         auth.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").denyAll();
                     }
                     auth
-                        // 无需认证放行接口：登录注册、刷新令牌、登出、健康检查、Swagger文档、jwks公钥接口
-                        .requestMatchers(
-                                "/api/auth/internal/task-recovery-capabilities",
-                                "/api/auth/internal/task-draft-finalization-capabilities",
-                                "/api/auth/internal/online-capabilities",
-                                "/api/auth/internal/online-release",
-                                "/api/auth/internal/online-waits/*/exchange", "/api/auth/internal/online-waits/*/renew",
-                                "/api/auth/register",
-                                "/api/auth/login",
-                                "/api/auth/refresh",
-                                "/api/auth/logout",
-                                "/oauth2/jwks",
-                                "/actuator/health",
-                                "/actuator/info",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html"
-                        ).permitAll()
-                        // 放行所有OPTIONS预检请求，解决前端跨域OPTIONS401问题
-                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        // 其余全部接口必须经过身份认证
-                        .anyRequest().authenticated();
+                            // 无需认证放行接口：公钥接口、健康检查、文档、内部令牌签发通道
+                            .requestMatchers(
+                                    "/api/auth/internal/task-recovery-capabilities",
+                                    "/api/auth/internal/task-draft-finalization-capabilities",
+                                    "/api/auth/internal/online-capabilities",
+                                    "/api/auth/internal/online-release",
+                                    "/api/auth/internal/online-waits/*/exchange", "/api/auth/internal/online-waits/*/renew",
+                                    "/api/auth/register",
+                                    "/api/auth/login",
+                                    "/api/auth/refresh",
+                                    "/api/auth/logout",
+                                    "/oauth2/jwks",
+                                    "/actuator/health",
+                                    "/actuator/info",
+                                    "/v3/api-docs/**",
+                                    "/swagger-ui/**",
+                                    "/swagger-ui.html"
+                            ).permitAll()
+                            // 放行所有OPTIONS预检请求，解决前端跨域OPTIONS 401问题
+                            .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                            // 其余全部接口必须经过身份认证
+                            .anyRequest().authenticated();
                 })
                 // OAuth2 资源服务器配置，使用JWT模式解析token
                 .oauth2ResourceServer(rs -> {
@@ -225,26 +248,33 @@ public class SecurityConfig {
                         });
                     }
                     rs
-                        // 指定JWT解码器，使用公钥验签
-                        .jwt(jwt -> {
-                            jwt.decoder(decoder);
-                            if (oidc) { jwt.jwtAuthenticationConverter(oidcConverter); }
-                        })
-                        // JWT校验失败（token无效、过期、篡改）自定义401入口，返回业务JSON，不返回默认html
-                        .authenticationEntryPoint(oidc ? jsonOidcEntryPoint() : json401EntryPoint());
+                            // 指定JWT解码器，使用公钥验签
+                            .jwt(jwt -> {
+                                jwt.decoder(decoder);
+                                if (oidc) { jwt.jwtAuthenticationConverter(oidcConverter); }
+                            })
+                            // JWT校验失败（token无效、过期、篡改）自定义401入口，返回业务JSON，不返回默认html
+                            .authenticationEntryPoint(oidc ? jsonOidcEntryPoint() : json401EntryPoint());
                 })
-                // 全局Security鉴权异常处理，未登录、权限不足等场景，复用同一个401 JSON入口
+                // 全局Security鉴权异常处理，未登录、权限不足等场景，复用同一个入口
                 .exceptionHandling(eh -> eh.authenticationEntryPoint(oidc ? jsonOidcEntryPoint() : json401EntryPoint()));
         return http.build();
     }
 
-    /** 仅保护Task/Worker签发，不将机器认证扩散到用户API。 */
+    /**
+     * Task内部机器认证Filter Bean
+     * 仅挂载到Security过滤链，保护SIGNING_PATHS令牌签发接口；
+     * 只识别SERVICE_TASK机器身份，不处理人类用户令牌。
+     */
     @Bean
     public TaskInternalAuthenticationFilter taskInternalAuthenticationFilter(TaskInternalAuthProperties properties) {
         return new TaskInternalAuthenticationFilter(properties, TaskInternalAuthConstant.SIGNING_PATHS);
     }
 
-    /** 只在Spring Security链内执行，避免Servlet容器提前注册造成上下文错位。 */
+    /**
+     * 禁用Servlet容器自动注册该Filter，只在Spring Security链内执行，
+     * 避免容器提前注册造成Filter重复执行、Security上下文错位。
+     */
     @Bean
     public FilterRegistrationBean<TaskInternalAuthenticationFilter> taskInternalFilterRegistration(
             TaskInternalAuthenticationFilter filter) {
@@ -254,7 +284,7 @@ public class SecurityConfig {
     }
 
     /**
-     * 统一未授权401响应处理器
+     * local模式统一未授权401响应处理器
      * 两种场景会进入此处理器：
      * 1. oauth2ResourceServer JWT校验失败：token过期、签名错误、token为空
      * 2. 全局security异常：未携带凭证访问受保护接口
@@ -265,12 +295,15 @@ public class SecurityConfig {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            // 输出统一失败返回体，错误码：UNAUTHORIZED
             response.getWriter().write(objectMapper.writeValueAsString(
                     Result.fail(ErrorCode.UNAUTHORIZED)));
         };
     }
 
+    /**
+     * OIDC模式异常分流入口：
+     * AuthenticationServiceException（内省失败、IdP不可达）返回503；其余认证异常走401分支。
+     */
     private AuthenticationEntryPoint jsonOidcEntryPoint() {
         return (request, response, error) -> {
             if (error instanceof AuthenticationServiceException) {
@@ -286,8 +319,7 @@ public class SecurityConfig {
 
     /**
      * 全局CORS跨域配置源
-     * 允许全部来源、全部请求方法、全部请求头，支持凭证（cookie/auth header）
-     * 适配前后端分离前端项目跨域访问后端接口
+     * 允许全部来源、全部请求方法、全部请求头，支持凭证（Authorization token、cookie）
      * setAllowedOriginPatterns("*")配合allowCredentials=true，比setAllowedOrigins更灵活
      */
     @Bean

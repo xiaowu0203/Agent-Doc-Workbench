@@ -47,12 +47,17 @@ import java.util.Set;
  * <ul>
  * <li>同步HTTP接口：透传登录用户JWT；</li>
  * <li>MQ异步任务执行：线程内设置TaskCapabilityContext，向下游传递任务能力令牌，实现Agent身份访问文档服务。</li>
+ * </ul>
  */
 public class AuthHeaderForwardInterceptor implements RequestInterceptor {
 
+    // 回环地址白名单，用于判断本地可信地址
     private static final Set<String> LOOPBACK_HOSTS = Set.of("localhost", "127.0.0.1", "::1", "[::1]");
+    // Task内部调用配置（secret、authUrl、agentUrl、trustedEncryptedNetwork）
     private final TaskInternalCallProperties internalProperties;
+    // identity身份链路是否信任加密内网开关
     private final boolean identityTrustedEncryptedNetwork;
+    // Ant路径匹配器，用于匹配执行档案路径
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     public AuthHeaderForwardInterceptor() {
@@ -77,9 +82,11 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
      */
     @Override
     public void apply(RequestTemplate template) {
+        // 身份查询链路专属保护逻辑，命中则直接返回，不再走后续透传逻辑
         if (applyIdentitySelfProtection(template)) {
             return;
         }
+        // Task内部机器凭据调用链路，命中则替换目标地址+设置Basic机器凭据，不再透传用户token
         if (applyTaskInternalAuthentication(template)) {
             return;
         }
@@ -121,22 +128,29 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
         }
     }
 
-    /** 身份查询仅携带显式用户Bearer，禁止向未受信地址发送。 */
+    /**
+     * 身份查询仅携带显式用户Bearer，禁止向未受信地址发送。
+     * 校验目标地址安全策略、Authorization格式，清理无关能力/机器头，命中返回true
+     */
     private boolean applyIdentitySelfProtection(RequestTemplate template) {
+        // 只针对 AuthIdentityFeign 这个身份查询Feign客户端生效
         if (template.feignTarget() == null || template.feignTarget().type() != AuthIdentityFeign.class) {
             return false;
         }
         URI target = URI.create(template.feignTarget().url());
+        // 安全校验：只允许HTTPS，或者http+回环/信任加密内网；禁止携带userInfo、query、fragment
         if (target.getHost() == null || target.getUserInfo() != null || target.getQuery() != null || target.getFragment() != null
                 || !("https".equalsIgnoreCase(target.getScheme()) || ("http".equalsIgnoreCase(target.getScheme())
                 && (LOOPBACK_HOSTS.contains(target.getHost()) || identityTrustedEncryptedNetwork)))) {
             throw new IllegalStateException("身份查询必须使用HTTPS、本机回环或明确受信加密网络");
         }
+        // 身份查询要求必须有且仅有一个Bearer Token
         var authorization = template.headers().get(HttpHeaders.AUTHORIZATION);
         if (authorization == null || authorization.size() != 1
                 || !authorization.iterator().next().startsWith("Bearer ")) {
             throw new IllegalStateException("身份查询必须显式提供唯一用户Bearer");
         }
+        // 清理所有机器、任务能力类头部，身份链路只保留用户Bearer
         template.removeHeader(HeaderConstants.X_TASK_CAPABILITY);
         template.removeHeader(TaskRecoveryConstant.MACHINE_KEY_HEADER);
         template.removeHeader(TaskRecoveryConstant.CAPABILITY_HEADER);
@@ -145,40 +159,51 @@ public class AuthHeaderForwardInterceptor implements RequestInterceptor {
         return true;
     }
 
-    /** 只给登记契约的三个内部入口附加机器身份，不从当前用户上下文取凭据。 */
+    /**
+     * 只给登记契约的三个内部入口附加机器身份，不从当前用户上下文取凭据。
+     * 匹配AuthFeign签发路径 / AgentFeign执行档案路径；替换直连地址、使用Basic机器secret鉴权，清理用户token
+     */
     private boolean applyTaskInternalAuthentication(RequestTemplate template) {
         if (template.feignTarget() == null) {
             return false;
         }
         Class<?> type = template.feignTarget().type();
         String url;
+        // 匹配：AuthFeign POST + 内部签名路径 → 使用authUrl直连地址
         if (type == AuthFeign.class && "POST".equals(template.method())
                 && TaskInternalAuthConstant.SIGNING_PATHS.contains(template.path())) {
             url = internalProperties.getAuthUrl();
-        } else if (type == AgentFeign.class && "GET".equals(template.method())
+        }
+        // 匹配：AgentFeign GET + 执行档案路径 → 使用agentUrl直连地址
+        else if (type == AgentFeign.class && "GET".equals(template.method())
                 && pathMatcher.match(TaskInternalAuthConstant.EXECUTION_PROFILE_PATH, template.path())) {
             url = internalProperties.getAgentUrl();
         } else {
             return false;
         }
+        // 校验secret长度，防止密钥过短不安全
         if (internalProperties.getSecret().getBytes(StandardCharsets.UTF_8).length
                 < TaskInternalAuthConstant.MIN_SECRET_BYTES) {
             throw new IllegalStateException("Task内部调用缺少独立机器凭据");
         }
         URI target = URI.create(url);
+        // 同样安全校验：仅允许HTTPS或可信内网http，禁止userInfo、query、fragment
         if (target.getHost() == null || target.getUserInfo() != null || target.getQuery() != null
                 || target.getFragment() != null || !("https".equalsIgnoreCase(target.getScheme())
                 || ("http".equalsIgnoreCase(target.getScheme())
                 && (LOOPBACK_HOSTS.contains(target.getHost()) || internalProperties.isTrustedEncryptedNetwork())))) {
             throw new IllegalStateException("Task内部调用必须使用HTTPS、本机回环或明确受信加密网络");
         }
+        // 覆盖Feign目标为直连地址（不走注册中心负载均衡）
         template.target(url);
+        // 清除用户Authorization、任务能力头，改用独立机器凭据
         template.removeHeader(HttpHeaders.AUTHORIZATION);
         template.removeHeader(HeaderConstants.X_TASK_CAPABILITY);
         template.removeHeader(TaskRecoveryConstant.MACHINE_KEY_HEADER);
         template.removeHeader(TaskRecoveryConstant.CAPABILITY_HEADER);
         template.removeHeader(OnlineCapabilityConstant.HEADER);
         template.removeHeader(ReportProofSignature.HEADER);
+        // 设置Basic Auth，使用内部独立机器密钥
         template.header(HttpHeaders.AUTHORIZATION, "Basic " + HttpHeaders.encodeBasicAuth(
                 TaskInternalAuthConstant.CLIENT_ID, internalProperties.getSecret(), StandardCharsets.UTF_8));
         return true;
