@@ -103,6 +103,12 @@ public final class PlatformManagementConstant {
      * 平台用户密码重置事件
      */
     public static final String USER_PASSWORD_RESET = "PLATFORM_USER_PASSWORD_RESET";
+
+    /** 当前人类用户修改本地密码。 */
+    public static final String USER_PASSWORD_CHANGED = "PLATFORM_USER_PASSWORD_CHANGED";
+
+    /** 用户本地全端强退，不注销其他SSO应用。 */
+    public static final String USER_AUTHENTICATION_REVOKED = "PLATFORM_USER_AUTHENTICATION_REVOKED";
     /**
      * 平台用户角色替换事件
      */

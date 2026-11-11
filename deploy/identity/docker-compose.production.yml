@@ -1,0 +1,76 @@
+name: adw-identity
+
+services:
+  postgres:
+    image: postgres:17.11-alpine3.24@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Set a private PostgreSQL administrator password}
+      KEYCLOAK_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set a private Keycloak database password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - type: bind
+        source: ./postgres/010-keycloak.sh
+        target: /docker-entrypoint-initdb.d/010-keycloak.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set a private Keycloak database password}
+      KC_DB_POOL_INITIAL_SIZE: "1"
+      KC_DB_POOL_MIN_SIZE: "1"
+      KC_DB_POOL_MAX_SIZE: "10"
+      KC_CACHE: local
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:?Set the public HTTPS URL}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/conf/tls.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/conf/tls.key
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:?Set the bootstrap administrator name}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set a private bootstrap password}
+      WORKBENCH_BFF_URL: ${WORKBENCH_BFF_URL:?Set the exact HTTPS BFF origin}
+      WORKBENCH_WEB_CLIENT_SECRET: ${WORKBENCH_WEB_CLIENT_SECRET:?Set a private BFF client secret}
+      WORKBENCH_API_CLIENT_SECRET: ${WORKBENCH_API_CLIENT_SECRET:?Set a private introspection client secret}
+    ports:
+      - "${KEYCLOAK_BIND_ADDRESS:-127.0.0.1}:${KEYCLOAK_HTTPS_PORT:-18443}:8443"
+    volumes:
+      - type: bind
+        source: ./realm/agent-doc-workbench-realm.json
+        target: /opt/keycloak/data/import/agent-doc-workbench-realm.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KEYCLOAK_TLS_CERT_FILE:?Set an existing PEM certificate path}
+        target: /opt/keycloak/conf/tls.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${KEYCLOAK_TLS_KEY_FILE:?Set an existing PEM private key path}
+        target: /opt/keycloak/conf/tls.key
+        read_only: true
+        bind:
+          create_host_path: false
+
+volumes:
+  postgres-data:

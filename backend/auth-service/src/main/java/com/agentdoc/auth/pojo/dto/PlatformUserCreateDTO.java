@@ -28,9 +28,8 @@ public record PlatformUserCreateDTO(
         @Schema(description = "用户名")
         String username,
 
-        @NotBlank(message = "初始密码不能为空")
         @Size(min = MIN_PASSWORD_LENGTH, max = MAX_PASSWORD_LENGTH, message = "密码长度为 6-64")
-        @Schema(description = "初始密码")
+        @Schema(description = "local模式必须显式提供初始密码；OIDC模式必须省略")
         String password,
 
         @Size(max = MAX_NICKNAME_LENGTH, message = "昵称过长")
@@ -57,4 +56,5 @@ public record PlatformUserCreateDTO(
         @Schema(description = "是否同时授予平台超级管理员；为空时默认否")
         Boolean superAdmin
 ) {
+    @Override public String toString() { return "[REDACTED USER CREATION REQUEST]"; }
 }

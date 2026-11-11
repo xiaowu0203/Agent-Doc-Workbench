@@ -1,0 +1,29 @@
+name: adw-identity-h2
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332
+    command: ["start-dev", "--db=dev-file", "--import-realm"]
+    environment:
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:18092}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_CACHE: local
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-workbench-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set a private bootstrap password}
+      WORKBENCH_BFF_URL: ${WORKBENCH_BFF_URL:-http://localhost:8080}
+      WORKBENCH_WEB_CLIENT_SECRET: ${WORKBENCH_WEB_CLIENT_SECRET:?Set a private BFF client secret}
+      WORKBENCH_API_CLIENT_SECRET: ${WORKBENCH_API_CLIENT_SECRET:?Set a private introspection client secret}
+    ports:
+      - "127.0.0.1:${KEYCLOAK_HTTP_PORT:-18092}:8080"
+    volumes:
+      - h2-data:/opt/keycloak/data
+      - type: bind
+        source: ./realm/agent-doc-workbench-realm.json
+        target: /opt/keycloak/data/import/agent-doc-workbench-realm.json
+        read_only: true
+        bind:
+          create_host_path: false
+
+volumes:
+  h2-data:

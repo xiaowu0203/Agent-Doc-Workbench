@@ -11,7 +11,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
-import org.springframework.core.env.Environment;
 
 /**
  * Agent任务能力令牌自动装配配置
@@ -19,7 +18,7 @@ import org.springframework.core.env.Environment;
  * 依赖基础资源服务安全组件，在{@link CommonSecurityAutoConfiguration}之后执行；
  * 负责装配Agent任务令牌相关Bean：验签器、请求过滤器。
  * <ol>
- * <li>需要容器中已经存在{@link JwtDecoder}，依赖jwks‑url配置，复用auth‑service公钥完成JWT验签；</li>
+ * <li>容器提供当前模式人类解码器后，另以业务jwks-url创建Capability验签器；</li>
  * <li>{@link TaskCapabilityVerifier}：JWT验签 + Agent业务声明校验；</li>
  * <li>{@link TaskCapabilityAuthenticationFilter}：仅配置 {@code task‑capability‑filter‑enabled=true} 才创建，
  * 用于解析HTTP请求头 {@link com.agentdoc.common.constant.HeaderConstants#X_TASK_CAPABILITY}，临时注入Agent身份到Security上下文；</li>
@@ -45,17 +44,17 @@ public class TaskCapabilitySecurityAutoConfiguration {
      * <li>配置了agent‑doc.security.jwks‑url公钥地址；</li>
      * <li>容器不存在同名Bean，允许业务自定义覆盖。</li>
      * </ul>
-     * 复用解码器完成JWT签名、过期校验；额外校验agent专属claim（actor_type、scope）业务语义。
+     * 独立业务解码器完成签名/时间校验，继续校验Agent专属claim。
      * </p>
-     * @param decoder JWT解码器，从JWKS拉取公钥
+     * @param properties 既有业务Capability的独立JWKS配置
      * @return TaskCapabilityVerifier Agent令牌验签实例
      */
     @Bean
     @ConditionalOnBean(JwtDecoder.class)
     @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
     @ConditionalOnMissingBean
-    public TaskCapabilityVerifier taskCapabilityVerifier(JwtDecoder decoder, SecurityVerifyProperties properties, Environment environment) {
-        return new TaskCapabilityVerifier(capabilityDecoder(decoder, properties, environment));
+    public TaskCapabilityVerifier taskCapabilityVerifier(SecurityVerifyProperties properties) {
+        return new TaskCapabilityVerifier(capabilityDecoder(properties));
     }
 
     /**
@@ -66,19 +65,16 @@ public class TaskCapabilitySecurityAutoConfiguration {
     @ConditionalOnBean(JwtDecoder.class)
     @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
     @ConditionalOnMissingBean
-    public EvaluationWorkerCapabilityVerifier evaluationWorkerCapabilityVerifier(JwtDecoder decoder, SecurityVerifyProperties properties, Environment environment) {
-        return new EvaluationWorkerCapabilityVerifier(capabilityDecoder(decoder, properties, environment));
+    public EvaluationWorkerCapabilityVerifier evaluationWorkerCapabilityVerifier(SecurityVerifyProperties properties) {
+        return new EvaluationWorkerCapabilityVerifier(capabilityDecoder(properties));
     }
 
     /**
      * 能力令牌解码器选择逻辑：
-     * OIDC模式强制新建一个基于jwks-url的解码器，不复用OIDC issuer解码器；local模式直接复用人令牌decoder。
+     * 两模式均使用既有业务JWKS，不复用任何人类身份解码器。
      */
-    private JwtDecoder capabilityDecoder(JwtDecoder humanDecoder, SecurityVerifyProperties properties, Environment environment) {
-        if ("oidc".equalsIgnoreCase(environment.getProperty("workbench.auth.mode", "local"))) {
-            return NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
-        }
-        return humanDecoder;
+    private JwtDecoder capabilityDecoder(SecurityVerifyProperties properties) {
+        return NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.agentdoc.task.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.exception.BusinessException;
@@ -34,7 +35,7 @@ class TaskOnlineApprovalSourceServiceTest {
     private ChangeRequestEntity request;
     private TaskOnlineOriginalProposalEntity original;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build(), 501L, List.of()));
         request = new ChangeRequestEntity(); request.setId(91L); request.setSourceTaskId(61L); request.setSpaceId(10L); request.setDocumentId(41L);
         request.setProposedBy(20L); request.setProposedActorType(2); request.setStatus(ChangeRequestStatus.MERGED.getCode());
         request.setMergedVersion(4L); request.setMergedBy(501L); request.setMergedAt(LocalDateTime.parse("2026-10-10T20:00:00"));
@@ -86,7 +87,7 @@ class TaskOnlineApprovalSourceServiceTest {
         when(access.input(61L, 10L, 71L)).thenReturn(new OnlineOriginalInputVO(input.taskId(), input.executionId(), input.spaceId(), input.agentId(), input.experimentId(), input.assignmentId(), input.bindingHash(), input.documentId(), input.documentType(), input.baseVersion(), input.inputHash(), false));
         assertThat(service.get(91L).reason()).isEqualTo("TASK_NOT_COMPLETED");
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("agent").header("alg", "RS256").subject("61")
-                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_AGENT).claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_AGENT).build()));
+                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_AGENT).claim(JwtConstant.CLAIM_ACTOR_TYPE, JwtConstant.ACTOR_AGENT).build(), List.of()));
         assertThatThrownBy(() -> service.get(91L)).isInstanceOf(BusinessException.class);
     }
 }

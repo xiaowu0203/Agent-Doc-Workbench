@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.TaskFeign;
@@ -30,7 +31,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -63,7 +63,7 @@ class OnlineApprovalFeedbackMySqlTest {
     @BeforeAll static void open() { context = new AnnotationConfigApplicationContext(Config.class); }
     @AfterAll static void close() { if (context != null) { context.close(); } }
     @BeforeEach void authenticate() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build(), 501L, List.of()));
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
     private JdbcTemplate sql() { return new JdbcTemplate(context.getBean(DriverManagerDataSource.class)); }

@@ -2,7 +2,6 @@ package com.agentdoc.task.config;
 
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.task.constant.EvaluationWorkerSecurityConstant;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -10,16 +9,15 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenResolv
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 
 /**
- * OIDC 认证模式下 Worker 专用接口安全适配配置
+ * 两种认证模式共用的Worker专用接口适配
  * 设计目标：
  * Worker 节点（评估执行Worker）走独立凭证体系，不能被框架当成【人类用户的OIDC身份】来解析；
  * 将 Worker 专用路径剥离出默认OIDC BearerToken解析逻辑，交给项目已有的【窄权限验证器】单独校验，
  * 避免 Worker 凭证被 OIDC 过滤器误解析、误归类为人类登录身份，造成身份校验错乱。
- * 生效条件：仅当配置 workbench.auth.mode = oidc 时，该配置类才加载
+ * local与oidc都加载，避免Worker证明进入任一模式的人类解析器。
  * proxyBeanMethods = false：@Configuration 轻量模式，跳过CGLIB代理，提升启动性能，无Bean互相依赖场景推荐开启
  */
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "oidc")
 public class EvaluationWorkerSecurityConfig {
 
     /**

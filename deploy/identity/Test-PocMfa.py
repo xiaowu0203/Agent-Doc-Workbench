@@ -97,8 +97,9 @@ class KeycloakMfaPocTest(unittest.TestCase):
         form = self.form(setup, "kc-totp-settings-form")
         self.assertNotIn("Location", setup.headers)
         secret = form.hidden["totpSecret"]
+        enrolled_code = self.totp(secret)
         enrolled = self.send(browser, "POST", form.action,
-                             data={**form.hidden, "totp": self.totp(secret), "userLabel": "P0 temporary"})
+                             data={**form.hidden, "totp": enrolled_code, "userLabel": "P0 temporary"})
         self.assertEqual(enrolled.status_code, 302)
         self.assertTrue(enrolled.headers["Location"].startswith(self.config["bffUrl"] + "/login/oauth2/code/workbench?"))
         browser = protocol.LocalhostBrowserSession()
@@ -112,6 +113,11 @@ class KeycloakMfaPocTest(unittest.TestCase):
         rejected = self.send(browser, "POST", form.action, data={**form.hidden, "otp": wrong})
         self.assertEqual(rejected.status_code, 200)
         form = self.form(rejected, "kc-otp-login-form")
+        # 禁止重用的验证码在绑定时已消费，下一次登录须等待新时间窗。
+        deadline = time.monotonic() + 35
+        while self.totp(secret) == enrolled_code:
+            self.assertLess(time.monotonic(), deadline, "TOTP时间窗未在预期时间内推进")
+            time.sleep(0.2)
         accepted = self.send(browser, "POST", form.action, data={**form.hidden, "otp": self.totp(secret)})
         self.assertEqual(accepted.status_code, 302)
         self.assertTrue(accepted.headers["Location"].startswith(self.config["bffUrl"] + "/login/oauth2/code/workbench?"))

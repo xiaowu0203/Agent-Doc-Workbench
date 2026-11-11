@@ -3,9 +3,10 @@ package com.agentdoc.document.service;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.exception.HumanAuthorizationException;
 import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.utils.AuthUtils;
-import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.feign.AuthIdentityFeign;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.mapper.PermissionMapper;
 import com.agentdoc.document.mapper.SpaceRoleMapper;
@@ -22,7 +23,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.List;
 
@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * {@link SpacePermissionService} 核心权限回归测试。
@@ -60,7 +61,7 @@ class SpacePermissionServiceTest {
     @Mock
     private PermissionMapper permissionMapper;
     @Mock
-    private AuthFeign authFeign;
+    private AuthIdentityFeign authFeign;
 
     private SpacePermissionService permissionService;
 
@@ -127,11 +128,21 @@ class SpacePermissionServiceTest {
     @Test
     void platformSuperAdminShouldOnlyBypassCrossSpaceRead() {
         login(List.of(SUPER_ADMIN));
-        when(authFeign.checkPlatformRole(SUPER_ADMIN)).thenReturn(Result.ok());
+        when(authFeign.checkPlatformRole("Bearer token", SUPER_ADMIN)).thenReturn(Result.ok());
         when(memberMapper.selectOne(any(Wrapper.class))).thenReturn(null);
 
         assertTrue(permissionService.hasPermission(SPACE_ID, SKILL_READ));
         assertFalse(permissionService.hasPermission(SPACE_ID, SKILL_MANAGE));
+    }
+
+    @Test
+    void superAdminAuthorityFailureDoesNotFallBackToSpaceMemberRights() {
+        login(List.of(SUPER_ADMIN));
+        when(authFeign.checkPlatformRole("Bearer token", SUPER_ADMIN)).thenThrow(new IllegalStateException("private"));
+        HumanAuthorizationException failure = assertThrows(HumanAuthorizationException.class,
+                () -> permissionService.hasPermission(SPACE_ID, SKILL_READ));
+        assertEquals(ErrorCode.SERVICE_UNAVAILABLE, failure.getErrorCode());
+        verifyNoInteractions(memberMapper, rolePermissionMapper);
     }
 
     @Test
@@ -175,7 +186,7 @@ class SpacePermissionServiceTest {
                 .claim(CLAIM_SCOPE, SCOPE_USER)
                 .claim(CLAIM_PLATFORM_ROLES, platformRoles)
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), platformRoles));
     }
 
     @Test

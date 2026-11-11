@@ -5,9 +5,12 @@ import com.agentdoc.agent.service.AgentService;
 import com.agentdoc.common.config.CommonSecurityAutoConfiguration;
 import com.agentdoc.common.config.CommonWebAutoConfiguration;
 import com.agentdoc.common.feign.vo.AgentExecutionProfileVO;
+import com.agentdoc.common.feign.AuthIdentityFeign;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.http.HttpHeaders;
@@ -32,6 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** P0执行档案最小权限回归（原匿名可达探针）；不依赖真实业务资源。 */
 @WebMvcTest(InternalAgentController.class)
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ContextConfiguration(classes = {InternalAgentController.class, CommonSecurityAutoConfiguration.class,
         CommonWebAutoConfiguration.class, InternalAgentSecurityConfig.class})
 class P0InternalEndpointBaselineTest {
@@ -46,6 +50,7 @@ class P0InternalEndpointBaselineTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private AgentService agentService;
     @MockitoBean private JwtDecoder decoder;
+    @MockitoBean private AuthIdentityFeign identity;
 
     @Test
     void rejectsAnonymousOrUntrustedIdentityBeforeReadingProfile() throws Exception {

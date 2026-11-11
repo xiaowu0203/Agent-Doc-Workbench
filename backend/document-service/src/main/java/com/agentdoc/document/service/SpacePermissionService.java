@@ -7,7 +7,9 @@ import com.agentdoc.common.constant.PlatformRoleConstant;
 import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.common.feign.AuthFeign;
+import com.agentdoc.common.exception.HumanAuthorizationException;
+import com.agentdoc.common.feign.AuthIdentityFeign;
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.common.feign.TaskFeign;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
 import com.agentdoc.common.utils.AuthUtils;
@@ -24,6 +26,7 @@ import com.agentdoc.document.pojo.vo.SpaceRoleSummaryVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
@@ -52,7 +55,7 @@ import static com.agentdoc.document.constant.DefaultSpaceRoleConstant.OWNER;
  * <p>
  * 使用说明：
  * <ul>
- *     <li>{@link #hasPermission(Long, String)}：判断是否拥有权限，返回布尔值，不抛异常</li>
+ *     <li>{@link #hasPermission(Long, String)}：判断权限，权威复核依赖故障时拒绝并返回503</li>
  *     <li>{@link #requirePermission(Long, String)}：校验权限，不通过直接抛出FORBIDDEN业务异常</li>
  *     <li>{@link #requireAgentCapability(Long, Long, String)}：Agent任务调用专用鉴权，校验任务令牌与远程任务能力范围</li>
  * </ul>
@@ -66,7 +69,7 @@ public class SpacePermissionService {
     private final SpaceRoleMapper spaceRoleMapper;
     private final SpaceRolePermissionMapper rolePermissionMapper;
     private final PermissionMapper permissionMapper;
-    private final AuthFeign authFeign;
+    private final AuthIdentityFeign identity;
     private final TaskFeign taskFeign;
     private final TaskCapabilityVerifier taskCapabilityVerifier;
     private final HttpServletRequest request;
@@ -76,7 +79,7 @@ public class SpacePermissionService {
                                   SpaceRoleMapper spaceRoleMapper,
                                   SpaceRolePermissionMapper rolePermissionMapper,
                                   PermissionMapper permissionMapper,
-                                  AuthFeign authFeign,
+                                  AuthIdentityFeign identity,
                                   TaskFeign taskFeign,
                                   TaskCapabilityVerifier taskCapabilityVerifier,
                                   HttpServletRequest request) {
@@ -84,7 +87,7 @@ public class SpacePermissionService {
         this.spaceRoleMapper = spaceRoleMapper;
         this.rolePermissionMapper = rolePermissionMapper;
         this.permissionMapper = permissionMapper;
-        this.authFeign = authFeign;
+        this.identity = identity;
         this.taskFeign = taskFeign;
         this.taskCapabilityVerifier = taskCapabilityVerifier;
         this.request = request;
@@ -108,12 +111,16 @@ public class SpacePermissionService {
             return true;
         }
         // 查询该用户在该空间下的成员记录
-        MemberEntity member = findMember(spaceId, userId);
-        // 成员存在，校验该成员绑定角色是否拥有目标权限
-        return member != null && rolePermissionMapper.selectCount(
-                new LambdaQueryWrapper<SpaceRolePermissionEntity>()
-                        .eq(SpaceRolePermissionEntity::getRoleId, member.getRoleId())
-                        .eq(SpaceRolePermissionEntity::getPermissionCode, permissionCode)) > 0;
+        try {
+            MemberEntity member = findMember(spaceId, userId);
+            // 成员存在，校验该成员绑定角色是否拥有目标权限
+            return member != null && rolePermissionMapper.selectCount(
+                    new LambdaQueryWrapper<SpaceRolePermissionEntity>()
+                            .eq(SpaceRolePermissionEntity::getRoleId, member.getRoleId())
+                            .eq(SpaceRolePermissionEntity::getPermissionCode, permissionCode)) > 0;
+        } catch (DataAccessException error) {
+            throw new HumanAuthorizationException(ErrorCode.SERVICE_UNAVAILABLE);
+        }
     }
 
     /**
@@ -179,21 +186,12 @@ public class SpacePermissionService {
 
     /**
      * 判断当前登录用户是否为平台超级管理员
-     * <p>通过authFeign远程鉴权；feign调用异常/降级场景返回false，不做权限放行</p>
+     * <p>直连Auth实时复核；身份失效401，依赖故障503，不回退成员权限。</p>
      *
-     * @return true 平台超级管理员；false 非平台超管或者调用异常
+     * @return true 平台超级管理员；false 已确认无角色
      */
     public boolean isPlatformSuperAdmin() {
-        if (!AuthUtils.hasPlatformRole(SUPER_ADMIN) || authFeign == null) {
-            return false;
-        }
-        try {
-            Result<Void> result = authFeign.checkPlatformRole(SUPER_ADMIN);
-            return result != null && result.code() == ErrorCode.SUCCESS.getCode();
-        } catch (RuntimeException exception) {
-            // feign远程调用异常，安全策略：拒绝，不授予超管权限
-            return false;
-        }
+        return PlatformRoleVerifier.hasRole(identity, SUPER_ADMIN);
     }
 
     /**

@@ -19,13 +19,18 @@ import com.agentdoc.auth.pojo.vo.DepartmentSummaryVO;
 import com.agentdoc.auth.pojo.vo.PlatformUserStatsVO;
 import com.agentdoc.auth.pojo.vo.PlatformUserVO;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.enums.AuthenticationMode;
+import com.agentdoc.common.config.WorkbenchAuthProperties;
+import com.agentdoc.auth.utils.LocalPasswordPolicy;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.pojo.vo.PageVO;
 import com.agentdoc.common.utils.PageUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +41,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static com.agentdoc.auth.constant.PlatformManagementConstant.USER_CREATED;
+import static com.agentdoc.auth.constant.PlatformManagementConstant.USER_AUTHENTICATION_REVOKED;
 import static com.agentdoc.auth.constant.PlatformManagementConstant.USER_PASSWORD_RESET;
 import static com.agentdoc.auth.constant.PlatformManagementConstant.USER_ROLES_REPLACED;
 import static com.agentdoc.auth.constant.PlatformManagementConstant.USER_STATUS_CHANGED;
@@ -58,8 +64,9 @@ public class PlatformUserService {
     private final UserPlatformRoleMapper userPlatformRoleMapper;
     private final DepartmentService departmentService;
     private final PasswordEncoder passwordEncoder;
-    private final RefreshTokenService refreshTokenService;
     private final PlatformAuditLogService auditLogService;
+    private final HumanAuthenticationService humanAuthenticationService;
+    private final WorkbenchAuthProperties authenticationProperties;
 
     /**
      * 平台用户分页搜索
@@ -143,11 +150,14 @@ public class PlatformUserService {
      */
     @Transactional(rollbackFor = Exception.class)
     public PlatformUserVO create(PlatformUserCreateDTO dto) {
+        if (authenticationProperties.getMode() == AuthenticationMode.LOCAL) { LocalPasswordPolicy.requireSupported(dto.password()); }
+        else if (dto.password() != null) { throw new BusinessException(ErrorCode.BAD_REQUEST, "OIDC账号不接受本地密码"); }
+        PlatformRoleEntity initialRole = Boolean.TRUE.equals(dto.superAdmin()) ? lockSuperAdminProtection() : null;
         requireUniqueUsername(dto.username());
         departmentService.requireEnabledDepartment(dto.departmentId());
         UserEntity user = new UserEntity();
         user.setUsername(dto.username().trim());
-        user.setPasswordHash(passwordEncoder.encode(dto.password()));
+        user.setPasswordHash(authenticationProperties.getMode() == AuthenticationMode.LOCAL ? passwordEncoder.encode(dto.password()) : null);
         // 昵称为空则使用用户名
         user.setNickname(dto.nickname() == null || dto.nickname().isBlank()
                 ? user.getUsername() : dto.nickname().trim());
@@ -166,10 +176,9 @@ public class PlatformUserService {
 
         // 如果标记为超级管理员，绑定超级管理员角色
         if (Boolean.TRUE.equals(dto.superAdmin())) {
-            PlatformRoleEntity role = requireSuperAdminRole();
             UserPlatformRoleEntity binding = new UserPlatformRoleEntity();
             binding.setUserId(user.getId());
-            binding.setRoleId(role.getId());
+            binding.setRoleId(initialRole.getId());
             userPlatformRoleMapper.insert(binding);
         }
         // 记录审计日志
@@ -193,7 +202,12 @@ public class PlatformUserService {
         user.setEmail(normalize(dto.email()));
         user.setDepartmentId(dto.departmentId());
         user.setJobTitle(normalize(dto.jobTitle()));
-        userMapper.updateById(user);
+        userMapper.update(null, new LambdaUpdateWrapper<UserEntity>()
+                .eq(UserEntity::getId, userId)
+                .set(UserEntity::getNickname, user.getNickname())
+                .set(UserEntity::getEmail, user.getEmail())
+                .set(UserEntity::getDepartmentId, user.getDepartmentId())
+                .set(UserEntity::getJobTitle, user.getJobTitle()));
         auditLogService.record(USER_UPDATED, USER_TARGET, userId,
                 Map.of("username", user.getUsername()));
         return detail(userId);
@@ -201,15 +215,19 @@ public class PlatformUserService {
 
     /**
      * 修改用户状态（启用/禁用）
-     * 禁用超级管理员时，校验系统至少保留一名启用超级管理员；禁用后撤销该用户所有刷新令牌
+     * 禁用超级管理员时，校验系统至少保留一名启用超级管理员；禁用后推进认证版本
      * @param userId 用户ID
      * @param dto 状态更新入参
      * @return 更新后的用户VO
      */
     @Transactional(rollbackFor = Exception.class)
     public PlatformUserVO updateStatus(Long userId, PlatformUserStatusUpdateDTO dto) {
-        UserEntity user = requireUser(userId);
+        lockSuperAdminProtection();
+        UserEntity user = requireUserForUpdate(userId);
         int newStatus = UserStatus.fromCode(dto.status()).getCode();
+        if (user.getStatus() == newStatus) {
+            return detail(userId);
+        }
         // 如果要把启用的超级管理员禁用，必须保证还有其他可用超级管理员
         if (newStatus == UserStatus.DISABLED.getCode()
                 && UserStatus.isEnabled(user.getStatus()) && hasSuperAdminRole(userId)) {
@@ -217,9 +235,9 @@ public class PlatformUserService {
         }
         user.setStatus(newStatus);
         userMapper.updateById(user);
-        // 用户禁用，作废全部refreshToken
+        // 用户禁用，作废旧人类认证。
         if (newStatus == UserStatus.DISABLED.getCode()) {
-            refreshTokenService.revoke(userId);
+            invalidateHumanAuthentication(userId);
         }
         auditLogService.record(USER_STATUS_CHANGED, USER_TARGET, userId,
                 Map.of("status", newStatus));
@@ -228,17 +246,18 @@ public class PlatformUserService {
 
     /**
      * 重置用户密码
-     * 重置后撤销该用户所有刷新令牌，强制重新登录
+     * 重置后推进认证版本，强制重新登录；OIDC模式不支持本地改密
      * @param userId 用户ID
      * @param dto 密码重置入参
      */
     @Transactional(rollbackFor = Exception.class)
     public void resetPassword(Long userId, PlatformUserPasswordResetDTO dto) {
-        UserEntity user = requireUser(userId);
+        if (authenticationProperties.getMode() != AuthenticationMode.LOCAL) { throw new BusinessException(ErrorCode.FORBIDDEN); }
+        LocalPasswordPolicy.requireSupported(dto.newPassword());
+        UserEntity user = requireUserForUpdate(userId);
         user.setPasswordHash(passwordEncoder.encode(dto.newPassword()));
         userMapper.updateById(user);
-        // 修改密码，作废refreshToken
-        refreshTokenService.revoke(userId);
+        invalidateHumanAuthentication(userId);
         auditLogService.record(USER_PASSWORD_RESET, USER_TARGET, userId, Map.of());
     }
 
@@ -246,14 +265,15 @@ public class PlatformUserService {
      * 替换用户平台角色
      * 当前业务仅支持超级管理员角色；
      * 取消超级管理员时，校验系统至少保留一名启用超级管理员；
-     * 变更角色后撤销刷新令牌
+     * 后续受保护请求从权威存储复核当前角色
      * @param userId 用户ID
      * @param dto 角色替换入参
      * @return 更新后的用户VO
      */
     @Transactional(rollbackFor = Exception.class)
     public PlatformUserVO replaceRoles(Long userId, PlatformUserRoleReplaceDTO dto) {
-        UserEntity user = requireUser(userId);
+        PlatformRoleEntity protectedRole = lockSuperAdminProtection();
+        UserEntity user = requireUserForUpdate(userId);
         Set<String> roleKeys = dto.roleKeys().stream()
                 .map(roleKey -> roleKey == null ? "" : roleKey.trim())
                 .filter(roleKey -> !roleKey.isEmpty())
@@ -282,15 +302,12 @@ public class PlatformUserService {
 
         // 需要赋予超级管理员，则新增绑定
         if (shouldBeSuperAdmin) {
-            PlatformRoleEntity role = requireSuperAdminRole();
             UserPlatformRoleEntity binding = new UserPlatformRoleEntity();
             binding.setUserId(userId);
-            binding.setRoleId(role.getId());
+            binding.setRoleId(protectedRole.getId());
             userPlatformRoleMapper.insert(binding);
         }
 
-        // 角色变更，作废refreshToken
-        refreshTokenService.revoke(userId);
         auditLogService.record(USER_ROLES_REPLACED, USER_TARGET, userId,
                 Map.of("platformRoles", roleKeys.stream().sorted().toList()));
         return detail(userId);
@@ -305,6 +322,29 @@ public class PlatformUserService {
         UserEntity user = requireUser(userId);
         if (!UserStatus.isEnabled(user.getStatus())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "用户已禁用");
+        }
+        return user;
+    }
+
+    /** 显式撤销目标用户在Workbench中的全部人类认证。 */
+    @PreAuthorize("@platformRoleService.hasCurrentUserRole('" + SUPER_ADMIN + "')")
+    @Transactional(rollbackFor = Exception.class)
+    public void forceLogout(Long userId) {
+        requireUserForUpdate(userId);
+        invalidateHumanAuthentication(userId);
+        auditLogService.record(USER_AUTHENTICATION_REVOKED, USER_TARGET, userId, Map.of());
+    }
+
+    /** 推进人类认证版本和OIDC边界；调用方负责其业务授权及关联事务。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void invalidateHumanAuthentication(Long userId) {
+        humanAuthenticationService.revoke(userId);
+    }
+
+    private UserEntity requireUserForUpdate(Long userId) {
+        UserEntity user = userMapper.lockById(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return user;
     }
@@ -360,9 +400,17 @@ public class PlatformUserService {
      */
     private boolean hasSuperAdminRole(Long userId) {
         PlatformRoleEntity role = requireSuperAdminRole();
-        return userPlatformRoleMapper.selectCount(new LambdaQueryWrapper<UserPlatformRoleEntity>()
+        return !userPlatformRoleMapper.selectList(new LambdaQueryWrapper<UserPlatformRoleEntity>()
                 .eq(UserPlatformRoleEntity::getUserId, userId)
-                .eq(UserPlatformRoleEntity::getRoleId, role.getId())) > 0;
+                .eq(UserPlatformRoleEntity::getRoleId, role.getId()).last("FOR UPDATE")).isEmpty();
+    }
+
+    private PlatformRoleEntity lockSuperAdminProtection() {
+        PlatformRoleEntity role = platformRoleMapper.lockByKey(SUPER_ADMIN);
+        if (role == null || !Boolean.TRUE.equals(role.getProtectedRole())) {
+            throw new BusinessException(ErrorCode.SERVICE_UNAVAILABLE, "平台保护角色不可用");
+        }
+        return role;
     }
 
     /**
@@ -383,15 +431,7 @@ public class PlatformUserService {
      * @param excludedUserId 需要排除的用户ID
      */
     private void requireAnotherEnabledSuperAdmin(Long excludedUserId) {
-        List<Long> superAdminIds = findRoleUserIds(SUPER_ADMIN);
-        if (superAdminIds == null || superAdminIds.stream().noneMatch(id -> !excludedUserId.equals(id))) {
-            throw new BusinessException(ErrorCode.CONFLICT, "平台至少保留一名启用的超级管理员");
-        }
-        long enabledCount = userMapper.selectCount(new LambdaQueryWrapper<UserEntity>()
-                .in(UserEntity::getId, superAdminIds.stream()
-                        .filter(id -> !excludedUserId.equals(id)).toList())
-                .eq(UserEntity::getStatus, UserStatus.ENABLED.getCode()));
-        if (enabledCount == 0) {
+        if (userMapper.lockEnabledRoleUsers(SUPER_ADMIN).stream().noneMatch(id -> !excludedUserId.equals(id))) {
             throw new BusinessException(ErrorCode.CONFLICT, "平台至少保留一名启用的超级管理员");
         }
     }

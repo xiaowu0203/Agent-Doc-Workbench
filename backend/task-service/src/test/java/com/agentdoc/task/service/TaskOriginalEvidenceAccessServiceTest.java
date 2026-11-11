@@ -1,5 +1,6 @@
 package com.agentdoc.task.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -23,8 +23,8 @@ class TaskOriginalEvidenceAccessServiceTest {
     private final DocumentFeign documents = mock(DocumentFeign.class);
     private final TaskOriginalEvidenceAccessService service = new TaskOriginalEvidenceAccessService(tasks, documents);
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256")
-                .subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256")
+                .subject("501").claim("scope", "user").build(), 501L, List.of()));
         var row = new TaskEntity(); row.setId(61L); row.setSpaceId(10L); row.setAgentExecutionId(71L); row.setOnlineAssignmentId(51L);
         row.setDocumentId(41L); row.setDocumentVersionSnapshot(3L); row.setDocumentContentSha256("a".repeat(64)); when(tasks.selectById(61L)).thenReturn(row);
         when(documents.checkSpacePermission(eq(10L), anyString())).thenReturn(Result.ok());

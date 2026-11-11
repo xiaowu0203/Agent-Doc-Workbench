@@ -1,6 +1,7 @@
 package com.agentdoc.evaluation.service;
 import com.agentdoc.evaluation.pojo.vo.EvaluationFeedbackVO;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
@@ -49,7 +50,7 @@ class OnlineQualityFeedbackServiceTest {
         when(receipts.require(any(), any(), any())).thenThrow(new BusinessException(409, "ONLINE_QUALITY_BLIND_REVIEW_NOT_READY"));
         var persisted = mock(EvaluationFeedbackVO.class); when(persisted.id()).thenReturn(91L);
         when(persistence.append(any(), anyString(), any(), anyLong())).thenReturn(persisted);
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build(), 501L, List.of()));
         assignment = new OnlineAssignmentEntity(); assignment.setId(51L); assignment.setTaskId(61L); assignment.setExecutionId(71L);
         assignment.setSpaceId(10L); assignment.setAgentId(20L); assignment.setExperimentId(11L); assignment.setDocumentId(41L);
         assignment.setBindingSchemaVersion(2); assignment.setBindingHash("a".repeat(64));
@@ -137,7 +138,7 @@ class OnlineQualityFeedbackServiceTest {
     }
     @Test void actualAgentCapabilityCannotSubmitHumanFeedback() {
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test-agent").header("alg", "RS256")
-                .subject("61").claim("scope", "agent").claim("actorType", "AGENT").build()));
+                .subject("61").claim("scope", "agent").claim("actorType", "AGENT").build(), List.of()));
         assertThatThrownBy(() -> service.create(request())).isInstanceOf(BusinessException.class);
         verifyNoInteractions(access, tasks, agents, persistence);
     }

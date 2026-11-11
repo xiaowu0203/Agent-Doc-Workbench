@@ -19,4 +19,5 @@ public record ChangePasswordRequestDTO(
         @Size(min = 6, max = 64, message = "密码长度为 6-64")
         String newPassword
 ) {
+    @Override public String toString() { return "[REDACTED PASSWORD CHANGE REQUEST]"; }
 }

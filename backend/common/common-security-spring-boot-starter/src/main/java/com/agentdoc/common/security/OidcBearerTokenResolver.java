@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 仅在启用任务能力过滤器时，将其登记的Bearer路径留给专用验证器。
  * <p>
- * OIDC模式下的Bearer令牌路由分发解析器：
+ * P0用于OIDC，P1在local/oidc共用的Bearer路由器：
  * 当请求命中能力令牌专属端点列表、并且任务能力Filter已开启时，返回null，
  * 让Spring Security默认OIDC Bearer解析逻辑直接跳过该请求，交给{@link TaskCapabilityAuthenticationFilter}独立解析X-TASK-CAPABILITY/Bearer能力令牌；
  * 其余路径走原有delegate（默认解析器），正常解析人类OIDC令牌。

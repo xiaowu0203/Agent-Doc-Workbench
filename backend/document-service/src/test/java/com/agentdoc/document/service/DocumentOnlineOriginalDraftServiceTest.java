@@ -1,5 +1,6 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -30,7 +31,7 @@ class DocumentOnlineOriginalDraftServiceTest {
     private DocumentEntity doc;
     private DocumentVersionEntity row;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg","RS256").subject("501").claim("scope","user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg","RS256").subject("501").claim("scope","user").build(), 501L, List.of()));
         when(tasks.getOnlineOriginalInput(61L,10L,71L)).thenReturn(Result.ok(input));
         doc = new DocumentEntity(); doc.setId(41L); doc.setSpaceId(10L); doc.setVersion(10L); doc.setContent("后来人工修改的正文");
         when(documents.requireDoc(41L)).thenReturn(doc);
@@ -62,7 +63,7 @@ class DocumentOnlineOriginalDraftServiceTest {
         assertThatThrownBy(() -> service.read(61L,10L,71L)).isInstanceOf(BusinessException.class); verifyNoInteractions(versions);
     }
     @Test void agentIdentityCannotUseHumanOriginalEvidenceEndpoint() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("agent").header("alg","RS256").subject("20").claim("scope","agent").build()));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("agent").header("alg","RS256").subject("20").claim("scope","agent").build(), List.of()));
         assertThatThrownBy(() -> service.read(61L,10L,71L)).isInstanceOf(BusinessException.class); verifyNoInteractions(tasks,versions);
     }
 }

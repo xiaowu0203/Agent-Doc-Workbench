@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.agent.enums.McpConnectionStatus;
 import com.agentdoc.agent.enums.TemplateVersionStatus;
@@ -17,7 +18,6 @@ import com.agentdoc.common.constant.JwtConstant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -127,7 +127,7 @@ class McpTemplateServiceTest {
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
                 .build();
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
+                new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
     }
 
     private McpTemplateService service(McpTemplateMapper mapper, McpTemplateVersionMapper versionMapper,

@@ -1,5 +1,7 @@
 package com.agentdoc.agent.service;
 
+import java.util.List;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.agent.mapper.AgentOnlineOriginalTextMapper;
 import com.agentdoc.agent.pojo.entity.AgentExecutionEntity;
@@ -33,7 +35,7 @@ class AgentOnlineOriginalTextServiceTest {
     @BeforeEach void setup() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "original-text"), AgentExecutionEntity.class);
         var jwt = Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
         execution = new AgentExecutionEntity(); execution.setId(71L); execution.setWorkbenchTaskId(61L); execution.setSpaceId(10L); execution.setAgentId(20L);
         execution.setOnlineExperimentId(11L); execution.setOnlineAssignmentId(51L); execution.setOnlineBindingSchemaVersion(2);
         execution.setOnlineBindingHash("a".repeat(64)); execution.setStatus("COMPLETED"); execution.setFinishedAt(LocalDateTime.of(2026,10,10,20,0,0,123456789));
@@ -61,7 +63,7 @@ class AgentOnlineOriginalTextServiceTest {
         when(executions.selectOne(any())).thenReturn(execution); when(tasks.checkOriginalEvidencePermission(61L,10L,71L)).thenReturn(Result.fail(ErrorCode.FORBIDDEN));
         assertThatThrownBy(() -> service.read(61L,10L)).isInstanceOf(BusinessException.class); verify(originals, never()).selectById(any());
         var jwt = Jwt.withTokenValue("task").header("alg", "RS256").subject("61").claim("scope", "agent").claim("actorType", "AGENT").build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt)); clearInvocations(executions);
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of())); clearInvocations(executions);
         assertThatThrownBy(() -> service.read(61L,10L)).isInstanceOf(BusinessException.class); verifyNoInteractions(executions);
     }
     @Test void originalReadChecksCurrentBindingAndDetectsStoredBodyCorruption() {

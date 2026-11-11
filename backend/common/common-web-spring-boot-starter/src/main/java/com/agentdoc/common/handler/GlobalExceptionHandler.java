@@ -3,10 +3,12 @@ package com.agentdoc.common.handler;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.exception.HumanAuthorizationException;
 import com.agentdoc.common.logging.LogSanitizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -108,6 +110,11 @@ public class GlobalExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleGeneric(Exception ex) {
+        // @PreAuthorize会包装表达式调用异常，仅还原受控的人类授权复核分类。
+        if (NestedExceptionUtils.getMostSpecificCause(ex) instanceof HumanAuthorizationException failure) {
+            ErrorCode code = failure.getErrorCode();
+            return ResponseEntity.status(code.getHttpStatus()).body(Result.fail(code));
+        }
         if (ex instanceof ErrorResponse errorResponse) {
             HttpStatus status = HttpStatus.resolve(errorResponse.getStatusCode().value());
             ErrorCode code = switch (status) {

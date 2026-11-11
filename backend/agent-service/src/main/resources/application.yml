@@ -71,6 +71,7 @@ agent-doc:
     agent-config-key: ${AGENT_CONFIG_KEY:}
     # JWT验签JWKS地址，用于校验外部传入的Task‑Capability‑Token任务能力令牌
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    identity-jwks-url: ${AUTH_IDENTITY_JWKS_URL:http://localhost:8081/oauth2/identity-jwks}
     # 是否开启TaskCapabilityAuthenticationFilter任务能力令牌鉴权过滤器
     task-capability-filter-enabled: true
     # 紧急关闭仅拒绝专用恢复入口，不影响普通 Task 能力校验。
@@ -135,6 +136,7 @@ agent-doc:
     # OpenAPI文档描述：包含Agent配置管理、A2A Server协议、Spring AI运行时能力
     description: Agent 配置、A2A Server 与 Spring AI Runtime
   feign:
+    identity-auth-url: ${IDENTITY_AUTH_URL:http://localhost:8081}
     # Feign调用网关地址，用于反向调用workbench工作台服务（MCP回调、业务接口）
     gateway-url: ${GATEWAY_URL:http://localhost:9090}
 

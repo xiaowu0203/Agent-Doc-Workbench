@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.mapper.SkillMapper;
 import com.agentdoc.agent.mapper.SkillVersionMapper;
@@ -7,7 +8,6 @@ import com.agentdoc.agent.pojo.dto.SystemSkillCreateDTO;
 import com.agentdoc.common.constant.JwtConstant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
@@ -54,6 +54,6 @@ class SystemSkillServiceTest {
                 .claim(JwtConstant.CLAIM_PLATFORM_ROLES, List.of(SUPER_ADMIN))
                 .build();
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
+                new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of(SUPER_ADMIN)));
     }
 }

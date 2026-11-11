@@ -39,6 +39,7 @@ Thumbs.db
 # === Env / Secrets ===
 .env
 .env.local
+/deploy/identity/.env.*.local
 *.pem
 *.key
 /backend/.secrets/

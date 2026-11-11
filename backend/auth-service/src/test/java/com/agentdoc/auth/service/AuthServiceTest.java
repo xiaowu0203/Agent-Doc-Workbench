@@ -1,53 +1,62 @@
 package com.agentdoc.auth.service;
 
-import com.agentdoc.auth.config.JwtProperties;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
+import com.agentdoc.common.config.WorkbenchAuthProperties;
 import com.agentdoc.auth.enums.UserStatus;
 import com.agentdoc.auth.pojo.dto.ChangePasswordRequestDTO;
-import com.agentdoc.auth.pojo.dto.RegisterRequestDTO;
 import com.agentdoc.auth.pojo.entity.UserEntity;
-import com.agentdoc.auth.pojo.vo.AuthResponseVO;
 import com.agentdoc.auth.mapper.UserMapper;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.enums.AuthenticationMode;
 import com.agentdoc.common.exception.BusinessException;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 
-import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 class AuthServiceTest {
 
+    @BeforeAll
+    static void initializeTableMetadata() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
+        assistant.setCurrentNamespace(AuthServiceTest.class.getName());
+        TableInfoHelper.initTableInfo(assistant, UserEntity.class);
+    }
+
     private UserMapper userMapper;
     private JwtService jwtService;
-    private RefreshTokenService refreshTokenService;
-    private PlatformRoleService platformRoleService;
+    private HumanAuthenticationService humanAuthenticationService;
     private AuthService authService;
 
     @BeforeEach
     void setUp() {
         userMapper = mock(UserMapper.class);
         jwtService = mock(JwtService.class);
-        refreshTokenService = mock(RefreshTokenService.class);
-        platformRoleService = mock(PlatformRoleService.class);
-        // issueTokens 会读取 props().accessTtl()，此处 stub 掉避免 mock 返回 null 导致 NPE
-        when(jwtService.props()).thenReturn(
-                new JwtProperties("", "", Duration.ofMinutes(30), Duration.ofDays(7), "test"));
+        humanAuthenticationService = mock(HumanAuthenticationService.class);
         authService = new AuthService(userMapper, new BCryptPasswordEncoder(), jwtService,
-                refreshTokenService, platformRoleService);
+                humanAuthenticationService, new WorkbenchAuthProperties(), mock(PlatformAuditLogService.class));
     }
 
     @AfterEach
@@ -56,15 +65,17 @@ class AuthServiceTest {
     }
 
     @Test
-    void registerRejectsDuplicateUsername() {
-        when(userMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
-        RegisterRequestDTO request = new RegisterRequestDTO("alice", "secret1", null, null);
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.register(request));
-        assertEquals(ErrorCode.USERNAME_EXISTS.getCode(), ex.getCode());
+    void oidcModeCannotAuthenticateLocalPassword() {
+        var properties = new WorkbenchAuthProperties();
+        properties.setMode(AuthenticationMode.OIDC);
+        var service = new AuthService(userMapper, new BCryptPasswordEncoder(), jwtService, humanAuthenticationService, properties, mock(PlatformAuditLogService.class));
+        var error = assertThrows(BusinessException.class, () -> service.authenticateLocalUser("alice", "secret1"));
+        assertEquals(ErrorCode.FORBIDDEN.getCode(), error.getCode());
+        verifyNoInteractions(userMapper, jwtService);
     }
 
     @Test
-    void loginReturnsTokensOnValidCredentials() {
+    void successfulPasswordCheckDoesNotMintLegacyTokens() {
         String rawPassword = "secret1";
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         UserEntity user = new UserEntity();
@@ -75,15 +86,10 @@ class AuthServiceTest {
         user.setStatus(UserStatus.ENABLED.getCode());
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
-        when(platformRoleService.listRoleKeys(user.getId())).thenReturn(List.of("PLATFORM_SUPER_ADMIN"));
-        when(jwtService.createAccessToken(user, List.of("PLATFORM_SUPER_ADMIN"))).thenReturn("access-token");
-        when(jwtService.createRefreshToken()).thenReturn("refresh-token");
-
-        AuthResponseVO response = authService.login("alice", rawPassword);
-        assertEquals("access-token", response.accessToken());
-        assertEquals("refresh-token", response.refreshToken());
-        assertEquals("alice", response.user().username());
-        assertEquals(List.of("PLATFORM_SUPER_ADMIN"), response.platformRoles());
+        when(userMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
+        UserEntity response = authService.authenticateLocalUser("alice", rawPassword);
+        assertEquals("alice", response.getUsername());
+        verifyNoInteractions(jwtService);
     }
 
     @Test
@@ -97,8 +103,45 @@ class AuthServiceTest {
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
 
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login("alice", "wrongpass"));
+        BusinessException ex = assertThrows(BusinessException.class, () -> authService.authenticateLocalUser("alice", "wrongpass"));
         assertEquals(ErrorCode.LOGIN_FAILED.getCode(), ex.getCode());
+    }
+
+    @Test
+    void loginRejectsOidcOnlyAccountWithoutCheckingLocalPassword() {
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        AuthService service = new AuthService(userMapper, encoder, jwtService,
+                humanAuthenticationService, new WorkbenchAuthProperties(), mock(PlatformAuditLogService.class));
+        UserEntity user = new UserEntity();
+        user.setId(10L);
+        user.setStatus(UserStatus.ENABLED.getCode());
+        when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.authenticateLocalUser("oidc-user", "secret1"));
+
+        assertEquals(ErrorCode.LOGIN_FAILED.getCode(), error.getCode());
+        verify(encoder).matches(any(), any());
+        verifyNoInteractions(jwtService);
+    }
+
+    @Test
+    void changePasswordRejectsOidcOnlyAccountWithoutCheckingLocalPassword() {
+        PasswordEncoder encoder = mock(PasswordEncoder.class);
+        AuthService service = new AuthService(userMapper, encoder, jwtService,
+                humanAuthenticationService, new WorkbenchAuthProperties(), mock(PlatformAuditLogService.class));
+        UserEntity user = new UserEntity();
+        user.setId(10L);
+        user.setStatus(UserStatus.ENABLED.getCode());
+        when(userMapper.lockById(10L)).thenReturn(user);
+        authenticateHumanUser(10L);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.changePassword(new ChangePasswordRequestDTO("secret1", "secret2")));
+
+        assertEquals(ErrorCode.CURRENT_PASSWORD_INVALID.getCode(), error.getCode());
+        verify(encoder, never()).matches(any(), any());
+        verify(userMapper, never()).updateById(any(UserEntity.class));
     }
 
     @Test
@@ -112,33 +155,37 @@ class AuthServiceTest {
 
         when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
 
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.login("alice", "secret1"));
-        assertEquals(ErrorCode.USER_DISABLED.getCode(), ex.getCode());
+        BusinessException ex = assertThrows(BusinessException.class, () -> authService.authenticateLocalUser("alice", "secret1"));
+        assertEquals(ErrorCode.LOGIN_FAILED.getCode(), ex.getCode());
     }
 
     @Test
-    void refreshRejectsEmptyToken() {
-        when(refreshTokenService.validateAndGetUserId("bad")).thenReturn(null);
-        BusinessException ex = assertThrows(BusinessException.class, () -> authService.refresh("bad"));
-        assertEquals(ErrorCode.REFRESH_TOKEN_INVALID.getCode(), ex.getCode());
+    void rejectsPasswordStateChangedDuringAuthentication() {
+        var user = new UserEntity(); user.setId(10L); user.setStatus(UserStatus.ENABLED.getCode());
+        user.setPasswordHash(new BCryptPasswordEncoder().encode("secret1"));
+        when(userMapper.selectOne(any(Wrapper.class))).thenReturn(user);
+        when(userMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(0);
+        var error = assertThrows(BusinessException.class, () -> authService.authenticateLocalUser("alice", "secret1"));
+        assertEquals(ErrorCode.LOGIN_FAILED.getCode(), error.getCode());
+        verifyNoInteractions(jwtService);
     }
 
     @Test
-    void changePasswordUpdatesHashAndRevokesRefreshTokens() {
+    void changePasswordUpdatesHashAndRevokesAuthenticationVersion() {
         BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
         UserEntity user = new UserEntity();
         user.setId(10L);
         user.setUsername("alice");
         user.setPasswordHash(encoder.encode("secret1"));
         user.setStatus(UserStatus.ENABLED.getCode());
-        when(userMapper.selectById(10L)).thenReturn(user);
+        when(userMapper.lockById(10L)).thenReturn(user);
         authenticateHumanUser(10L);
 
         authService.changePassword(new ChangePasswordRequestDTO("secret1", "secret2"));
 
         assertTrue(encoder.matches("secret2", user.getPasswordHash()));
         verify(userMapper).updateById(user);
-        verify(refreshTokenService).revoke(10L);
+        verify(humanAuthenticationService).revoke(10L);
     }
 
     @Test
@@ -149,7 +196,7 @@ class AuthServiceTest {
         user.setUsername("alice");
         user.setPasswordHash(encoder.encode("secret1"));
         user.setStatus(UserStatus.ENABLED.getCode());
-        when(userMapper.selectById(10L)).thenReturn(user);
+        when(userMapper.lockById(10L)).thenReturn(user);
         authenticateHumanUser(10L);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -165,6 +212,6 @@ class AuthServiceTest {
                 .claim("scope", "user")
                 .build();
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
+                new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
     }
 }

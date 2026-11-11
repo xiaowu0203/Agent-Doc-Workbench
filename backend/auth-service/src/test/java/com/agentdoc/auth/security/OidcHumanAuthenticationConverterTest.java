@@ -2,6 +2,9 @@ package com.agentdoc.auth.security;
 
 import com.agentdoc.auth.service.IdentityBindingService;
 import com.agentdoc.auth.service.PlatformRoleService;
+import com.agentdoc.auth.service.HumanAuthenticationService;
+import com.agentdoc.auth.mapper.UserMapper;
+import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import org.junit.jupiter.api.Test;
@@ -11,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import com.agentdoc.common.constant.JwtConstant;
 
 import java.time.Clock;
@@ -22,6 +27,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
 class OidcHumanAuthenticationConverterTest {
@@ -29,6 +35,11 @@ class OidcHumanAuthenticationConverterTest {
     private static final String SUBJECT = "550e8400-e29b-41d4-a716-446655440000";
     @Mock private IdentityBindingService bindings;
     @Mock private PlatformRoleService roles;
+
+    private OidcHumanAuthenticationConverter converter() {
+        return new OidcHumanAuthenticationConverter(bindings, roles,
+                new HumanAuthenticationService(mock(UserMapper.class), Clock.systemUTC()));
+    }
 
     @Test
     void timestampSkewHasExplicitThirtySecondBound() {
@@ -45,10 +56,12 @@ class OidcHumanAuthenticationConverterTest {
 
     @Test
     void projectsBoundUserAndLocalRolesWithoutChangingSubject() {
-        when(bindings.resolve(ISSUER, SUBJECT)).thenReturn(42L);
+        var user = new UserEntity();
+        user.setId(42L);
+        when(bindings.resolve(ISSUER, SUBJECT)).thenReturn(user);
         when(roles.listRoleKeys(42L)).thenReturn(List.of("LOCAL_ROLE"));
         var token = valid().claim("platformRoles", List.of("FORGED_ROLE")).build();
-        var authentication = new OidcHumanAuthenticationConverter(bindings, roles).convert(token);
+        var authentication = converter().convert(token);
         assertThat(authentication.getPrincipal().getSubject()).isEqualTo(SUBJECT);
         assertThat(authentication.getUserId()).isEqualTo(42L);
         assertThat(authentication.hasPlatformRole("LOCAL_ROLE")).isTrue();
@@ -57,7 +70,7 @@ class OidcHumanAuthenticationConverterTest {
 
     @Test
     void rejectsWrongAudienceClientScopeTypeActorAndUnboundIdentity() {
-        var converter = new OidcHumanAuthenticationConverter(bindings, roles);
+        var converter = converter();
         var invalid = List.of(
                 valid().audience(List.of("workbench-web")).build(),
                 valid().claim("azp", "workbench-task").build(),
@@ -74,10 +87,23 @@ class OidcHumanAuthenticationConverterTest {
         assertThatThrownBy(() -> converter.convert(valid().build())).isInstanceOf(OAuth2AuthenticationException.class);
     }
 
+    @Test
+    void unavailableAuthenticationStateIsNotReportedAsInvalidCredentials() {
+        when(bindings.resolve(ISSUER, SUBJECT)).thenThrow(new DataAccessResourceFailureException("fixture"));
+        assertThatThrownBy(() -> converter().convert(valid().build())).isInstanceOf(AuthenticationServiceException.class);
+    }
+
+    @Test
+    void missingIssuerConfigurationIsADependencyFailure() {
+        when(bindings.resolve(ISSUER, SUBJECT)).thenThrow(new BusinessException(ErrorCode.SERVICE_UNAVAILABLE));
+        assertThatThrownBy(() -> converter().convert(valid().build())).isInstanceOf(AuthenticationServiceException.class);
+    }
+
     private Jwt.Builder valid() {
         Instant now = Instant.now();
         return Jwt.withTokenValue("fixture").header("alg", "RS256").issuer(ISSUER).subject(SUBJECT)
                 .audience(List.of("workbench-api")).issuedAt(now).expiresAt(now.plusSeconds(600))
+                .claim("auth_time", now.getEpochSecond())
                 .claim("azp", "workbench-web").claim("typ", "Bearer").claim("scope", "openid workbench:access");
     }
 }

@@ -7,5 +7,6 @@ import java.util.List;
  *
  * @param userId 本地用户标识
  * @param platformRoles 当前平台角色标识
+ * @param authVersion 当前用户级人类认证版本
  */
-public record IdentitySelfVO(Long userId, List<String> platformRoles) { }
+public record IdentitySelfVO(Long userId, List<String> platformRoles, Long authVersion) { }

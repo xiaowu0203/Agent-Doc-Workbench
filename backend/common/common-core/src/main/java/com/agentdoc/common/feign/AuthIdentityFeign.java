@@ -5,12 +5,13 @@ import com.agentdoc.common.feign.vo.IdentitySelfVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * 仅用已验证的人类Bearer查询该持有者自身身份，不能指定其他用户。
  * <p>
  * Feign客户端，对接auth-service身份查询接口；
- * 入参Authorization头携带已经验签通过的OIDC AccessToken，只能返回token持有者本人的身份信息，
+ * 入参Authorization头携带当前模式已经验签通过的人类Token，只能查询持有者本人，
  * 不支持传入其他用户ID/Subject去查询别人，防止越权查身份。
  * <p>
  * OIDC模式下完成外部OIDC sub -> 平台内部userId映射。
@@ -25,4 +26,8 @@ public interface AuthIdentityFeign {
      */
     @GetMapping("/api/auth/identity")
     Result<IdentitySelfVO> currentIdentity(@RequestHeader("Authorization") String authorization);
+
+    /** 使用同一人类Bearer实时复核持有者的平台角色；不能指定其他用户。 */
+    @GetMapping("/api/auth/internal/platform-role")
+    Result<Void> checkPlatformRole(@RequestHeader("Authorization") String authorization, @RequestParam String roleKey);
 }

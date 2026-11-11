@@ -10,7 +10,7 @@ import java.util.Arrays;
  * <p>
  * 用于校验OIDC Access Token的业务声明约束，判断该令牌是否属于合法的人类访问令牌；
  * ⚠️ 重要前置：这个方法**不做签名、iss、exp时间校验**，这些必须由上层JwtDecoder提前校验完成。
- * 仅在 {@link OidcRemoteHumanAuthenticationConverter} 内使用，过滤掉能力令牌、其他客户端/用途的令牌。
+ * 由Auth及远程人类转换器使用，过滤掉能力令牌和其他客户端/用途。
  * </p>
  */
 public final class OidcHumanTokenUtils {

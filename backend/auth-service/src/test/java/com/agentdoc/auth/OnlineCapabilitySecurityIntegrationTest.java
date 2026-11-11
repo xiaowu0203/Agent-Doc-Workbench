@@ -7,6 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.assertj.core.api.Assertions.assertThat;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.service.JwtService;
+import com.agentdoc.auth.service.LocalIdentityJwtService;
+import com.agentdoc.auth.mapper.UserMapper;
+import com.agentdoc.auth.service.PlatformRoleService;
+import com.agentdoc.auth.enums.UserStatus;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
 import com.agentdoc.common.feign.OnlineDocumentFeign;
@@ -36,6 +40,9 @@ import java.util.List;
 class OnlineCapabilitySecurityIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private JwtService signer;
+    @Autowired private LocalIdentityJwtService identities;
+    @MockitoBean private UserMapper users;
+    @MockitoBean private PlatformRoleService roles;
     @MockitoBean private OnlineDocumentFeign onlineDocument;
     @MockitoBean private OnlineEvaluationFeign evaluation;
     @MockitoBean private OnlineTaskFeign tasks;
@@ -130,6 +137,9 @@ class OnlineCapabilitySecurityIntegrationTest {
     }
     private String user() {
         var user = new UserEntity(); user.setId(501L); user.setUsername("owner");
-        return signer.createAccessToken(user, List.of());
+        user.setStatus(UserStatus.ENABLED.getCode());
+        when(users.selectById(501L)).thenReturn(user);
+        when(roles.listRoleKeys(501L)).thenReturn(List.of());
+        return identities.issueHuman(user).value();
     }
 }

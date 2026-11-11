@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.DocumentFeign;
@@ -47,7 +48,7 @@ class OnlineChangeReviewServiceTest {
     private OnlineOriginalInputVO input;
     private OnlineAssignmentEntity assignment;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg","RS256").subject("501").claim("scope","user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg","RS256").subject("501").claim("scope","user").build(), 501L, List.of()));
         var experiment = new OnlineExperimentEntity(); experiment.setId(11L); experiment.setSpaceId(10L); experiment.setManifestSchemaVersion(2);
         when(experiments.selectById(11L)).thenReturn(experiment);
         assignment = new OnlineAssignmentEntity(); assignment.setId(51L); assignment.setTaskId(61L); assignment.setExecutionId(71L);
@@ -131,7 +132,7 @@ class OnlineChangeReviewServiceTest {
     @Test void actualHumanAndCurrentPermissionsPrecedeBodyReads() {
         doThrow(new BusinessException(40300,"权限撤回")).when(access).requirePermission(10L,"evaluation:run");
         assertThatThrownBy(() -> service.read("11","51")).isInstanceOf(BusinessException.class); verifyNoInteractions(tasks,documents);
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("agent").header("alg","RS256").subject("61").claim("scope","agent").build()));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("agent").header("alg","RS256").subject("61").claim("scope","agent").build(), List.of()));
         assertThatThrownBy(() -> service.read("11","51")).isInstanceOf(BusinessException.class);
     }
     @Test void knownExposureRemainsNonBlindedWithoutWritingNewExposure() {

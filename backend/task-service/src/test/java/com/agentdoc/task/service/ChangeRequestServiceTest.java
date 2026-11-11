@@ -1,5 +1,6 @@
 package com.agentdoc.task.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ChangeOp;
@@ -21,7 +22,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.List;
 
@@ -63,7 +63,7 @@ class ChangeRequestServiceTest {
                 .claim("username", "tester")
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
         // lenient：不存在场景不会读取文档或校验空间权限。
         lenient().when(documentFeign.getDocumentRefs(anyList()))
                 .thenReturn(Result.ok(List.of(new DocumentRefVO(DOCUMENT_ID, 2001L, "测试文档"))));

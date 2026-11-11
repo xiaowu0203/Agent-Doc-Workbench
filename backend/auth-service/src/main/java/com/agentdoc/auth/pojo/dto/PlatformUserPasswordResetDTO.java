@@ -17,4 +17,5 @@ public record PlatformUserPasswordResetDTO(
         @Schema(description = "新密码")
         String newPassword
 ) {
+    @Override public String toString() { return "[REDACTED PASSWORD RESET REQUEST]"; }
 }

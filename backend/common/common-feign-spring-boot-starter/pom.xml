@@ -25,6 +25,10 @@
         </dependency>
         <!-- Servlet API：AuthHeaderForwardInterceptor 读取当前请求头编译用；provided，运行时由容器提供 -->
         <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+        </dependency>
+        <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
             <scope>provided</scope>

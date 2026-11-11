@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.constant.JwtConstant;
@@ -21,7 +22,6 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.List;
 import java.time.Instant;
 import static org.assertj.core.api.Assertions.*;
@@ -41,8 +41,8 @@ class OnlineExperimentLifecycleServiceTest {
                 mock(WorkerCapabilityCryptoService.class), beans.getBeanProvider(OnlineCapabilityVerifier.class));
         var experiment = new OnlineExperimentEntity(); experiment.setId(11L); experiment.setSpaceId(20L); experiment.setManifestHash("a".repeat(64));
         when(experiments.selectById(11L)).thenReturn(experiment);
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("user").header("alg", "RS256")
-                .subject("50").claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("user").header("alg", "RS256")
+                .subject("50").claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build(), 50L, List.of()));
         when(queries.preflight("11")).thenReturn(new OnlineExperimentPreflightVO("11", "a".repeat(64), null, "b".repeat(64), null, true, false, 1, 1, null, "100", null, List.of()));
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }

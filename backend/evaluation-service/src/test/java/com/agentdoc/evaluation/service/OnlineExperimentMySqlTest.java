@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.evaluation.config.OnlineReconciliationProperties;
@@ -33,7 +34,6 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import java.util.List;
@@ -87,7 +87,7 @@ class OnlineExperimentMySqlTest {
     void creationRetryPaginationAndPreflightUseRealMapperAndTransactionBoundary() {
         var jwt = Jwt.withTokenValue("test").header("alg", "RS256").subject("501")
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
         try (var context = new AnnotationConfigApplicationContext(TestConfig.class)) {
             var experiments = context.getBean(OnlineExperimentMapper.class);
             var intents = context.getBean(OnlineExperimentCreateIntentMapper.class);

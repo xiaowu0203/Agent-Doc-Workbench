@@ -4,6 +4,7 @@ import com.agentdoc.auth.config.IdentityBindingProperties;
 import com.agentdoc.auth.constant.IdentityBindingConstant;
 import com.agentdoc.auth.mapper.IdentityBindingMapper;
 import com.agentdoc.auth.pojo.entity.IdentityBindingEntity;
+import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.utils.IdentityKeyUtils;
@@ -50,6 +51,7 @@ public class IdentityBindingService {
      * @param userId 平台内部用户ID
      */
     @Transactional
+    @PreAuthorize("@platformRoleService.hasCurrentUserRole('" + SUPER_ADMIN + "')")
     public void bind(String issuer, String subject, Long userId) {
         byte[] key = validate(issuer, subject);
         if (userId == null) { throw new BusinessException(ErrorCode.BAD_REQUEST); }
@@ -82,16 +84,15 @@ public class IdentityBindingService {
      * 不做邮箱、用户名模糊自动匹配，严格依赖预先绑定记录。
      * @param issuer OIDC身份提供商地址
      * @param subject IdP侧用户唯一标识 sub
-     * @return 平台内部userId
+     * @return 当前启用用户及认证状态
      */
-    public Long resolve(String issuer, String subject) {
+    public UserEntity resolve(String issuer, String subject) {
         var binding = find(validate(issuer, subject));
         if (binding == null || !IdentityBindingConstant.ACTIVE.equals(binding.getStatus())
                 || !issuer.equals(binding.getIssuer()) || !subject.equals(binding.getSubject())) {
             throw new BusinessException(ErrorCode.UNAUTHORIZED);
         }
-        users.requireEnabledUser(binding.getUserId());
-        return binding.getUserId();
+        return users.requireEnabledUser(binding.getUserId());
     }
 
     /**
@@ -103,6 +104,7 @@ public class IdentityBindingService {
      * @param userId 预期绑定的平台用户ID，用于防误操作
      */
     @Transactional
+    @PreAuthorize("@platformRoleService.hasCurrentUserRole('" + SUPER_ADMIN + "')")
     public void revoke(String issuer, String subject, Long userId) {
         byte[] key = validate(issuer, subject);
         Long operatorId = AuthUtils.getUserIdOrException();
@@ -121,6 +123,7 @@ public class IdentityBindingService {
                 .set(IdentityBindingEntity::getRevokedAt, LocalDateTime.now()));
         // 行更新断言，防止并发下状态已被变更
         if (changed != 1) { throw new BusinessException(ErrorCode.CONFLICT, "身份状态已改变"); }
+        users.invalidateHumanAuthentication(userId);
         audit.record(IdentityBindingConstant.AUDIT_REVOKED, IdentityBindingConstant.AUDIT_TARGET, binding.getId(),
                 Map.of("userId", userId));
     }

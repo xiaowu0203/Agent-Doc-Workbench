@@ -1,22 +1,21 @@
 package com.agentdoc.agent.service;
 
-import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
-import com.agentdoc.common.feign.AuthFeign;
-import com.agentdoc.common.utils.AuthUtils;
+import com.agentdoc.common.feign.AuthIdentityFeign;
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
  * 平台级能力访问校验。
- * <p>先校验当前 JWT 的角色投影，再通过 Auth 服务复核实时绑定；任一步失败均拒绝访问。</p>
+ * <p>先校验可信人类角色投影，再直连 Auth 复核实时绑定；依赖故障不降级为无角色。</p>
  */
 @Component("PlatformAccess")
 @RequiredArgsConstructor
 public class PlatformAccessService {
 
-    private final AuthFeign authFeign;
+    private final AuthIdentityFeign identity;
 
     /**
      * 判断当前用户是否具有指定平台角色。
@@ -25,15 +24,7 @@ public class PlatformAccessService {
      * @return true 表示角色声明和实时绑定均校验通过
      */
     public boolean hasRole(String roleKey) {
-        if (roleKey == null || !AuthUtils.hasPlatformRole(roleKey)) {
-            return false;
-        }
-        try {
-            Result<Void> result = authFeign.checkPlatformRole(roleKey);
-            return result != null && result.code() == ErrorCode.SUCCESS.getCode();
-        } catch (RuntimeException exception) {
-            return false;
-        }
+        return PlatformRoleVerifier.hasRole(identity, roleKey);
     }
 
     /** 要求当前用户具有指定平台角色。 */

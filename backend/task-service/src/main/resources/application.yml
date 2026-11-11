@@ -105,6 +105,7 @@ agent-doc:
     # 模型 B：从 auth-service JWK Set 拉取 RSA 公钥，供 Spring Security Resource Server
     # 从 Authorization 自行解析 JWT 身份（配置即启用；无效 token 由 Security 层直接 401）
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    identity-jwks-url: ${AUTH_IDENTITY_JWKS_URL:http://localhost:8081/oauth2/identity-jwks}
     task-capability-filter-enabled: true
     capability-auth-endpoints:
       - /mcp
@@ -115,6 +116,7 @@ agent-doc:
     title: Task Service API
     description: 任务服务：Agent 任务、变更审批、Token 用量与审计
   feign:
+    identity-auth-url: ${IDENTITY_AUTH_URL:http://localhost:8081}
     # 普通用户契约仍经网关；Task签发/执行档案由专用拦截分支改为受限直连。
     gateway-url: ${GATEWAY_URL:http://localhost:9090}
   a2a:

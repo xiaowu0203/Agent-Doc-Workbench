@@ -10,7 +10,7 @@ import java.util.List;
  * 已验签且经可信Auth绑定解析的人类身份；不得由请求头或未验证声明构造。
  * <p>
  * Spring Security认证对象，代表经过完整校验的登录人类用户身份；
- * 仅在OIDC模式下由 {@link OidcRemoteHumanAuthenticationConverter} 构建，
+ * 由当前模式的可信Auth状态解析器构建，
  * 禁止直接从原始请求头、未校验的JWT声明手动实例化。
  * </p>
  */
@@ -21,7 +21,7 @@ public final class ResolvedHumanAuthentication extends AbstractAuthenticationTok
     private final List<String> platformRoles;
 
     /**
-     * @param jwt 已通过OIDC解码器验签的原始JWT
+     * @param jwt 已通过当前模式专用解码器验签的原始JWT
      * @param userId 平台内部用户ID
      * @param platformRoles 用户平台角色列表
      */

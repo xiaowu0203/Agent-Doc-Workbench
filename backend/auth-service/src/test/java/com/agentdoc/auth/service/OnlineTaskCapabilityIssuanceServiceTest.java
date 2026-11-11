@@ -1,5 +1,6 @@
 package com.agentdoc.auth.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.config.SecurityVerifyProperties;
@@ -18,8 +19,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import java.time.Duration;
 import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -27,7 +26,7 @@ import static org.mockito.Mockito.*;
 import static com.agentdoc.common.constant.OnlineCapabilityConstant.*;
 
 class OnlineTaskCapabilityIssuanceServiceTest {
-    private static final JwtService signer = new JwtService(new JwtProperties("", "", Duration.ofMinutes(30), Duration.ofDays(7), "agent-doc-workbench"));
+    private static final JwtService signer = new JwtService(new JwtProperties("", "", "agent-doc-workbench"));
     private final OnlineTaskFeign tasks = mock(OnlineTaskFeign.class);
     private final OnlineEvaluationFeign evaluation = mock(OnlineEvaluationFeign.class);
     private final SecurityVerifyProperties properties = new SecurityVerifyProperties();
@@ -43,7 +42,7 @@ class OnlineTaskCapabilityIssuanceServiceTest {
     @BeforeEach void setup() {
         properties.setOnlineCapabilityEnabled(true);
         var user = Jwt.withTokenValue("user").header("alg", "RS256").subject("50").claim("scope", "user").build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(user));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(user, Long.valueOf(user.getSubject()), List.of()));
         when(tasks.humanDispatchProof("10")).thenReturn(Result.ok(proof));
         when(tasks.waitDispatchProof(eq("10"), anyString())).thenReturn(Result.ok(proof));
         when(evaluation.waiting(eq("10"), anyString())).thenReturn(Result.ok(binding));
@@ -73,9 +72,9 @@ class OnlineTaskCapabilityIssuanceServiceTest {
     }
     @Test void anotherHumanAndUnavailableCurrentProtectionNeverMintWaitOrExecution() {
         var user = Jwt.withTokenValue("other").header("alg", "RS256").subject("51").claim("scope", "user").build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(user));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(user, Long.valueOf(user.getSubject()), List.of()));
         assertThatThrownBy(() -> service.initial("10")).isInstanceOf(BusinessException.class);
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("user").header("alg", "RS256").subject("50").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("user").header("alg", "RS256").subject("50").claim("scope", "user").build(), 50L, List.of()));
         String wait = service.initial("10"); when(evaluation.waiting(eq("10"), anyString())).thenReturn(Result.fail(403, "revoked"));
         assertThatThrownBy(() -> service.renew("10", wait)).isInstanceOf(BusinessException.class);
     }

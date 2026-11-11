@@ -2,14 +2,20 @@ package com.agentdoc.auth.config;
 
 import com.agentdoc.auth.service.JwtService;
 import com.agentdoc.auth.security.OidcHumanAuthenticationConverter;
+import com.agentdoc.auth.security.LocalHumanAuthenticationConverter;
+import com.agentdoc.auth.security.LocalClientAuthenticationFilter;
+import com.agentdoc.auth.service.LocalIdentityJwtService;
+import com.agentdoc.auth.service.LocalClientRegistry;
+import com.agentdoc.auth.service.PlatformAuditLogService;
+import org.springframework.beans.factory.ObjectProvider;
+import com.agentdoc.common.feign.http.AuthenticationHttpClient;
+import com.agentdoc.common.feign.config.AuthenticationHttpBudget;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.config.TaskInternalAuthProperties;
 import com.agentdoc.common.constant.TaskInternalAuthConstant;
 import com.agentdoc.common.filter.TaskInternalAuthenticationFilter;
-import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
-import com.agentdoc.common.utils.OnlineCapabilityUtils;
 import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.security.OnlineCapabilityVerifier;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,7 +58,6 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.client.support.BasicAuthenticationInterceptor;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.util.LinkedMultiValueMap;
@@ -98,14 +103,12 @@ public class SecurityConfig {
 
     /**
      * local模式JWT解码器
-     * 使用auth-service非对称公钥解析JWT令牌，校验token签名合法性
-     * 在校验通过后追加业务拦截：拒绝通用访问类窄令牌
+     * 只接受独立身份密钥及正式HUMAN协议；旧用户JWT、SERVICE和业务Capability均拒绝。
      */
     @Bean
     @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "local", matchIfMissing = true)
-    public JwtDecoder jwtDecoder() {
-        JwtDecoder decoder = NimbusJwtDecoder.withPublicKey(jwtService.getPublicKey()).build();
-        return token -> OnlineCapabilityUtils.rejectGeneralAccess(TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token)));
+    public JwtDecoder jwtDecoder(LocalIdentityJwtService identities) {
+        return identities.humanDecoder();
     }
 
     /**
@@ -143,26 +146,40 @@ public class SecurityConfig {
      */
     @Bean
     @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "oidc")
-    public OpaqueTokenIntrospector oidcTokenIntrospector(IdentityBindingProperties properties) {
+    public OpaqueTokenIntrospector oidcTokenIntrospector(IdentityBindingProperties properties, AuthenticationHttpClient oidcIntrospectionTransport) {
         if (properties.getIntrospectionUri() == null || properties.getIntrospectionUri().isBlank()
                 || properties.getIntrospectionClientId() == null || properties.getIntrospectionClientId().isBlank()
                 || properties.getIntrospectionClientSecret() == null || properties.getIntrospectionClientSecret().isBlank()) {
             throw new IllegalStateException("OIDC模式必须配置受众客户端的introspection端点和凭据");
         }
-        var requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofSeconds(3));
-        requestFactory.setReadTimeout(Duration.ofSeconds(3));
-        var rest = new RestTemplate(requestFactory);
+        URI endpoint;
+        try {
+            endpoint = URI.create(properties.getIntrospectionUri());
+        } catch (IllegalArgumentException error) {
+            throw new IllegalStateException("OIDC内省地址格式无效");
+        }
+        if (endpoint.getHost() == null || endpoint.getUserInfo() != null || endpoint.getQuery() != null
+                || endpoint.getFragment() != null || !("https".equalsIgnoreCase(endpoint.getScheme())
+                || "http".equalsIgnoreCase(endpoint.getScheme()))) {
+            throw new IllegalStateException("OIDC内省地址必须是无用户信息、查询和片段的HTTP(S)地址");
+        }
+        var rest = new RestTemplate(oidcIntrospectionTransport.requestFactory());
         rest.getInterceptors().add(new BasicAuthenticationInterceptor(
                 properties.getIntrospectionClientId(), properties.getIntrospectionClientSecret()));
-        var introspector = new SpringOpaqueTokenIntrospector(properties.getIntrospectionUri(), rest);
+        var introspector = new SpringOpaqueTokenIntrospector(endpoint.toString(), rest);
         introspector.setRequestEntityConverter(token -> {
             var form = new RedactedTokenForm();
             form.add("token", token);
-            return RequestEntity.post(URI.create(properties.getIntrospectionUri()))
+            return RequestEntity.post(endpoint)
                     .contentType(MediaType.APPLICATION_FORM_URLENCODED).accept(MediaType.APPLICATION_JSON).body(form);
         });
         return introspector;
+    }
+
+    @Bean(destroyMethod = "close")
+    @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "oidc")
+    public AuthenticationHttpClient oidcIntrospectionTransport() {
+        return new AuthenticationHttpClient("oidc_introspection", AuthenticationHttpBudget.INTROSPECTION);
     }
 
     /**
@@ -194,9 +211,12 @@ public class SecurityConfig {
                                                    TaskInternalAuthenticationFilter internalFilter,
                                                    JwtDecoder decoder,
                                                    OidcHumanAuthenticationConverter oidcConverter,
+                                                   LocalHumanAuthenticationConverter localConverter,
+                                                   ObjectProvider<LocalClientAuthenticationFilter> localClientFilter,
                                                    Environment environment) throws Exception {
         boolean oidc = "oidc".equalsIgnoreCase(environment.getProperty("workbench.auth.mode", "local"));
         http.addFilterBefore(internalFilter, AnonymousAuthenticationFilter.class);
+        localClientFilter.ifAvailable(filter -> http.addFilterBefore(filter, BearerTokenAuthenticationFilter.class));
         http
                 // 关闭CSRF防护，JWT前后端分离无cookie，不需要CSRF
                 .csrf(AbstractHttpConfigurer::disable)
@@ -206,9 +226,10 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // 请求鉴权规则配置
                 .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").denyAll();
                     if (oidc) {
-                        // OIDC模式下登录/注册/刷新/登出由外部IdP接管，禁用内部登录接口
-                        auth.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/logout").denyAll();
+                        auth.requestMatchers("/api/auth/password", "/api/platform/users/*/password",
+                                "/api/auth/internal/local-human-credentials", "/api/auth/internal/service-proofs").denyAll();
                     }
                     auth
                             // 无需认证放行接口：公钥接口、健康检查、文档、内部令牌签发通道
@@ -218,12 +239,9 @@ public class SecurityConfig {
                                     "/api/auth/internal/online-capabilities",
                                     "/api/auth/internal/online-release",
                                     "/api/auth/internal/online-waits/*/exchange", "/api/auth/internal/online-waits/*/renew",
-                                    "/api/auth/register",
-                                    "/api/auth/login",
-                                    "/api/auth/refresh",
-                                    "/api/auth/logout",
                                     "/oauth2/jwks",
-                                    "/actuator/health",
+                                    "/oauth2/identity-jwks",
+                                    "/actuator/health", "/actuator/health/**",
                                     "/actuator/info",
                                     "/v3/api-docs/**",
                                     "/swagger-ui/**",
@@ -236,28 +254,27 @@ public class SecurityConfig {
                 })
                 // OAuth2 资源服务器配置，使用JWT模式解析token
                 .oauth2ResourceServer(rs -> {
-                    if (oidc) {
-                        rs.withObjectPostProcessor(new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
+                    rs.withObjectPostProcessor(new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
                             @Override
                             public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
-                                var handler = new AuthenticationEntryPointFailureHandler(jsonOidcEntryPoint());
+                                var handler = new AuthenticationEntryPointFailureHandler(jsonAuthenticationEntryPoint());
                                 handler.setRethrowAuthenticationServiceException(false);
                                 filter.setAuthenticationFailureHandler(handler);
                                 return filter;
                             }
                         });
-                    }
                     rs
                             // 指定JWT解码器，使用公钥验签
                             .jwt(jwt -> {
                                 jwt.decoder(decoder);
                                 if (oidc) { jwt.jwtAuthenticationConverter(oidcConverter); }
+                                else { jwt.jwtAuthenticationConverter(localConverter); }
                             })
                             // JWT校验失败（token无效、过期、篡改）自定义401入口，返回业务JSON，不返回默认html
-                            .authenticationEntryPoint(oidc ? jsonOidcEntryPoint() : json401EntryPoint());
+                            .authenticationEntryPoint(jsonAuthenticationEntryPoint());
                 })
                 // 全局Security鉴权异常处理，未登录、权限不足等场景，复用同一个入口
-                .exceptionHandling(eh -> eh.authenticationEntryPoint(oidc ? jsonOidcEntryPoint() : json401EntryPoint()));
+                .exceptionHandling(eh -> eh.authenticationEntryPoint(jsonAuthenticationEntryPoint()));
         return http.build();
     }
 
@@ -269,6 +286,21 @@ public class SecurityConfig {
     @Bean
     public TaskInternalAuthenticationFilter taskInternalAuthenticationFilter(TaskInternalAuthProperties properties) {
         return new TaskInternalAuthenticationFilter(properties, TaskInternalAuthConstant.SIGNING_PATHS);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "local", matchIfMissing = true)
+    public LocalClientAuthenticationFilter localClientAuthenticationFilter(LocalClientRegistry clients, LocalIdentityProperties properties,
+                                                                          PlatformAuditLogService audit) {
+        return new LocalClientAuthenticationFilter(clients, properties, audit);
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "local", matchIfMissing = true)
+    public FilterRegistrationBean<LocalClientAuthenticationFilter> localClientFilterRegistration(LocalClientAuthenticationFilter filter) {
+        var registration = new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     /**
@@ -301,10 +333,9 @@ public class SecurityConfig {
     }
 
     /**
-     * OIDC模式异常分流入口：
-     * AuthenticationServiceException（内省失败、IdP不可达）返回503；其余认证异常走401分支。
+     * 两模式认证异常分流：必需状态存储/内省不可用返回503，其余认证异常返回401。
      */
-    private AuthenticationEntryPoint jsonOidcEntryPoint() {
+    private AuthenticationEntryPoint jsonAuthenticationEntryPoint() {
         return (request, response, error) -> {
             if (error instanceof AuthenticationServiceException) {
                 response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);

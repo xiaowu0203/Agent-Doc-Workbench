@@ -1,4 +1,45 @@
-# Keycloak + PostgreSQL 本机P0部署
+# Keycloak 部署与验证
+
+## P1 local Auth 配置
+
+`local`的认证最小依赖为业务MySQL和Redis，不加载Keycloak Discovery或内省客户端。部署必须显式设置`WORKBENCH_AUTH_MODE=local`，并将下列受管变量提供给Auth的Java进程：
+
+| 变量 | 用途 |
+| --- | --- |
+| `LOCAL_IDENTITY_PRIVATE_KEY` / `LOCAL_IDENTITY_PUBLIC_KEY` | 匹配的RSA密钥，至少2048位，PKCS8私钥/X509公钥PEM；必须与既有`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`的Capability密钥不同 |
+| `LOCAL_BFF_CLIENT_SECRET` | `workbench-web`的独立BFF Secret，仅允许申请本地人类凭据 |
+| `LOCAL_TASK_CLIENT_SECRET` | `task-service`的独立SERVICE Secret，仅允许申请固定用途的服务证明；P3接入实际后台调用 |
+
+机器Secret为32～512个UTF8字节且不能复用，不提供示例弱密钥。人类凭据固定最多7天，不签Refresh；SERVICE固定60秒，验证偏差30秒，旧证明最长残余90秒。关闭客户端的`auth.identity.clients.<client>.enabled`阻止新签发，已有证明按期限自然失效；受管配置变更需要重启Auth进程生效。
+
+Document/Task/Agent/Evaluation两模式均须将`IDENTITY_AUTH_URL`指向受控Auth直连地址，不能经Gateway形成认证循环。local另设置`AUTH_IDENTITY_JWKS_URL`为Auth的`/oauth2/identity-jwks`，该地址缺失/无效拒绝启动；`AUTH_JWKS_URL`继续只指向Capability的`/oauth2/jwks`，不能替代身份公钥。人类身份每次由Auth复核，Auth不可用返回503，不按JWT中的旧角色继续放行。生产部署须给所有应用显式填写同一`WORKBENCH_AUTH_MODE`；oidc同时提供一致的可信issuer，不能依赖新装默认local或跨模式回退。
+
+受控入口是`POST /api/auth/internal/local-human-credentials`与`POST /api/auth/internal/service-proofs`，只接受相应用途的Basic机器凭据，且要求TLS或本机回环；等价加密的内部网络终止TLS时才显式启用`LOCAL_IDENTITY_TRUSTED_ENCRYPTED_NETWORK`。不得将入口公开给浏览器或把响应中的凭据转交浏览器。公钥由`GET /oauth2/identity-jwks`发布，既有`/oauth2/jwks`继续专用于Capability。
+
+登录失败按账号5次/15分钟及受信客户端IP 50次/5分钟限流，Redis故障登录返回503。`/actuator/health/readiness`包含数据库及local Redis检查，`/actuator/health/liveness`不包含外部依赖。旧`/api/auth/register|login|refresh|logout`已关闭；正式浏览器会话登录由P2的Gateway/BFF提供，当前P1内部接口不能替代该前端入口。OIDC模式禁止本地密码登录/改密/重置，创建业务账号不接收密码。
+
+## P1 部署入口
+
+原 `docker-compose.yml` 与 P0 realm 保留用于既有验证。P1 新增以下独立入口，不自动切换现有应用或导入业务账号：
+
+| 入口 | 用途 | 私有环境文件 |
+| --- | --- | --- |
+| `docker-compose.h2.yml` | 单 Keycloak / H2 开发测试，默认 localhost:18092，与既有 P0 项目隔离 | 从 `.env.h2.example` 复制为 `.env.h2.local` |
+| `docker-compose.production.yml` | 单 Keycloak / 独立 PG 持久部署，生产启动与直接 HTTPS | 从 `.env.production.example` 复制为 `.env.production.local` |
+
+两个私有环境文件均被忽略，密码及客户端密钥须独立生成，不复制 P0 测试用户。持久模板要求现有 PEM 证书/私钥的绝对路径、公开 HTTPS URL 和精确 BFF origin；`WORKBENCH_AUTH_MODE=oidc` 还须按部署流程提供给各应用，Compose 的 env 文件不会自动注入宿主机 Java。默认只绑定回环地址，向外提供服务前另确认受控管理面和实际地址。
+
+```powershell
+# 只解析配置，不启动或修改任何容器；参数缺失时拒绝。
+docker compose --env-file deploy/identity/.env.h2.local -f deploy/identity/docker-compose.h2.yml config --quiet
+docker compose --env-file deploy/identity/.env.production.local -f deploy/identity/docker-compose.production.yml config --quiet
+```
+
+两入口共用 `realm/agent-doc-workbench-realm.json`：没有测试用户、业务管理员或空间权限 mapper，仅有 Code + PKCE BFF 和受限 introspection 客户端；暂不预建 P3 服务客户端。用户通过 IdP 管理面准备，再按 Workbench 管理员绑定流程接入。`workbench-api` 是人类 Access 的受众客户端，不支持密码、隐式、Client Credentials 或业务管理授权。
+
+启动使用 `--import-realm`，已有同名 realm 会跳过，不覆盖人工修改或轮换密钥；变更客户端/证书/密码不能靠重启导入完成。持久部署 PG 使用独立命名卷和非超级用户，缺失的绑定源文件拒绝创建而不生成同名目录。H2 仅用于测试，不能用于正式数据；生产模板不使用 `start-dev` 或开放 HTTP。[导入行为](https://www.keycloak.org/server/importExport)、[容器与HTTPS](https://www.keycloak.org/server/containers)、[H2边界](https://www.keycloak.org/server/db)
+
+以下各节仍描述原 P0 本机环境，不作为上述新模板已经完成部署、重启恢复或浏览器验收的证据。
 
 本目录供维护者自行启动两个独立容器：Keycloak 26.8.1、PostgreSQL 17.11 Alpine 3.24。模板固定版本及多架构镜像digest；同版本用户容器已用于真实协议、TOTP与隔离BFF/Redis验证，结果见[公开P0基线](../../docs/designs/v0.3.0-p0-auth-baseline.md#7-真实idp与隔离bff原型)。当前运行容器使用版本tag，不能据此声称已按模板digest启动。现有MySQL/Redis保持原状，不需要新增Redis；本目录不包含业务权限或业务库迁移。
 

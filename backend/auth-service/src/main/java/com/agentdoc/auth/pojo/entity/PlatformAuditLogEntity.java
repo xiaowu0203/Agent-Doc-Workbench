@@ -21,10 +21,10 @@ public class PlatformAuditLogEntity extends BaseEntity {
     @Schema(description = "关联任务 ID；平台操作为空")
     private Long taskId;
 
-    @Schema(description = "主体类型：1 人")
+    @Schema(description = "主体类型：1 人 / 2 Agent / 3 认证系统")
     private Integer actorType;
 
-    @Schema(description = "操作人用户 ID")
+    @Schema(description = "主体 ID；认证系统固定0，不是可登录用户")
     private Long actorId;
 
     @Schema(description = "操作行为")
