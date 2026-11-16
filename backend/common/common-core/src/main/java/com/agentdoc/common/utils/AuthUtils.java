@@ -34,6 +34,7 @@ public final class AuthUtils {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         // 判断认证对象非空、不是匿名身份、principal为JWT实例
         if (authentication != null
+                && authentication.isAuthenticated()
                 && !(authentication instanceof AnonymousAuthenticationToken)
                 && authentication.getPrincipal() instanceof Jwt jwt) {
             return jwt;
@@ -42,7 +43,7 @@ public final class AuthUtils {
     }
 
     /**
-     * 获取当前人类用户 ID；可信映射身份使用本地userId，旧本地JWT使用数字sub。
+     * 仅从当前模式转换器生成的可信人类投影取得本地ID，不从原始JWT推断用户。
      * <p>Agent 任务 Token 的 sub 是 taskId，不会被当作用户 ID 返回。</p>
      * @return 人类用户 ID；未登录、匿名或 Agent 任务 Token 返回null
      */
@@ -51,15 +52,7 @@ public final class AuthUtils {
         if (authentication instanceof ResolvedHumanAuthentication resolved && resolved.isAuthenticated()) {
             return resolved.getUserId();
         }
-        Jwt jwt = currentJwt();
-        if (!isHumanToken(jwt)) {
-            return null;
-        }
-        try {
-            return Long.valueOf(jwt.getSubject());
-        } catch (NumberFormatException error) {
-            return null;
-        }
+        return null;
     }
 
     /**
@@ -138,22 +131,17 @@ public final class AuthUtils {
     }
 
     /**
-     * 判断当前用户 JWT 是否声明指定平台角色。
-     * <p>该方法只用于远程实时确认前的快速判断，最终高权限授权仍需回查 auth-service。</p>
+     * 判断当前已认证人类投影是否包含指定平台角色，不读取原始JWT的自报角色。
+     * <p>高权限操作仍须实时复核对应权威授权服务。</p>
      * @param roleKey 平台角色标识
-     * @return true 当前用户 JWT 声明该平台角色
+     * @return true 当前可信投影包含该角色
      */
     public static boolean hasPlatformRole(String roleKey) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication instanceof ResolvedHumanAuthentication resolved && resolved.isAuthenticated()) {
             return resolved.hasPlatformRole(roleKey);
         }
-        Jwt jwt = currentJwt();
-        if (jwt == null || getUserId() == null) {
-            return false;
-        }
-        List<String> roles = jwt.getClaimAsStringList(JwtConstant.CLAIM_PLATFORM_ROLES);
-        return roles != null && roles.contains(roleKey);
+        return false;
     }
 
     /**
@@ -193,9 +181,4 @@ public final class AuthUtils {
     }
 
     /** 判断当前JWT是否为人类用户Token。 */
-    private static boolean isHumanToken(Jwt jwt) {
-        return jwt != null
-                && JwtConstant.SCOPE_USER.equals(jwt.getClaimAsString(JwtConstant.CLAIM_SCOPE))
-                && !JwtConstant.ACTOR_AGENT.equals(jwt.getClaimAsString(JwtConstant.CLAIM_ACTOR_TYPE));
-    }
 }

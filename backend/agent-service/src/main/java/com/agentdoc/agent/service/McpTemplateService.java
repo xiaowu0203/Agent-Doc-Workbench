@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.agent.enums.McpServerStatus;
 import com.agentdoc.agent.enums.TemplateVersionStatus;
@@ -52,7 +53,7 @@ import static com.agentdoc.common.constant.PlatformRoleConstant.SUPER_ADMIN;
 public class McpTemplateService {
     private final McpTemplateMapper mapper;
     private final McpTemplateVersionMapper versionMapper;
-    private final PlatformAccessService platformAccessService;
+    private final PlatformRoleVerifier platformRoleVerifier;
     private final McpEndpointSecurityValidator endpointValidator;
     private final McpServerService mcpServerService;
     private final SkillAuditLogService auditLogService;
@@ -110,7 +111,7 @@ public class McpTemplateService {
      */
     public PageVO<McpTemplateVO> search(McpTemplateSearchParam param) {
         param.validate();
-        boolean manager = platformAccessService.hasRole(SUPER_ADMIN);
+        boolean manager = platformRoleVerifier.hasRole(SUPER_ADMIN);
         LambdaQueryWrapper<McpTemplateEntity> query = new LambdaQueryWrapper<McpTemplateEntity>()
                 .orderByDesc(McpTemplateEntity::getUpdatedAt).orderByDesc(McpTemplateEntity::getId);
         // 非管理员只能查启用状态模板
@@ -159,7 +160,7 @@ public class McpTemplateService {
     public McpTemplateVO detail(Long id) {
         McpTemplateEntity entity = require(id);
         McpTemplateVersionEntity latest = latestPublishedVersion(id);
-        if (!platformAccessService.hasRole(SUPER_ADMIN)
+        if (!platformRoleVerifier.hasRole(SUPER_ADMIN)
                 && (!McpServerStatus.ENABLED.matches(entity.getStatus()) || latest == null)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "系统 MCP 模板不存在");
         }
@@ -313,7 +314,7 @@ public class McpTemplateService {
     /** 普通用户只读取已发布版本，平台管理员可同时读取草稿。 */
     public List<McpTemplateVersionVO> listVersions(Long templateId) {
         McpTemplateEntity template = require(templateId);
-        boolean manager = platformAccessService.hasRole(SUPER_ADMIN);
+        boolean manager = platformRoleVerifier.hasRole(SUPER_ADMIN);
         if (!manager && !McpServerStatus.ENABLED.matches(template.getStatus())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "系统 MCP 模板不存在");
         }
@@ -456,6 +457,6 @@ public class McpTemplateService {
      * 权限校验：要求超级管理员角色
      */
     private void requireManage() {
-        platformAccessService.requireRole(SUPER_ADMIN);
+        platformRoleVerifier.requireRole(SUPER_ADMIN);
     }
 }

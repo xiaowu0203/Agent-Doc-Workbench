@@ -1,5 +1,6 @@
 package com.agentdoc.agent.a2a.service;
 
+import java.util.List;
 import com.agentdoc.agent.service.OnlineAgentAdmissionService;
 import com.agentdoc.agent.mapper.AgentExecutionMapper;
 import com.agentdoc.common.constant.JwtConstant;
@@ -37,7 +38,7 @@ class A2aRequestAuthorizationServiceTest {
     void setUp() {
         service = new A2aRequestAuthorizationService(new ObjectMapper(), mock(AgentExecutionMapper.class), mock(OnlineAgentAdmissionService.class));
         TaskCapabilityContext.set(CAPABILITY);
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(capabilityJwt()));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(capabilityJwt(), List.of()));
     }
 
     @AfterEach
@@ -81,7 +82,7 @@ class A2aRequestAuthorizationServiceTest {
                 .claim(JwtConstant.CLAIM_INPUT_SNAPSHOT_HASH, "b".repeat(64))
                 .claim(JwtConstant.CLAIM_DERIVATION_REQUEST_HASH, "c".repeat(64))
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt, List.of()));
 
         assertThatThrownBy(() -> service.requireTaskScope(params(input(
                 CAPABILITY, DOCUMENT_ID, "d".repeat(64)))))

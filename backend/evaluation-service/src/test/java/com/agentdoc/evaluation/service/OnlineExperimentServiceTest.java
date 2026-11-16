@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.config.SecurityVerifyProperties;
@@ -24,7 +25,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.*;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -73,7 +73,7 @@ class OnlineExperimentServiceTest {
     void setup() {
         var jwt = Jwt.withTokenValue("test").header("alg", "RS256").subject("501")
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
         service = new OnlineExperimentService(mapper, assignments, new OnlineAssignmentConvertor(), new OnlineExperimentConvertor(), intents, persistence,
                 versions, new EvaluatorContractValidator(), access, agents, documents, mock(OnlinePreflightProofService.class), exposures, catalog, deployment, security);
         when(intents.selectOne(any())).thenAnswer(call -> intent.get());

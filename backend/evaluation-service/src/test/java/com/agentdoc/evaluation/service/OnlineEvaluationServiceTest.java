@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -30,7 +31,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.List;
 import java.util.Map;
 import static org.assertj.core.api.Assertions.*;
@@ -53,8 +53,8 @@ class OnlineEvaluationServiceTest {
     private OnlineExperimentEntity experiment;
     private EvaluatorVersionEntity version;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256")
-                .subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256")
+                .subject("501").claim("scope", "user").build(), 501L, List.of()));
         assignment = new OnlineAssignmentEntity(); assignment.setId(51L); assignment.setExperimentId(11L); assignment.setSpaceId(10L);
         assignment.setTaskId(61L); assignment.setExecutionId(71L); assignment.setAgentId(20L); assignment.setDocumentId(41L);
         assignment.setBindingSchemaVersion(2); assignment.setBindingHash("a".repeat(64)); when(assignments.selectById(51L)).thenReturn(assignment);

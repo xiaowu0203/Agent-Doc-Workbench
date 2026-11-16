@@ -1,5 +1,6 @@
 package com.agentdoc.task.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.ErrorCode;
@@ -29,7 +30,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.List;
 
@@ -88,7 +88,7 @@ class ChangeRequestReviewServiceTest {
                 .subject(String.valueOf(USER_ID))
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
         when(documentFeign.checkSpacePermission(anyLong(), any())).thenReturn(Result.ok());
     }
 

@@ -23,7 +23,7 @@ public class IdentitySelfController {
     @Operation(summary = "查询当前用户的业务身份")
     public Result<IdentitySelfVO> identity() {
         Long userId = AuthUtils.getUserIdOrException();
-        users.requireEnabledUser(userId);
-        return Result.ok(new IdentitySelfVO(userId, roles.listRoleKeys(userId)));
+        var user = users.requireEnabledUser(userId);
+        return Result.ok(new IdentitySelfVO(userId, roles.listRoleKeys(userId), user.getAuthVersion()));
     }
 }

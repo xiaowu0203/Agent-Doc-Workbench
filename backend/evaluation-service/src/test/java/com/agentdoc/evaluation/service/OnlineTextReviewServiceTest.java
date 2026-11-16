@@ -1,5 +1,7 @@
 package com.agentdoc.evaluation.service;
 
+import java.util.List;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AgentFeign;
@@ -44,7 +46,7 @@ class OnlineTextReviewServiceTest {
     private OnlineAssignmentEntity assignment;
     private OnlineOriginalInputVO input;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build(), 501L, List.of()));
         var experiment = new OnlineExperimentEntity(); experiment.setId(11L); experiment.setSpaceId(10L); experiment.setManifestSchemaVersion(2);
         when(experiments.selectById(11L)).thenReturn(experiment);
         assignment = new OnlineAssignmentEntity(); assignment.setId(51L); assignment.setTaskId(61L); assignment.setExecutionId(71L);
@@ -95,7 +97,7 @@ class OnlineTextReviewServiceTest {
     @Test void currentPermissionAndActualHumanAreRequiredBeforeSourceReads() {
         doThrow(new BusinessException(403, "权限不足")).when(access).requirePermission(10L, EVALUATION_RUN);
         assertThatThrownBy(() -> service.read("11", "51")).isInstanceOf(BusinessException.class); verifyNoInteractions(tasks, agents, documents);
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test-agent").header("alg", "RS256").subject("61").claim("scope", "agent").build()));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test-agent").header("alg", "RS256").subject("61").claim("scope", "agent").build(), List.of()));
         assertThatThrownBy(() -> service.read("11", "51")).isInstanceOf(BusinessException.class);
     }
     @Test void oversizedInputOrOriginalIsRejectedAndNeverTruncatedIntoAReview() {

@@ -1,5 +1,7 @@
 package com.agentdoc.evaluation.service;
 
+import java.util.List;
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.feign.TaskFeign;
@@ -29,7 +31,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -61,7 +62,7 @@ class EvaluationFeedbackServiceTest {
                 resultMapper, spaceAccessService, taskFeign, onlineAssignments);
         Jwt jwt = Jwt.withTokenValue("token").header("alg", "RS256").subject("501")
                 .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
     }
 
     @AfterEach

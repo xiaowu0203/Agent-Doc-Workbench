@@ -10,6 +10,7 @@ import com.agentdoc.auth.pojo.entity.PlatformRoleEntity;
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.entity.UserPlatformRoleEntity;
 import com.agentdoc.common.enums.ErrorCode;
+import com.agentdoc.common.config.WorkbenchAuthProperties;
 import com.agentdoc.common.exception.BusinessException;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
@@ -47,16 +48,18 @@ class PlatformUserServiceTest {
         PlatformRoleEntity role = new PlatformRoleEntity();
         role.setId(1L);
         role.setRoleKey("PLATFORM_SUPER_ADMIN");
+        role.setProtectedRole(true);
         UserPlatformRoleEntity binding = new UserPlatformRoleEntity();
         binding.setUserId(10L);
         binding.setRoleId(1L);
-        when(userMapper.selectById(10L)).thenReturn(user);
+        when(userMapper.lockById(10L)).thenReturn(user);
         when(roleMapper.selectOne(any(Wrapper.class))).thenReturn(role);
-        when(bindingMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        when(roleMapper.lockByKey("PLATFORM_SUPER_ADMIN")).thenReturn(role);
         when(bindingMapper.selectList(any(Wrapper.class))).thenReturn(List.of(binding));
+        when(userMapper.lockEnabledRoleUsers("PLATFORM_SUPER_ADMIN")).thenReturn(List.of(10L));
         PlatformUserService service = new PlatformUserService(userMapper, mock(DepartmentMapper.class),
                 roleMapper, bindingMapper, mock(DepartmentService.class), mock(PasswordEncoder.class),
-                mock(RefreshTokenService.class), mock(PlatformAuditLogService.class));
+                mock(PlatformAuditLogService.class), mock(HumanAuthenticationService.class), new WorkbenchAuthProperties());
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.updateStatus(10L, new PlatformUserStatusUpdateDTO(0)));

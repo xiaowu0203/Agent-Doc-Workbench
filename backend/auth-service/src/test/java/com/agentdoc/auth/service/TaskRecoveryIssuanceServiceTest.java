@@ -52,8 +52,7 @@ class TaskRecoveryIssuanceServiceTest {
         generator.initialize(2048);
         KeyPair pair = generator.generateKeyPair();
         JwtProperties config = new JwtProperties(Base64.getEncoder().encodeToString(pair.getPrivate().getEncoded()),
-                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()), Duration.ofMinutes(30),
-                Duration.ofDays(7), "agent-doc-workbench");
+                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()), "agent-doc-workbench");
         jwtService = new JwtService(config);
         RSAKey key = new RSAKey.Builder((RSAPublicKey) pair.getPublic())
                 .privateKey((RSAPrivateKey) pair.getPrivate()).keyID("test-generated").build();

@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.agent.convertor.AgentConvertor;
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
@@ -42,7 +43,7 @@ class AgentTemplateServiceTest {
         McpTemplateService mcpTemplateService = mock(McpTemplateService.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
                 skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
-                mock(PlatformAccessService.class), modelService, mock(AgentService.class),
+                mock(PlatformRoleVerifier.class), modelService, mock(AgentService.class),
                 mock(AgentSkillService.class), mock(AgentMcpBindingService.class), mock(McpServerService.class),
                 mcpTemplateService, mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
         AgentTemplateEntity template = new AgentTemplateEntity();
@@ -67,7 +68,7 @@ class AgentTemplateServiceTest {
     void normalUserCanReadEnabledTemplateWithPublishedVersion() {
         AgentTemplateMapper templateMapper = mock(AgentTemplateMapper.class);
         AgentTemplateVersionMapper versionMapper = mock(AgentTemplateVersionMapper.class);
-        PlatformAccessService accessService = mock(PlatformAccessService.class);
+        PlatformRoleVerifier accessService = mock(PlatformRoleVerifier.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
                 mock(AgentTemplateSkillMapper.class), mock(AgentTemplateMcpMapper.class),
                 mock(SpaceSkillInstallationService.class), accessService, mock(ModelService.class),
@@ -100,7 +101,7 @@ class AgentTemplateServiceTest {
         AgentMcpBindingService agentMcpBindingService = mock(AgentMcpBindingService.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
                 skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
-                mock(PlatformAccessService.class), mock(ModelService.class), agentService, agentSkillService,
+                mock(PlatformRoleVerifier.class), mock(ModelService.class), agentService, agentSkillService,
                 agentMcpBindingService, mock(McpServerService.class), mock(McpTemplateService.class),
                 mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
 
@@ -140,7 +141,7 @@ class AgentTemplateServiceTest {
         AgentMcpBindingService agentMcpBindingService = mock(AgentMcpBindingService.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
                 skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
-                mock(PlatformAccessService.class), mock(ModelService.class), agentService, agentSkillService,
+                mock(PlatformRoleVerifier.class), mock(ModelService.class), agentService, agentSkillService,
                 agentMcpBindingService, mock(McpServerService.class), mock(McpTemplateService.class),
                 mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
         AgentTemplateEntity template = new AgentTemplateEntity();
@@ -179,7 +180,7 @@ class AgentTemplateServiceTest {
         McpTemplateService mcpTemplateService = mock(McpTemplateService.class);
         AgentTemplateService service = new AgentTemplateService(templateMapper, versionMapper,
                 skillReferenceMapper, mcpReferenceMapper, mock(SpaceSkillInstallationService.class),
-                mock(PlatformAccessService.class), mock(ModelService.class), agentService,
+                mock(PlatformRoleVerifier.class), mock(ModelService.class), agentService,
                 mock(AgentSkillService.class), bindingService, mcpServerService, mcpTemplateService,
                 mock(SpaceAccessService.class), mock(SkillAuditLogService.class));
         AgentTemplateEntity template = new AgentTemplateEntity();

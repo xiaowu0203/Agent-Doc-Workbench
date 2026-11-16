@@ -8,11 +8,8 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.env.MockEnvironment;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
-import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 import java.net.InetSocketAddress;
@@ -45,11 +42,9 @@ class OidcCapabilitySigningDomainTest {
         try {
             var properties = new SecurityVerifyProperties();
             properties.setJwksUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/jwks");
-            var environment = new MockEnvironment().withProperty("workbench.auth.mode", "oidc");
-            JwtDecoder oidcHumanDecoder = token -> { throw new JwtException("wrong signing domain"); };
             var config = new TaskCapabilitySecurityAutoConfiguration();
-            var taskVerifier = config.taskCapabilityVerifier(oidcHumanDecoder, properties, environment);
-            var workerVerifier = config.evaluationWorkerCapabilityVerifier(oidcHumanDecoder, properties, environment);
+            var taskVerifier = config.taskCapabilityVerifier(properties);
+            var workerVerifier = config.evaluationWorkerCapabilityVerifier(properties);
             Instant now = Instant.now();
             var task = JwtClaimsSet.builder().subject("1").issuedAt(now).expiresAt(now.plusSeconds(300))
                     .audience(List.of(JwtConstant.TASK_CAPABILITY_AUDIENCE)).claim("actorType", "AGENT").claim("scope", "agent").build();

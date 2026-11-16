@@ -7,9 +7,7 @@ import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
 import com.agentdoc.common.feign.vo.UserRefVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -26,14 +24,6 @@ public interface AuthFeign {
     /** 签发仅绑定一个 EvaluationRun 和确切 Task 集合的后台能力令牌。 */
     @PostMapping("/api/auth/internal/evaluation-worker-capabilities")
     Result<String> issueEvaluationWorkerCapability(@RequestBody EvaluationWorkerCapabilityIssueDTO request);
-
-    /**
-     * 校验当前用户是否拥有roleKey角色
-     * @param roleKey 平台角色标识
-     * @return 校验成功结果
-     */
-    @GetMapping("/api/auth/internal/platform-role")
-    Result<Void> checkPlatformRole(@RequestParam String roleKey);
 
     /**
      * 批量查询用户展示信息。

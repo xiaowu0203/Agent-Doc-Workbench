@@ -1,5 +1,6 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.AuthFeign;
@@ -15,7 +16,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -29,7 +29,7 @@ class DocumentOnlineChangePreviewTest {
     private DocumentEntity doc;
     private DocumentVersionEntity base;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg","RS256").subject("501").claim("scope","user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg","RS256").subject("501").claim("scope","user").build(), 501L, List.of()));
         doc = new DocumentEntity(); doc.setId(41L); doc.setSpaceId(10L); doc.setVersion(12L); doc.setContent("审批后正文"); when(mapper.selectById(41L)).thenReturn(doc);
         base = new DocumentVersionEntity(); base.setContent(original); base.setContentSha256(StableSnapshotUtils.sha256Utf8(original)); when(versions.requireVersion(41L,3L)).thenReturn(base);
     }

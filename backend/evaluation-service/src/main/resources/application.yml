@@ -47,10 +47,12 @@ agent-doc:
   security:
     # 与其他业务服务共享 Auth 的 JWT 公钥地址。
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    identity-jwks-url: ${AUTH_IDENTITY_JWKS_URL:http://localhost:8081/oauth2/identity-jwks}
   online:
     # 线上模板直连 Agent；默认本机8084，按部署拓扑设置，不经公共网关。
     agent-url: ${AGENT_INTERNAL_URL:http://localhost:8084}
   feign:
+    identity-auth-url: ${IDENTITY_AUTH_URL:http://localhost:8081}
     # Feign调用网关地址
     gateway-url: ${GATEWAY_URL:http://localhost:9090}
   evaluation:

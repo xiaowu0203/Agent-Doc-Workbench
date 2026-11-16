@@ -37,7 +37,7 @@ public class SystemCapabilityCatalogController {
 
     @Operation(summary = "查询系统能力平台统计")
     @GetMapping("/statistics")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<SystemCapabilityStatisticsVO> statistics() {
         return Result.ok(service.statistics());
     }

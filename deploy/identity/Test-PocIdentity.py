@@ -79,8 +79,9 @@ class KeycloakPocTest(unittest.TestCase):
         except requests.RequestException:
             raise RuntimeError("PoC IdP transport failed; URL/credentials suppressed") from None
 
-    def authorization_code(self, challenge=None):
-        browser = LocalhostBrowserSession()
+    def authorization_code(self, challenge=None, browser=None):
+        allow_sso = browser is not None
+        browser = browser or LocalhostBrowserSession()
         verifier = secrets.token_urlsafe(48)
         state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
         digest = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -89,13 +90,16 @@ class KeycloakPocTest(unittest.TestCase):
             "redirect_uri": self.config["bffUrl"] + "/login/oauth2/code/workbench", "state": state,
             "nonce": nonce, "code_challenge_method": "S256", "code_challenge": challenge or digest,
         }, allow_redirects=False)
-        self.assertEqual(response.status_code, 200)
-        form = LoginForm()
-        form.feed(response.text)
-        self.assertIsNotNone(form.action)
-        self.assertEqual(urlparse(form.action).netloc, urlparse(self.config["issuer"]).netloc)
-        data = {**form.hidden, "username": self.config["username"], "password": self.config["password"]}
-        login = self.send(browser, "POST", form.action, data=data, allow_redirects=False)
+        if allow_sso and response.status_code == 302:
+            login = response
+        else:
+            self.assertEqual(response.status_code, 200)
+            form = LoginForm()
+            form.feed(response.text)
+            self.assertIsNotNone(form.action)
+            self.assertEqual(urlparse(form.action).netloc, urlparse(self.config["issuer"]).netloc)
+            data = {**form.hidden, "username": self.config["username"], "password": self.config["password"]}
+            login = self.send(browser, "POST", form.action, data=data, allow_redirects=False)
         self.assertEqual(login.status_code, 302)
         location = urlparse(login.headers["Location"])
         self.assertEqual(location.netloc, urlparse(self.config["bffUrl"]).netloc)
@@ -135,7 +139,9 @@ class KeycloakPocTest(unittest.TestCase):
         self.assertEqual(identity["nonce"], nonce)
         self.assertEqual(access["sub"], self.config["subject"])
         self.assertEqual(access["azp"], self.config["webClientId"])
-        self.assertEqual(access["exp"] - access["iat"], 604800)
+        # Access还受SSO绝对截止约束，授权码交互跨秒时可能短于realm配置。
+        self.assertGreaterEqual(access["exp"] - access["iat"], 604740)
+        self.assertLessEqual(access["exp"] - access["iat"], 604800)
         self.assertIn("workbench:access", access["scope"].split())
         self.assertNotIn("realm_access", access)
         self.assertNotIn("resource_access", access)

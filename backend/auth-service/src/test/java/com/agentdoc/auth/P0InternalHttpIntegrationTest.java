@@ -2,6 +2,7 @@ package com.agentdoc.auth;
 
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.service.JwtService;
+import com.agentdoc.auth.support.LegacyHumanCredentialFixture;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.TaskExecutionMode;
@@ -53,7 +54,7 @@ class P0InternalHttpIntegrationTest {
         var user = new UserEntity();
         user.setId(9901L);
         user.setUsername("p0-fixture");
-        String userToken = jwtService.createAccessToken(user, List.of());
+        String userToken = LegacyHumanCredentialFixture.issue(jwtService, user);
         var request = new TaskCapabilityIssueDTO(9001L, 9002L, 9003L, 9004L,
                 TaskExecutionMode.LIVE.name(), 0L, HASH, 1, HASH, null,
                 List.of(JwtConstant.ACTION_READ_FRAGMENT), null);

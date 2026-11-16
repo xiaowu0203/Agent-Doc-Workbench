@@ -1,5 +1,6 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
@@ -32,7 +33,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.List;
 
@@ -91,7 +91,7 @@ class DocumentServiceTest {
                 .subject(String.valueOf(USER_ID))
                 .claim("username", "tester")
                 .build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
     }
 
     @AfterEach

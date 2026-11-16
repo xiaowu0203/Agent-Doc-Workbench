@@ -49,6 +49,8 @@ spring:
 
 # 自定义openapi配置
 agent-doc:
+  feign:
+    identity-auth-url: ${IDENTITY_AUTH_URL:http://localhost:8081}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     access-key: ${MINIO_ACCESS_KEY:}
@@ -60,6 +62,7 @@ agent-doc:
     description: 文档服务：空间、成员、文档树、版本快照
   security:
     jwks-url: ${AUTH_JWKS_URL:http://localhost:8081/oauth2/jwks}
+    identity-jwks-url: ${AUTH_IDENTITY_JWKS_URL:http://localhost:8081/oauth2/identity-jwks}
     task-capability-filter-enabled: true
     task-recovery-enabled: ${TASK_RECOVERY_ENABLED:false}
     task-recovery-issuer: agent-doc-workbench

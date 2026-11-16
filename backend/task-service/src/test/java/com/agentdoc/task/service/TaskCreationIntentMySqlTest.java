@@ -1,5 +1,6 @@
 package com.agentdoc.task.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.task.config.OnlineTaskProperties;
 import com.agentdoc.common.feign.OnlineEvaluationFeign;
 import com.agentdoc.common.feign.dto.OnlineTaskBindingDTO;
@@ -54,7 +55,6 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import java.util.ArrayList;
@@ -129,7 +129,7 @@ class TaskCreationIntentMySqlTest {
     @AfterEach void cleanup() { SecurityContextHolder.clearContext(); if (first != null) { first.close(); } if (second != null) { second.close(); } }
     private static void human(long actor) {
         var jwt = Jwt.withTokenValue("fixture-user").header("alg", "RS256").subject(Long.toString(actor)).claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
     }
     private TaskCreateDTO request(String key) { return new TaskCreateDTO(space, 201L, 301L, "  重试任务  ", "  新指令  ", null, null, null, key); }
     private TaskCreationIntentEntity intent(long actor, String key) {

@@ -11,15 +11,21 @@ spring:
   # MySQL连接配置
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:agent_doc_workbench}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=2000&socketTimeout=5000
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:root}
+    hikari:
+      connection-timeout: 2000
+      validation-timeout: 1000
+      maximum-pool-size: 10
   # Redis连接配置
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+      connect-timeout: 1s
+      timeout: 2s
   # flyway数据库版本迁移配置
   flyway:
     enabled: true
@@ -33,19 +39,23 @@ spring:
 
 # Auth JWT认证配置
 auth:
-  cookie:
-    # 本地 HTTP 开发默认为 false；prod Profile 会强制覆盖为 true
-    secure: ${AUTH_COOKIE_SECURE:false}
-    same-site: ${AUTH_COOKIE_SAME_SITE:Strict}
+  identity:
+    # local必须配置持久身份密钥，且不得与下方Capability密钥相同；缺失时拒绝启动。
+    private-key: ${LOCAL_IDENTITY_PRIVATE_KEY:}
+    public-key: ${LOCAL_IDENTITY_PUBLIC_KEY:}
+    trusted-encrypted-network: ${LOCAL_IDENTITY_TRUSTED_ENCRYPTED_NETWORK:false}
+    clients:
+      workbench-web:
+        purpose: BFF
+        secret: ${LOCAL_BFF_CLIENT_SECRET:}
+      task-service:
+        purpose: SERVICE
+        secret: ${LOCAL_TASK_CLIENT_SECRET:}
   jwt:
     # RSA私钥，环境变量 JWT_PRIVATE_KEY；生产环境填入PEM格式密钥；为空则启动自动生成临时密钥（仅开发调试使用）
     private-key: ${JWT_PRIVATE_KEY:}
     # RSA公钥，环境变量 JWT_PUBLIC_KEY；生产环境填入PEM公钥，用于校验token签名
     public-key: ${JWT_PUBLIC_KEY:}
-    # AccessToken 有效期 7 天
-    access-ttl: 7d
-    # RefreshToken 有效期 7天，用于刷新access令牌
-    refresh-ttl: 7d
     # JWT签发者标识，写入token payload iss字段
     issuer: agent-doc-workbench
 
@@ -65,10 +75,14 @@ agent-doc:
     key-rotated-at: ${TASK_RECOVERY_KEY_ROTATED_AT:}
   openapi:
     title: Auth Service API
-    description: 认证服务：注册、登录、刷新、JWKS
+    description: 认证服务：受控身份签发、当前用户与JWKS
 
 # Spring Boot Actuator 健康检查端点配置
 management:
+  health:
+    # 认证就绪指标按模式检查Redis，OIDC不因无Redis而退出就绪。
+    redis:
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -78,6 +92,13 @@ management:
     health:
       # 健康接口不返回详细组件详情，只返回UP/DOWN，保护内部信息
       show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,authenticationReadiness
+        liveness:
+          include: livenessState
 
 # SpringDoc OpenAPI Swagger文档路径配置
 springdoc:
@@ -93,6 +114,8 @@ logging:
   level:
     root: INFO
     com.agentdoc.auth: DEBUG
+    # 用户查询/写入包含密码哈希；禁止MyBatis调试日志输出绑定参数与结果。
+    com.agentdoc.auth.mapper: INFO
     org.springframework: INFO
     org.springframework.ai: INFO
 

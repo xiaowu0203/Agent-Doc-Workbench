@@ -1,5 +1,6 @@
 package com.agentdoc.evaluation.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.feign.vo.OnlineOriginalInputVO;
@@ -22,7 +23,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -39,8 +39,8 @@ class OnlineQualityHistoryServiceTest {
     private OnlineQualityFeedbackPersistenceService writer;
     private final OnlineQualityHistoryService history = new OnlineQualityHistoryService(reviews, feedback);
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256")
-                .subject("501").claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256")
+                .subject("501").claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER).build(), 501L, List.of()));
         var assignment = new OnlineAssignmentEntity(); assignment.setId(51L); assignment.setTaskId(61L); assignment.setExecutionId(71L);
         assignment.setExperimentId(11L); assignment.setSpaceId(10L); assignment.setAgentId(20L); assignment.setDocumentId(41L);
         assignment.setBindingSchemaVersion(2); assignment.setBindingHash(input.bindingHash());

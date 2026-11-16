@@ -1,5 +1,6 @@
 package com.agentdoc.document.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ChangeOp;
 import com.agentdoc.common.exception.BusinessException;
@@ -20,7 +21,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -36,7 +36,7 @@ class DocumentOnlineApprovalDifferenceTest {
     private DocumentVersionEntity merged;
     private DocumentEntity document;
     @BeforeEach void setup() {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build()));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(Jwt.withTokenValue("test").header("alg", "RS256").subject("501").claim("scope", "user").build(), 501L, List.of()));
         var input = new OnlineOriginalInputVO("61", "71", "10", "20", "11", "51", "a".repeat(64), "41", "FORMAL", 3L, StableSnapshotUtils.sha256Utf8("基线"), true);
         source = new OnlineApprovalSourceVO(input, "91", "MERGED", "b".repeat(64), "c".repeat(64), 3L,
                 List.of(new ChangeItemDTO(ChangeOp.REPLACE, null, "原始😀正文")), 4L, "501", "2026-10-10T20:00:00", null);

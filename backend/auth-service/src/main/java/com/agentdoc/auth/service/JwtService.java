@@ -2,7 +2,6 @@ package com.agentdoc.auth.service;
 
 import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.auth.constant.AuthConstant;
-import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.constant.TaskRecoveryConstant;
 import com.agentdoc.common.constant.OnlineCapabilityConstant;
@@ -36,7 +35,6 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.PublicKey;
-import java.security.SecureRandom;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -48,17 +46,15 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * JWT签发服务，Auth‑Service内部使用，负责RSA密钥加载、Access‑Token生成、JWK集合输出。
+ * 既有业务Capability签发域；不再签发人类Access或Refresh凭据。
  * <p>
  * 核心设计：
  * <ul>
  * <li>支持配置持久化RSA公私钥；未配置时自动生成临时RSA‑2048密钥对；</li>
- * <li>Access‑Token：RSA‑RS256签名JWT短时效令牌；网关通过JWKS接口拉取公钥做验签；</li>
- * <li>Refresh‑Token：随机不透明字符串，本身不是JWT，映射关系存储在Redis，支持主动撤销；</li>
  * <li>对外提供JWK集合，供网关 /oauth2/jwks 端点输出公钥集合；</li>
  * </ul>
  * <p>
- * 重要提醒：临时密钥模式下，服务重启密钥会重新生成，历史所有Access‑Token全部失效；。
+ * 临时开发密钥重启后失效；生产Capability配置仍须提供持久密钥。
  */
 @Slf4j
 @Component
@@ -167,34 +163,9 @@ public class JwtService {
     }
 
     /**
-     * 生成Access Token，RSA‑RS256签名JWT。
-     * <p>
-     * payload包含：iss签发者、sub=userId、username、nickname、scope、jti；设置过期时间。
-     * @param user 用户实体
-     * @return JWT字符串
-     */
-    public String createAccessToken(UserEntity user, List<String> platformRoles) {
-        Instant now = Instant.now();
-        Instant expiresAt = now.plus(props.accessTtl());
-        JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer(props.issuer())
-                .issuedAt(now)
-                .expiresAt(expiresAt)
-                .subject(String.valueOf(user.getId()))
-                .claim(JwtConstant.CLAIM_USERNAME, user.getUsername())
-                .claim(JwtConstant.CLAIM_NICKNAME, user.getNickname() == null ? user.getUsername() : user.getNickname())
-                .claim(JwtConstant.CLAIM_SCOPE, JwtConstant.SCOPE_USER)
-                .claim(JwtConstant.CLAIM_PLATFORM_ROLES,
-                        platformRoles == null ? List.of() : List.copyOf(platformRoles))
-                .id(UUID.randomUUID().toString())
-                .build();
-        return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
-    }
-
-    /**
      * 签发任务能力 JWT（Agent令牌）
      * <p>
-     * 任务能力令牌与用户登录令牌复用 auth-service 的 RSA 密钥与 JWKS 端点；
+     * 任务能力令牌使用既有Capability RSA密钥与JWKS端点，与新人类身份签名域隔离；
      * 通过 actorType、scope 业务声明和 audience 受众，与普通用户登录令牌做隔离区分。
      * 任务业务权限裁决前置在 task-service，本方法仅负责按既定权限结果组装并签发JWT，不做权限判断。
      * 该令牌放置于请求头 X-TASK-CAPABILITY，供Agent执行任务时调用下游服务使用。
@@ -342,18 +313,6 @@ public class JwtService {
                 .build();
         // 编码并签名，返回JWT字符串
         return encoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
-    }
-
-    /**
-     * 生成Refresh‑Token：安全随机字节，Base64‑URL无填充编码。
-     * <p>
-     * 注意：refreshToken不是JWT，只是一串不透明随机字符串；真实信息保存在Redis。
-     * @return refreshToken字符串
-     */
-    public String createRefreshToken() {
-        byte[] bytes = new byte[AuthConstant.REFRESH_TOKEN_BYTE_LENGTH];
-        new SecureRandom().nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     /**

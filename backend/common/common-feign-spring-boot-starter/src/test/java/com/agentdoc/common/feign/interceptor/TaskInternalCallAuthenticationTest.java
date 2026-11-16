@@ -1,5 +1,7 @@
 package com.agentdoc.common.feign.interceptor;
 
+import com.agentdoc.common.feign.dto.UserBatchQueryDTO;
+
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.constant.HeaderConstants;
 import com.agentdoc.common.constant.TaskInternalAuthConstant;
@@ -78,9 +80,9 @@ class TaskInternalCallAuthenticationTest {
     @Test
     void nonMachineContractRetainsUserIdentityAndDoesNotReceiveServiceSecret() {
         AuthorizationContext.set("Bearer user-token");
-        client(AuthFeign.class).checkPlatformRole("PLATFORM_SUPER_ADMIN");
+        client(AuthFeign.class).queryUsers(new UserBatchQueryDTO(List.of(1L)));
         assertThat(requests).hasSize(1);
-        assertThat(requests.getFirst().url()).startsWith("http://localhost:19090/api/auth/internal/platform-role");
+        assertThat(requests.getFirst().url()).startsWith("http://localhost:19090/api/auth/internal/users/query");
         assertThat(requests.getFirst().headers().get(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer user-token");
     }
 
@@ -89,10 +91,13 @@ class TaskInternalCallAuthenticationTest {
         AuthorizationContext.set("Bearer different-user");
         TaskCapabilityContext.set("task-capability");
         client(AuthIdentityFeign.class).currentIdentity("Bearer verified-user");
-        assertThat(requests).hasSize(1);
+        client(AuthIdentityFeign.class).checkPlatformRole("Bearer verified-user", "PLATFORM_SUPER_ADMIN");
+        assertThat(requests).hasSize(2);
         assertThat(requests.getFirst().url()).isEqualTo("http://localhost:19090/api/auth/identity");
         assertThat(requests.getFirst().headers().get(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer verified-user");
         assertThat(requests.getFirst().headers()).doesNotContainKey(HeaderConstants.X_TASK_CAPABILITY);
+        assertThat(requests.get(1).headers().get(HttpHeaders.AUTHORIZATION)).containsExactly("Bearer verified-user");
+        assertThat(requests.get(1).headers()).doesNotContainKey(HeaderConstants.X_TASK_CAPABILITY);
     }
 
     @Test

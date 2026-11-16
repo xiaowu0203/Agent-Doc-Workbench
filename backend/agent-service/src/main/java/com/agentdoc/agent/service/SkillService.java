@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.agent.convertor.SkillConvertor;
 import com.agentdoc.agent.convertor.SkillVersionConvertor;
 import com.agentdoc.agent.enums.SkillScopeType;
@@ -71,7 +72,7 @@ public class SkillService {
     private final SkillMapper skillMapper;
     private final SkillVersionMapper skillVersionMapper;
     private final SpaceAccessService spaceAccessService;
-    private final PlatformAccessService platformAccessService;
+    private final PlatformRoleVerifier platformRoleVerifier;
     private final SkillAuditLogService auditLogService;
 
     /**
@@ -652,7 +653,7 @@ public class SkillService {
      * 要求平台超级管理员权限。
      */
     public void requireSystemManage() {
-        platformAccessService.requireRole(SUPER_ADMIN);
+        platformRoleVerifier.requireRole(SUPER_ADMIN);
     }
 
     /**
@@ -661,7 +662,7 @@ public class SkillService {
      * @return true=超管
      */
     public boolean isSystemManager() {
-        return platformAccessService.hasRole(SUPER_ADMIN);
+        return platformRoleVerifier.hasRole(SUPER_ADMIN);
     }
 
     /**

@@ -2,7 +2,9 @@ package com.agentdoc.auth;
 
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.service.IdentityBindingService;
-import com.agentdoc.auth.service.JwtService;
+import com.agentdoc.auth.service.LocalIdentityJwtService;
+import com.agentdoc.auth.mapper.UserMapper;
+import com.agentdoc.auth.enums.UserStatus;
 import com.agentdoc.auth.service.PlatformRoleService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +28,8 @@ import static org.mockito.Mockito.when;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class IdentityBindingHttpSecurityTest {
     @LocalServerPort private int port;
-    @Autowired private JwtService jwtService;
+    @Autowired private LocalIdentityJwtService identities;
+    @MockitoBean private UserMapper users;
     @MockitoBean private PlatformRoleService roles;
     @MockitoBean private IdentityBindingService bindings;
 
@@ -35,7 +38,9 @@ class IdentityBindingHttpSecurityTest {
         var user = new UserEntity();
         user.setId(9001L);
         user.setUsername("p0-user");
-        String token = jwtService.createAccessToken(user, List.of());
+        user.setStatus(UserStatus.ENABLED.getCode());
+        String token = identities.issueHuman(user).value();
+        when(users.selectById(user.getId())).thenReturn(user);
         assertThat(post(null)).isEqualTo(401);
         when(roles.hasCurrentUserRole(anyString())).thenReturn(false, true);
         assertThat(post(token)).isEqualTo(403);

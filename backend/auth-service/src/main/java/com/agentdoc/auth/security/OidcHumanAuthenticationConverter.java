@@ -2,11 +2,15 @@ package com.agentdoc.auth.security;
 
 import com.agentdoc.auth.service.IdentityBindingService;
 import com.agentdoc.auth.service.PlatformRoleService;
+import com.agentdoc.auth.service.HumanAuthenticationService;
 import com.agentdoc.common.utils.OidcHumanTokenUtils;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.dao.DataAccessException;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -26,6 +30,7 @@ public class OidcHumanAuthenticationConverter implements Converter<Jwt, Resolved
 
     private final IdentityBindingService bindings;
     private final PlatformRoleService roles;
+    private final HumanAuthenticationService authentication;
 
     /**
      * 转换流程：
@@ -42,10 +47,16 @@ public class OidcHumanAuthenticationConverter implements Converter<Jwt, Resolved
         }
         try {
             // 根据外部IdP的issuer和subject，解析绑定的平台用户ID
-            Long userId = bindings.resolve(jwt.getClaimAsString("iss"), jwt.getSubject());
+            var user = bindings.resolve(jwt.getClaimAsString("iss"), jwt.getSubject());
+            authentication.requireCurrentOidcAuthentication(user, jwt);
             // 查询该用户绑定的平台角色，组装内部认证对象
-            return new ResolvedHumanAuthentication(jwt, userId, roles.listRoleKeys(userId));
+            return new ResolvedHumanAuthentication(jwt, user.getId(), roles.listRoleKeys(user.getId()));
+        } catch (DataAccessException error) {
+            throw new AuthenticationServiceException("用户认证状态不可用");
         } catch (BusinessException error) {
+            if (error.getCode() == ErrorCode.SERVICE_UNAVAILABLE.getCode()) {
+                throw new AuthenticationServiceException("用户认证状态不可用");
+            }
             // 找不到绑定记录、绑定已撤销等业务异常，统一转为 invalid_token
             throw invalidToken();
         }

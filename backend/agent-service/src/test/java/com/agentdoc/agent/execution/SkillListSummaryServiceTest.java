@@ -1,5 +1,6 @@
 package com.agentdoc.agent.execution;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.agent.enums.SkillStatus;
 import com.agentdoc.agent.enums.SkillScopeType;
 import com.agentdoc.agent.enums.SkillVersionStatus;
@@ -11,7 +12,6 @@ import com.agentdoc.agent.pojo.param.SkillSearchParam;
 import com.agentdoc.agent.pojo.vo.SkillBindingCountVO;
 import com.agentdoc.agent.service.SkillAuditLogService;
 import com.agentdoc.agent.service.SkillService;
-import com.agentdoc.agent.service.PlatformAccessService;
 import com.agentdoc.agent.service.SpaceAccessService;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ class SkillListSummaryServiceTest {
         SkillVersionMapper versionMapper = mock(SkillVersionMapper.class);
         SpaceAccessService spaceAccessService = mock(SpaceAccessService.class);
         SkillService service = new SkillService(skillMapper, versionMapper, spaceAccessService,
-                mock(PlatformAccessService.class),
+                mock(PlatformRoleVerifier.class),
                 mock(SkillAuditLogService.class));
         SkillEntity skill = new SkillEntity();
         skill.setId(11L);

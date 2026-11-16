@@ -1,5 +1,6 @@
 package com.agentdoc.auth.service;
 
+import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import static com.agentdoc.common.constant.OnlineCapabilityConstant.*;
 import static com.agentdoc.common.enums.OnlineCapabilityPurpose.*;
 import static org.assertj.core.api.Assertions.*;
@@ -7,6 +8,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import com.agentdoc.auth.config.JwtProperties;
 import com.agentdoc.auth.config.SecurityConfig;
+import com.agentdoc.auth.support.LocalIdentityTestInitializer;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.config.SecurityVerifyProperties;
 import com.agentdoc.common.enums.ErrorCode;
@@ -24,15 +26,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.*;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.util.ReflectionTestUtils;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 
 class OnlineCapabilityIssuanceServiceTest {
-    private static final JwtService signer = new JwtService(new JwtProperties("", "", Duration.ofMinutes(30),
-            Duration.ofDays(7), "agent-doc-workbench"));
+    private static final JwtService signer = new JwtService(new JwtProperties("", "", "agent-doc-workbench"));
     private final OnlineDocumentFeign onlineDocument = mock(OnlineDocumentFeign.class);
     private final OnlineEvaluationFeign evaluation = mock(OnlineEvaluationFeign.class);
     private final SecurityVerifyProperties properties = new SecurityVerifyProperties();
@@ -67,7 +66,7 @@ class OnlineCapabilityIssuanceServiceTest {
         assertThat(jwt.getClaimAsString("scope")).isEqualTo("service");
         assertThat(jwt.getExpiresAt().getEpochSecond() - jwt.getIssuedAt().getEpochSecond()).isEqualTo(300);
         assertThat(jwt.getClaims()).doesNotContainKeys("agentActions", "workerActions", "platformRoles", TASK_SET_HASH);
-        assertThatThrownBy(() -> new SecurityConfig(signer).jwtDecoder().decode(jwt.getTokenValue())).isInstanceOf(JwtException.class);
+        assertThatThrownBy(() -> new SecurityConfig(signer).jwtDecoder(LocalIdentityTestInitializer.signer(signer)).decode(jwt.getTokenValue())).isInstanceOf(JwtException.class);
     }
 
     @Test
@@ -95,7 +94,7 @@ class OnlineCapabilityIssuanceServiceTest {
             assertThat(jwt.getExpiresAt()).isBeforeOrEqualTo(decoder.decode(source).getExpiresAt());
             assertThatThrownBy(() -> service.issue(derived, new OnlineCapabilityIssueDTO(ONLINE_CONTROL, List.of())))
                     .isInstanceOf(BusinessException.class);
-            assertThatThrownBy(() -> new SecurityConfig(signer).jwtDecoder().decode(derived)).isInstanceOf(JwtException.class);
+            assertThatThrownBy(() -> new SecurityConfig(signer).jwtDecoder(LocalIdentityTestInitializer.signer(signer)).decode(derived)).isInstanceOf(JwtException.class);
         }
     }
 
@@ -150,7 +149,7 @@ class OnlineCapabilityIssuanceServiceTest {
     }
     private void login(String actor) {
         var jwt = Jwt.withTokenValue("user").header("alg", "RS256").subject(actor).claim("scope", "user").build();
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
+        SecurityContextHolder.getContext().setAuthentication(new ResolvedHumanAuthentication(jwt, Long.valueOf(jwt.getSubject()), List.of()));
     }
     private OnlineTaskBindingDTO binding(String id, String space) {
         return new OnlineTaskBindingDTO("7" + id, "11", proof.manifestHash(), "1", "BASELINE", 9999,

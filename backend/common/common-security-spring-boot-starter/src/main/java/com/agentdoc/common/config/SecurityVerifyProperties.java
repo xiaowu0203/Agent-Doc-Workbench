@@ -13,9 +13,12 @@ import java.util.List;
 public class SecurityVerifyProperties {
 
     /**
-     * auth-service 的 JWK Set 地址，业务服务从这里拉取并缓存 RSA 公钥。
+     * 既有业务Capability的JWK Set地址；不得用作新人类身份密钥。
      */
     private String jwksUrl;
+
+    /** local人类身份的独立JWKS地址，必须显式配置；不回退到Capability的jwksUrl。 */
+    private String identityJwksUrl;
 
     /** 是否接收线上保护窄凭证，默认关闭；不控制实验启动就绪。 */
     private boolean onlineCapabilityEnabled;

@@ -9,11 +9,13 @@ import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.pojo.entity.UserPlatformRoleEntity;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
+import com.agentdoc.common.exception.HumanAuthorizationException;
 import com.agentdoc.common.utils.AuthUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DataAccessException;
 
 import java.util.List;
 import java.util.Map;
@@ -150,8 +152,12 @@ public class PlatformRoleService {
      */
     public boolean hasCurrentUserRole(String roleKey) {
         Long userId = AuthUtils.getUserId();
-        return userId != null && roleKey != null && isEnabledUser(userId)
-                && listRoleKeys(userId).contains(roleKey);
+        try {
+            return userId != null && roleKey != null && isEnabledUser(userId)
+                    && listRoleKeys(userId).contains(roleKey);
+        } catch (DataAccessException error) {
+            throw new HumanAuthorizationException(ErrorCode.SERVICE_UNAVAILABLE);
+        }
     }
 
     /**
@@ -159,8 +165,8 @@ public class PlatformRoleService {
      * @param roleKey 平台角色标识
      */
     public void requireCurrentUserRole(String roleKey) {
-        Long userId = AuthUtils.getUserIdOrException();
-        if (!isEnabledUser(userId) || !listRoleKeys(userId).contains(roleKey)) {
+        AuthUtils.getUserIdOrException();
+        if (!hasCurrentUserRole(roleKey)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "缺少平台角色：" + roleKey);
         }
     }

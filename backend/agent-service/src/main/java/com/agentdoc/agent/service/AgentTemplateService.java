@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.agent.constant.AgentConstant;
 import com.agentdoc.agent.enums.AgentStatus;
 import com.agentdoc.agent.enums.SkillSelectionMode;
@@ -78,7 +79,7 @@ public class AgentTemplateService {
     private final AgentTemplateSkillMapper templateSkillMapper;
     private final AgentTemplateMcpMapper templateMcpMapper;
     private final SpaceSkillInstallationService skillInstallationService;
-    private final PlatformAccessService platformAccessService;
+    private final PlatformRoleVerifier platformRoleVerifier;
     private final ModelService modelService;
     private final AgentService agentService;
     private final AgentSkillService agentSkillService;
@@ -120,7 +121,7 @@ public class AgentTemplateService {
      */
     public PageVO<AgentTemplateVO> search(AgentTemplateSearchParam param) {
         param.validate();
-        boolean manager = platformAccessService.hasRole(SUPER_ADMIN);
+        boolean manager = platformRoleVerifier.hasRole(SUPER_ADMIN);
         LambdaQueryWrapper<AgentTemplateEntity> query = new LambdaQueryWrapper<AgentTemplateEntity>()
                 .orderByDesc(AgentTemplateEntity::getUpdatedAt).orderByDesc(AgentTemplateEntity::getId);
         if (!manager) {
@@ -167,7 +168,7 @@ public class AgentTemplateService {
     public AgentTemplateVO detail(Long templateId) {
         AgentTemplateEntity entity = requireTemplate(templateId);
         AgentTemplateVersionEntity latestPublished = findLatestPublishedVersion(templateId);
-        if (!platformAccessService.hasRole(SUPER_ADMIN)
+        if (!platformRoleVerifier.hasRole(SUPER_ADMIN)
                 && (!AgentStatus.ENABLED.matches(entity.getStatus()) || latestPublished == null)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 模板不存在");
         }
@@ -370,7 +371,7 @@ public class AgentTemplateService {
      */
     public List<AgentTemplateVersionVO> listVersions(Long templateId) {
         AgentTemplateEntity template = requireTemplate(templateId);
-        boolean manager = platformAccessService.hasRole(SUPER_ADMIN);
+        boolean manager = platformRoleVerifier.hasRole(SUPER_ADMIN);
         if (!manager && !AgentStatus.ENABLED.matches(template.getStatus())) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Agent 模板不存在");
         }
@@ -954,6 +955,6 @@ public class AgentTemplateService {
      * 权限校验：平台超管角色，用于模板/版本的新建、修改、发布。
      */
     private void requireManage() {
-        platformAccessService.requireRole(SUPER_ADMIN);
+        platformRoleVerifier.requireRole(SUPER_ADMIN);
     }
 }

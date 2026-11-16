@@ -73,8 +73,10 @@ class AuthUtilsTest {
             builder.claim(CLAIM_ACTOR_TYPE, ACTOR_AGENT);
             builder.claim(CLAIM_TASK_ID, subjectId);
         }
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(builder.build(), null, List.of()));
+        Jwt jwt = builder.build();
+        SecurityContextHolder.getContext().setAuthentication(agentId == null
+                ? new ResolvedHumanAuthentication(jwt, subjectId, List.of())
+                : new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
     }
 
     @Test
@@ -147,17 +149,36 @@ class AuthUtilsTest {
     }
 
     @Test
-    void shouldReadPlatformRoleFromHumanJwt() {
+    void shouldReadPlatformRoleOnlyFromResolvedProjection() {
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "RS256")
                 .subject(String.valueOf(USER_ID_FOR_PLATFORM_ROLE))
                 .claim(CLAIM_SCOPE, SCOPE_USER)
-                .claim(CLAIM_PLATFORM_ROLES, List.of("PLATFORM_SUPER_ADMIN"))
+                .claim(CLAIM_PLATFORM_ROLES, List.of("FORGED_ROLE"))
                 .build();
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
+                new ResolvedHumanAuthentication(jwt, USER_ID_FOR_PLATFORM_ROLE, List.of("PLATFORM_SUPER_ADMIN")));
 
         assertTrue(AuthUtils.hasPlatformRole("PLATFORM_SUPER_ADMIN"));
         assertFalse(AuthUtils.hasPlatformRole("OTHER_ROLE"));
+        assertFalse(AuthUtils.hasPlatformRole("FORGED_ROLE"));
+    }
+
+    @Test
+    void rawJwtAndUnauthenticatedProjectionCannotSupplyUserOrRoles() {
+        for (String actor : List.of("HUMAN", "SERVICE", "AGENT")) {
+            Jwt jwt = Jwt.withTokenValue("raw").header("alg", "RS256").subject("42")
+                    .claim(CLAIM_SCOPE, SCOPE_USER).claim(CLAIM_ACTOR_TYPE, actor)
+                    .claim(CLAIM_PLATFORM_ROLES, List.of("PLATFORM_SUPER_ADMIN")).build();
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(jwt, null, List.of()));
+            assertNull(AuthUtils.getUserId());
+            assertFalse(AuthUtils.hasPlatformRole("PLATFORM_SUPER_ADMIN"));
+        }
+        Jwt jwt = Jwt.withTokenValue("mapped").header("alg", "RS256").subject("42").build();
+        var projection = new ResolvedHumanAuthentication(jwt, 42L, List.of("PLATFORM_SUPER_ADMIN"));
+        projection.setAuthenticated(false);
+        SecurityContextHolder.getContext().setAuthentication(projection);
+        assertNull(AuthUtils.getUserId()); assertNull(AuthUtils.currentJwt());
+        assertFalse(AuthUtils.hasPlatformRole("PLATFORM_SUPER_ADMIN"));
     }
 }

@@ -2,6 +2,7 @@ package com.agentdoc.auth;
 
 import com.agentdoc.auth.pojo.entity.UserEntity;
 import com.agentdoc.auth.service.JwtService;
+import com.agentdoc.auth.support.LegacyHumanCredentialFixture;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.enums.TaskExecutionMode;
 import com.agentdoc.common.feign.dto.EvaluationWorkerCapabilityIssueDTO;
@@ -140,7 +141,7 @@ class P0CapabilityIssuanceBaselineTest {
         UserEntity user = new UserEntity();
         user.setId(9901L);
         user.setUsername("p0-no-platform-role");
-        return jwtService.createAccessToken(user, List.of());
+        return LegacyHumanCredentialFixture.issue(jwtService, user);
     }
 
     private Jwt decodeResponse(String response) {

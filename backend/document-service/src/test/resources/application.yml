@@ -9,6 +9,7 @@ spring:
 agent-doc:
   security:
     jwks-url: http://localhost:8081/oauth2/jwks
+    identity-jwks-url: ${AUTH_IDENTITY_JWKS_URL:http://localhost:8081/oauth2/identity-jwks}
 
 mybatis-plus:
   configuration:

@@ -4,12 +4,12 @@ import com.agentdoc.common.api.Result;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.constant.JwtConstant;
 import com.agentdoc.common.feign.AuthIdentityFeign;
-import com.agentdoc.common.security.OidcRemoteHumanAuthenticationConverter;
+import com.agentdoc.common.security.RemoteHumanAuthenticationConverter;
+import com.agentdoc.common.enums.AuthenticationMode;
+import com.agentdoc.common.utils.LocalIdentityTokenUtils;
 import com.agentdoc.common.security.OidcBearerTokenResolver;
 import com.agentdoc.common.security.TaskCapabilityAuthenticationFilter;
 import com.agentdoc.common.filter.TaskInternalAuthenticationFilter;
-import com.agentdoc.common.utils.TaskRecoveryJwtUtils;
-import com.agentdoc.common.utils.OnlineCapabilityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.ObjectProvider;
@@ -20,6 +20,14 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplicat
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.Environment;
+import org.springframework.boot.ApplicationRunner;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -43,6 +51,11 @@ import org.springframework.security.web.authentication.AnonymousAuthenticationFi
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.net.URI;
+import java.net.HttpURLConnection;
+import java.io.IOException;
+import java.util.Locale;
 
 /**
  * 通用Spring Security自动装配配置
@@ -50,10 +63,10 @@ import java.time.Duration;
  * <p>
  * 仅在Servlet Web环境生效；提供无状态OAuth2 Resource-Server基础能力。
  * 功能：
- * 1. 当配置 agent-doc.security.jwks-url 存在时（local模式），自动创建基于JWKS的JwtDecoder；
+ * 1. local模式仅使用identity-jwks-url创建人类JwtDecoder，缺失配置拒绝启动；
  * 2. 当 workbench.auth.mode=oidc 时，基于IdP issuer自动创建OIDC JwtDecoder；
  * 3. 构建默认SecurityFilterChain：关闭CSRF，设置无状态会话；默认全部接口放行；
- * 4. 存在JwtDecoder时开启OAuth2资源服务JWT解析能力；
+ * 4. 两模式均开启人类JWT解析及Auth本人身份复核；
  * 5. 自定义401未授权返回JSON统一格式Result.fail，而非默认Spring HTML页面；
  * 6. 业务模块若显式提供 TaskInternalAuthenticationFilter，则把内部验签Filter挂进安全链。
  * </p>
@@ -64,6 +77,7 @@ import java.time.Duration;
  *   避免与业务自定义链冲突（注意是"整类跳过"，不是只跳过某一个Bean）。
  */
 @AutoConfiguration
+@Slf4j
 // Spring Boot 3 自动配置注解，等价于 @Configuration(proxyBeanMethods=false) + 注册自动装配
 @EnableMethodSecurity
 // 开启方法级鉴权，使 @PreAuthorize / @PostAuthorize 等注解生效（默认 prePostEnabled=true）
@@ -71,7 +85,7 @@ import java.time.Duration;
 // 仅Servlet Web应用装配；WebFlux响应式环境下Security模型不同，必须排除
 @ConditionalOnMissingBean(SecurityFilterChain.class)
 // 容器中不存在自定义SecurityFilterChain时才生效，给业务方留覆盖入口
-@EnableConfigurationProperties(SecurityVerifyProperties.class)
+@EnableConfigurationProperties({SecurityVerifyProperties.class, WorkbenchAuthProperties.class})
 // 绑定 agent-doc.security.* 配置（至少含 jwks-url），注册为Bean供后续注入
 public class CommonSecurityAutoConfiguration {
 
@@ -88,32 +102,54 @@ public class CommonSecurityAutoConfiguration {
      * 构建JWT解码器 Bean（local模式）
      *
      * <p>
-     * 条件：容器无自定义JwtDecoder + 配置 agent-doc.security.jwks-url 存在
-     * + workbench.auth.mode 为 local（matchIfMissing=true，即未配置时默认local）。
-     * 基于JWKS地址远程拉取公钥集合，自动完成JWT验签、过期时间(exp/nbf)校验。
+     * 仅local模式；使用独立身份JWKS验签，限制算法、用途与时间。
      * </p>
      *
      * <p>
-     * 关键安全处理：解码后不直接返回，再串两道人造校验——
-     * {@link TaskRecoveryJwtUtils#rejectGeneralAccess} 与 {@link OnlineCapabilityUtils#rejectGeneralAccess}，
-     * 目的是拒绝"通用/恢复类令牌"走业务接口访问，防止不同用途的令牌被交叉复用（令牌混用防护）。
+     * 旧用户JWT、SERVICE及Task/Worker/恢复/线上凭据均不能通过人类契约。
      * </p>
      *
-     * @param properties 安全配置属性，包含jwks-url地址
+     * @param properties 包含identity-jwks-url，与业务Capability的jwks-url分开
      * @return JwtDecoder JWT解码器实例
      */
     @Bean
     @ConditionalOnMissingBean(JwtDecoder.class)
     // 已有自定义JwtDecoder时不覆盖
-    @ConditionalOnProperty(prefix = "agent-doc.security", name = "jwks-url")
-    // 没有配置JWKS地址时不做任何事，避免启动即失败
     @ConditionalOnProperty(prefix = "workbench.auth", name = "mode", havingValue = "local", matchIfMissing = true)
     // 仅local模式装配；未显式配置mode时按local处理
     public JwtDecoder businessJwtDecoder(SecurityVerifyProperties properties) {
-        // 基于JWKS URI构建Nimbus解码器，公钥由startup后首次解析时远程拉取并缓存
-        JwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(properties.getJwksUrl()).build();
-        // 外层包一层Lambda JwtDecoder：先解码验签，再依次做恢复令牌、在线通用令牌的拒绝校验
-        return token -> OnlineCapabilityUtils.rejectGeneralAccess(TaskRecoveryJwtUtils.rejectGeneralAccess(decoder.decode(token)));
+        URI endpoint;
+        try {
+            endpoint = URI.create(properties.getIdentityJwksUrl());
+            if (endpoint.getHost() == null || endpoint.getUserInfo() != null || endpoint.getQuery() != null
+                    || endpoint.getFragment() != null || !("http".equalsIgnoreCase(endpoint.getScheme()) || "https".equalsIgnoreCase(endpoint.getScheme()))) {
+                throw new IllegalArgumentException();
+            }
+        } catch (IllegalArgumentException | NullPointerException error) {
+            throw new IllegalStateException("local模式必须配置无凭据/查询的HTTP(S)身份JWKS地址");
+        }
+        var requests = new SimpleClientHttpRequestFactory() {
+            @Override protected void prepareConnection(HttpURLConnection connection, String method) throws IOException {
+                super.prepareConnection(connection, method); connection.setInstanceFollowRedirects(false);
+            }
+        };
+        requests.setConnectTimeout(Duration.ofSeconds(2)); requests.setReadTimeout(Duration.ofSeconds(5));
+        var decoder = NimbusJwtDecoder.withJwkSetUri(endpoint.toString()).jwsAlgorithm(SignatureAlgorithm.RS256)
+                .validateType(false).restOperations(new RestTemplate(requests)).build();
+        decoder.setJwtValidator(jwt -> {
+            try {
+                LocalIdentityTokenUtils.requireHuman(jwt, Instant.now());
+                return OAuth2TokenValidatorResult.success();
+            } catch (JwtException | IllegalArgumentException error) {
+                return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "无效的本地人类凭据", null));
+            }
+        });
+        return decoder;
+    }
+
+    @Bean
+    ApplicationRunner logAuthenticationMode(WorkbenchAuthProperties properties) {
+        return arguments -> log.info("认证模式={}", properties.getMode().name().toLowerCase(Locale.ROOT));
     }
 
     /** OIDC人类令牌使用IdP密钥；业务Capability仍由独立验证器使用Auth密钥。 */
@@ -144,7 +180,7 @@ public class CommonSecurityAutoConfiguration {
      * <p>
      * 1. 关闭CSRF防护；设置会话策略为无状态，不创建HttpSession；
      * 2. 默认放行全部请求 {@code anyRequest().permitAll()}，鉴权交给业务注解/拦截器处理；
-     * 3. 容器中存在JwtDecoder时，开启oauth2资源服务，自动解析 Authorization: Bearer JWT；
+     * 3. 当前模式的JwtDecoder和本人客户端必须存在，自动解析人类Bearer；
      * 4. JWT校验失败时使用自定义JSON EntryPoint返回统一错误报文；
      * 5. 业务侧提供了 TaskInternalAuthenticationFilter 时，挂到匿名认证器之前。
      * </p>
@@ -152,11 +188,11 @@ public class CommonSecurityAutoConfiguration {
      * @param http HttpSecurity构建器
      * @param decoderProvider ObjectProvider延迟获取JwtDecoder，处理Bean可能不存在的场景
      * @param internalFilterProvider 业务模块显式提供的内部认证过滤器；没有时保持原链行为
-     * @param identityProvider OIDC模式下远程查询本人身份的Feign客户端
-     * @param bearerResolverProvider 可选的Bearer解析器（OIDC分支下被外层包装）
-     * @param capabilityFilterProvider 任务能力鉴权Filter，决定OIDC Token解析策略的开关
+     * @param identityProvider 两模式共用的受控本人Feign
+     * @param bearerResolverProvider 可选的专用Bearer路由器
+     * @param capabilityFilterProvider 决定任务Bearer是否交给独立验证器
      * @param securityProperties 安全配置属性
-     * @param environment 环境配置，用于读取认证模式
+     * @param authenticationProperties 唯一部署认证模式
      * @return SecurityFilterChain 安全过滤链
      * @throws Exception http配置构建异常
      */
@@ -168,22 +204,17 @@ public class CommonSecurityAutoConfiguration {
                                                    ObjectProvider<BearerTokenResolver> bearerResolverProvider,
                                                    ObjectProvider<TaskCapabilityAuthenticationFilter> capabilityFilterProvider,
                                                    SecurityVerifyProperties securityProperties,
-                                                   Environment environment) throws Exception {
+                                                   WorkbenchAuthProperties authenticationProperties) throws Exception {
         // 读取认证模式，未配置时默认local
-        String mode = environment.getProperty("workbench.auth.mode", "local");
+        AuthenticationMode mode = authenticationProperties.getMode();
         // 模式白名单校验：只允许local/oidc，非法值直接fail-fast，避免拼错配置后静默降级
-        if (!"local".equalsIgnoreCase(mode) && !"oidc".equalsIgnoreCase(mode)) {
+        if (mode == null) {
             throw new IllegalStateException("未知身份认证模式");
         }
-        // 布尔化模式，后续多处分支复用
-        boolean oidc = "oidc".equalsIgnoreCase(mode);
-        // 获取JwtDecoder，可能为null（未配置jwks-url且非oidc模式时）
         JwtDecoder jwtDecoder = decoderProvider.getIfAvailable();
-        // 仅OIDC模式需要"本人身份客户端"；local模式置null，避免无谓依赖
-        AuthIdentityFeign identity = oidc ? identityProvider.getIfAvailable() : null;
-        // OIDC模式的前置完整性校验：缺解码器或缺身份客户端都属于配置错误，必须启动即失败
-        if (oidc && (jwtDecoder == null || identity == null)) {
-            throw new IllegalStateException("OIDC模式缺少JWT解码器或本人身份客户端");
+        AuthIdentityFeign identity = identityProvider.getIfAvailable();
+        if (jwtDecoder == null || identity == null) {
+            throw new IllegalStateException("当前认证模式缺少JWT解码器或本人身份客户端");
         }
         http
                 // 关闭CSRF：前后端分离、Token鉴权的无状态API，CSRF Token机制不适用且会拦截跨域请求
@@ -194,42 +225,22 @@ public class CommonSecurityAutoConfiguration {
                 // 本链只负责"身份解析"，不负责"接口是否允许访问"
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 
-        // 只有存在JwtDecoder时才启用资源服务能力；local且未配jwks时整块跳过，保持纯放行链
-        if (jwtDecoder != null) {
-            http.oauth2ResourceServer(rs -> {
-                // ---- OIDC专属：Bearer解析器包装 + 认证失败处理器改造 ----
-                if (oidc) {
-                    // 允许业务自定义Bearer解析器，未提供则用Spring默认（从Authorization头取Bearer）
-                    BearerTokenResolver delegate = bearerResolverProvider.getIfAvailable(DefaultBearerTokenResolver::new);
-                    // 包装一层：把 resolver、可信内网配置、以及"是否存在能力Filter"传进去，
-                    // 用于区分人类Token与任务能力Token，避免能力Token被当人类身份解析
-                    rs.bearerTokenResolver(new OidcBearerTokenResolver(delegate, securityProperties,
-                            capabilityFilterProvider.getIfAvailable() != null));
-                    // 通过ObjectPostProcessor在过滤器实例创建后替换其失败处理器
-                    rs.withObjectPostProcessor(new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
-                        @Override
-                        public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
-                            // 用EntryPoint驱动的失败处理器，把认证异常统一转成HTTP响应
-                            var handler = new AuthenticationEntryPointFailureHandler(jsonOidcEntryPoint());
-                            // 关闭异常外抛：身份服务不可用等异常不走容器默认500，而由EntryPoint转503
-                            handler.setRethrowAuthenticationServiceException(false);
-                            filter.setAuthenticationFailureHandler(handler);
-                            return filter;
-                        }
-                    });
+        http.oauth2ResourceServer(rs -> {
+            BearerTokenResolver delegate = bearerResolverProvider.getIfAvailable(DefaultBearerTokenResolver::new);
+            rs.bearerTokenResolver(new OidcBearerTokenResolver(delegate, securityProperties,
+                    capabilityFilterProvider.getIfAvailable() != null));
+            rs.withObjectPostProcessor(new ObjectPostProcessor<BearerTokenAuthenticationFilter>() {
+                @Override
+                public <O extends BearerTokenAuthenticationFilter> O postProcess(O filter) {
+                    var handler = new AuthenticationEntryPointFailureHandler(jsonAuthenticationEntryPoint());
+                    handler.setRethrowAuthenticationServiceException(false);
+                    filter.setAuthenticationFailureHandler(handler);
+                    return filter;
                 }
-                rs.jwt(jwt -> {
-                            // 绑定解码器：验签、时间戳、issuer（OIDC）等校验全部在此生效
-                            jwt.decoder(jwtDecoder);
-                            // OIDC模式：把OIDC的subject经远程身份服务换取系统内用户，得到可用的业务身份
-                            // local模式：subject本身即可信业务身份，无需转换
-                            if (oidc) { jwt.jwtAuthenticationConverter(new OidcRemoteHumanAuthenticationConverter(identity)); }
-                        })
-                        // 认证入口点：未携带Token或解析失败时的统一返回；
-                        // local → 一律401 UNAUTHORIZED；oidc → 区分凭证错误401与身份服务不可用503
-                        .authenticationEntryPoint(oidc ? jsonOidcEntryPoint() : json401EntryPoint());
             });
-        }
+            rs.jwt(jwt -> jwt.decoder(jwtDecoder).jwtAuthenticationConverter(new RemoteHumanAuthenticationConverter(identity, mode)))
+                    .authenticationEntryPoint(jsonAuthenticationEntryPoint());
+        });
 
         // 业务模块若显式提供了内部验签Filter，则挂进安全链
         TaskInternalAuthenticationFilter internalFilter = internalFilterProvider.getIfAvailable();
@@ -265,7 +276,7 @@ public class CommonSecurityAutoConfiguration {
     }
 
     /**
-     * OIDC模式专用认证入口点
+     * 两模式共用的认证故障入口
      *
      * <p>
      * 语义区分：
@@ -274,7 +285,7 @@ public class CommonSecurityAutoConfiguration {
      * - 其余认证异常（凭证无效、过期、缺失）→ 回落到401统一处理。
      * </p>
      */
-    private AuthenticationEntryPoint jsonOidcEntryPoint() {
+    private AuthenticationEntryPoint jsonAuthenticationEntryPoint() {
         return (request, response, error) -> {
             // 认证服务异常：属于上游依赖故障，返回503而不是401，避免把系统故障误报成凭证问题
             if (error instanceof AuthenticationServiceException) {

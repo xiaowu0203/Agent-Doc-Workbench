@@ -26,7 +26,7 @@ public class SystemSkillVersionController {
 
     @Operation(summary = "发布系统 Skill 版本")
     @PostMapping("/{versionId}/publish")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<SkillVersionVO> publish(@PathVariable Long versionId) {
         return Result.ok(versionService.publishSystem(versionId));
     }

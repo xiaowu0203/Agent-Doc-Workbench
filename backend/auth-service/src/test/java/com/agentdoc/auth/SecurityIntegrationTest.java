@@ -5,6 +5,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.agentdoc.auth.health.AuthenticationReadinessHealthIndicator;
+import org.springframework.boot.actuate.health.Health;
+import org.junit.jupiter.api.BeforeEach;
+import static org.mockito.Mockito.when;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,6 +25,10 @@ class SecurityIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
+    @MockitoBean private AuthenticationReadinessHealthIndicator readiness;
+
+    @BeforeEach
+    void ready() { when(readiness.health()).thenReturn(Health.up().build()); }
 
     @Test
     void permitAllHealthReturns200() throws Exception {
