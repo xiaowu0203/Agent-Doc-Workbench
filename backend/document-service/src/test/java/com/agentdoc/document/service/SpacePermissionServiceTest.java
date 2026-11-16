@@ -7,6 +7,7 @@ import com.agentdoc.common.exception.HumanAuthorizationException;
 import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.common.utils.AuthUtils;
 import com.agentdoc.common.feign.AuthIdentityFeign;
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.document.mapper.MemberMapper;
 import com.agentdoc.document.mapper.PermissionMapper;
 import com.agentdoc.document.mapper.SpaceRoleMapper;
@@ -68,7 +69,7 @@ class SpacePermissionServiceTest {
     @BeforeEach
     void setUp() {
         permissionService = new SpacePermissionService(memberMapper, spaceRoleMapper,
-                rolePermissionMapper, permissionMapper, authFeign, null, null, null);
+                rolePermissionMapper, permissionMapper, new PlatformRoleVerifier(authFeign), null, null, null);
         login(List.of());
     }
 

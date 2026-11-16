@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest({MemberController.class, PlatformMembershipController.class})
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @ContextConfiguration(classes = {MemberController.class, PlatformMembershipController.class, SpacePermissionService.class,
-        CommonSecurityAutoConfiguration.class, CommonWebAutoConfiguration.class})
+        PlatformAuthorizationConfig.class, CommonSecurityAutoConfiguration.class, CommonWebAutoConfiguration.class})
 class MemberAuthorizationHttpTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private MemberService changes;

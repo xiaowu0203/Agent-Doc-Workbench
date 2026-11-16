@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.agent.enums.SystemCapabilityType;
 import com.agentdoc.agent.mapper.SystemCapabilityCatalogMapper;
 import com.agentdoc.agent.pojo.param.SystemCapabilitySearchParam;
@@ -19,7 +20,7 @@ class SystemCapabilityCatalogServiceTest {
     @Test
     void normalUserOnlyQueriesPublishedEnabledCapabilities() {
         SystemCapabilityCatalogMapper mapper = mock(SystemCapabilityCatalogMapper.class);
-        PlatformAccessService accessService = mock(PlatformAccessService.class);
+        PlatformRoleVerifier accessService = mock(PlatformRoleVerifier.class);
         SystemCapabilityCatalogService service = new SystemCapabilityCatalogService(mapper, accessService);
         SystemCapabilitySearchParam param = searchParam();
         param.setType(SystemCapabilityType.MCP_TEMPLATE);
@@ -38,7 +39,7 @@ class SystemCapabilityCatalogServiceTest {
     @Test
     void managerCanQueryAllCapabilitiesByStatus() {
         SystemCapabilityCatalogMapper mapper = mock(SystemCapabilityCatalogMapper.class);
-        PlatformAccessService accessService = mock(PlatformAccessService.class);
+        PlatformRoleVerifier accessService = mock(PlatformRoleVerifier.class);
         SystemCapabilityCatalogService service = new SystemCapabilityCatalogService(mapper, accessService);
         SystemCapabilitySearchParam param = searchParam();
         param.setPageNum(2);
@@ -55,7 +56,7 @@ class SystemCapabilityCatalogServiceTest {
     @Test
     void statisticsAggregatesAllCapabilityTypes() {
         SystemCapabilityCatalogMapper mapper = mock(SystemCapabilityCatalogMapper.class);
-        PlatformAccessService accessService = mock(PlatformAccessService.class);
+        PlatformRoleVerifier accessService = mock(PlatformRoleVerifier.class);
         SystemCapabilityCatalogService service = new SystemCapabilityCatalogService(mapper, accessService);
         when(mapper.selectStatistics()).thenReturn(List.of(
                 statistics(SystemCapabilityType.SKILL, 2, 1, 3, 4),

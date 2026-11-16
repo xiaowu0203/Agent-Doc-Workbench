@@ -2,7 +2,6 @@ package com.agentdoc.agent.config;
 
 import com.agentdoc.agent.controller.ModelController;
 import com.agentdoc.agent.service.ModelService;
-import com.agentdoc.agent.service.PlatformAccessService;
 import com.agentdoc.common.api.Result;
 import com.agentdoc.common.config.CommonSecurityAutoConfiguration;
 import com.agentdoc.common.config.CommonWebAutoConfiguration;
@@ -35,8 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /** 平台角色复核必须穿过真实方法鉴权表达式，不能把依赖故障混为无权限。 */
 @WebMvcTest(ModelController.class)
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
-@ContextConfiguration(classes = {ModelController.class, PlatformAccessService.class,
-        CommonSecurityAutoConfiguration.class, CommonWebAutoConfiguration.class})
+@ContextConfiguration(classes = {ModelController.class,
+        PlatformAuthorizationConfig.class, CommonSecurityAutoConfiguration.class, CommonWebAutoConfiguration.class})
 class PlatformRoleHttpSecurityTest {
     @Autowired private MockMvc mvc;
     @MockitoBean private ModelService modelService;

@@ -29,14 +29,14 @@ public class McpTemplateVersionController {
 
     @Operation(summary = "发布 MCP 模板版本")
     @PostMapping("/{id}/publish")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVersionVO> publish(@PathVariable Long id) {
         return Result.ok(service.publish(id));
     }
 
     @Operation(summary = "更新 MCP 模板草稿版本")
     @PutMapping("/{id}")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVersionVO> update(@PathVariable Long id,
                                                 @Valid @RequestBody McpTemplateVersionCreateDTO dto) {
         return Result.ok(service.updateVersion(id, dto));
@@ -44,14 +44,14 @@ public class McpTemplateVersionController {
 
     @Operation(summary = "停用 MCP 模板版本")
     @PostMapping("/{id}/disable")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVersionVO> disable(@PathVariable Long id) {
         return Result.ok(service.disableVersion(id));
     }
 
     @Operation(summary = "恢复 MCP 模板版本")
     @PostMapping("/{id}/enable")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVersionVO> enable(@PathVariable Long id) {
         return Result.ok(service.enableVersion(id));
     }

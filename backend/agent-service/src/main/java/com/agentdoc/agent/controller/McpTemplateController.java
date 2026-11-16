@@ -49,14 +49,14 @@ public class McpTemplateController {
 
     @Operation(summary = "创建系统 MCP 模板")
     @PostMapping
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVO> create(@Valid @RequestBody McpTemplateCreateDTO dto) {
         return Result.ok(service.create(dto));
     }
 
     @Operation(summary = "更新系统 MCP 模板")
     @PutMapping("/{id}")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVO> update(@PathVariable Long id,
                                         @Valid @RequestBody McpTemplateUpdateDTO dto) {
         return Result.ok(service.update(id, dto));
@@ -70,7 +70,7 @@ public class McpTemplateController {
 
     @Operation(summary = "创建 MCP 模板草稿版本")
     @PostMapping("/{id}/versions")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<McpTemplateVersionVO> createVersion(@PathVariable Long id,
                                                        @Valid @RequestBody McpTemplateVersionCreateDTO dto) {
         return Result.ok(service.createVersion(id, dto));

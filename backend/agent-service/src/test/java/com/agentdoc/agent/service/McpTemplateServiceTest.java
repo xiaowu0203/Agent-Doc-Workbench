@@ -1,5 +1,6 @@
 package com.agentdoc.agent.service;
 
+import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.common.security.ResolvedHumanAuthentication;
 import com.agentdoc.agent.enums.McpAuthType;
 import com.agentdoc.agent.enums.McpConnectionStatus;
@@ -137,7 +138,7 @@ class McpTemplateServiceTest {
 
     private McpTemplateService service(McpTemplateMapper mapper, McpTemplateVersionMapper versionMapper,
                                        McpServerService mcpServerService, SkillAuditLogService auditLogService) {
-        return new McpTemplateService(mapper, versionMapper, mock(PlatformAccessService.class),
+        return new McpTemplateService(mapper, versionMapper, mock(PlatformRoleVerifier.class),
                 mock(McpEndpointSecurityValidator.class), mcpServerService, auditLogService,
                 immediateTransaction());
     }

@@ -8,7 +8,6 @@ import com.agentdoc.common.context.TaskCapabilityContext;
 import com.agentdoc.common.enums.ErrorCode;
 import com.agentdoc.common.exception.BusinessException;
 import com.agentdoc.common.exception.HumanAuthorizationException;
-import com.agentdoc.common.feign.AuthIdentityFeign;
 import com.agentdoc.common.security.PlatformRoleVerifier;
 import com.agentdoc.common.feign.TaskFeign;
 import com.agentdoc.common.security.TaskCapabilityVerifier;
@@ -69,7 +68,7 @@ public class SpacePermissionService {
     private final SpaceRoleMapper spaceRoleMapper;
     private final SpaceRolePermissionMapper rolePermissionMapper;
     private final PermissionMapper permissionMapper;
-    private final AuthIdentityFeign identity;
+    private final PlatformRoleVerifier platformRoleVerifier;
     private final TaskFeign taskFeign;
     private final TaskCapabilityVerifier taskCapabilityVerifier;
     private final HttpServletRequest request;
@@ -79,7 +78,7 @@ public class SpacePermissionService {
                                   SpaceRoleMapper spaceRoleMapper,
                                   SpaceRolePermissionMapper rolePermissionMapper,
                                   PermissionMapper permissionMapper,
-                                  AuthIdentityFeign identity,
+                                  PlatformRoleVerifier platformRoleVerifier,
                                   TaskFeign taskFeign,
                                   TaskCapabilityVerifier taskCapabilityVerifier,
                                   HttpServletRequest request) {
@@ -87,7 +86,7 @@ public class SpacePermissionService {
         this.spaceRoleMapper = spaceRoleMapper;
         this.rolePermissionMapper = rolePermissionMapper;
         this.permissionMapper = permissionMapper;
-        this.identity = identity;
+        this.platformRoleVerifier = platformRoleVerifier;
         this.taskFeign = taskFeign;
         this.taskCapabilityVerifier = taskCapabilityVerifier;
         this.request = request;
@@ -191,7 +190,7 @@ public class SpacePermissionService {
      * @return true 平台超级管理员；false 已确认无角色
      */
     public boolean isPlatformSuperAdmin() {
-        return PlatformRoleVerifier.hasRole(identity, SUPER_ADMIN);
+        return platformRoleVerifier.hasRole(SUPER_ADMIN);
     }
 
     /**

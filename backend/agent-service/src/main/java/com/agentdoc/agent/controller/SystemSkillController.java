@@ -68,14 +68,14 @@ public class SystemSkillController {
 
     @Operation(summary = "创建系统 Skill")
     @PostMapping
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<SkillVO> create(@Valid @RequestBody SystemSkillCreateDTO dto) {
         return Result.ok(skillService.toVO(skillService.createSystem(dto)));
     }
 
     @Operation(summary = "上传 ZIP 并自动创建系统 Skill 与首个草稿版本")
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<SkillImportVO> importPackage(@RequestParam(required = false) String displayName,
                                                 @RequestParam(required = false) String description,
                                                 @RequestPart("file") MultipartFile file) {
@@ -84,14 +84,14 @@ public class SystemSkillController {
 
     @Operation(summary = "更新系统 Skill")
     @PutMapping("/{skillId}")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<SkillVO> update(@PathVariable Long skillId, @Valid @RequestBody SkillUpdateDTO dto) {
         return Result.ok(skillService.toVO(skillService.updateSystem(skillId, dto)));
     }
 
     @Operation(summary = "上传系统 Skill 版本 ZIP")
     @PostMapping(value = "/{skillId}/versions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<SkillVersionVO> uploadVersion(@PathVariable Long skillId,
                                                 @RequestPart("file") MultipartFile file) {
         return Result.ok(versionService.uploadSystem(skillId, file));
@@ -131,7 +131,7 @@ public class SystemSkillController {
 
     @Operation(summary = "停用系统 Skill")
     @PostMapping("/{skillId}/disable")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> disable(@PathVariable Long skillId) {
         skillService.setSystemStatus(skillId, SkillStatus.DISABLED);
         return Result.ok();
@@ -139,7 +139,7 @@ public class SystemSkillController {
 
     @Operation(summary = "启用系统 Skill")
     @PostMapping("/{skillId}/enable")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     public Result<Void> enable(@PathVariable Long skillId) {
         skillService.setSystemStatus(skillId, SkillStatus.ACTIVE);
         return Result.ok();

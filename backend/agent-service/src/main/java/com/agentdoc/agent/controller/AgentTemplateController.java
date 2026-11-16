@@ -48,14 +48,14 @@ public class AgentTemplateController {
     }
 
     @PostMapping
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "创建系统 Agent 模板")
     public Result<AgentTemplateVO> create(@Valid @RequestBody AgentTemplateCreateDTO dto) {
         return Result.ok(service.create(dto));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "更新系统 Agent 模板")
     public Result<AgentTemplateVO> update(@PathVariable Long id, @Valid @RequestBody AgentTemplateUpdateDTO dto) {
         return Result.ok(service.update(id, dto));
@@ -68,7 +68,7 @@ public class AgentTemplateController {
     }
 
     @PostMapping("/{id}/versions")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "创建 Agent 模板草稿版本")
     public Result<AgentTemplateVersionVO> createVersion(@PathVariable Long id,
                                                         @Valid @RequestBody AgentTemplateVersionCreateDTO dto) {

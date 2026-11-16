@@ -28,14 +28,14 @@ public class AgentTemplateVersionController {
     private final AgentTemplateService service;
 
     @PostMapping("/{id}/publish")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "发布 Agent 模板版本")
     public Result<AgentTemplateVersionVO> publish(@PathVariable Long id) {
         return Result.ok(service.publish(id));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "更新 Agent 模板草稿版本")
     public Result<AgentTemplateVersionVO> update(@PathVariable Long id,
                                                   @Valid @RequestBody AgentTemplateVersionCreateDTO dto) {
@@ -43,14 +43,14 @@ public class AgentTemplateVersionController {
     }
 
     @PostMapping("/{id}/disable")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "停用 Agent 模板版本")
     public Result<AgentTemplateVersionVO> disable(@PathVariable Long id) {
         return Result.ok(service.disableVersion(id));
     }
 
     @PostMapping("/{id}/enable")
-    @PreAuthorize("@PlatformAccess.hasRole('" + SUPER_ADMIN + "')")
+    @PreAuthorize("@platformRoleVerifier.hasRole('" + SUPER_ADMIN + "')")
     @Operation(summary = "恢复 Agent 模板版本")
     public Result<AgentTemplateVersionVO> enable(@PathVariable Long id) {
         return Result.ok(service.enableVersion(id));

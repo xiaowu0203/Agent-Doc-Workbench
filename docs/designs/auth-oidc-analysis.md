@@ -9,6 +9,8 @@
 
 > 后续实施：P0已对3个已知内部入口实施过渡机器认证/直连及默认拒绝回归，并验证真实Keycloak协议、密码策略/TOTP与隔离双模式BFF，见[公开P0基线](v0.3.0-p0-auth-baseline.md)。本文风险统计描述原v0.2.0基线；test原型不改变正式登录入口，不表示所有缺口已经修复。
 
+> P1后续简化：`PlatformAccessService`转发层已移除，业务服务和方法鉴权直接使用构造器注入的`PlatformRoleVerifier.hasRole/requireRole`；对应角色复核和异常分类保持原契约。下文原始分析及测试数量不变，已删除包装类的源码链接固定到本文历史基线。
+
 ## 1. 结论与建议
 
 当前系统是“自定义账号登录和令牌签发 + Spring Security Resource Server + Space RBAC + 多种业务 Capability”。已经具备 JWT 验签基础，但没有实现完整的标准 OAuth2 Authorization Server / OIDC Provider，也没有真正的 OIDC 登录客户端。
@@ -693,7 +695,7 @@ Workbench 当前迁移最高为 **V44__evaluation_display_names.sql**。v0.3.0 �
 | [backend/common/common-core/src/main/java/com/agentdoc/common/feign/AuthFeign.java:16](../../backend/common/common-core/src/main/java/com/agentdoc/common/feign/AuthFeign.java) | 经网关访问 Auth 内部签发 |
 | [backend/common/common-feign-spring-boot-starter/src/main/java/com/agentdoc/common/feign/interceptor/AuthHeaderForwardInterceptor.java:50](../../backend/common/common-feign-spring-boot-starter/src/main/java/com/agentdoc/common/feign/interceptor/AuthHeaderForwardInterceptor.java) | 用户、异步及窄凭证透传 |
 | [backend/document-service/src/main/java/com/agentdoc/document/service/SpacePermissionService.java:100](../../backend/document-service/src/main/java/com/agentdoc/document/service/SpacePermissionService.java) | RBAC、超管例外、OWNER、Agent 任务回查 |
-| [backend/agent-service/src/main/java/com/agentdoc/agent/service/PlatformAccessService.java:27](../../backend/agent-service/src/main/java/com/agentdoc/agent/service/PlatformAccessService.java) | 角色投影与远程实时复核 |
+| [backend/agent-service/src/main/java/com/agentdoc/agent/service/PlatformAccessService.java:27](https://github.com/xiaowu0203/Agent-Doc-Workbench/blob/2bbf372/backend/agent-service/src/main/java/com/agentdoc/agent/service/PlatformAccessService.java#L27) | 历史基线的角色投影与远程实时复核 |
 | [backend/agent-service/src/main/java/com/agentdoc/agent/service/AgentService.java:298](../../backend/agent-service/src/main/java/com/agentdoc/agent/service/AgentService.java) | 内部执行配置投影边界 |
 | [backend/agent-service/src/main/java/com/agentdoc/agent/service/AgentExecutionQueryService.java:184](../../backend/agent-service/src/main/java/com/agentdoc/agent/service/AgentExecutionQueryService.java) | 内部执行事实投影边界 |
 | [backend/agent-service/src/main/java/com/agentdoc/agent/a2a/service/A2aRequestAuthorizationService.java:51](../../backend/agent-service/src/main/java/com/agentdoc/agent/a2a/service/A2aRequestAuthorizationService.java) | A2A 冻结身份及资源范围 |
@@ -714,7 +716,7 @@ Workbench 当前迁移最高为 **V44__evaluation_display_names.sql**。v0.3.0 �
 | 后端文件 | JUnit 声明数 |
 | --- | ---: |
 | [backend/agent-service/src/test/java/com/agentdoc/agent/a2a/service/A2aRequestAuthorizationServiceTest.java](../../backend/agent-service/src/test/java/com/agentdoc/agent/a2a/service/A2aRequestAuthorizationServiceTest.java) | 4 |
-| [backend/agent-service/src/test/java/com/agentdoc/agent/service/PlatformAccessServiceTest.java](../../backend/agent-service/src/test/java/com/agentdoc/agent/service/PlatformAccessServiceTest.java) | 2 |
+| [backend/agent-service/src/test/java/com/agentdoc/agent/service/PlatformAccessServiceTest.java](https://github.com/xiaowu0203/Agent-Doc-Workbench/blob/2bbf372/backend/agent-service/src/test/java/com/agentdoc/agent/service/PlatformAccessServiceTest.java) | 2 |
 | [backend/auth-service/src/test/java/com/agentdoc/auth/OnlineCapabilitySecurityIntegrationTest.java](../../backend/auth-service/src/test/java/com/agentdoc/auth/OnlineCapabilitySecurityIntegrationTest.java) | 4 |
 | [backend/auth-service/src/test/java/com/agentdoc/auth/SecurityIntegrationTest.java](../../backend/auth-service/src/test/java/com/agentdoc/auth/SecurityIntegrationTest.java) | 3 |
 | [backend/auth-service/src/test/java/com/agentdoc/auth/controller/AuthControllerTest.java](../../backend/auth-service/src/test/java/com/agentdoc/auth/controller/AuthControllerTest.java) | 4 |
